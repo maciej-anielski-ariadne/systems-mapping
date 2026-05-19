@@ -14,8 +14,6 @@ Domain-agnostic — any system you can express as nodes-with-streams-and-stages 
    - **Load sample** — the small bundled worked example.
 3. Iterate. Re-open **Edit map** at any time to tweak the live map; **Apply to map** re-renders instantly. From inside the wizard, **Download CSV** saves your work.
 
-> The original single-file build is preserved as `border_systems_map.html` for reference. New work should use `index.html` and the modular files under `assets/`.
-
 The app starts empty — a drop zone with four buttons (Choose CSV file / Build from scratch / Load sample data / Download sample CSV) until you load something. The header has seven buttons left-to-right: **Build map · Edit map · Import map · Load sample · Download sample · Simulate · Reset view**. (`Edit map` is dimmed until a map is loaded.)
 
 ## What you get
@@ -166,7 +164,6 @@ Loader checks every load and reports findings in a toast (top-right) and the con
 ```
 systems_mapping/
 ├── index.html                       The app entry point — open this in a browser
-├── border_systems_map.html          Archived original single-file build
 ├── README.md                        This file
 └── assets/
     ├── fonts/
@@ -224,8 +221,8 @@ systems_mapping/
 
 ### Why so many small files?
 
-The original `border_systems_map.html` was one 2,500-line file. Splitting it
-into ~35 small, well-commented files makes it easier for:
+The app was originally a single ~2,500-line HTML file. Splitting it into
+~35 small, well-commented files makes it easier for:
 
 - Non-technical editors to find and tweak one thing (e.g. colours live in
   exactly one file: `assets/css/01-variables.css`).
