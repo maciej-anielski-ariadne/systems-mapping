@@ -96,18 +96,24 @@ body.panning * {
   stroke-width: 2;
 }
 
-/* Text rendered inside each node */
+/* Text rendered inside each node.
+ *
+ * --map-text-scale is set on #viz-svg by render() / applyZoom() — it grows
+ * above 1.0 as the user zooms out so on-screen text stays readable. The
+ * `, 1` fallback keeps things working before the JS has had a chance to
+ * set it (e.g. while the empty drop zone is showing).
+ */
 .node-label {
   font-family: var(--font-ui);
   font-weight: 500;
-  font-size: 12px;
+  font-size: calc(12px * var(--map-text-scale, 1));
   pointer-events: none;   /* clicks pass through to the underlying rect */
   user-select: none;
 }
 
 .node-value {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--map-text-scale, 1));
   font-weight: 500;
   pointer-events: none;
   user-select: none;
@@ -116,7 +122,7 @@ body.panning * {
 
 .node-delta {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--map-text-scale, 1));
   font-weight: 600;
   pointer-events: none;
   user-select: none;
@@ -140,7 +146,7 @@ body.panning * {
 
 .row-label-text {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: calc(11px * var(--map-text-scale, 1));
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -162,7 +168,7 @@ body.panning * {
 }
 
 .row-label-group.collapsed .row-label-text {
-  font-size: 10px;
+  font-size: calc(10px * var(--map-text-scale, 1));
   opacity: 0.55;
 }
 
@@ -181,7 +187,7 @@ body.panning * {
 
 .col-header-text {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: calc(11px * var(--map-text-scale, 1));
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;

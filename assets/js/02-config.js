@@ -35,6 +35,17 @@ const SVG_PADDING_TOP    = 12;
 const SVG_PADDING_RIGHT  = 24;
 const SVG_PADDING_BOTTOM = 24;
 
+// Map-text auto-enlargement when the user zooms out.
+//
+// Below a zoom of TEXT_SCALE_RATIO we grow SVG font-size inversely with
+// zoom so on-screen text stays readable. TEXT_SCALE_MAX caps the growth so
+// labels do not spill out of node-rects or crash into the value/delta line.
+// 1.4× is a deliberate trade-off: typical labels (under ~20 chars) stay
+// inside their rect, while a worst-case 24-char label may overflow slightly
+// at minimum zoom — accepted in exchange for the readability win.
+const TEXT_SCALE_RATIO = 0.85;
+const TEXT_SCALE_MAX   = 1.4;
+
 // Key strings used in the CSV's `defaults` section. Centralised here so the
 // CSV parser (06-data-loader.js), serializer (05a-csv-serializer.js), and
 // the wizard's "Start from sample" path (16a-builder-panel.js) all reference

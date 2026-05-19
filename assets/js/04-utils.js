@@ -1,10 +1,11 @@
 // =============================================================================
 // UTILITY HELPERS — small functions used in many places
 // -----------------------------------------------------------------------------
-// Three tiny helpers:
-//   • wrapLabel    – split a node label across two lines if it's too long
-//   • escapeHtml   – make user text safe to inject into HTML/SVG strings
-//   • formatScalar – format a number for display ("9,000", "1.25", etc.)
+// Small helpers:
+//   • wrapLabel       – split a node label across two lines if it's too long
+//   • escapeHtml      – make user text safe to inject into HTML/SVG strings
+//   • formatScalar    – format a number for display ("9,000", "1.25", etc.)
+//   • getMapTextScale – font-scale multiplier for the map when zoomed out
 // =============================================================================
 
 // Split `text` into up to 2 lines, each no more than `maxCharsPerLine` chars.
@@ -65,4 +66,15 @@ function formatScalar(value) {
   if (absValue >= 10)     return value.toFixed(1);
   if (absValue >= 1)      return value.toFixed(2);
   return value.toFixed(3);
+}
+
+// Map text-scale multiplier given the current zoom level. As the user zooms
+// out below TEXT_SCALE_RATIO, SVG font-sizes grow inversely with zoom so
+// on-screen text stays roughly readable, capped at TEXT_SCALE_MAX so labels
+// don't spill out of node-rects. At zoom >= TEXT_SCALE_RATIO this returns
+// 1.0 (no scaling). Set as the --map-text-scale CSS variable on #viz-svg
+// by both render() and applyZoom().
+function getMapTextScale(zoomLevel) {
+  if (!zoomLevel || isNaN(zoomLevel) || zoomLevel <= 0) return 1;
+  return Math.min(TEXT_SCALE_MAX, Math.max(1, TEXT_SCALE_RATIO / zoomLevel));
 }

@@ -161,6 +161,7 @@ function applyZoom() {
   if (svgEl && layout && layout.totalWidth) {
     svgEl.setAttribute("width",  layout.totalWidth  * state.zoomLevel);
     svgEl.setAttribute("height", layout.totalHeight * state.zoomLevel);
+    svgEl.style.setProperty("--map-text-scale", getMapTextScale(state.zoomLevel));
   }
   if (readout) readout.textContent = Math.round(state.zoomLevel * 100) + "%";
 }

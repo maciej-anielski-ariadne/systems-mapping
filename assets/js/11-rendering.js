@@ -39,6 +39,10 @@ function render() {
   svg.setAttribute("width",  layout.totalWidth  * zoom);
   svg.setAttribute("height", layout.totalHeight * zoom);
   svg.setAttribute("viewBox", "0 0 " + layout.totalWidth + " " + layout.totalHeight);
+  // Grow SVG text-size when zoomed out (capped) so labels stay readable.
+  // Picked up by `font-size: calc(<base> * var(--map-text-scale, 1))` in
+  // assets/css/05-visualization.css.
+  svg.style.setProperty("--map-text-scale", getMapTextScale(zoom));
 
   let content = "";
 
@@ -228,11 +232,18 @@ function render() {
     content += '<path d="' + barPath + '" fill="' + stream.color + '"></path>';
 
     // ── Label (wrapped to up to 2 lines) ──
+    // One <text> with one or two <tspan> children. Using `dy="1.083em"` (the
+    // 13/12 ratio of the previous hard-coded line-height) means the gap
+    // between lines scales with the font-size, so labels stay legible when
+    // --map-text-scale grows on zoom-out without lines overlapping.
     const labelLines = wrapLabel(node.label, 24);
     const labelBlockTopY = pos.y + 16;
+    content += '<text class="node-label" x="' + (pos.x + 14) + '" y="' + labelBlockTopY + '" fill="' + category.textColor + '" dominant-baseline="middle">';
     for (let lineIdx = 0; lineIdx < labelLines.length; lineIdx++) {
-      content += '<text class="node-label" x="' + (pos.x + 14) + '" y="' + (labelBlockTopY + lineIdx * 13) + '" fill="' + category.textColor + '" dominant-baseline="middle">' + escapeHtml(labelLines[lineIdx]) + '</text>';
+      const dy = lineIdx === 0 ? "0" : "1.083em";
+      content += '<tspan x="' + (pos.x + 14) + '" dy="' + dy + '">' + escapeHtml(labelLines[lineIdx]) + '</tspan>';
     }
+    content += '</text>';
 
     // ── Value + delta (only for nodes with a baseline) ──
     const valueText = formatNodeValue(node.id);
