@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<!--
+================================================================================
+ Systems Map — single-page web app
+
+ This is the only file you need to open in a browser. Everything else is loaded
+ from the `assets/` folder next to it. The app is fully self-contained:
+ fonts are bundled locally, no internet connection is needed.
+
+ ─── Where to find what ────────────────────────────────────────────────────
+   assets/fonts/     Web fonts (Fraunces, IBM Plex Sans, IBM Plex Mono).
+   assets/css/       Stylesheets. Files are numbered in the order they load —
+                     start with 01-variables.css to change colours or fonts.
+   assets/js/        JavaScript. Files are numbered in the order they load —
+                     each one has a comment header explaining its job.
+   assets/data/      The sample CSV and the empty CSV template, openable in
+                     Excel or Google Sheets.
+
+ ─── To edit the systems map ──────────────────────────────────────────────
+   1. Open assets/data/sample.csv (or empty_template.csv) in Excel.
+   2. Edit the rows.
+   3. Save as a .csv file.
+   4. Drag-and-drop it onto the app.
+
+ ─── To change colours / fonts ────────────────────────────────────────────
+   Edit assets/css/01-variables.css and reload the page.
+
+ ─── To change behaviour ──────────────────────────────────────────────────
+   The JS modules in assets/js/ are deliberately small and well-commented.
+   Pick the one that names what you want to change.
+================================================================================
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Systems Map</title>
+
+  <!-- ──────────────────────────────────────────────────────────────────────
+       FONTS (loaded locally — works offline)
+       ────────────────────────────────────────────────────────────────────── -->
+  <link rel="stylesheet" href="assets/fonts/fonts.css">
+
+  <!-- ──────────────────────────────────────────────────────────────────────
+       STYLESHEETS — loaded in numeric order. Each file is focused on one
+       area of the UI; the header comment inside the file explains what.
+       ────────────────────────────────────────────────────────────────────── -->
+  <link rel="stylesheet" href="assets/css/01-variables.css">
+  <link rel="stylesheet" href="assets/css/02-base.css">
+  <link rel="stylesheet" href="assets/css/03-app-shell.css">
+  <link rel="stylesheet" href="assets/css/04-sidebar.css">
+  <link rel="stylesheet" href="assets/css/05-visualization.css">
+  <link rel="stylesheet" href="assets/css/06-detail-panel.css">
+  <link rel="stylesheet" href="assets/css/07-tooltip.css">
+  <link rel="stylesheet" href="assets/css/08-simulation.css">
+  <link rel="stylesheet" href="assets/css/09-drop-zone.css">
+  <link rel="stylesheet" href="assets/css/10-misc.css">
+  <link rel="stylesheet" href="assets/css/11-builder.css">
+  <link rel="stylesheet" href="assets/css/12-no-borders.css">
+  <link rel="stylesheet" href="assets/css/13-search.css">
+</head>
+<body>
+
+<!-- ============================================================================
+     APP SHELL
+     The 3-column grid (sidebar / visualization / detail panel) below the
+     top header. The CSS that makes this a grid lives in 03-app-shell.css.
+     ========================================================================== -->
+<div class="app">
+
+  <!-- ============== TOP HEADER ============== -->
+  <header class="app-header">
+    <!-- Search box (icon + text input) — stretches to fill the row, with the
+         action buttons pinned to the right. JS in 17a-search.js fills the
+         #search-results dropdown below as the user types. -->
+    <div class="search-wrap">
+      <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="8"></circle>
+        <path d="m21 21-4.3-4.3"></path>
+      </svg>
+      <input id="search-input" class="search-input" placeholder="Search nodes  (press /  ·  ↑↓ to step  ·  Esc to clear)">
+      <div id="search-results" class="search-results" hidden></div>
+    </div>
+
+    <!-- Header action buttons. Classes (load-csv-trigger, load-sample-trigger,
+         etc.) are picked up by the JS in 17-events.js and wired to their
+         handlers — see that file. -->
+    <button class="header-button build-map-trigger"       data-tooltip="Open the wizard to build a new systems map from scratch. Applying replaces the current map.">Build map</button>
+    <button class="header-button edit-map-trigger"        data-tooltip="Open the wizard pre-populated with the currently-loaded map. Disabled until a map is loaded.">Edit map</button>
+    <button class="header-button load-csv-trigger"        data-tooltip="Import a CSV map file from your computer. Same as drag-dropping a .csv onto the window.">Import map</button>
+    <button class="header-button load-sample-trigger"     data-tooltip="Load the bundled neutral sample (3 streams, 12 nodes, 12 edges) so you can explore how the app behaves.">Load sample</button>
+    <button class="header-button download-sample-trigger" data-tooltip="Download the bundled sample as a .csv file to study or edit in Excel / Google Sheets.">Download sample</button>
+    <button id="sim-toggle-button" class="header-button"  data-tooltip="Toggle simulation mode — sliders on every controllable input, downstream values recompute live.">Simulate</button>
+    <button id="reset-button"      class="header-button"  data-tooltip="Clear hidden streams / categories, simulation overrides, selection, and the search box.">Reset view</button>
+  </header>
+
+  <!-- Hidden file picker. Clicking any .load-csv-trigger button triggers it. -->
+  <input type="file" id="hidden-file-input" accept=".csv,text/csv" style="display: none;">
+  <!-- Toast container — JS fills it via showLoadFeedback() -->
+  <div id="load-feedback" class="load-feedback" style="display: none;"></div>
+
+  <!-- ============== LEFT SIDEBAR ============== -->
+  <aside class="sidebar" id="sidebar">
+    <!-- Sticky header strip at the top of the panel. Holds the pin button
+         centred in the header; the label reads "Click here to (un)pin" and
+         the pin icon sits to the right of the text as if it were part of it. -->
+    <div class="panel-header">
+      <button class="panel-pin sidebar-pin" id="sidebar-pin" title="Click to unpin sidebar" aria-label="Click to unpin sidebar">
+        <span class="panel-pin-label">Click here to unpin</span>
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+          <path d="M14 4h2v2l-3 4v3h3l1 1v1h-5v6h-1v-6H6v-1l1-1h3v-3L7 6V4h2"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Simulation panel — JS fills it in 14-simulation-panel.js -->
+    <div class="sidebar-section" id="simulation-panel-section">
+      <div id="simulation-panel" style="display: none;"></div>
+    </div>
+
+    <!-- Stream filters — JS fills the list in 13-sidebar.js -->
+    <div class="sidebar-section" id="stream-filters-section">
+      <div class="sidebar-section-title">
+        <span>Streams</span>
+        <span class="count" id="visible-streams-count"></span>
+      </div>
+      <div id="stream-filters"></div>
+    </div>
+
+    <!-- Category filters -->
+    <div class="sidebar-section" id="category-filters-section">
+      <div class="sidebar-section-title">
+        <span>Node Categories</span>
+      </div>
+      <div id="category-filters"></div>
+    </div>
+
+    <!-- Edge legend (static) -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">
+        <span>Edge Legend</span>
+      </div>
+      <div class="legend-row">
+        <div class="legend-line" style="background: var(--edge-enables);"></div>
+        <div class="legend-label">Enables / supports</div>
+      </div>
+      <div class="legend-row">
+        <div class="legend-line" style="background: var(--edge-increases);"></div>
+        <div class="legend-label">Increases</div>
+      </div>
+      <div class="legend-row">
+        <div class="legend-line" style="background: var(--edge-decreases);"></div>
+        <div class="legend-label">Decreases</div>
+      </div>
+    </div>
+
+    <!-- Trace legend (static) -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">
+        <span>Trace Legend</span>
+      </div>
+      <div class="legend-row">
+        <div class="legend-swatch" style="box-shadow: inset 0 0 0 2px var(--edge-ancestor), 0 0 4px var(--edge-ancestor);"></div>
+        <div class="legend-label">Upstream sources</div>
+      </div>
+      <div class="legend-row">
+        <div class="legend-swatch" style="box-shadow: inset 0 0 0 2px var(--edge-descendant), 0 0 4px var(--edge-descendant);"></div>
+        <div class="legend-label">Downstream impacts</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ============== CENTER VISUALIZATION ============== -->
+  <main class="viz-container" id="viz-container">
+    <!-- Scrollable area containing the rendered SVG. JS in 11-rendering.js
+         writes the SVG contents on every render. -->
+    <div class="viz-scroll" id="viz-scroll">
+      <svg id="viz-svg" class="viz-svg"></svg>
+    </div>
+
+    <!-- Small status pill at the bottom-left of the map -->
+    <div class="status-bar" id="status-bar">
+      <b>Click</b> a node to trace its causal chain &nbsp;·&nbsp;
+      <b>Click stream</b> to hide/show &nbsp;·&nbsp;
+      <b>Simulation</b> mode for live what-if sliders
+    </div>
+
+    <!-- Zoom controls (bottom-right). JS in 17-events.js wires them. -->
+    <div class="viz-zoom-controls" id="viz-zoom-controls">
+      <button class="viz-zoom-button" id="viz-zoom-out"  title="Zoom out (Ctrl+−)" aria-label="Zoom out">−</button>
+      <button class="viz-zoom-readout" id="viz-zoom-readout" title="Reset zoom (click)">100%</button>
+      <button class="viz-zoom-button" id="viz-zoom-in"   title="Zoom in (Ctrl+=)"  aria-label="Zoom in">+</button>
+    </div>
+
+    <!-- Empty-state overlay shown until a CSV is loaded. JS hides it via
+         hideDropZone() once data arrives. -->
+    <div id="drop-zone" class="drop-zone">
+      <div class="drop-zone-inner">
+        <div class="drop-zone-icon">
+          <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+        </div>
+        <div class="drop-zone-title">Drop a CSV here to load a systems map</div>
+        <div class="drop-zone-subtitle">
+          Or use the buttons below. The map is driven by a CSV defining streams,
+          stages, categories, nodes, and edges — build it from scratch in the
+          in-app wizard, or hand-edit in Excel / Google Sheets.
+        </div>
+        <div class="drop-zone-buttons">
+          <button class="drop-zone-button primary load-csv-trigger">Choose CSV file</button>
+          <button class="drop-zone-button build-map-trigger">Build from scratch</button>
+          <button class="drop-zone-button load-sample-trigger">Load sample data</button>
+          <button class="drop-zone-button download-sample-trigger">Download sample CSV</button>
+        </div>
+        <div class="drop-zone-hint">
+          The bundled sample is a small neutral example (3 streams, 12 nodes,
+          12 edges) you can use as a placeholder while learning the schema.
+          Click <b>Build from scratch</b> for a guided wizard with dropdowns
+          and live validation, or <b>Download sample CSV</b> to study it in a
+          spreadsheet.
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ============== RIGHT DETAIL PANEL ============== -->
+  <aside class="detail-panel" id="detail-panel">
+    <!-- Sticky header strip with the centred "Click here to (un)pin" label +
+         pin icon. -->
+    <div class="panel-header">
+      <button class="panel-pin detail-pin" id="detail-pin" title="Click to unpin details" aria-label="Click to unpin details">
+        <span class="panel-pin-label">Click here to unpin</span>
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+          <path d="M14 4h2v2l-3 4v3h3l1 1v1h-5v6h-1v-6H6v-1l1-1h3v-3L7 6V4h2"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Shown when no node is selected -->
+    <div class="detail-empty" id="detail-empty">
+      <h3>Causal trace.</h3>
+      <p>Click any node to see what feeds into it and what it impacts downstream — recursively, across the whole map.</p>
+      <p>Click again to deselect. Use the streams in the left panel to hide branches.</p>
+      <div class="hint">
+        <b>DATA</b> — All structure and quantification is loaded from a CSV. Use <b>Build map</b> / <b>Edit map</b> in the header for the form-based wizard, or hand-edit the CSV in Excel / Sheets and drag it back in.<br><br>
+        <b>EDGES</b> — Each link is annotated as <i>enables</i>, <i>increases</i>, or <i>decreases</i>, with an elasticity that drives simulation propagation.
+      </div>
+    </div>
+    <!-- Filled by JS in 15-detail-panel.js when a node is selected -->
+    <div id="detail-content" style="display: none;"></div>
+  </aside>
+
+</div>
+
+<!-- Single tooltip element reused for every node hover.
+     JS in 12-tooltip.js fills and positions it. -->
+<div class="tooltip" id="tooltip"></div>
+
+<!-- Build / Edit wizard overlay — filled by 16a-builder-panel.js when open. -->
+<div id="builder-overlay" class="builder-overlay"></div>
+
+<!-- ============================================================================
+     JAVASCRIPT — loaded in strict numeric order
+     -------------------------------------------------------------------------
+     The files share global variables (declared in 03-state.js) and call each
+     other's functions, so the order matters. New code that doesn't fit cleanly
+     into an existing file should generally go into a NEW numbered file,
+     loaded at the right point in this sequence.
+     ========================================================================== -->
+<script src="assets/js/01-sample-data.js"></script>        <!-- SAMPLE_CSV constants     -->
+<script src="assets/js/02-config.js"></script>             <!-- layout sizing constants  -->
+<script src="assets/js/03-state.js"></script>              <!-- shared global state      -->
+<script src="assets/js/04-utils.js"></script>              <!-- escapeHtml / formatScalar -->
+<script src="assets/js/04a-storage.js"></script>           <!-- localStorage persistence -->
+<script src="assets/js/05-csv-parser.js"></script>         <!-- read .csv string         -->
+<script src="assets/js/05a-csv-serializer.js"></script>    <!-- write .csv string        -->
+<script src="assets/js/06-data-loader.js"></script>        <!-- loadDataFromCsv          -->
+<script src="assets/js/07-simulation-engine.js"></script>  <!-- node value propagation   -->
+<script src="assets/js/08-layout.js"></script>             <!-- computeLayout            -->
+<script src="assets/js/09-graph-selection.js"></script>    <!-- ancestor / descendant    -->
+<script src="assets/js/10-filters.js"></script>            <!-- show/hide streams        -->
+<script src="assets/js/11-rendering.js"></script>          <!-- SVG renderer             -->
+<script src="assets/js/12-tooltip.js"></script>            <!-- hover popup              -->
+<script src="assets/js/13-sidebar.js"></script>            <!-- left-side filter UI      -->
+<script src="assets/js/14-simulation-panel.js"></script>   <!-- sliders                  -->
+<script src="assets/js/15-detail-panel.js"></script>       <!-- right-side details       -->
+<script src="assets/js/16-file-io.js"></script>            <!-- drag-drop + download         -->
+<script src="assets/js/16a-builder-state.js"></script>     <!-- wizard: state + validation   -->
+<script src="assets/js/16b-builder-render.js"></script>    <!-- wizard: render functions     -->
+<script src="assets/js/16c-builder-editor.js"></script>    <!-- wizard: floating cell editor -->
+<script src="assets/js/16d-builder-events.js"></script>    <!-- wizard: event wiring         -->
+<script src="assets/js/17-events.js"></script>             <!-- wire up controls         -->
+<script src="assets/js/17a-search.js"></script>            <!-- fuzzy search + dropdown  -->
+<script src="assets/js/18-main.js"></script>               <!-- startup                  -->
+
+</body>
+</html>

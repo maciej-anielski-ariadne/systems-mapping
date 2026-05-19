@@ -1,0 +1,72 @@
+# UK Systems Map - Empty Template
+# Fill in the rows under each section. Save as .csv. Drag onto the app to load.
+#
+# Sections start with a line like `# SECTION: <name>`.
+# The first non-comment row of each section is the column header. Do NOT change column names.
+# Lines starting with # are comments and are ignored.
+# Empty rows are ignored.
+#
+# Build order recommendation:
+#   1. Decide your streams (rows) - functional flows or domains.
+#   2. Decide your stages (columns) - the lifecycle from inputs to outcomes, left-to-right.
+#   3. Decide your categories - node types (resource, process, metric, outcome, etc).
+#   4. Add nodes - one per cell of the stream x stage grid you want to populate.
+#   5. Add edges - causal links between nodes (from -> to).
+#   6. (Optional) Set baselines + elasticities to enable the Simulation feature.
+
+# SECTION: streams
+# id        - unique stream identifier (referenced from nodes). Lowercase, no spaces.
+# label     - display name shown in the sidebar and detail panel.
+# short     - short label shown on the map row header (uppercase, ~6 chars).
+# color     - hex colour for the stream (e.g. #60a5fa). Used for the left bar on each node.
+id,label,short,color
+
+# SECTION: stages
+# id    - stage identifier (referenced from nodes). Lowercase, no spaces.
+# label - column header shown on the map. Stages appear left-to-right in the order listed here.
+id,label
+
+# SECTION: categories
+# id          - category identifier (referenced from nodes). Lowercase, no spaces.
+# label       - display name shown in the sidebar legend.
+# color       - fill colour for nodes of this category (hex).
+# text_color  - label text colour (hex). Pick a high-contrast value relative to the fill.
+id,label,color,text_color
+
+# SECTION: defaults
+# Default elasticities used when an edge's `elasticity` cell is left blank.
+# Elasticity = percent change in target value per percent change in source value.
+# For `decreases` effects, the default is negative.
+# These three rows are pre-filled with sensible starting values. Tune later if needed.
+key,value
+elasticity_enables,0.3
+elasticity_increases,0.25
+elasticity_decreases,-0.25
+
+# SECTION: nodes
+# id           - unique node identifier (referenced from edges). Lowercase, underscores, no spaces.
+# label        - display name shown on the node.
+# description  - tooltip text and detail panel description. Wrap in quotes if it contains commas.
+# stream       - which stream this node belongs to (must match an id from the `streams` section).
+# stage        - which stage column this node sits in (must match an id from the `stages` section).
+# category     - node category (must match an id from the `categories` section).
+#
+# The fields below are OPTIONAL. Fill them in to enable the Simulation feature for this node:
+#
+# baseline     - baseline numeric value (e.g. 9000 for FTE, 25 for wait time in minutes).
+# unit         - unit string shown after the value (e.g. FTE, min avg, £bn/yr, %, index).
+# controllable - 'true' to expose this node as a slider in Simulation mode. Use for exogenous inputs only.
+# direction    - 'higher_better', 'lower_better', or 'neutral'. Set on outcome metrics to drive status colouring.
+# slider_max   - maximum multiplier for the slider in Simulation mode (e.g. 2.0 = up to 200% of baseline). Default 2.0.
+id,label,description,stream,stage,category,baseline,unit,controllable,direction,slider_max
+
+# SECTION: edges
+# from        - source node id.
+# to          - target node id.
+# effect      - 'enables', 'increases', or 'decreases'. Determines arrow colour and default elasticity sign.
+#                 enables   = structural prerequisite (X must exist for Y to happen)
+#                 increases = X going up tends to push Y up
+#                 decreases = X going up tends to push Y down
+# elasticity  - OPTIONAL. Per-edge elasticity override (signed number). Leave blank to use the default for the effect type.
+# description - explanation shown in the detail panel.
+from,to,effect,elasticity,description

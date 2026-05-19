@@ -1,0 +1,60 @@
+/* =============================================================================
+ * BASE STYLES
+ * -----------------------------------------------------------------------------
+ * Browser reset, page background, body font, and the faint grid pattern that
+ * sits behind everything. This file contains styles that apply globally —
+ * everything else builds on top of these.
+ * ========================================================================== */
+
+/* Reset margins, padding, and force border-box sizing on every element.
+   border-box means an element's `width` includes its padding and border,
+   which makes layout math far more predictable. */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* Lock the viewport to the window size so the app doesn't scroll as a whole.
+   Internal panels handle their own scrolling. */
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-ui);
+  background: var(--bg-deepest);
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Subtle grid pattern drawn behind everything else.
+   Two thin lines (horizontal + vertical) repeated every 32px. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(58, 69, 94, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(58, 69, 94, 0.08) 1px, transparent 1px);
+  background-size: 32px 32px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Hide scrollbars everywhere while keeping scroll functionality.
+   Firefox uses scrollbar-width, WebKit/Blink use ::-webkit-scrollbar. */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}

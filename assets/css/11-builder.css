@@ -1,0 +1,572 @@
+/* =============================================================================
+ * BUILDER OVERLAY — the in-app "Build / Edit map" wizard
+ * -----------------------------------------------------------------------------
+ * Full-screen overlay opened by clicking the "Build / Edit map" button.
+ * Re-uses the same dark-card visual language as 09-drop-zone.css, but the
+ * inner card is much wider and scrollable because the wizard contains
+ * multi-row tables for nodes and edges.
+ *
+ * JS in 16a-builder-panel.js fills the #builder-overlay div with the
+ * step-specific markup on every render.
+ * ========================================================================== */
+
+.builder-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 14, 26, 0.92);
+  backdrop-filter: blur(4px);
+  display: none;             /* JS toggles to "flex" when open */
+  align-items: stretch;
+  justify-content: center;
+  z-index: 200;              /* above the drop zone (z 50) and everything else */
+  padding: 32px;
+  font-family: var(--font-ui);
+}
+
+.builder-overlay.open { display: flex; }
+
+.builder-card {
+  width: 100%;
+  max-width: 1180px;
+  background: var(--bg-deep);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;          /* let the body scroll, not the whole card */
+}
+
+/* ───── Card header (title + step indicator + close) ─────────────────── */
+.builder-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 24px;
+  background: var(--bg-mid);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.builder-title {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.builder-step-indicator {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.builder-step-dot {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  background: var(--bg-light);
+  color: var(--text-tertiary);
+  border: 1px solid var(--border-subtle);
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.builder-step-dot:hover {
+  color: var(--text-secondary);
+  border-color: var(--border-strong);
+}
+
+.builder-step-dot.active {
+  background: var(--accent-blue);
+  color: var(--bg-deepest);
+  border-color: var(--accent-blue);
+}
+
+.builder-close {
+  background: transparent;
+  color: var(--text-tertiary);
+  border: 1px solid var(--border-subtle);
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.builder-close:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+/* ───── Card body — split into a fixed top section and a scrolling table area ─────
+ * The top section holds the heading / blurb / help / action bar (and the
+ * default-elasticities row on step 5). Only the table tbody scrolls below it.
+ * On step 6 the split puts the review tiles + validation list in the scroll
+ * area, the heading + blurb above. */
+.builder-body {
+  flex: 1;
+  min-height: 0;            /* let the inner flex children manage their own scroll */
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.builder-step-static {
+  padding: 24px 24px 16px 24px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.builder-step-static:empty {  /* hide the fixed section + its divider when there's nothing above */
+  display: none;
+}
+
+.builder-step-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* No top padding — the sticky table header sits flush against the divider
+   * above. Side + bottom padding gives the table breathing room. */
+  padding: 0 24px 24px 24px;
+}
+
+.builder-step-scroll > .builder-table {
+  margin-top: 0;
+}
+
+/* On step 6 the scroll area has no table — give it a top margin so the
+ * review tiles don't butt up against the divider. */
+.builder-step-scroll > .builder-review-grid {
+  margin-top: 20px;
+}
+
+.builder-step-heading {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin: 0 0 6px 0;
+}
+
+.builder-step-blurb {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 20px;
+  max-width: 760px;
+}
+
+.builder-step-help {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  line-height: 1.5;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  background: var(--bg-mid);
+  border-left: 3px solid var(--accent-blue);
+  border-radius: 4px;
+  max-width: 760px;
+}
+
+.builder-step-help b { color: var(--text-secondary); }
+
+/* ───── Form table (rows for streams / stages / categories / nodes / edges) ───── */
+.builder-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--bg-mid);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+
+.builder-table th {
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  padding: 10px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-deep);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.builder-table td {
+  padding: 6px 6px;
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: middle;
+}
+
+.builder-table tr:last-child td { border-bottom: none; }
+
+.builder-table input[type="text"],
+.builder-table input[type="number"],
+.builder-table select {
+  width: 100%;
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  box-sizing: border-box;
+}
+
+/* Subtle pop-out: any focused cell input/select gets a blue ring so the user
+ * can find it quickly even with many rows on screen. */
+.builder-table input:focus,
+.builder-table select:focus {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.25);
+  position: relative;
+  z-index: 2;
+}
+
+.builder-table input.invalid,
+.builder-table select.invalid {
+  border-color: var(--accent-red);
+}
+
+.builder-table input[type="color"] {
+  width: 40px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  background: var(--bg-deep);
+  cursor: pointer;
+}
+
+.builder-table input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent-blue);
+  cursor: pointer;
+}
+
+/* Drag handle column on streams / stages / categories rows. The grippy
+ * dots are a CSS-rendered text glyph; the actual drag is handled on the
+ * surrounding <tr draggable="true"> by handlers in 16a-builder-panel.js. */
+.builder-row-drag {
+  cursor: grab;
+  text-align: center;
+  color: var(--text-tertiary);
+  user-select: none;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  letter-spacing: -0.1em;
+  font-size: 14px;
+}
+.builder-row-drag:hover { color: var(--text-secondary); }
+.builder-row-drag:active { cursor: grabbing; }
+.builder-table tr.dragging { opacity: 0.45; }
+.builder-table tr.drop-target-above td { box-shadow: inset 0 2px 0 var(--accent-blue); }
+.builder-table tr.drop-target-below td { box-shadow: inset 0 -2px 0 var(--accent-blue); }
+
+.builder-row-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+
+.builder-row-action {
+  background: var(--bg-light);
+  color: var(--text-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  width: 26px;
+  height: 26px;
+  font-size: 13px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+}
+
+.builder-row-action:hover {
+  color: var(--text-primary);
+  background: var(--bg-lighter);
+}
+
+.builder-row-action.danger:hover { color: var(--accent-red); border-color: var(--accent-red); }
+
+.builder-empty-row td {
+  text-align: center;
+  padding: 24px;
+  color: var(--text-tertiary);
+  font-size: 13px;
+  font-style: italic;
+}
+
+/* ───── Action bar above the table (Add row, Start from sample) ──────── */
+.builder-action-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.builder-action {
+  background: var(--bg-mid);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  padding: 7px 12px;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.builder-action:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+  background: var(--bg-light);
+}
+
+.builder-action.primary {
+  background: var(--accent-blue);
+  color: var(--bg-deepest);
+  border-color: var(--accent-blue);
+  font-weight: 600;
+}
+
+.builder-action.primary:hover {
+  background: #93c5fd;
+  border-color: #93c5fd;
+}
+
+.builder-action:disabled,
+.builder-action[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ───── Defaults panel (just 3 elasticity inputs on step 5) ──────────── */
+.builder-defaults {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+  padding: 14px;
+  background: var(--bg-mid);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+}
+
+.builder-defaults label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.builder-defaults input {
+  width: 100px;
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  outline: none;
+}
+
+.builder-defaults input:focus { border-color: var(--accent-blue); }
+
+/* ───── Review step (step 6) ────────────────────────────────────────── */
+.builder-review-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.builder-review-tile {
+  background: var(--bg-mid);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 14px 16px;
+}
+
+.builder-review-tile-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-bottom: 6px;
+}
+
+.builder-review-tile-value {
+  font-family: var(--font-display);
+  font-size: 24px;
+  color: var(--text-primary);
+}
+
+.builder-validation {
+  background: var(--bg-mid);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+
+.builder-validation.ok {
+  border-color: var(--status-good);
+}
+
+.builder-validation.errors {
+  border-color: var(--accent-red);
+}
+
+.builder-validation-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+}
+
+.builder-validation.ok .builder-validation-title { color: var(--status-good); }
+.builder-validation.errors .builder-validation-title { color: var(--accent-red); }
+
+.builder-validation ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.builder-validation li { margin-bottom: 2px; }
+
+/* ───── Footer (Back / Next / Apply / Download) ──────────────────────── */
+.builder-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 24px;
+  background: var(--bg-mid);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.builder-footer-spacer { flex: 1; }
+
+.builder-footer-status {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-right: 8px;
+}
+
+.builder-footer-status.warn { color: var(--accent-amber); }
+
+/* ───── Inline column-help (tiny grey label under each table) ────────── */
+.builder-column-help {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  line-height: 1.5;
+  margin: 4px 2px 16px 2px;
+}
+
+/* ───── Floating cell editor ─────────────────────────────────────────────
+ * Opens on focus of any text / number cell. Big readable textarea so long
+ * descriptions are easy to read and edit. Keeps the underlying <input> as
+ * the source of truth — the editor just mirrors it back and forth.
+ * Lives on document.body (not inside the overlay) so it can spill outside
+ * the wizard card if the cell is near an edge. */
+.builder-cell-editor {
+  position: fixed;
+  z-index: 300;
+  width: 480px;
+  max-width: calc(100vw - 40px);
+  background: var(--bg-deep);
+  border: 1px solid var(--accent-blue);
+  border-radius: 6px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  padding: 10px 12px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.builder-cell-editor-title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.builder-cell-editor-title b {
+  color: var(--text-secondary);
+}
+
+.builder-cell-editor-textarea {
+  width: 100%;
+  min-height: 130px;
+  max-height: 360px;
+  background: var(--bg-mid);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 10px 12px;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.5;
+  outline: none;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.builder-cell-editor-textarea:focus {
+  border-color: var(--accent-blue);
+}
+
+.builder-cell-editor-hint {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.04em;
+}
+
+.builder-cell-editor-hint kbd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  background: var(--bg-light);
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  padding: 1px 5px;
+  color: var(--text-secondary);
+}

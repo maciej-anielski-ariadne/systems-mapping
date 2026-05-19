@@ -1,0 +1,107 @@
+/* =============================================================================
+ * MISC — toast feedback, status bar, no-data dimming
+ * -----------------------------------------------------------------------------
+ * Small odds and ends that don't deserve their own file.
+ * ========================================================================== */
+
+/* === Toast message shown after a CSV load attempt ===
+ * The `border` is stripped globally by 12-no-borders.css, so we paint the
+ * success/error colour cue via a box-shadow ring instead. */
+.load-feedback {
+  position: fixed;
+  top: 76px;       /* sits just below the header */
+  right: 16px;
+  background: var(--bg-light);
+  color: var(--text-primary);
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4), 0 0 0 2px var(--accent-green);
+  z-index: 200;
+  max-width: 380px;
+}
+
+.load-feedback.error {
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4), 0 0 0 2px var(--accent-red);
+}
+
+/* === When no data is loaded, the side panels are dimmed and inert === */
+body.no-data .sidebar,
+body.no-data .detail-panel {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+/* === Small status pill in the bottom-left of the map === */
+.status-bar {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  z-index: 5;
+  background: rgba(17, 24, 39, 0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-subtle);
+  padding: 8px 14px;
+  border-radius: 5px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.05em;
+  pointer-events: none;
+}
+
+.status-bar b {
+  color: var(--text-secondary);
+}
+
+/* === Zoom controls (bottom-right of the viz area) ===
+ * z-index 50 so the controls stay visible (and clickable) even when an
+ * unpinned sidebar/detail panel is hovered and expands as an overlay
+ * over the viz — those panels live at z-index 30. */
+.viz-zoom-controls {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: rgba(17, 24, 39, 0.85);
+  backdrop-filter: blur(8px);
+  padding: 3px;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+}
+
+.viz-zoom-button,
+.viz-zoom-readout {
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 4px;
+  height: 26px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+  padding: 0;
+}
+
+.viz-zoom-button {
+  width: 26px;
+  font-size: 16px;
+}
+
+.viz-zoom-readout {
+  min-width: 44px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  padding: 0 4px;
+}
+
+.viz-zoom-button:hover,
+.viz-zoom-readout:hover {
+  color: var(--text-primary);
+  background: var(--bg-light);
+}

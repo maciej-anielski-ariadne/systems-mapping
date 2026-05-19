@@ -1,0 +1,63 @@
+/* =============================================================================
+ * TOOLTIP — pops up when the mouse hovers over a node
+ * -----------------------------------------------------------------------------
+ * One single tooltip element (#tooltip) is reused for every node. JS in
+ * assets/js/12-tooltip.js writes its contents and moves it to the cursor.
+ * ========================================================================== */
+
+.tooltip {
+  position: fixed;
+  background: var(--bg-light);
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
+  padding: 8px 12px;
+  border-radius: 5px;
+  font-size: 12px;
+  pointer-events: none;
+  z-index: 100;
+  max-width: 260px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.tooltip.visible {
+  opacity: 1;
+}
+
+.tooltip-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+
+.tooltip-desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+/* Quantification line: "Current: 9000 FTE (+5% vs baseline 8571 FTE)" */
+.tooltip-quant {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+  padding: 4px 0;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.tooltip-quant-label  { color: var(--text-tertiary); }
+.tooltip-quant-value  { font-weight: 600; }
+.tooltip-quant-delta  { color: var(--text-secondary); margin-left: 4px; }
+
+/* Single-line text tooltip used for buttons / filters / SVG row labels.
+ * Sits in the same #tooltip container as the rich node hover; just a
+ * shorter, simpler layout. */
+.tooltip-text {
+  font-size: 12px;
+  color: var(--text-primary);
+  line-height: 1.4;
+  max-width: 240px;
+}

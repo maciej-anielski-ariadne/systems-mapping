@@ -1,0 +1,65 @@
+/* =============================================================================
+ * DESIGN TOKENS (colors, fonts)
+ * -----------------------------------------------------------------------------
+ * Every colour and font in the app is defined here as a CSS "variable". Changing
+ * one of these values changes that colour or font everywhere in the app. This
+ * lets non-technical editors retheme the app without hunting through every CSS
+ * file.
+ *
+ * How CSS variables work:
+ *   :root { --my-color: #ff0000; }      ← define a variable
+ *   .some-class { color: var(--my-color); } ← use it
+ *
+ * Naming convention:
+ *   --bg-*      → background shades (deepest is darkest)
+ *   --text-*    → text shades (primary is brightest, tertiary is dimmest)
+ *   --border-*  → border colours
+ *   --accent-*  → highlight colours
+ *   --edge-*    → arrow colours in the visualization
+ *   --font-*    → font families (font files are in ../fonts/)
+ * ========================================================================== */
+
+:root {
+  /* Background shades, dark-to-light */
+  --bg-deepest:     #0a0e1a;
+  --bg-deep:        #111827;
+  --bg-mid:         #1a2030;
+  --bg-light:       #232a3d;
+  --bg-lighter:     #2c354b;
+
+  /* Borders */
+  --border-subtle:  #2a3346;
+  --border-strong:  #3a455e;
+
+  /* Text shades */
+  --text-primary:   #e7ecf3;
+  --text-secondary: #a1adc4;
+  --text-tertiary:  #6b7691;
+
+  /* Accent / highlight colours */
+  --accent-blue:    #60a5fa;
+  --accent-amber:   #fbbf24;
+  --accent-orange:  #fb923c;
+  --accent-green:   #34d399;
+  --accent-red:     #f87171;
+  --accent-purple:  #a78bfa;
+
+  /* Outcome-status colours (used by JS to colour borders / deltas when an
+     outcome metric moves "good" or "bad" relative to baseline) */
+  --status-good:    #10b981;
+  --status-bad:     #f87171;
+
+  /* Arrow colours in the map */
+  --edge-default:   #3a455e;   /* normal, unselected arrow */
+  --edge-dim:       #232a3d;   /* dimmed-out arrow */
+  --edge-ancestor:  #60a5fa;   /* upstream chain (blue) */
+  --edge-descendant:#fbbf24;   /* downstream chain (amber) */
+  --edge-increases: #34d399;   /* "X increases Y" arrow (green) */
+  --edge-decreases: #f87171;   /* "X decreases Y" arrow (red) */
+  --edge-enables:   #a78bfa;   /* "X enables Y" arrow (purple) */
+
+  /* Font families — loaded locally from ../fonts/fonts.css */
+  --font-display:   "Fraunces", Georgia, serif;
+  --font-ui:        "IBM Plex Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono:      "IBM Plex Mono", "Menlo", monospace;
+}

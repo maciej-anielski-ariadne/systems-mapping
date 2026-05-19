@@ -1,0 +1,167 @@
+/* =============================================================================
+ * SIMULATION PANEL — sliders that drive what-if analysis
+ * -----------------------------------------------------------------------------
+ * Shown in the left sidebar when the user toggles "Simulation" mode.
+ * Each slider controls a single "controllable" input node (in the CSV,
+ * controllable=true). Moving the slider sets a multiplier (e.g. 1.5 = 150%
+ * of baseline). The JS recomputes every downstream node and re-renders
+ * the map live.
+ * ========================================================================== */
+
+#simulation-panel {
+  padding: 4px 0;
+}
+
+.sim-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.sim-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.sim-reset {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  background: var(--bg-light);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-strong);
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.sim-reset:hover {
+  background: var(--bg-lighter);
+  color: var(--text-primary);
+}
+
+.sim-help {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-bottom: 12px;
+  line-height: 1.4;
+}
+
+/* One block per stream — groups sliders for that stream */
+.sim-stream-block {
+  margin-bottom: 14px;
+}
+
+.sim-stream-header {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  padding-left: 11px;            /* 8 + 3 so the text sits past the stripe */
+  /* Coloured stripe on the left signals which stream this slider group
+   * belongs to. The stream's hex colour comes in via the --stream-color
+   * CSS variable set by JS (14-simulation-panel.js); painted via
+   * box-shadow:inset because 12-no-borders.css strips real borders. */
+  box-shadow: inset 3px 0 0 var(--stream-color, var(--border-strong));
+  margin-bottom: 6px;
+}
+
+/* === One slider row === */
+.sim-slider-row {
+  margin-bottom: 10px;
+}
+
+.sim-slider-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.sim-slider-name {
+  font-size: 11.5px;
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+.sim-slider-readout {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+/* Editable number alongside the slider — typed values are converted to a
+ * multiplier in 14-simulation-panel.js. Right-aligned, monospaced. */
+.sim-value-input {
+  width: 70px;
+  background: var(--bg-mid);
+  color: var(--text-primary);
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-align: right;
+  outline: none;
+  /* hide the spinner; users can use the slider or type for fine control */
+  -moz-appearance: textfield;
+}
+.sim-value-input::-webkit-outer-spin-button,
+.sim-value-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.sim-value-input:focus {
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.5);
+}
+
+.sim-slider-unit {
+  color: var(--text-secondary);
+}
+
+.sim-slider-pct {
+  color: var(--text-tertiary);
+}
+
+/* The slider itself — custom look across browsers */
+.sim-slider {
+  width: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--bg-light);
+  border-radius: 3px;
+  height: 4px;
+  outline: none;
+  cursor: pointer;
+}
+
+.sim-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent-blue);
+  cursor: pointer;
+  border: 2px solid var(--bg-deepest);
+}
+
+.sim-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent-blue);
+  cursor: pointer;
+  border: 2px solid var(--bg-deepest);
+}

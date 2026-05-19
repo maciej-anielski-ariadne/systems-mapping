@@ -1,0 +1,286 @@
+# UK Border Systems Map - Editable Configuration
+# Edit any section below. Save as .csv. Drag the file onto the app to load it.
+#
+# Sections start with a line like `# SECTION: <name>`.
+# The first row of each section is the column header.
+# Lines starting with # are comments and are ignored.
+# Empty rows are ignored.
+#
+# Sections (in order): streams, stages, categories, defaults, nodes, edges.
+
+# SECTION: streams
+# id        - unique stream identifier (referenced from nodes)
+# label     - display name
+# short     - short label shown on the map row header (uppercase)
+# color     - hex colour for the stream (e.g. #60a5fa)
+id,label,short,color
+cross,Cross-Cutting,CROSS,#94a3b8
+air,Air Passenger,AIR,#60a5fa
+roro,RoRo Goods,RORO,#f59e0b
+lolo,LoLo Goods,LOLO,#a855f7
+parcel,Fast Parcel,PARCEL,#22d3ee
+post,Post & Mail,POST,#f472b6
+
+# SECTION: stages
+# id    - stage identifier (referenced from nodes). Stages render as columns left-to-right in CSV order.
+# label - column header text on the map
+id,label
+input_resource,Resources & Infrastructure
+input_policy,Systems & Policy
+prearrival,Pre-Arrival
+border,Border Processing
+intermediate,Intermediate Outputs
+outcome,Outcomes & Impacts
+
+# SECTION: categories
+# id          - category identifier (referenced from nodes)
+# label       - display name
+# color       - fill colour for nodes of this category (hex)
+# text_color  - label text colour (hex). Pick a high-contrast value relative to the fill.
+id,label,color,text_color
+resource,Resource,#d4a373,#1c1917
+policy,Policy,#a3a3a3,#1c1917
+system,System,#a5b4fc,#1e1b4b
+process,Process,#7dd3fc,#082f49
+metric,Metric,#5eead4,#042f2e
+economic,Economic Outcome,#86efac,#052e16
+security,Security Outcome,#fda4af,#4c0519
+health,Health Outcome,#67e8f9,#083344
+reputation,Reputation,#f0abfc,#4a044e
+
+# SECTION: defaults
+# Default elasticities used when an edge's `elasticity` cell is empty.
+# Elasticity = percent change in target value per percent change in source value.
+# For `decreases` effects, the default is negative.
+key,value
+elasticity_enables,0.3
+elasticity_increases,0.25
+elasticity_decreases,-0.25
+
+# SECTION: nodes
+# id           - unique node identifier (referenced from edges)
+# label        - display name on the node
+# description  - tooltip text and detail panel description
+# stream       - which stream this node belongs to (must match an id in `streams` section)
+# stage        - which stage column this node sits in (must match an id in `stages` section)
+# category     - node category (must match an id in `categories` section)
+# baseline     - baseline numeric value (e.g. 9000 for FTE, 25 for wait time in minutes)
+# unit         - unit string shown after the value (e.g. FTE, min avg, £bn/yr, %, index)
+# controllable - 'true' to expose this node as a slider in Simulation mode; blank otherwise
+# direction    - 'higher_better', 'lower_better', or 'neutral'. Only set for outcome metrics.
+# slider_max   - maximum multiplier on the slider in Simulation mode (e.g. 2.0 = 200% of baseline). Defaults to 2.0 if blank.
+id,label,description,stream,stage,category,baseline,unit,controllable,direction,slider_max
+border_force_fte,Border Force FTE,Total operational Border Force officer headcount across all roles and locations.,cross,input_resource,resource,9000,FTE,true,,2
+hmrc_customs_fte,HMRC Customs FTE,"HMRC staffing for declarations processing, post-clearance audit, and customs enforcement.",cross,input_resource,resource,3000,FTE,true,,2
+apha_port_health_fte,APHA & Port Health FTE,Animal & Plant Health Agency and Port Health Authority staff conducting SPS checks.,cross,input_resource,resource,800,FTE,true,,3
+intelligence_analyst_fte,Intelligence Analysts,Joint Border Intelligence Unit and NCA analysts producing targeting packages.,cross,input_resource,resource,1200,FTE,true,,2.5
+detection_dog_teams,Detection Dog Teams,"Sniffer dogs and handlers for drugs, cash, tobacco, and firearms detection.",cross,input_resource,resource,250,teams,true,,3
+inland_bcp_capacity,Inland BCP Capacity,"Capacity at Sevington, Ashford and other inland Border Control Posts for SPS examinations.",cross,input_resource,resource,30,BCPs,true,,3
+egate_estate,eGate Estate,Number of operational eGates and biometric processing throughput at airports.,air,input_resource,resource,270,gates,true,,3
+pcp_booth_capacity,PCP Booth Capacity,Primary Control Point booth count and operational hours at all air ports of entry.,air,input_resource,resource,800,booths,true,,2
+secondary_room_capacity,Secondary Area Capacity,"Physical capacity for secondary examination, holding rooms, and detention space.",air,input_resource,resource,50,rooms,true,,3
+anpr_coverage,ANPR Camera Coverage,Automated Number Plate Recognition deployed at RoRo ports for pre-arrival vehicle ID.,roro,input_resource,resource,95,%,true,,1.05
+roro_xray_scanners,RoRo X-Ray Scanners,"Fixed and mobile cargo X-ray and gamma scanners at Dover, Holyhead, Eurotunnel etc.",roro,input_resource,resource,40,scanners,true,,3
+lolo_xray_scanners,LoLo Container Scanners,"Fixed gantry and mobile container scanners at Felixstowe, Southampton, London Gateway, etc.",lolo,input_resource,resource,35,scanners,true,,3
+lolo_exam_facilities,Container Exam Facilities,Sheds and equipment for physical container devanning and inspection.,lolo,input_resource,resource,12,sheds,true,,3
+parcel_hub_scanners,Parcel Hub Scanners,"CT and X-ray scanners at fast parcel operator hubs (FedEx, DHL, UPS).",parcel,input_resource,resource,60,scanners,true,,3
+mail_centre_scanners,Mail Centre Scanners,X-ray and CT scanners at Royal Mail international mail processing centres.,post,input_resource,resource,25,scanners,true,,3
+semaphore_intel_systems,Semaphore & Intel Systems,"API/PNR analysis, watchlist matching, and intelligence data infrastructure.",cross,input_policy,system,100,% maturity,true,,1.5
+ics2_data,ICS2 Pre-Arrival Data,Import Control System 2 — electronic advance cargo data for inbound consignments.,cross,input_policy,system,100,% coverage,true,,1.2
+sanctions_regime,Sanctions & Export Controls,"OFSI sanctions lists, dual-use goods controls, and trade restrictions framework.",cross,input_policy,policy,100,% effect.,true,,1.5
+eta_scheme,ETA Scheme,Electronic Travel Authorisation regime for non-visa nationals — pre-arrival vetting.,air,input_policy,policy,100,% coverage,true,,1.2
+visa_regime,Visa Regime,Visa policy framework determining who needs a visa and conditions of entry.,air,input_policy,policy,100,% effect.,true,,1.5
+api_pnr_legal,API/PNR Legal Framework,Statutory obligations on carriers to submit Advance Passenger Info and Passenger Name Records.,air,input_policy,policy,100,% compliance,true,,1.2
+gvms_system,GVMS,Goods Vehicle Movement Service — pre-lodgement and movement reference tracking for RoRo.,roro,input_policy,system,100,% uptime,true,,1.2
+btom_model,BTOM Risk Model,Border Target Operating Model — risk-based SPS check tiers (low/medium/high).,roro,input_policy,policy,100,% impl.,true,,1.5
+cds_system,CDS,Customs Declaration Service — electronic import declarations for goods.,lolo,input_policy,system,100,% uptime,true,,1.2
+manifest_legal,Manifest Legal Framework,Statutory carrier obligations to submit manifests and entry summary declarations.,lolo,input_policy,policy,100,% compliance,true,,1.2
+parcel_data_regime,Parcel Pre-Arrival Data,Electronic advance data obligations on fast parcel operators (low-value consignment).,parcel,input_policy,policy,100,% coverage,true,,1.2
+upu_data_exchange,UPU Electronic Data,Universal Postal Union electronic advance data on international postal items.,post,input_policy,system,100,% coverage,true,,1.2
+api_pnr_submission,API/PNR Submission,Airlines transmit passenger data 24-72hrs before arrival for analysis.,air,prearrival,process,98,% compliance,,,
+eta_processing,ETA Application Processing,Automated and manual review of ETA applications; deny travel authorisation pre-boarding.,air,prearrival,process,100,index,,,
+watchlist_screening,Watchlist Screening,"Automated checks against Warnings Index, Police National Computer, and intelligence watchlists.",air,prearrival,process,100,index,,,
+passenger_risk_targeting,Passenger Risk Targeting,Analyst-driven risk assessment of passenger data to flag individuals for examination.,air,prearrival,process,100,index,,,
+gvms_prelodgement,GVMS Pre-Lodgement,Hauliers register movements and declarations before arrival at RoRo port.,roro,prearrival,process,100,index,,,
+roro_risk_targeting,RoRo Risk Targeting,"Targeting of vehicles based on declarations, origin, intelligence, and routing.",roro,prearrival,process,100,index,,,
+cds_declaration_processing,CDS Declaration Processing,Importers submit electronic customs declarations against manifests for clearance.,lolo,prearrival,process,100,index,,,
+lolo_risk_targeting,LoLo Risk Targeting,"Container targeting based on origin, commodity, importer history, and intelligence.",lolo,prearrival,process,100,index,,,
+parcel_manifest_processing,Parcel Manifest Processing,Fast parcel operators submit electronic data; risk engines flag consignments.,parcel,prearrival,process,100,index,,,
+mail_data_processing,Mail Data Processing,Electronic data on inbound mail items processed against risk and intelligence indicators.,post,prearrival,process,100,index,,,
+egate_processing,eGate Processing,Biometric self-service entry for eligible passengers — facial match against chip.,air,border,process,100,index,,,
+pcp_inspection,PCP Officer Inspection,"Border Force officer at desk: identity, intent, supporting documents, watchlist check.",air,border,process,100,index,,,
+passenger_secondary_examination,Secondary Examination,"Detailed interview, baggage search, and verification for referred passengers.",air,border,process,100,index,,,
+detention_removal,Detention & Removal Processing,"Holding, casework, and removal of refused passengers.",air,border,process,100,index,,,
+vehicle_document_check,Vehicle Document Check,"Verification of GVMS reference, customs status, and driver documents.",roro,border,process,100,index,,,
+vehicle_xray_scan,Vehicle X-Ray Scan,Non-intrusive imaging of HGV trailers and contents for concealed goods/persons.,roro,border,process,100,index,,,
+vehicle_physical_search,Vehicle Physical Search,"Hands-on inspection of cab, trailer, and load for referred vehicles.",roro,border,process,100,index,,,
+container_targeting_exam,Container Examination,X-ray scan and physical inspection of containers selected by risk targeting.,lolo,border,process,100,index,,,
+container_devanning,Container Devanning,Full unload and inspection of high-risk containers at port or off-site.,lolo,border,process,100,index,,,
+sps_inspection,SPS / BCP Inspection,"Sanitary and phytosanitary checks: documentary, identity, and physical on plants/animals/POAO.",cross,border,process,100,index,,,
+parcel_xray_screening,Parcel X-Ray Screening,Routine scanning of inbound parcels at operator hubs.,parcel,border,process,100,index,,,
+parcel_physical_exam,Parcel Physical Exam,Opening and inspection of parcels flagged by screening or targeting.,parcel,border,process,100,index,,,
+mail_screening,Mail Screening,X-ray and physical examination of international mail at processing centres.,post,border,process,100,index,,,
+passenger_wait_time,Passenger Queue Times,Wait time at arrivals — key Border Force performance metric (e.g. <25min target for non-EEA).,air,intermediate,metric,25,min avg,,lower_better,
+passenger_throughput,Passenger Throughput,Volume of passengers processed per hour through all entry channels.,air,intermediate,metric,100,index,,higher_better,
+refusal_rate,Refusal & Removal Rate,Proportion of arrivals refused leave to enter or removed at port.,air,intermediate,metric,0.5,%,,neutral,
+lorry_wait_time,Lorry Wait Times,HGV processing time at RoRo ports — affects supply chains and just-in-time delivery.,roro,intermediate,metric,90,min avg,,lower_better,
+roro_throughput,RoRo Throughput,Volume of HGV movements processed per day at RoRo ports.,roro,intermediate,metric,100,index,,higher_better,
+container_dwell_time,Container Dwell Time,Time containers spend at port awaiting clearance — affects port capacity and shipping costs.,lolo,intermediate,metric,3,days avg,,lower_better,
+lolo_throughput,LoLo Throughput,Number of TEUs cleared per day at container ports.,lolo,intermediate,metric,100,index,,higher_better,
+parcel_clearance_time,Parcel Clearance Time,Time from arrival to delivery for fast parcels — directly affects e-commerce experience.,parcel,intermediate,metric,6,hrs avg,,lower_better,
+post_clearance_time,Post Clearance Time,Time from arrival to onward processing for international mail.,post,intermediate,metric,24,hrs avg,,lower_better,
+detection_seizure_rate,Detection & Seizure Rate,"Volume and value of illicit goods, contraband, and prohibited items detected at the border.",cross,intermediate,metric,100,index,,higher_better,
+duty_vat_collected,Duty & VAT Revenue,"Customs duty, import VAT, and excise duty collected at the border.",cross,intermediate,metric,40,£bn/yr,,higher_better,
+trader_compliance_rate,Trader Compliance Rate,Proportion of declarations and movements meeting legal and procedural requirements.,cross,intermediate,metric,95,%,,higher_better,
+trade_gdp_growth,Trade-Driven GDP Growth,Contribution to economic growth from efficient cross-border trade and supply chains.,cross,outcome,economic,100,index,,higher_better,
+tourism_revenue,Tourism Revenue,Visitor spending in the UK — sensitive to border experience and entry friction.,air,outcome,economic,30,£bn/yr,,higher_better,
+hmrc_tax_revenue,HMRC Tax Revenue,Total tax take at the border feeding into public finances.,cross,outcome,economic,65,£bn/yr,,higher_better,
+business_confidence,Business Confidence,Trader and investor sentiment driven by border predictability and cost.,cross,outcome,economic,100,index,,higher_better,
+reduced_drug_supply,Reduced Drug Supply,Disruption of illicit drug importation into UK communities.,cross,outcome,security,100,index,,higher_better,
+reduced_firearms_supply,Reduced Firearms Supply,Disruption of illegal firearms flow to organised crime.,cross,outcome,security,100,index,,higher_better,
+ocg_disruption,OCG Disruption,"Disruption of organised crime groups via interception of money, drugs, and people.",cross,outcome,security,100,index,,higher_better,
+ct_effectiveness,Counter-Terrorism Effectiveness,"Prevention of terrorist travel, movement of weapons, and terror financing.",cross,outcome,security,100,index,,higher_better,
+reduced_illegal_migration,Reduced Illegal Migration,Reduction in illegal entry and overstaying via effective entry controls.,cross,outcome,security,100,index,,higher_better,
+biosecurity_protection,Biosecurity Protection,Protection of UK animal and plant health from imported pests and diseases.,cross,outcome,health,100,index,,higher_better,
+uk_traveller_reputation,UK Traveller Reputation,"International perception of UK border as efficient, fair, and welcoming.",air,outcome,reputation,100,index,,higher_better,
+
+# SECTION: edges
+# from        - source node id
+# to          - target node id
+# effect      - 'enables', 'increases', or 'decreases' (determines arrow colour and default elasticity sign)
+# elasticity  - per-edge elasticity override (signed number). Leave blank to use the default for the effect type.
+# description - explanation shown in the detail panel
+from,to,effect,elasticity,description
+border_force_fte,pcp_inspection,enables,0.7,FTE directly determines number of PCP desks staffed and hours covered.
+border_force_fte,passenger_secondary_examination,enables,0.55,Sufficient officers required to handle referrals without bottleneck.
+border_force_fte,detention_removal,enables,0.6,Caseworking and escorting requires dedicated Border Force resource.
+border_force_fte,vehicle_document_check,enables,0.55,Officers conduct GVMS and document verification at RoRo.
+border_force_fte,vehicle_xray_scan,enables,0.4,Officers operate scanners and interpret images.
+border_force_fte,vehicle_physical_search,enables,0.65,Physical search of vehicles is labour-intensive.
+border_force_fte,container_targeting_exam,enables,0.4,Officers conduct container scans and tailgate inspections.
+border_force_fte,container_devanning,enables,0.55,Devanning is the most resource-intensive container intervention.
+border_force_fte,parcel_physical_exam,enables,0.5,Officers stationed at parcel hubs conduct physical exams.
+border_force_fte,mail_screening,enables,0.45,Officers at mail centres conduct physical screening.
+hmrc_customs_fte,cds_declaration_processing,enables,0.55,HMRC casework on declarations and queries.
+hmrc_customs_fte,container_targeting_exam,enables,0.35,HMRC officers conduct customs interventions on containers.
+hmrc_customs_fte,duty_vat_collected,enables,0.3,Compliance and audit activity drives revenue capture.
+apha_port_health_fte,sps_inspection,enables,0.65,Plant and animal inspectors required for SPS checks.
+intelligence_analyst_fte,passenger_risk_targeting,enables,0.55,Analysts build targeting packages from raw data.
+intelligence_analyst_fte,roro_risk_targeting,enables,0.55,Analysts produce vehicle and consignment targeting.
+intelligence_analyst_fte,lolo_risk_targeting,enables,0.55,Container targeting is intelligence-led.
+intelligence_analyst_fte,watchlist_screening,enables,0.35,Watchlists are curated and maintained by intel teams.
+detection_dog_teams,passenger_secondary_examination,increases,0.1,Dogs increase hit rate in secondary examination.
+detection_dog_teams,parcel_physical_exam,increases,0.2,Dogs screen parcel flows at operator hubs.
+detection_dog_teams,mail_screening,increases,0.2,Dogs deployed at mail centres for drugs and cash detection.
+detection_dog_teams,vehicle_physical_search,increases,0.15,Dogs supplement HGV physical searches.
+egate_estate,egate_processing,enables,0.85,eGate count directly caps eGate throughput.
+pcp_booth_capacity,pcp_inspection,enables,0.45,Physical booth count caps maximum officers at desks.
+secondary_room_capacity,passenger_secondary_examination,enables,0.35,Limited holding space caps concurrent examinations.
+secondary_room_capacity,detention_removal,enables,0.5,Detention beds and rooms determine removal pipeline capacity.
+anpr_coverage,vehicle_document_check,enables,0.2,ANPR provides pre-arrival vehicle ID enabling targeting decisions before booth.
+roro_xray_scanners,vehicle_xray_scan,enables,0.7,Scanner availability caps non-intrusive imaging capacity.
+lolo_xray_scanners,container_targeting_exam,enables,0.55,Scanner capacity caps non-intrusive container exams.
+lolo_exam_facilities,container_devanning,enables,0.65,Devanning sheds and equipment determine physical examination throughput.
+parcel_hub_scanners,parcel_xray_screening,enables,0.65,Scanner count and speed caps parcel screening rate.
+mail_centre_scanners,mail_screening,enables,0.55,Scanner capacity caps mail screening volume.
+inland_bcp_capacity,sps_inspection,enables,0.5,Sevington and inland BCPs are where high-risk SPS checks occur post-Brexit.
+semaphore_intel_systems,watchlist_screening,enables,0.45,Underpins automated watchlist matching.
+semaphore_intel_systems,passenger_risk_targeting,enables,0.4,Analytical platform feeds targeting decisions.
+ics2_data,parcel_manifest_processing,enables,0.55,ICS2 mandates electronic advance data on parcels.
+ics2_data,mail_data_processing,enables,0.45,ICS2 covers postal items for risk analysis.
+ics2_data,lolo_risk_targeting,enables,0.3,Pre-arrival data feeds container targeting.
+eta_scheme,eta_processing,enables,0.8,Policy regime defines who must apply and review criteria.
+visa_regime,watchlist_screening,enables,0.2,Visa pre-screening is a key checkpoint for high-risk nationals.
+api_pnr_legal,api_pnr_submission,enables,0.75,Statutory duty to submit data 24-72hrs before flight.
+gvms_system,gvms_prelodgement,enables,0.8,GVMS is the platform hauliers use to pre-lodge movements.
+btom_model,sps_inspection,enables,0.45,"Risk tiering determines SPS check rate (low: docs only, high: physical)."
+btom_model,roro_risk_targeting,increases,0.4,Tiered risk model focuses interventions on high-risk consignments.
+cds_system,cds_declaration_processing,enables,0.8,CDS is the platform for declaration submission.
+manifest_legal,cds_declaration_processing,enables,0.3,Carrier duty to submit manifests is statutory.
+parcel_data_regime,parcel_manifest_processing,enables,0.55,Mandates electronic advance data on consignments.
+upu_data_exchange,mail_data_processing,enables,0.6,UPU framework enables electronic data on postal items.
+sanctions_regime,cds_declaration_processing,enables,0.1,Sanctions checks built into declaration screening.
+sanctions_regime,container_targeting_exam,increases,0.15,Sanctions hits drive container interventions.
+api_pnr_submission,watchlist_screening,enables,0.35,API data is checked against watchlists pre-flight.
+api_pnr_submission,passenger_risk_targeting,enables,0.4,PNR feeds analytical risk targeting.
+eta_processing,watchlist_screening,increases,,ETA applications screened against watchlists pre-travel.
+eta_processing,pcp_inspection,decreases,-0.1,Pre-vetted ETA holders reduce time required at PCP.
+watchlist_screening,passenger_secondary_examination,increases,0.3,Watchlist hits drive referrals to secondary.
+watchlist_screening,pcp_inspection,decreases,-0.05,Pre-cleared low-risk passengers reduce PCP load.
+passenger_risk_targeting,passenger_secondary_examination,increases,0.35,Targeting packages flag specific passengers for examination.
+passenger_risk_targeting,pcp_inspection,increases,0.1,PCP officers receive risk indicators on arrival.
+gvms_prelodgement,vehicle_document_check,decreases,-0.2,Pre-lodged declarations reduce time per vehicle at booth.
+gvms_prelodgement,trader_compliance_rate,increases,0.2,GVMS adoption raises compliance baseline.
+roro_risk_targeting,vehicle_xray_scan,increases,0.3,Risk targeting selects vehicles for scanning.
+roro_risk_targeting,vehicle_physical_search,increases,0.4,Targeting drives physical search referrals.
+roro_risk_targeting,sps_inspection,increases,0.25,SPS goods targeted for inland BCP referral.
+cds_declaration_processing,container_targeting_exam,decreases,-0.1,Clean declarations reduce intervention rate.
+cds_declaration_processing,duty_vat_collected,increases,0.4,Declaration data drives revenue calculation.
+cds_declaration_processing,trader_compliance_rate,increases,0.3,Declaration processing identifies non-compliance.
+lolo_risk_targeting,container_targeting_exam,increases,0.45,Targeting drives container intervention selection.
+lolo_risk_targeting,container_devanning,increases,0.4,High-risk targeting hits drive devanning.
+lolo_risk_targeting,sps_inspection,increases,0.2,SPS-relevant containers referred for BCP checks.
+parcel_manifest_processing,parcel_xray_screening,increases,0.25,High-risk manifests drive screening priority.
+parcel_manifest_processing,parcel_physical_exam,increases,0.35,Targeting hits drive physical examination referrals.
+mail_data_processing,mail_screening,increases,0.35,Pre-arrival data drives targeted mail screening.
+egate_processing,pcp_inspection,decreases,-0.3,"eGate-eligible passengers bypass PCP entirely, reducing load."
+pcp_inspection,passenger_secondary_examination,increases,0.25,PCP officers refer suspect cases to secondary.
+passenger_secondary_examination,detention_removal,increases,0.3,Confirmed non-admissibility leads to detention and removal.
+vehicle_document_check,vehicle_xray_scan,increases,0.2,Document discrepancies trigger scanning.
+vehicle_xray_scan,vehicle_physical_search,increases,0.25,Scan anomalies drive physical search.
+vehicle_document_check,sps_inspection,increases,0.2,SPS-relevant goods referred for inland BCP inspection.
+container_targeting_exam,container_devanning,increases,0.3,Anomalies in scans trigger full devanning.
+container_targeting_exam,sps_inspection,increases,0.15,SPS-relevant containers go to BCP.
+parcel_xray_screening,parcel_physical_exam,increases,0.3,Suspect images drive physical examination of parcels.
+egate_processing,passenger_wait_time,decreases,-0.55,Faster automated processing reduces queues.
+egate_processing,passenger_throughput,increases,0.55,eGates dramatically lift throughput per hour.
+pcp_inspection,passenger_wait_time,increases,-0.55,PCP is the primary bottleneck for non-eGate passengers.
+pcp_inspection,passenger_throughput,increases,0.45,PCP throughput is a function of officer count × speed per passenger.
+passenger_secondary_examination,refusal_rate,increases,0.45,Secondary findings drive refusals at port.
+passenger_secondary_examination,detection_seizure_rate,increases,0.3,"Secondary uncovers contraband, prohibited goods."
+detention_removal,refusal_rate,increases,0.3,Confirmed removals contribute directly.
+vehicle_document_check,lorry_wait_time,increases,-0.5,Document verification is the main RoRo bottleneck per vehicle.
+vehicle_document_check,roro_throughput,increases,0.5,Drives volume processed per shift.
+vehicle_xray_scan,lorry_wait_time,increases,0.2,Scanning adds delay for selected vehicles.
+vehicle_xray_scan,detection_seizure_rate,increases,0.35,"Scanning detects concealment of drugs, firearms, clandestines."
+vehicle_physical_search,detection_seizure_rate,increases,0.3,Physical search confirms scanner anomalies.
+vehicle_physical_search,lorry_wait_time,increases,0.1,Physical search holds vehicles much longer than scanning.
+container_targeting_exam,container_dwell_time,increases,0.25,Interventions add dwell time at port.
+container_targeting_exam,detection_seizure_rate,increases,0.45,Major source of high-value seizures.
+container_targeting_exam,duty_vat_collected,increases,0.2,Misdeclaration detection drives duty recovery.
+container_devanning,container_dwell_time,increases,0.4,"Devanning takes days, significantly extending dwell."
+container_devanning,detection_seizure_rate,increases,0.3,Devanning uncovers deep-concealed contraband.
+container_targeting_exam,lolo_throughput,decreases,-0.15,Higher intervention rates reduce overall throughput.
+sps_inspection,lorry_wait_time,increases,0.3,SPS checks at inland BCP add hours to lorry journey times.
+sps_inspection,container_dwell_time,increases,0.25,SPS-relevant containers held until BCP cleared.
+sps_inspection,biosecurity_protection,increases,0.7,Primary intervention preventing disease and pest entry.
+parcel_xray_screening,parcel_clearance_time,increases,0.05,Adds processing step but routine and fast.
+parcel_physical_exam,parcel_clearance_time,increases,0.2,Physical exam significantly delays affected parcels.
+parcel_physical_exam,detection_seizure_rate,increases,0.2,Major channel for drug and counterfeit detection.
+parcel_physical_exam,duty_vat_collected,increases,0.1,Undervaluation detection drives duty recovery.
+mail_screening,post_clearance_time,increases,0.2,Screening adds processing time for international mail.
+mail_screening,detection_seizure_rate,increases,0.15,Significant channel for drugs and counterfeit.
+trader_compliance_rate,duty_vat_collected,increases,0.5,Compliant declarations drive baseline revenue capture.
+passenger_wait_time,uk_traveller_reputation,decreases,-0.3,Long queues damage perception of UK as efficient destination.
+passenger_wait_time,tourism_revenue,decreases,-0.1,"Friction reduces leisure visitor inclination, length of stay."
+passenger_throughput,tourism_revenue,increases,0.15,Higher throughput supports peak tourist seasons.
+passenger_throughput,trade_gdp_growth,increases,0.05,Business travel volumes support service trade.
+lorry_wait_time,trade_gdp_growth,decreases,-0.1,Delays disrupt just-in-time supply chains; raises haulage costs.
+lorry_wait_time,business_confidence,decreases,-0.15,Unpredictable border friction reduces investment willingness.
+roro_throughput,trade_gdp_growth,increases,0.15,"RoRo throughput is essential to fresh food, JIT manufacturing."
+container_dwell_time,trade_gdp_growth,decreases,-0.08,Dwell time directly increases supply chain costs.
+container_dwell_time,business_confidence,decreases,-0.15,Predictable dwell is a key factor in port selection.
+lolo_throughput,trade_gdp_growth,increases,0.12,Container flow underpins import-dependent sectors.
+parcel_clearance_time,trade_gdp_growth,decreases,-0.05,Cross-border e-commerce depends on fast clearance.
+parcel_clearance_time,business_confidence,decreases,-0.08,Affects retailers' willingness to import via UK channels.
+post_clearance_time,uk_traveller_reputation,decreases,-0.05,Slow post affects expat and consumer perception.
+detection_seizure_rate,reduced_drug_supply,increases,0.55,Direct contribution to disrupting drug supply chains.
+detection_seizure_rate,reduced_firearms_supply,increases,0.4,Detections take firearms out of criminal markets.
+detection_seizure_rate,ocg_disruption,increases,0.45,Seizures damage OCG business models.
+detection_seizure_rate,ct_effectiveness,increases,0.25,"Detection of CBRN, dual-use, weapons reduces terror risk."
+refusal_rate,reduced_illegal_migration,increases,0.45,Direct removals reduce illegal entry baseline.
+refusal_rate,ct_effectiveness,increases,0.2,Refusing entry to known threats prevents internal harm.
+duty_vat_collected,hmrc_tax_revenue,increases,0.55,Direct revenue stream into Exchequer.
+duty_vat_collected,trade_gdp_growth,decreases,-0.03,Higher duty take signals more friction on trade (small effect).
+trader_compliance_rate,business_confidence,increases,0.2,Predictable compliance lowers cost of trade.
+trader_compliance_rate,hmrc_tax_revenue,increases,0.45,Voluntary compliance is the largest revenue lever.

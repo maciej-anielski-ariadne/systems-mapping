@@ -1,0 +1,226 @@
+/* =============================================================================
+ * APP SHELL — outer 3-column layout and top header
+ * -----------------------------------------------------------------------------
+ * The whole app is a CSS grid:
+ *
+ *   ┌─────────────────────────────────────────────────────────────────┐
+ *   │  HEADER (title, search, buttons)                  height: 64px  │
+ *   ├──────────────┬──────────────────────────────────┬───────────────┤
+ *   │  SIDEBAR     │  VISUALIZATION                   │  DETAIL PANEL │
+ *   │  280 px      │  flexible (1fr = takes the rest) │  340 px       │
+ *   │              │                                  │               │
+ *   └──────────────┴──────────────────────────────────┴───────────────┘
+ *
+ * Plus the styles for everything in that top header: title, search box,
+ * and the buttons (Simulation, Reset, Load CSV, etc.).
+ * ========================================================================== */
+
+/* === Outer grid ===
+ * Column widths come from CSS variables. Unpinning a panel makes its grid
+ * track narrow (a strip) so the central viz reclaims the space; the panel
+ * itself absolute-positions over the viz on hover to show its contents. */
+.app {
+  --sidebar-w-full: 280px;
+  --detail-w-full:  340px;
+  --panel-strip-w:  44px;
+  --sidebar-w: var(--sidebar-w-full);
+  --detail-w:  var(--detail-w-full);
+
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr var(--detail-w);
+  grid-template-rows: 64px 1fr;
+  height: 100vh;
+  position: relative;
+  z-index: 1;
+}
+
+/* When unpinned, the grid track for the panel collapses to 0 so the viz
+ * extends edge-to-edge. The strip is an absolutely-positioned overlay on
+ * top of the viz (width still --panel-strip-w from 04-sidebar.css /
+ * 06-detail-panel.css), so the transparent strip reveals the viz content
+ * behind it rather than the body's --bg-deepest backdrop. */
+.app.sidebar-unpinned { --sidebar-w: 0; }
+.app.detail-unpinned  { --detail-w:  0; }
+
+/* === Panel header ===
+ * Sticky strip at the top of each side panel that holds the pin button.
+ * Living in a real header (rather than absolute-positioning the pin over
+ * content) means filter rows and detail content can never overlap or
+ * obscure the pin. The header sticks to the top of the panel's scroll
+ * area so the pin is always reachable. */
+.panel-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  flex-shrink: 0;
+  height: 44px;
+  background: var(--bg-deep);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  margin-bottom: 8px;
+}
+
+/* === Pin / unpin button ===
+ * Reads "Click here to (un)pin" with the pin icon at the right of the
+ * text, like a glyph at the end of the sentence. The whole button is
+ * centred in the panel header. Hidden behind a label-collapsed state when
+ * the panel is collapsed to a strip (text wouldn't fit). */
+.panel-pin {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 6px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  transition: background 0.15s, color 0.15s;
+}
+
+.panel-pin-label {
+  white-space: nowrap;
+}
+
+.panel-pin svg {
+  flex-shrink: 0;
+  transition: transform 0.22s ease;
+}
+
+.panel-pin:hover {
+  color: var(--text-primary);
+  background: var(--bg-light);
+}
+
+/* Both pins start upright (head up, tip down). When unpinned they tilt so
+ * the tip points toward the outside edge of the window — left pin tilts
+ * clockwise (tip → lower-left), right pin tilts counter-clockwise (tip →
+ * lower-right). The transition on `.panel-pin svg` animates the change. */
+.app.sidebar-unpinned .sidebar-pin svg { transform: rotate(45deg);  }
+.app.detail-unpinned  .detail-pin  svg { transform: rotate(-45deg); }
+
+/* In strip mode the text doesn't fit, so hide it and shrink the button
+ * back to an icon-only square. The label reappears when the panel is
+ * pinned again, or when the user hovers the strip to expand it. */
+.app.sidebar-unpinned .sidebar       .panel-pin-label,
+.app.detail-unpinned  .detail-panel  .panel-pin-label {
+  display: none;
+}
+.app.sidebar-unpinned .sidebar:hover       .panel-pin-label,
+.app.detail-unpinned  .detail-panel:hover  .panel-pin-label {
+  display: inline;
+}
+
+.app.sidebar-unpinned .sidebar       .panel-pin,
+.app.detail-unpinned  .detail-panel  .panel-pin {
+  padding: 6px 8px;
+}
+.app.sidebar-unpinned .sidebar:hover       .panel-pin,
+.app.detail-unpinned  .detail-panel:hover  .panel-pin {
+  padding: 6px 12px;
+}
+
+/* The panels get dimmed + pointer-events: none in the no-data state
+ * (see 10-misc.css). Keep the pin buttons clickable so users are never
+ * trapped with an unpinned panel they can't pin again. */
+body.no-data .panel-pin {
+  pointer-events: auto;
+}
+
+/* === Header bar (spans all three columns) ===
+ * z-index 40 so that the search dropdown (which is a child of the header
+ * via .search-wrap) renders ABOVE the unpinned sidebar strips at z-index
+ * 30. The header itself doesn't actually overlap the strips visually —
+ * they sit below it — but stacking-context lifts the whole header layer
+ * (and its descendants) above the strips. */
+.app-header {
+  grid-column: 1 / -1;     /* span from column 1 to the last column */
+  background: var(--bg-deep);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  gap: 24px;
+  position: relative;
+  z-index: 40;
+}
+
+/* === Search box ===
+ * Stretches to fill the available header space; the action buttons sit to
+ * its right. */
+.search-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.search-input {
+  width: 100%;
+  background: var(--bg-mid);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  padding: 9px 14px 9px 36px;  /* extra left padding leaves room for the icon */
+  border-radius: 6px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.search-input:focus {
+  border-color: var(--accent-blue);
+}
+
+.search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+
+/* === Header buttons (Simulation, Reset, Load CSV) === */
+.header-button {
+  background: var(--bg-mid);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.header-button:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+  background: var(--bg-light);
+}
+
+/* The Simulation button is highlighted while simulation mode is on */
+.header-button.active {
+  background: var(--accent-blue);
+  color: var(--bg-deepest);
+  border-color: var(--accent-blue);
+}
+
+/* "Edit map" needs an existing map to edit; dim it while there's nothing
+ * loaded so the user knows it isn't actionable yet. */
+body.no-data .edit-map-trigger {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+body.no-data .edit-map-trigger:hover {
+  background: var(--bg-mid);
+  color: var(--text-secondary);
+  border-color: var(--border-subtle);
+}

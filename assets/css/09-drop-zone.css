@@ -1,0 +1,112 @@
+/* =============================================================================
+ * DROP ZONE — initial overlay shown when no data is loaded
+ * -----------------------------------------------------------------------------
+ * On first load, no CSV is present. A large overlay covers the visualization
+ * area inviting the user to drop a CSV onto the window, pick a file, load the
+ * embedded sample, or download a blank template. Once data is loaded, the
+ * overlay is hidden by JS (it sets style.display = "none").
+ *
+ * When the user is in the middle of dragging a file over the window,
+ * body gets a `.drag-active` class which highlights the drop zone.
+ * ========================================================================== */
+
+.drop-zone {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 14, 26, 0.92);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 32px;
+}
+
+/* When dragging a file over the window, brighten the drop zone */
+body.drag-active .drop-zone {
+  background: rgba(96, 165, 250, 0.12);
+  backdrop-filter: blur(8px);
+}
+
+body.drag-active .drop-zone-inner {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 60px rgba(96, 165, 250, 0.3);
+}
+
+.drop-zone-inner {
+  max-width: 540px;
+  text-align: center;
+  background: var(--bg-deep);
+  border: 2px dashed var(--border-strong);
+  border-radius: 12px;
+  padding: 40px 32px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.drop-zone-icon {
+  color: var(--accent-blue);
+  margin-bottom: 16px;
+  display: flex;
+  justify-content: center;
+}
+
+.drop-zone-title {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+}
+
+.drop-zone-subtitle {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 24px;
+}
+
+.drop-zone-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.drop-zone-button {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 500;
+  background: var(--bg-light);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  padding: 10px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.drop-zone-button:hover {
+  background: var(--bg-lighter);
+  border-color: var(--text-tertiary);
+}
+
+.drop-zone-button.primary {
+  background: var(--accent-blue);
+  color: var(--bg-deepest);
+  border-color: var(--accent-blue);
+  font-weight: 600;
+}
+
+.drop-zone-button.primary:hover {
+  background: #93c5fd;
+  border-color: #93c5fd;
+}
+
+.drop-zone-hint {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  line-height: 1.5;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-subtle);
+}

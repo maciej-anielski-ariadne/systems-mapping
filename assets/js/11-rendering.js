@@ -1,0 +1,306 @@
+// =============================================================================
+// MAIN SVG RENDERER
+// -----------------------------------------------------------------------------
+// One function — `render()` — produces the entire SVG content for the central
+// visualization. It is called whenever anything visual changes: a node is
+// selected, a filter is toggled, a slider is moved, a new CSV is loaded.
+//
+// The render is "stringly typed" — we build a single string of SVG markup and
+// assign it to svg.innerHTML in one go. This is simpler and surprisingly fast
+// for graphs of this size (a few hundred nodes / edges).
+//
+// Once the string is committed, `attachSvgEventHandlers()` wires up click,
+// hover, and mousemove listeners on the freshly-inserted DOM nodes.
+// =============================================================================
+
+// Single grabbed reference to the SVG element we draw into.
+const svg = document.getElementById("viz-svg");
+
+// One-time listener: clicking the empty SVG background deselects the
+// currently-selected node. Registered ONCE here so it does not accumulate
+// each time render() replaces svg.innerHTML.
+svg.addEventListener("click", () => {
+  if (state.selectedNodeId) deselectNode();
+});
+
+function render() {
+  // When no CSV is loaded, blank the SVG completely.
+  if (!state.dataLoaded || NODES.length === 0) {
+    svg.setAttribute("width", 0);
+    svg.setAttribute("height", 0);
+    svg.innerHTML = "";
+    return;
+  }
+
+  // Size the SVG canvas to fit the layout, scaled by the current zoom level
+  // (state.zoomLevel defaults to 1.0). The viewBox stays in unscaled layout
+  // coordinates so the SVG natively rescales every element by the same factor.
+  const zoom = (state.zoomLevel && !isNaN(state.zoomLevel)) ? state.zoomLevel : 1.0;
+  svg.setAttribute("width",  layout.totalWidth  * zoom);
+  svg.setAttribute("height", layout.totalHeight * zoom);
+  svg.setAttribute("viewBox", "0 0 " + layout.totalWidth + " " + layout.totalHeight);
+
+  let content = "";
+
+  // ───── <defs>: arrowhead markers for the different edge types ─────────
+  content += '<defs>';
+  const arrowColors = {
+    default:    "var(--edge-default)",
+    enables:    "var(--edge-enables)",
+    increases:  "var(--edge-increases)",
+    decreases:  "var(--edge-decreases)",
+    ancestor:   "var(--edge-ancestor)",
+    descendant: "var(--edge-descendant)",
+  };
+  for (const [name, color] of Object.entries(arrowColors)) {
+    content += '<marker id="arrow_' + name + '" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">';
+    content += '<path d="M 0 0 L 10 5 L 0 10 z" fill="' + color + '"></path>';
+    content += '</marker>';
+  }
+  content += '</defs>';
+
+  // ───── Background stripes (one per stream row) ────────────────────────
+  for (const stream of STREAMS) {
+    if (state.hiddenStreams.has(stream.id)) continue;
+    const rowYPos    = layout.rowY[stream.id];
+    const rowHeight  = layout.rowHeights[stream.id];
+
+    // Very faint coloured stripe behind the row
+    content += '<rect x="0" y="' + rowYPos + '" width="' + layout.totalWidth + '" height="' + rowHeight + '" fill="' + stream.color + '" opacity="0.025"></rect>';
+    // Horizontal divider line just above each row
+    content += '<line x1="0" y1="' + rowYPos + '" x2="' + layout.totalWidth + '" y2="' + rowYPos + '" stroke="var(--border-subtle)" stroke-width="1"></line>';
+  }
+
+  // ───── Top band where column headers sit ──────────────────────────────
+  content += '<rect x="0" y="0" width="' + layout.totalWidth + '" height="' + (SVG_PADDING_TOP + COL_HEADER_HEIGHT) + '" fill="var(--bg-deep)"></rect>';
+
+  // ───── Column headers + vertical dividers ─────────────────────────────
+  for (const stage of STAGES) {
+    const x = layout.colX[stage.id] + NODE_WIDTH / 2;
+    content += '<text class="col-header-text" x="' + x + '" y="' + (SVG_PADDING_TOP + 24) + '" text-anchor="middle">' + stage.label + '</text>';
+
+    // Dotted divider between columns (skip after the last one)
+    if (stage.id !== STAGES[STAGES.length - 1].id) {
+      const dividerX = layout.colX[stage.id] + NODE_WIDTH + COL_GAP / 2;
+      content += '<line class="col-divider" x1="' + dividerX + '" y1="' + (SVG_PADDING_TOP + COL_HEADER_HEIGHT) + '" x2="' + dividerX + '" y2="' + layout.totalHeight + '"></line>';
+    }
+  }
+
+  // ───── Row label strip on the left (per stream) ───────────────────────
+  // Hidden streams keep their label so the user can click to expand again;
+  // they're rendered with a .collapsed class for a dimmer visual treatment.
+  for (const stream of STREAMS) {
+    const isCollapsed = state.hiddenStreams.has(stream.id);
+    const rowYPos = layout.rowY[stream.id];
+    const rowHeight = layout.rowHeights[stream.id];
+    const labelText = isCollapsed ? "+ " + stream.short : stream.short;
+
+    content += '<g class="row-label-group' + (isCollapsed ? ' collapsed' : '') + '" data-stream-id="' + stream.id + '">';
+    content += '<rect class="row-label-bg" x="0" y="' + rowYPos + '" width="' + ROW_HEADER_WIDTH + '" height="' + rowHeight + '"></rect>';
+    // Thin coloured stripe on the right edge of the strip
+    content += '<rect x="' + (ROW_HEADER_WIDTH - 4) + '" y="' + rowYPos + '" width="4" height="' + rowHeight + '" fill="' + stream.color + '" opacity="' + (isCollapsed ? 0.4 : 0.7) + '"></rect>';
+    content += '<text class="row-label-text" fill="' + stream.color + '" x="' + (ROW_HEADER_WIDTH / 2) + '" y="' + (rowYPos + rowHeight / 2) + '" text-anchor="middle" dominant-baseline="middle">' + labelText + '</text>';
+    content += '</g>';
+  }
+
+  // ───── Edges (drawn BEFORE nodes so nodes sit on top) ─────────────────
+  for (const edge of EDGES) {
+    const fromNode = nodeById[edge.from];
+    const toNode   = nodeById[edge.to];
+    if (!fromNode || !toNode) continue;
+    if (!isNodeVisible(fromNode) || !isNodeVisible(toNode)) continue;
+
+    const fromPos = layout.positions[edge.from];
+    const toPos   = layout.positions[edge.to];
+
+    // Edge starts at the right side of the source, ends at the left side of the target.
+    const startX = fromPos.x + fromPos.width;
+    const startY = fromPos.y + fromPos.height / 2;
+    const endX   = toPos.x;
+    const endY   = toPos.y + toPos.height / 2;
+
+    // Cubic Bezier with horizontal tangents at both ends — produces a smooth
+    // left-to-right curve regardless of vertical offset.
+    const deltaX = endX - startX;
+    const ctrlOffset = Math.max(40, Math.abs(deltaX) * 0.5);
+    const ctrl1X = startX + ctrlOffset;
+    const ctrl2X = endX - ctrlOffset;
+    const pathD =
+      "M " + startX + "," + startY +
+      " C " + ctrl1X + "," + startY +
+      " " + ctrl2X + "," + endY +
+      " " + endX + "," + endY;
+
+    // Default styling — overridden if the edge is highlighted by a selection.
+    let strokeColor   = "var(--edge-default)";
+    let strokeWidth   = 1;
+    let strokeOpacity = 0.45;
+    let markerEnd     = "";
+    let dimmed        = false;
+
+    if (state.selectedNodeId) {
+      const isHighlighted = state.highlightedEdgeIds.has(edge.id);
+      if (isHighlighted) {
+        if      (edge.effect === "increases") strokeColor = "var(--edge-increases)";
+        else if (edge.effect === "decreases") strokeColor = "var(--edge-decreases)";
+        else                                  strokeColor = "var(--edge-enables)";
+        strokeWidth = 2;
+        strokeOpacity = 0.9;
+        markerEnd = ' marker-end="url(#arrow_' + edge.effect + ')"';
+      } else {
+        dimmed = true;
+      }
+    }
+
+    const classAttr = ' class="edge-path' + (dimmed ? ' dimmed' : '') + '"';
+    content += '<path' + classAttr + ' d="' + pathD + '" stroke="' + strokeColor + '" stroke-width="' + strokeWidth + '" stroke-opacity="' + strokeOpacity + '"' + markerEnd + '></path>';
+  }
+
+  // Pre-compute the set of search-match ids once so the per-node check
+  // below is O(1) instead of O(matches). Tiny optimisation for 73 nodes,
+  // but it also makes the inner loop easier to read.
+  const searchMatchIds = (state.searchMatches && state.searchMatches.length > 0)
+    ? new Set(state.searchMatches.map(m => m.node.id))
+    : null;
+
+  // ───── Nodes ──────────────────────────────────────────────────────────
+  for (const node of NODES) {
+    if (!isNodeVisible(node)) continue;
+    const pos = layout.positions[node.id];
+    if (!pos) continue;
+    const stream   = streamById[node.stream];
+    const category = CATEGORIES[node.category];
+
+    // Class flags applied to the <g> wrapper — see 05-visualization.css
+    // and 12-no-borders.css (state glows) + 13-search.css (search halo).
+    let nodeClasses = "node-group";
+    if (state.selectedNodeId) {
+      if      (node.id === state.selectedNodeId)  nodeClasses += " selected";
+      else if (state.ancestorSet.has(node.id))    nodeClasses += " ancestor";
+      else if (state.descendantSet.has(node.id))  nodeClasses += " descendant";
+      else                                        nodeClasses += " dimmed";
+    }
+    if (state.hoveredNodeId === node.id) nodeClasses += " hovered";
+    if (searchMatchIds && searchMatchIds.has(node.id)) nodeClasses += " search-match";
+
+    content += '<g class="' + nodeClasses + '" data-node-id="' + node.id + '">';
+
+    // ── Background rect with conditional border ──
+    let strokeColor = "rgba(0,0,0,0.4)";
+    let strokeWidth = 1;
+    const outcomeStatusColor = getOutcomeBorderColor(node.id);
+
+    if (node.id === state.selectedNodeId) {
+      strokeColor = "#ffffff";
+      strokeWidth = 2.5;
+    } else if (state.ancestorSet.has(node.id)) {
+      strokeColor = "var(--edge-ancestor)";
+      strokeWidth = 2;
+    } else if (state.descendantSet.has(node.id)) {
+      strokeColor = "var(--edge-descendant)";
+      strokeWidth = 2;
+    } else if (outcomeStatusColor && !state.selectedNodeId) {
+      // Show good/bad colour around outcome nodes when nothing is selected.
+      strokeColor = outcomeStatusColor;
+      strokeWidth = 2;
+    }
+
+    content += '<rect class="node-rect" x="' + pos.x + '" y="' + pos.y + '" width="' + pos.width + '" height="' + pos.height + '" rx="5" fill="' + category.color + '" stroke="' + strokeColor + '" stroke-width="' + strokeWidth + '"></rect>';
+
+    // ── Coloured stripe down the left edge (the stream colour) ──
+    // We draw it as a path so only the left corners are rounded — the right
+    // side is flush against the rectangle.
+    const barWidth  = 6;
+    const barRadius = 5;
+    const barLeft   = pos.x;
+    const barRight  = pos.x + barWidth;
+    const barTop    = pos.y;
+    const barBottom = pos.y + pos.height;
+    const barPath =
+      "M " + (barLeft + barRadius) + "," + barTop +
+      " L " + barRight + "," + barTop +
+      " L " + barRight + "," + barBottom +
+      " L " + (barLeft + barRadius) + "," + barBottom +
+      " A " + barRadius + "," + barRadius + " 0 0 1 " + barLeft + "," + (barBottom - barRadius) +
+      " L " + barLeft + "," + (barTop + barRadius) +
+      " A " + barRadius + "," + barRadius + " 0 0 1 " + (barLeft + barRadius) + "," + barTop +
+      " Z";
+    content += '<path d="' + barPath + '" fill="' + stream.color + '"></path>';
+
+    // ── Label (wrapped to up to 2 lines) ──
+    const labelLines = wrapLabel(node.label, 24);
+    const labelBlockTopY = pos.y + 16;
+    for (let lineIdx = 0; lineIdx < labelLines.length; lineIdx++) {
+      content += '<text class="node-label" x="' + (pos.x + 14) + '" y="' + (labelBlockTopY + lineIdx * 13) + '" fill="' + category.textColor + '" dominant-baseline="middle">' + escapeHtml(labelLines[lineIdx]) + '</text>';
+    }
+
+    // ── Value + delta (only for nodes with a baseline) ──
+    const valueText = formatNodeValue(node.id);
+    if (valueText) {
+      const deltaInfo = formatNodeDelta(node.id);
+      const valueY = pos.y + pos.height - 12;
+      content += '<text class="node-value" x="' + (pos.x + 14) + '" y="' + valueY + '" fill="' + category.textColor + '" dominant-baseline="middle" opacity="0.75">' + escapeHtml(valueText) + '</text>';
+
+      if (deltaInfo.text && deltaInfo.text !== "—") {
+        let deltaColor = "#1c1917";
+        if (node.direction === "higher_better") {
+          deltaColor = deltaInfo.pct > 0 ? "#065f46" : "#7f1d1d";
+        } else if (node.direction === "lower_better") {
+          deltaColor = deltaInfo.pct < 0 ? "#065f46" : "#7f1d1d";
+        } else {
+          deltaColor = deltaInfo.pct > 0 ? "#1e3a8a" : "#7c2d12";
+        }
+        content += '<text class="node-delta" x="' + (pos.x + pos.width - 10) + '" y="' + valueY + '" fill="' + deltaColor + '" text-anchor="end" dominant-baseline="middle" font-weight="600">' + escapeHtml(deltaInfo.text) + '</text>';
+      }
+    }
+
+    content += '</g>';
+  }
+
+  // Commit the markup, then wire up event listeners.
+  svg.innerHTML = content;
+  attachSvgEventHandlers();
+}
+
+// Attach click / hover / leave listeners to every node and row label.
+// Called fresh after every render() because innerHTML replaces all children.
+function attachSvgEventHandlers() {
+  // Node click → select; hover → show tooltip.
+  svg.querySelectorAll(".node-group").forEach(group => {
+    group.addEventListener("click", event => {
+      event.stopPropagation();
+      const nodeId = group.getAttribute("data-node-id");
+      selectNode(nodeId);
+    });
+    group.addEventListener("mouseenter", event => {
+      const nodeId = group.getAttribute("data-node-id");
+      showTooltip(nodeById[nodeId], event);
+    });
+    group.addEventListener("mousemove", event => {
+      moveTooltip(event);
+    });
+    group.addEventListener("mouseleave", () => {
+      hideTooltip();
+    });
+  });
+
+  // Clicking the row label toggles the whole stream. Also wire a tooltip
+  // so the user knows the click target is interactive.
+  svg.querySelectorAll(".row-label-group").forEach(group => {
+    const streamId = group.getAttribute("data-stream-id");
+    const stream = streamById[streamId];
+    group.addEventListener("click", event => {
+      event.stopPropagation();
+      toggleStream(streamId);
+    });
+    if (stream) {
+      const collapsed = state.hiddenStreams.has(streamId);
+      const text = (collapsed ? "Click to expand " : "Click to collapse ") + stream.label + " — hides every node in this stream from the map.";
+      if (typeof attachTooltip === "function") attachTooltip(group, text);
+    }
+  });
+
+  // (The svg-background click → deselect listener is registered once at
+  // the top of this file, not here — see the comment above the file's
+  // `const svg = …` line.)
+}

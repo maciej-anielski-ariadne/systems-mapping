@@ -1,0 +1,330 @@
+/* =============================================================================
+ * RIGHT-SIDE DETAIL PANEL
+ * -----------------------------------------------------------------------------
+ * When the user clicks a node in the map, the right panel fills with details:
+ *   • Tags (category, stream, stage)
+ *   • The node's name and description
+ *   • A "quantification block" — baseline, current value, delta from baseline
+ *   • A list of "Direct Inputs"  (edges coming into the node)
+ *   • A list of "Direct Impacts" (edges going out of the node)
+ *   • Summary stats for the full upstream / downstream chain
+ *
+ * When no node is selected, the empty-state placeholder is shown instead.
+ * ========================================================================== */
+
+.detail-panel {
+  background: var(--bg-deep);
+  border-left: 1px solid var(--border-subtle);
+  overflow-y: auto;
+  /* No top padding so the sticky .panel-header sits flush against the top.
+   * Side + bottom padding give the rest of the content breathing room. */
+  padding: 0 24px 24px 24px;
+  position: relative;
+  grid-column: 3;
+}
+
+/* The detail panel has 24px side padding, but we want the pin button to sit
+ * at the very right edge of the panel (= window edge). Negative side margin
+ * pulls the header outside the panel's padding so it spans the full width. */
+.detail-panel > .panel-header {
+  margin: 0 -24px 8px -24px;
+}
+
+/* Unpinned → strip + hover-expand. Same model as the left sidebar. In strip
+ * mode the background is removed entirely so the pin button floats over
+ * the viz; backgrounds return on hover. */
+.app.detail-unpinned .detail-panel {
+  position: absolute;
+  top: 64px;
+  bottom: 0;
+  right: 0;
+  width: var(--panel-strip-w);
+  z-index: 30;
+  overflow: hidden;
+  padding: 0;
+  min-width: 0;
+  background: transparent;
+  transition: width 0.18s ease, box-shadow 0.18s ease, background 0.15s ease;
+}
+
+.app.detail-unpinned .detail-panel .panel-header {
+  background: transparent;
+}
+
+/* When unpinned, the strip has no side padding, so the header doesn't
+ * need its negative margin compensation. */
+.app.detail-unpinned .detail-panel > .panel-header {
+  margin: 0 0 8px 0;
+}
+
+.app.detail-unpinned .detail-panel:hover {
+  width: var(--detail-w-full);
+  overflow-y: auto;
+  padding: 0 24px 24px 24px;
+  background: var(--bg-deep);
+  box-shadow: -4px 0 18px rgba(0, 0, 0, 0.55);
+}
+
+.app.detail-unpinned .detail-panel:hover > .panel-header {
+  margin: 0 -24px 8px -24px;
+  background: var(--bg-deep);
+}
+
+/* visibility:hidden so we don't override the inline style.display set by
+ * 15-detail-panel.js on .detail-empty / #detail-content. */
+.app.detail-unpinned .detail-panel > *:not(.panel-header) { visibility: hidden; }
+.app.detail-unpinned .detail-panel:hover > *              { visibility: visible; }
+
+/* === Empty state (nothing selected) === */
+.detail-empty {
+  text-align: left;
+  color: var(--text-tertiary);
+}
+
+.detail-empty h3 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-style: italic;
+  font-size: 18px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  letter-spacing: -0.01em;
+}
+
+.detail-empty p {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-tertiary);
+  margin-bottom: 10px;
+}
+
+.detail-empty .hint {
+  margin-top: 24px;
+  padding: 14px;
+  background: var(--bg-mid);
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--text-tertiary);
+}
+
+.detail-empty .hint b {
+  color: var(--text-secondary);
+}
+
+/* === Tags row at the top of a selected node's details === */
+.detail-tags {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.detail-tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 4px 8px;
+  border-radius: 3px;
+  color: var(--text-secondary);
+  background: var(--bg-mid);
+  border: 1px solid var(--border-subtle);
+}
+
+/* The category tag uses the category's own fill colour */
+.detail-tag.category {
+  color: var(--bg-deepest);
+  border: none;
+  font-weight: 600;
+}
+
+/* === Node name + description === */
+.detail-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+  margin-bottom: 12px;
+  line-height: 1.2;
+}
+
+.detail-description {
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text-secondary);
+  margin-bottom: 24px;
+}
+
+/* === List title (e.g. "Direct Inputs", "Direct Impacts") === */
+.detail-list-title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-tertiary);
+  margin: 18px 0 8px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.detail-list-title .count {
+  color: var(--text-tertiary);
+}
+
+/* === One row in a list of edges (input / impact) ===
+ * The 3px coloured stripe on the left signals the effect type (green =
+ * increases, red = decreases, purple = enables). Painted with
+ * box-shadow:inset because 12-no-borders.css strips real borders.
+ * `--edge-color` is overridden per modifier class below. */
+.detail-edge-item {
+  --edge-color: var(--border-strong);
+  display: block;
+  padding: 9px 12px 9px 15px;   /* 12 + 3 on the left so content sits past the stripe */
+  background: var(--bg-mid);
+  border-radius: 0 5px 5px 0;
+  box-shadow: inset 3px 0 0 var(--edge-color);
+  margin-bottom: 4px;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.detail-edge-item:hover {
+  background: var(--bg-light);
+  transform: translateX(2px);
+}
+
+.detail-edge-item.increases { --edge-color: var(--accent-green);  }
+.detail-edge-item.decreases { --edge-color: var(--accent-red);    }
+.detail-edge-item.enables   { --edge-color: var(--accent-purple); }
+
+.detail-edge-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.detail-edge-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.detail-edge-elasticity {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  font-weight: 600;
+}
+
+.detail-edge-effect {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+}
+
+.detail-edge-effect.increases { color: var(--accent-green);  }
+.detail-edge-effect.decreases { color: var(--accent-red);    }
+.detail-edge-effect.enables   { color: var(--accent-purple); }
+
+.detail-edge-desc {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  line-height: 1.5;
+  margin-top: 4px;
+}
+
+/* === Quantification block (baseline, current, delta) === */
+.detail-quant-block {
+  margin: 12px 0;
+  padding: 10px 12px;
+  background: var(--bg-deepest);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+}
+
+.detail-quant-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 3px 0;
+  font-size: 12px;
+}
+
+.detail-quant-label {
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.detail-quant-value {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+/* Editable current-value input shown in the "Current" row when the
+ * selected node is a controllable input and sim mode is on. Typed values
+ * propagate via applySimMultiplier (assets/js/14-simulation-panel.js). */
+.detail-value-input {
+  width: 110px;
+  background: var(--bg-mid);
+  color: var(--text-primary);
+  border-radius: 3px;
+  padding: 3px 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-align: right;
+  outline: none;
+  -moz-appearance: textfield;
+}
+.detail-value-input::-webkit-outer-spin-button,
+.detail-value-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.detail-value-input:focus {
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.5);
+}
+
+/* === Generic detail-panel action buttons === */
+.detail-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.detail-button {
+  flex: 1;
+  background: var(--bg-mid);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  padding: 8px 12px;
+  border-radius: 5px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.detail-button:hover {
+  color: var(--text-primary);
+  background: var(--bg-light);
+  border-color: var(--border-strong);
+}
+
+.detail-button.active {
+  background: var(--bg-light);
+  color: var(--text-primary);
+  border-color: var(--accent-blue);
+}

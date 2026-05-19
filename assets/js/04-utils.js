@@ -1,0 +1,68 @@
+// =============================================================================
+// UTILITY HELPERS — small functions used in many places
+// -----------------------------------------------------------------------------
+// Three tiny helpers:
+//   • wrapLabel    – split a node label across two lines if it's too long
+//   • escapeHtml   – make user text safe to inject into HTML/SVG strings
+//   • formatScalar – format a number for display ("9,000", "1.25", etc.)
+// =============================================================================
+
+// Split `text` into up to 2 lines, each no more than `maxCharsPerLine` chars.
+// Words are kept whole; if a third line would be needed, the second line is
+// truncated with an ellipsis.
+function wrapLabel(text, maxCharsPerLine) {
+  if (text.length <= maxCharsPerLine) return [text];
+
+  const words = text.split(" ");
+  const lines = [];
+  let currentLine = "";
+
+  for (const word of words) {
+    if ((currentLine + " " + word).trim().length <= maxCharsPerLine) {
+      currentLine = (currentLine + " " + word).trim();
+    } else {
+      if (currentLine) lines.push(currentLine);
+      currentLine = word;
+    }
+  }
+  if (currentLine) lines.push(currentLine);
+
+  // Limit to 2 lines, adding an ellipsis on the second if there was more.
+  // If line 2 is already at the character limit, drop its last char first so
+  // the ellipsis doesn't push it past `maxCharsPerLine`.
+  if (lines.length > 2) {
+    if (lines[1].length >= maxCharsPerLine) {
+      lines[1] = lines[1].slice(0, maxCharsPerLine - 1);
+    }
+    lines[1] = lines[1] + "…";
+    return lines.slice(0, 2);
+  }
+  return lines;
+}
+
+// Replace the five HTML-unsafe characters with their entity equivalents so the
+// resulting text is safe to inject into innerHTML / SVG markup strings.
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+// Format a number for display. The decimal precision depends on magnitude:
+//   • Above 1 billion: e.g. "1.25" (with implied "bn" elsewhere)
+//   • 10,000 and up:   thousands-separated integer ("9,000")
+//   • 100 to 9,999:    integer ("250")
+//   • 10 to 99:        one decimal ("12.5")
+//   • 1 to 9:          two decimals ("3.14")
+//   • Below 1:         three decimals ("0.125")
+function formatScalar(value) {
+  const absValue = Math.abs(value);
+  if (absValue >= 1e9)    return (value / 1e9).toFixed(2);
+  if (absValue >= 10000)  return Math.round(value).toLocaleString();
+  if (absValue >= 100)    return Math.round(value).toString();
+  if (absValue >= 10)     return value.toFixed(1);
+  if (absValue >= 1)      return value.toFixed(2);
+  return value.toFixed(3);
+}

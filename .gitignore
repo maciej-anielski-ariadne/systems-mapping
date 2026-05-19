@@ -1,0 +1,13 @@
+# macOS Finder metadata
+.DS_Store
+**/.DS_Store
+
+# Editor/IDE crud
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS / system
+Thumbs.db

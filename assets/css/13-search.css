@@ -1,0 +1,116 @@
+/* =============================================================================
+ * SEARCH — dropdown of ranked results + map-halo for every match
+ * -----------------------------------------------------------------------------
+ * Companion to assets/js/17a-search.js. The dropdown floats below the
+ * header's search input; matches on the map get a soft amber drop-shadow
+ * via the .node-group.search-match class (added by 11-rendering.js).
+ * ========================================================================== */
+
+/* === Dropdown panel === */
+.search-results {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 40;                /* above the viz, below the builder overlay */
+  max-height: min(420px, 60vh);
+  overflow-y: auto;
+  background: var(--bg-deep);
+  border-radius: 6px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  padding: 4px;
+}
+
+.search-results[hidden] { display: none; }
+
+/* === A single result row === */
+.search-result {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  transition: background 0.12s;
+}
+
+.search-result + .search-result {
+  margin-top: 2px;
+}
+
+.search-result.focused,
+.search-result:hover {
+  background: var(--bg-light);
+}
+
+.search-result-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.search-result-label {
+  font-size: 13px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-result-id {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Three-part stream · stage · category tag on the right. */
+.search-result-meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Matched-character highlight inside the label or id. */
+.search-result mark {
+  background: var(--accent-amber);
+  color: var(--bg-deepest);
+  padding: 0 1px;
+  border-radius: 2px;
+  font-weight: 600;
+}
+
+.search-result.focused mark {
+  background: var(--accent-blue);
+  color: var(--bg-deepest);
+}
+
+/* Empty state when the query has no matches. */
+.search-result-empty {
+  padding: 12px 14px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+/* === Map halo on every match ===
+ * Sits next to the existing .selected / .ancestor / .descendant filters
+ * from 12-no-borders.css. A subtle amber drop-shadow so matches stand
+ * out without overpowering the white selection / blue trace glows. */
+.node-group.search-match .node-rect {
+  filter: drop-shadow(0 0 4px rgba(251, 191, 36, 0.75));
+}
+
+/* When the search match is also the selected node, the white selection
+ * glow already wins. When it's also an ancestor/descendant, the blue/amber
+ * trace glow already wins. So the search-match filter is mainly visible on
+ * matches OTHER than the focused one — which is exactly what we want
+ * (focused = strong white glow, others = soft amber halo). */

@@ -1,0 +1,173 @@
+/* =============================================================================
+ * LEFT SIDEBAR — filters and legend
+ * -----------------------------------------------------------------------------
+ * The left column contains:
+ *   1. The Simulation panel (only shown in Simulation mode — see 08-simulation.css)
+ *   2. Stream filters (click a stream to hide/show its row in the map)
+ *   3. Category filters (click a category to hide/show that node type)
+ *   4. A legend explaining the arrow colours
+ *   5. A legend explaining the upstream / downstream node borders
+ *
+ * Each block above lives inside a `.sidebar-section`.
+ * ========================================================================== */
+
+.sidebar {
+  background: var(--bg-deep);
+  border-right: 1px solid var(--border-subtle);
+  overflow-y: auto;
+  /* No top padding so the sticky .panel-header sits flush against the top.
+   * Bottom padding gives whitespace below the last section. */
+  padding: 0 0 20px 0;
+  position: relative;
+  /* Explicit grid-column so the other grid items don't shift when this one
+   * becomes position:absolute (i.e. removed from grid flow). grid-row is
+   * intentionally left auto: with grid-row:auto on an absolutely-positioned
+   * grid item, the vertical containing block is .app's padding edge — which
+   * lets `top: 64px` (used in the unpinned rule) sit right below the header
+   * rather than 64px below the start of row 2. */
+  grid-column: 1;
+}
+
+/* Unpinned → the sidebar collapses to a narrow strip but expands on hover
+ * as an overlay over the viz (without re-flowing the grid). Achieved by
+ * taking the panel out of the grid with position: absolute when unpinned.
+ * In strip mode the background is removed entirely so the pin button
+ * floats over the viz; backgrounds return on hover so the expanded content
+ * has a readable backdrop. */
+.app.sidebar-unpinned .sidebar {
+  position: absolute;
+  top: 64px;       /* below the header */
+  bottom: 0;
+  left: 0;
+  width: var(--panel-strip-w);
+  z-index: 30;     /* above the viz, below the builder overlay (200) */
+  overflow: hidden;
+  padding: 0;
+  min-width: 0;
+  background: transparent;
+  transition: width 0.18s ease, box-shadow 0.18s ease, background 0.15s ease;
+}
+
+.app.sidebar-unpinned .sidebar .panel-header {
+  background: transparent;
+}
+
+.app.sidebar-unpinned .sidebar:hover {
+  width: var(--sidebar-w-full);
+  overflow-y: auto;
+  padding: 0 0 20px 0;
+  background: var(--bg-deep);
+  box-shadow: 4px 0 18px rgba(0, 0, 0, 0.55);
+}
+
+.app.sidebar-unpinned .sidebar:hover .panel-header {
+  background: var(--bg-deep);
+}
+
+/* While collapsed (not hovered) hide every child except the .panel-header
+ * (which holds the pin). visibility:hidden (instead of display:none) so
+ * we don't fight with any inline style.display the JS may set on direct
+ * children. The parent's overflow:hidden + fixed width clip the rest. */
+.app.sidebar-unpinned .sidebar > *:not(.panel-header) { visibility: hidden; }
+.app.sidebar-unpinned .sidebar:hover > *              { visibility: visible; }
+
+.sidebar-section {
+  padding: 0 20px 24px;
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 20px;
+}
+
+.sidebar-section:last-child {
+  border-bottom: none;
+}
+
+/* Small uppercase heading at the top of each sidebar block */
+.sidebar-section-title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-tertiary);
+  margin-bottom: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sidebar-section-title .count {
+  color: var(--text-tertiary);
+  font-size: 9px;
+}
+
+/* === Filter rows (one per stream / category) === */
+.filter-row {
+  display: flex;
+  align-items: center;
+  padding: 7px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.12s;
+  user-select: none;
+  margin-bottom: 1px;
+}
+
+.filter-row:hover {
+  background: var(--bg-mid);
+}
+
+/* Visual state for a filter that has been clicked off */
+.filter-row.disabled {
+  opacity: 0.35;
+}
+
+.filter-row.disabled .filter-label {
+  text-decoration: line-through;
+}
+
+.filter-swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  margin-right: 10px;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.filter-label {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.filter-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
+
+/* === Legend rows (one per arrow type / node-border type) === */
+.legend-row {
+  display: flex;
+  align-items: center;
+  padding: 5px 0;
+}
+
+.legend-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  margin-right: 10px;
+  flex-shrink: 0;
+}
+
+.legend-line {
+  width: 24px;
+  height: 2px;
+  margin-right: 10px;
+  flex-shrink: 0;
+}
+
+.legend-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
