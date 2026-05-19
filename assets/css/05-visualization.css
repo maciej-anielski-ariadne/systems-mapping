@@ -47,6 +47,15 @@
 .viz-svg {
   display: block;
   background: transparent;
+  cursor: grab;
+}
+
+/* While the user is actively drag-panning, swap to the closed-hand cursor
+ * everywhere on the page (the cursor can leave the SVG mid-drag). The class
+ * is toggled on document.body by 17-events.js. */
+body.panning,
+body.panning * {
+  cursor: grabbing !important;
 }
 
 /* === Node styles ===

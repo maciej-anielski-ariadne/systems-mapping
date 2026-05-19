@@ -246,6 +246,65 @@ document.addEventListener("keydown", event => {
   else if (event.key === "0")                      { event.preventDefault(); setZoom(1.0); }
 });
 
+// ───── Map drag-to-pan ──────────────────────────────────────────────────
+// Click-and-drag on empty SVG background pans the map by adjusting the
+// scrollLeft / scrollTop of #viz-scroll. Two key UX details:
+//
+//   • A small drag threshold means a still-mouse click still counts as a
+//     click — only past the threshold do we lock in "panning" mode and
+//     swallow the trailing click (so a pan that happens to end on a node
+//     does not also select it).
+//   • mousedown directly over a .node-group is ignored — node clicks must
+//     still select. The user pans by grabbing empty SVG space (the grid,
+//     column dividers, row labels).
+//
+// mousemove + mouseup are bound to window so the gesture survives the
+// cursor leaving the SVG (and even leaving the browser viewport).
+const PAN_DRAG_THRESHOLD = 4;
+const vizScrollEl = document.getElementById("viz-scroll");
+
+if (_vizSvgEl && vizScrollEl) {
+  let panStart = null;  // { clientX, clientY, scrollLeft, scrollTop, dragging }
+
+  _vizSvgEl.addEventListener("mousedown", event => {
+    if (event.button !== 0) return;                            // left button only
+    if (event.target.closest && event.target.closest(".node-group")) return;
+    panStart = {
+      clientX:    event.clientX,
+      clientY:    event.clientY,
+      scrollLeft: vizScrollEl.scrollLeft,
+      scrollTop:  vizScrollEl.scrollTop,
+      dragging:   false,
+    };
+  });
+
+  window.addEventListener("mousemove", event => {
+    if (!panStart) return;
+    const dx = event.clientX - panStart.clientX;
+    const dy = event.clientY - panStart.clientY;
+    if (!panStart.dragging) {
+      if (Math.abs(dx) < PAN_DRAG_THRESHOLD && Math.abs(dy) < PAN_DRAG_THRESHOLD) return;
+      panStart.dragging = true;
+      document.body.classList.add("panning");
+    }
+    vizScrollEl.scrollLeft = panStart.scrollLeft - dx;
+    vizScrollEl.scrollTop  = panStart.scrollTop  - dy;
+  });
+
+  window.addEventListener("mouseup", () => {
+    if (!panStart) return;
+    const wasDragging = panStart.dragging;
+    panStart = null;
+    if (wasDragging) {
+      document.body.classList.remove("panning");
+      // Swallow the click that follows this mouseup so a pan that ends on
+      // a node does not also select / deselect.
+      const swallow = e => { e.stopPropagation(); e.preventDefault(); };
+      window.addEventListener("click", swallow, { capture: true, once: true });
+    }
+  });
+}
+
 // ───── Drag-and-drop a CSV onto the whole window ─────────────────────────
 window.addEventListener("dragover", event => {
   if (event.dataTransfer && Array.from(event.dataTransfer.types).includes("Files")) {

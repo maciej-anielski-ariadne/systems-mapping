@@ -28,6 +28,7 @@ The app starts empty — a drop zone with four buttons (Choose CSV file / Build 
 - Outcome nodes get green / red halo colouring when their direction-of-merit metric moves materially from baseline.
 - **Collapsible side panels** → click the pin icon in either panel header to collapse it to a thin strip; hover the strip to peek the contents, click the pin again to re-pin.
 - **Zoom** → bottom-right `−` / `+` buttons, `Ctrl/Cmd` + scroll-wheel (or trackpad pinch), or `Ctrl/Cmd + =/-/0` to zoom in / out / reset. Pinching anchors on the cursor.
+- **Pan** → click-and-drag any empty area of the map to pan around it. Plain scroll-wheel and trackpad two-finger scroll also pan.
 - **Survives a refresh** → the loaded CSV, hidden filters, simulation mode + slider positions, selected node, zoom level, panel pin state, and any unsaved wizard work are all persisted in `localStorage`. Close the tab, reopen, keep going. (Loading a different CSV / applying a wizard / clicking **Load sample** replaces what's stored.)
 
 ## CSV format
@@ -207,7 +208,7 @@ systems_mapping/
     │   ├── 16b-builder-render.js    Wizard: HTML output for the six steps
     │   ├── 16c-builder-editor.js    Wizard: floating "expand this cell" editor
     │   ├── 16d-builder-events.js    Wizard: click / typing / drag handlers
-    │   ├── 17-events.js             Wires up search box, buttons, drag-drop, zoom, pins
+    │   ├── 17-events.js             Wires up search box, buttons, drag-drop, zoom, pan, pins
     │   ├── 17a-search.js            Fuzzy search: scoring, dropdown, map highlights
     │   └── 18-main.js               Startup — restores persisted state
     └── data/
