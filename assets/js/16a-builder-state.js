@@ -29,8 +29,9 @@ const BUILDER_STEPS = [
   { num: 6, key: "review",     label: "Review" },
 ];
 
-const DIRECTION_OPTIONS = ["", "higher_better", "lower_better", "neutral"];
-const EFFECT_OPTIONS    = ["enables", "increases", "decreases"];
+// EFFECT_OPTIONS, DIRECTION_OPTIONS, and STREAM_COLOR_PALETTE all live in
+// 02-config.js so the wizard, the detail panel, the canvas edit module, and
+// the CSV loader all share one source of truth.
 
 // Sentinel string used to split each step's HTML output into a sticky-top
 // section (heading + blurb + action bar) and a scroll-below section (the

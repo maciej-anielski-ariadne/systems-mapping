@@ -58,10 +58,6 @@ function renderDetailPanel() {
 // =============================================================================
 
 function renderViewMode(node) {
-  const stream   = streamById[node.stream];
-  const category = CATEGORIES[node.category];
-  const stage    = stageById[node.stage];
-
   const directInputs = incomingEdges[node.id].map(edge => ({
     edge: edge,
     otherNode: nodeById[edge.from],
@@ -74,13 +70,7 @@ function renderViewMode(node) {
   let html = "";
 
   // ───── Tags row ──────────────────────────────────────────────────────
-  html += '<div class="detail-tags">';
-  if (category) {
-    html += '<span class="detail-tag category" style="background: ' + category.color + '; color: ' + category.textColor + ';">' + escapeHtml(category.label) + '</span>';
-  }
-  if (stream) html += '<span class="detail-tag">' + escapeHtml(stream.label) + '</span>';
-  if (stage)  html += '<span class="detail-tag">' + escapeHtml(stage.label) + '</span>';
-  html += '</div>';
+  html += renderTagRow(node);
 
   // ───── Name + description ────────────────────────────────────────────
   html += '<div class="detail-name">' + escapeHtml(node.label) + '</div>';
@@ -152,20 +142,10 @@ function renderQuantBlock(node) {
 // =============================================================================
 
 function renderEditMode(node) {
-  const stream   = streamById[node.stream];
-  const category = CATEGORIES[node.category];
-  const stage    = stageById[node.stage];
-
   let html = "";
 
   // ───── Tags row (kept for at-a-glance context) ───────────────────────
-  html += '<div class="detail-tags">';
-  if (category) {
-    html += '<span class="detail-tag category" style="background: ' + category.color + '; color: ' + category.textColor + ';">' + escapeHtml(category.label) + '</span>';
-  }
-  if (stream) html += '<span class="detail-tag">' + escapeHtml(stream.label) + '</span>';
-  if (stage)  html += '<span class="detail-tag">' + escapeHtml(stage.label) + '</span>';
-  html += '</div>';
+  html += renderTagRow(node);
 
   // ───── Done editing button (full-width, top of edit mode) ────────────
   html += '<div class="detail-mode-toggle">';
@@ -230,6 +210,24 @@ function editRow(label, controlHtml) {
   return '<div class="detail-edit-row"><span class="detail-edit-label">' + escapeHtml(label) + '</span><div class="detail-edit-control">' + controlHtml + '</div></div>';
 }
 
+// Category / stream / stage tag chips shown at the top of both view and edit
+// mode. Same markup in both — extracted so changing the chip style (e.g.
+// adding an icon) only happens in one place.
+function renderTagRow(node) {
+  const stream   = streamById[node.stream];
+  const category = CATEGORIES[node.category];
+  const stage    = stageById[node.stage];
+
+  let html = '<div class="detail-tags">';
+  if (category) {
+    html += '<span class="detail-tag category" style="background: ' + category.color + '; color: ' + category.textColor + ';">' + escapeHtml(category.label) + '</span>';
+  }
+  if (stream) html += '<span class="detail-tag">' + escapeHtml(stream.label) + '</span>';
+  if (stage)  html += '<span class="detail-tag">' + escapeHtml(stage.label) + '</span>';
+  html += '</div>';
+  return html;
+}
+
 function selectInput(field, options, currentValue) {
   let html = '<select class="detail-edit-input detail-edit-select" data-field="' + field + '">';
   for (const opt of options) {
@@ -263,7 +261,7 @@ function renderOutgoingEdgesBlock(node) {
       html +=   '</div>';
       html +=   '<div class="outgoing-edge-controls">';
       html +=     '<select class="detail-edit-input detail-edit-select" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="effect">';
-      for (const eff of ["enables", "increases", "decreases"]) {
+      for (const eff of EFFECT_OPTIONS) {
         html +=     '<option value="' + eff + '"' + (edge.effect === eff ? " selected" : "") + '>' + eff + '</option>';
       }
       html +=     '</select>';
@@ -293,7 +291,7 @@ function renderOutgoingEdgesBlock(node) {
       }
       html +=     '</select>';
       html +=     '<select class="detail-edit-input detail-edit-select" data-action="pick-add-effect">';
-      for (const eff of ["enables", "increases", "decreases"]) {
+      for (const eff of EFFECT_OPTIONS) {
         html +=     '<option value="' + eff + '"' + (eff === "increases" ? " selected" : "") + '>' + eff + '</option>';
       }
       html +=     '</select>';
@@ -497,7 +495,7 @@ function applyEdgeFieldEdit(edgeId, field, input) {
   const edge = EDGES.find(e => e.id === edgeId);
   if (!edge) return;
   if (field === "effect") {
-    if (!["enables", "increases", "decreases"].includes(input.value)) return;
+    if (!EFFECT_OPTIONS.includes(input.value)) return;
     edge.effect = input.value;
   } else if (field === "elasticity") {
     const v = parseFloat(input.value);

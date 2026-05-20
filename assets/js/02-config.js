@@ -55,3 +55,29 @@ const ELASTICITY_KEYS = {
   increases: "elasticity_increases",
   decreases: "elasticity_decreases",
 };
+
+// ─── Shared option lists ─────────────────────────────────────────────────
+// Used by the wizard (16a/16b), the detail panel (15), the canvas edge
+// effect picker (16e), and the CSV loader's validation (06). One source of
+// truth — change the list here and every UI affected updates.
+
+// The three causal-link kinds an edge can carry.
+const EFFECT_OPTIONS = ["enables", "increases", "decreases"];
+
+// Outcome direction-of-merit values. The blank entry is the "(no preference)"
+// option in dropdowns.
+const DIRECTION_OPTIONS = ["", "higher_better", "lower_better", "neutral"];
+
+// Colour palette cycled through when seeding a new stream / category so
+// adjacent ones visually differ. Used by addStream / addCategory (16e) and
+// the wizard.
+const STREAM_COLOR_PALETTE = [
+  "#60a5fa",  // blue
+  "#a78bfa",  // purple
+  "#34d399",  // emerald
+  "#f59e0b",  // amber
+  "#f472b6",  // pink
+  "#22d3ee",  // cyan
+  "#fb7185",  // rose
+  "#84cc16",  // lime
+];
