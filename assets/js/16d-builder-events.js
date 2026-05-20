@@ -54,14 +54,22 @@ function handleBuilderClick(event) {
     return;
   }
   if (target.hasAttribute("data-add")) {
-    addBuilderRow(target.getAttribute("data-add"));
+    const section = target.getAttribute("data-add");
+    const newIdx = addBuilderRow(section);
+    if (newIdx >= 0) {
+      state.builder.focusAfterRender = { section, index: newIdx, field: null };
+    }
     renderBuilder();
     return;
   }
   const index = parseInt(target.getAttribute("data-index"), 10);
   if (isNaN(index)) return;
   if (target.hasAttribute("data-duplicate")) {
-    duplicateBuilderRow(target.getAttribute("data-duplicate"), index);
+    const section = target.getAttribute("data-duplicate");
+    const newIdx = duplicateBuilderRow(section, index);
+    if (newIdx >= 0) {
+      state.builder.focusAfterRender = { section, index: newIdx, field: null };
+    }
     renderBuilder();
   } else if (target.hasAttribute("data-delete")) {
     state.builder[target.getAttribute("data-delete")].splice(index, 1);
@@ -76,6 +84,108 @@ function handleBuilderCellChange(event) {
   else if (event.target.matches("[data-default]"))             handleBuilderDefault(event);
 }
 
+// Spreadsheet-style keyboard navigation across editable table cells.
+//   • Tab / Shift-Tab → next / previous editable cell (skips drag handles
+//     and row action buttons). Tab past the last cell appends a new row.
+//   • Enter (text/number only) → same column, row below. Enter on the last
+//     row of a section appends a new row.
+//   • Selects, checkboxes, color inputs keep native Enter / Space behaviour.
+const BUILDER_EDITABLE_SELECTOR = "[data-section][data-field]:not(:disabled)";
+
+function builderEditableCells(fromEl) {
+  const scope = (fromEl && fromEl.closest("table.builder-table")) ||
+                document.getElementById("builder-overlay");
+  if (!scope) return [];
+  return Array.from(scope.querySelectorAll(BUILDER_EDITABLE_SELECTOR));
+}
+
+// Move focus to the next / previous editable cell in DOM order. Returns the
+// element focused, or null if we ran off the end. Caller is responsible for
+// appending a new row if it wants to handle the off-end case.
+function navigateEditableCell(fromEl, direction) {
+  const cells = builderEditableCells(fromEl);
+  const idx = cells.indexOf(fromEl);
+  if (idx === -1) return null;
+  const targetIdx = direction === "prev" ? idx - 1 : idx + 1;
+  if (targetIdx < 0 || targetIdx >= cells.length) return null;
+  const next = cells[targetIdx];
+  next.focus();
+  if (next.select && (next.type === "text" || next.type === "number")) {
+    try { next.select(); } catch (_) {}
+  }
+  return next;
+}
+
+function handleBuilderKeydown(event) {
+  const t = event.target;
+  if (!t || !t.matches) return;
+  // The floating editor's textarea handles its own keys (Esc, Tab,
+  // Cmd-Enter); don't double-handle here.
+  if (t.tagName === "TEXTAREA") return;
+  if (!t.matches(BUILDER_EDITABLE_SELECTOR)) return;
+
+  if (event.key === "Tab") {
+    const direction = event.shiftKey ? "prev" : "next";
+    const moved = navigateEditableCell(t, direction);
+    if (moved) {
+      event.preventDefault();
+      return;
+    }
+    // Off the end of the table. On forward-Tab we append a new row and
+    // focus its first input. On backward-Tab from the very first cell we
+    // let the browser handle it (focus moves to whatever comes before the
+    // wizard's editable area).
+    if (direction === "next") {
+      const section = t.getAttribute("data-section");
+      if (section && typeof addBuilderRow === "function") {
+        const newIdx = addBuilderRow(section);
+        if (newIdx >= 0) {
+          event.preventDefault();
+          state.builder.focusAfterRender = { section, index: newIdx, field: null };
+          renderBuilder();
+        }
+      }
+    }
+    return;
+  }
+
+  if (event.key === "Enter") {
+    // Spreadsheet metaphor: move down in the same column. Limit to plain
+    // text/number inputs — selects, color pickers, and checkboxes have
+    // native Enter behaviour we want to preserve.
+    if (t.tagName !== "INPUT") return;
+    if (t.type !== "text" && t.type !== "number") return;
+
+    const section = t.getAttribute("data-section");
+    const field   = t.getAttribute("data-field");
+    const index   = parseInt(t.getAttribute("data-index"), 10);
+    if (!section || !field || isNaN(index)) return;
+
+    event.preventDefault();
+    const overlay = document.getElementById("builder-overlay");
+    const sameColNext = overlay && overlay.querySelector(
+      '[data-section="' + section + '"]' +
+      '[data-field="'   + field   + '"]' +
+      '[data-index="'   + (index + 1) + '"]'
+    );
+    if (sameColNext) {
+      sameColNext.focus();
+      if (sameColNext.select && (sameColNext.type === "text" || sameColNext.type === "number")) {
+        try { sameColNext.select(); } catch (_) {}
+      }
+      return;
+    }
+    // At the last row → append and land in the same column of the new row.
+    if (typeof addBuilderRow === "function") {
+      const newIdx = addBuilderRow(section);
+      if (newIdx >= 0) {
+        state.builder.focusAfterRender = { section, index: newIdx, field };
+        renderBuilder();
+      }
+    }
+  }
+}
+
 // ───── Drag-to-reorder for streams / stages / categories rows ───────────
 // HTML5 drag-and-drop: the source row stashes its section+index on
 // dragstart; the target row computes "drop above / below" from the cursor's
@@ -85,6 +195,9 @@ let _builderDragSource = null;
 function handleBuilderDragStart(event) {
   const row = event.target.closest("tr[draggable='true']");
   if (!row) return;
+  // Close any open cell editor so it doesn't anchor to a row that's about
+  // to move.
+  if (typeof hideCellEditor === "function") hideCellEditor();
   _builderDragSource = {
     section: row.getAttribute("data-section"),
     index:   parseInt(row.getAttribute("data-index"), 10),
@@ -167,6 +280,8 @@ function attachBuilderEvents() {
     overlay.addEventListener("input",     handleBuilderCellChange);
     overlay.addEventListener("change",    handleBuilderCellChange);
     overlay.addEventListener("focusin",   handleBuilderFocus);
+    overlay.addEventListener("focusout",  handleBuilderFocusOut);
+    overlay.addEventListener("keydown",   handleBuilderKeydown);
     overlay.addEventListener("dragstart", handleBuilderDragStart);
     overlay.addEventListener("dragover",  handleBuilderDragOver);
     overlay.addEventListener("drop",      handleBuilderDrop);
@@ -232,4 +347,8 @@ function handleBuilderInput(event) {
   // the user is currently typing in.
   refreshBuilderFooter();
   saveBuilderToStorage();
+
+  // If the value just started overflowing, drop the "expanded" textarea
+  // below the cell so the user can keep reading what they're typing.
+  handleBuilderInputForOverflow(event);
 }

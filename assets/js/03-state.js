@@ -88,6 +88,10 @@ const state = {
     defaults: { enables: 0.30, increases: 0.25, decreases: -0.25 },
     nodes: [],              // [{ id, label, description, stream, stage, category, baseline, unit, controllable, direction, sliderMax }]
     edges: [],              // [{ from, to, effect, elasticity, description }]
+    // After a full re-render of the wizard, restore focus to this cell.
+    // { section, index, field } — field=null means "first editable input in
+    // that row". Consumed (and cleared) by renderBuilder().
+    focusAfterRender: null,
   },
 };
 

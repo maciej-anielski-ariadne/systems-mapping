@@ -71,6 +71,7 @@ function seedBuilderEmpty() {
   state.builder.defaults   = { enables: 0.30, increases: 0.25, decreases: -0.25 };
   state.builder.nodes      = [];
   state.builder.edges      = [];
+  state.builder.focusAfterRender = null;
 }
 
 function seedBuilderFromLiveData() {
@@ -105,6 +106,7 @@ function seedBuilderFromLiveData() {
     elasticity: e.elasticity !== undefined ? e.elasticity : "",
     description: e.description || "",
   }));
+  state.builder.focusAfterRender = null;
 }
 
 // "Start from sample" button on step 1 — pre-fills streams/stages/categories
@@ -272,6 +274,8 @@ function downloadBuilderCsv() {
 // "Add row" creates a default-shaped object for each section. "Duplicate
 // row" clones the row with its id wiped (so the duplicate doesn't fail
 // duplicate-id validation immediately).
+// Both return the index of the newly-inserted row so callers (e.g. the
+// keyboard navigation in 16d) can set state.builder.focusAfterRender.
 function addBuilderRow(section) {
   if (section === "streams") {
     state.builder.streams.push({ id: "", label: "", short: "", color: "#94a3b8" });
@@ -293,14 +297,18 @@ function addBuilderRow(section) {
       to:   state.builder.nodes[0] ? state.builder.nodes[0].id : "",
       effect: "increases", elasticity: "", description: "",
     });
+  } else {
+    return -1;
   }
+  return state.builder[section].length - 1;
 }
 
 function duplicateBuilderRow(section, index) {
   const original = state.builder[section][index];
-  if (!original) return;
+  if (!original) return -1;
   const copy = Object.assign({}, original);
   // Wipe the id of the duplicated row — duplicates would fail validation.
   if (copy.id !== undefined) copy.id = "";
   state.builder[section].splice(index + 1, 0, copy);
+  return index + 1;
 }

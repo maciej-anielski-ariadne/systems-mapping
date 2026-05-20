@@ -23,8 +23,10 @@ function renderBuilder() {
 
   // The floating cell editor references DOM nodes inside the overlay. A
   // full re-render destroys those nodes, so close the editor first to
-  // avoid a stale trigger reference.
+  // avoid a stale trigger reference. The dismissed-trigger ref also
+  // points at a soon-to-be-removed input, so clear it too.
   hideCellEditor();
+  clearDismissedTrigger();
 
   if (!state.builder.open) {
     overlay.classList.remove("open");
@@ -59,6 +61,49 @@ function renderBuilder() {
 
   attachBuilderEvents();
   saveBuilderToStorage();
+  applyFocusAfterRender();
+}
+
+// After a full re-render, restore focus to a specific cell so keyboard-driven
+// row creation (Enter on last row, Tab past last cell, +Add, Duplicate) lands
+// inside the new row without requiring a mouse click. Runs in rAF so the
+// floating editor's overflow measurements (scrollWidth/clientWidth) see a
+// settled layout.
+function applyFocusAfterRender() {
+  const target = state.builder.focusAfterRender;
+  if (!target) return;
+  state.builder.focusAfterRender = null;
+
+  const overlay = document.getElementById("builder-overlay");
+  if (!overlay) return;
+
+  requestAnimationFrame(() => {
+    let el = null;
+    if (target.field) {
+      const sel = '[data-section="' + target.section + '"]' +
+                  '[data-field="'   + target.field   + '"]' +
+                  '[data-index="'   + target.index   + '"]';
+      el = overlay.querySelector(sel);
+    } else {
+      const rowSel = 'tr[data-section="' + target.section + '"][data-index="' + target.index + '"]';
+      let tr = overlay.querySelector(rowSel);
+      if (!tr) {
+        // Edges and nodes rows don't carry data-section on the <tr> (only the
+        // inputs do). Fall back to the first input we can find for that index.
+        const first = overlay.querySelector('[data-section="' + target.section + '"][data-index="' + target.index + '"]');
+        tr = first ? first.closest("tr") : null;
+      }
+      el = tr ? tr.querySelector('[data-section][data-field]') : null;
+    }
+    if (!el) return;
+    el.focus();
+    if (typeof el.select === "function" && (el.type === "text" || el.type === "number")) {
+      try { el.select(); } catch (_) {}
+    }
+    if (typeof el.scrollIntoView === "function") {
+      el.scrollIntoView({ block: "nearest" });
+    }
+  });
 }
 
 function renderBuilderHeader() {
@@ -90,7 +135,9 @@ function renderBuilderFooter() {
 
   const backDisabled  = step === 1 ? ' disabled' : '';
   const nextDisabled  = step === 6 ? ' disabled' : '';
-  const applyDisabled = hasErrors ? ' disabled' : '';
+  // Apply is intentionally NOT gated on validation — the user can apply a
+  // partially-built map and the canvas will render blanks for missing data.
+  // The issue-count warning above stays as informational feedback.
 
   return '<div class="builder-footer">' +
            '<button class="builder-action" id="builder-back-button"' + backDisabled + '>← Back</button>' +
@@ -98,7 +145,7 @@ function renderBuilderFooter() {
            '<div class="builder-footer-spacer"></div>' +
            status +
            '<button class="builder-action" id="builder-download-button">Download CSV</button>' +
-           '<button class="builder-action primary" id="builder-apply-button"' + applyDisabled + '>Apply to map</button>' +
+           '<button class="builder-action primary" id="builder-apply-button">Apply to map</button>' +
          '</div>';
 }
 
