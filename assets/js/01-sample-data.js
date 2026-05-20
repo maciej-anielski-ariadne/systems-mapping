@@ -4,11 +4,6 @@
 // The string below is a byte-for-byte copy of:
 //   • SAMPLE_CSV  ← assets/data/sample.csv  (small neutral example)
 //
-// A larger UK-border worked example is also kept in
-// assets/data/sample_uk_border.csv — it is NOT loaded by the "Load sample"
-// button, but the user can drag it onto the app to import it manually for
-// a richer demo.
-//
 // Edit assets/data/sample.csv (in Excel / Google Sheets / a text editor),
 // then regenerate this file using the snippet in the project README
 // ("Updating the sample CSV"). Otherwise the in-page "Load sample" /

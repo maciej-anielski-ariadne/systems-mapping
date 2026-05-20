@@ -2,7 +2,7 @@
 
 CSV-driven interactive systems map. Single standalone HTML file, no dependencies, no server, no build step required at runtime. Open the HTML, drop in a CSV, get a layered causal diagram with live what-if simulation.
 
-Domain-agnostic — any system you can express as nodes-with-streams-and-stages plus signed edges will render. The default sample CSV is a small neutral worked example (a three-team product company — 12 nodes, 12 edges) that exercises every feature of the app while staying small enough to grok at a glance. A larger UK-border worked example ships alongside it (73 nodes, 133 edges) for anyone wanting a richer reference — drag `assets/data/sample_uk_border.csv` onto the app to load it.
+Domain-agnostic — any system you can express as nodes-with-streams-and-stages plus signed edges will render. The default sample CSV is a small neutral worked example (a three-team product company — 12 nodes, 12 edges) that exercises every feature of the app while staying small enough to grok at a glance.
 
 ## Quick start
 
@@ -214,8 +214,6 @@ systems_mapping/
     └── data/
         ├── sample.csv               Small neutral example (3 streams, 12 nodes, 12 edges).
         │                            Powers "Load Sample" + "Download Sample".
-        ├── sample_uk_border.csv     Larger worked example (73 nodes, 133 edges). Drag
-        │                            it onto the app to load — not linked to any button.
         └── empty_template.csv       Empty starter with structure + inline comments.
                                      Reference only — no button loads it.
 ```

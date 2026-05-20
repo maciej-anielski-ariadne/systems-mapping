@@ -11,3 +11,6 @@
 
 # OS / system
 Thumbs.db
+
+# Local-only sample data (not shipped with the repo)
+assets/data/sample_uk_border.csv
