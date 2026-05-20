@@ -213,25 +213,46 @@ if (zoomInButton)  zoomInButton.addEventListener("click",  () => setZoom(state.z
 if (zoomOutButton) zoomOutButton.addEventListener("click", () => setZoom(state.zoomLevel - ZOOM_STEP));
 if (zoomReadout)   zoomReadout.addEventListener("click",   () => setZoom(1.0));
 
-// Ctrl/Cmd + wheel zooms over the map. (Plain wheel keeps the default
-// behaviour: panning the viz-scroll container.) macOS trackpad pinch is
-// already delivered as a wheel event with ctrlKey synthesised by the
-// browser, so the same path handles both pinch and mouse-wheel zoom.
+// Wheel-to-zoom over the map. Three input paths feed the same handler:
+//   • Ctrl/Cmd + wheel (any device)              → zoom
+//   • macOS trackpad pinch (synth ctrlKey wheel) → zoom
+//   • Plain mouse-wheel (no modifier)            → zoom
+// Plain trackpad two-finger scroll stays as panning (the container's default
+// scroll behaviour). We distinguish mouse-wheel from trackpad scroll with a
+// heuristic on the wheel event: mice emit infrequent, large, integer deltaY
+// with no horizontal component (or use deltaMode=LINE/PAGE), while trackpads
+// emit frequent small/fractional deltas, often with a deltaX component too.
 //
-// The factor is exp(-deltaY * sensitivity), which makes zoom multiplicative
-// (every unit of input multiplies by the same ratio). Trackpads send many
-// small-deltaY events per gesture, mice send fewer large-deltaY events;
-// the exponential mapping keeps both feeling smooth and proportional.
-const ZOOM_WHEEL_SENSITIVITY = 0.0035;
+// The zoom factor is exp(-deltaY * sensitivity), which makes zoom
+// multiplicative (every unit of input multiplies by the same ratio). For
+// mouse wheels we use a smaller sensitivity so a single click of the wheel
+// (~100px) is a comfortable step rather than a big jump.
+const ZOOM_WHEEL_SENSITIVITY       = 0.0035;
+const ZOOM_MOUSE_WHEEL_SENSITIVITY = 0.0015;
+
+function looksLikeMouseWheel(event) {
+  // LINE/PAGE delta modes are typical of mouse wheels in some browsers.
+  if (event.deltaMode !== 0) return true;
+  // Any horizontal component → trackpad (or horizontal mouse wheel, rare).
+  if (event.deltaX !== 0) return false;
+  // Pixel mode: mice produce large integer deltas per tick; trackpads
+  // produce small or fractional deltas.
+  const absY = Math.abs(event.deltaY);
+  return absY >= 50 && absY === Math.round(absY);
+}
+
 const vizScroll = document.getElementById("viz-scroll");
 if (vizScroll) {
   vizScroll.addEventListener("wheel", event => {
-    if (!event.ctrlKey && !event.metaKey) return;
+    const modified = event.ctrlKey || event.metaKey;
+    const mouseWheel = !modified && looksLikeMouseWheel(event);
+    if (!modified && !mouseWheel) return;            // trackpad scroll → pan
     event.preventDefault();
     // event.deltaMode 1 = lines (some mice); convert to a pseudo-pixel
     // delta so the sensitivity constant stays meaningful.
     const deltaY = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
-    const factor = Math.exp(-deltaY * ZOOM_WHEEL_SENSITIVITY);
+    const sensitivity = mouseWheel ? ZOOM_MOUSE_WHEEL_SENSITIVITY : ZOOM_WHEEL_SENSITIVITY;
+    const factor = Math.exp(-deltaY * sensitivity);
     zoomBy(factor, event.clientX, event.clientY);
   }, { passive: false });
 }
