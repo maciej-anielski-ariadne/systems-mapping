@@ -34,6 +34,16 @@
 // `options.skipSidebarRender` — same idea for the sidebar (preserves focus
 // while the user is typing in the expanded stream / stage edit row).
 function applyCanvasMutation(options) {
+  // Push the PREVIOUS state's CSV onto undo history before mutating. The
+  // "previous" snapshot is whatever applyCanvasMutation produced last time
+  // (or what loadDataFromCsv seeded). This makes every mutation undoable
+  // without each call-site having to opt in.
+  if (state.dataLoaded && !isUndoCaptureSuspended() && state.lastCsvSnapshot) {
+    state.history.past.push(state.lastCsvSnapshot);
+    if (state.history.past.length > HISTORY_CAP) state.history.past.shift();
+    state.history.future.length = 0;
+  }
+
   rebuildIndexes();
   layout = computeLayout();
   recomputeValues();
@@ -41,7 +51,9 @@ function applyCanvasMutation(options) {
   render();
   if (!options || !options.skipDetailRender) renderDetailPanel();
   try {
-    saveCsvToStorage(serializeLiveStateToCsv());
+    const afterCsv = serializeLiveStateToCsv();
+    state.lastCsvSnapshot = afterCsv;
+    saveCsvToStorage(afterCsv);
   } catch (err) {
     console.warn("Persisting canvas mutation failed:", err);
   }

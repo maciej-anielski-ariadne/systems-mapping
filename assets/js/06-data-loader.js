@@ -274,5 +274,13 @@ function loadDataFromCsv(csvText) {
   // Persist the CSV so the map survives a page refresh. Helper is a no-op
   // when localStorage is unavailable.
   saveCsvToStorage(csvText);
+  // Seed the undo "previous snapshot" with the CSV we just loaded — without
+  // this, the very first mutation after a load has nothing to push onto
+  // history.past. Also clear history unless we're mid-restore (undo/redo
+  // call loadDataFromCsv internally and don't want to wipe the stacks).
+  state.lastCsvSnapshot = csvText;
+  if (typeof isUndoCaptureSuspended === "function" && !isUndoCaptureSuspended()) {
+    if (typeof clearHistory === "function") clearHistory();
+  }
   return true;
 }

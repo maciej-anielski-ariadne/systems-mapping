@@ -118,6 +118,22 @@ function render() {
     content += '</g>';
   }
 
+  // ───── Drag drop-target highlight (during node drag) ──────────────────
+  // Drawn here so it sits under nodes but over the grid. The insertion line
+  // (drop-line) appears between the siblings at the cursor's insert index.
+  const drag = state.canvasEdit && state.canvasEdit.draggingNode;
+  if (drag && drag.dropCell && layout.rowY[drag.dropCell.streamId] !== undefined && layout.colX[drag.dropCell.stageId] !== undefined) {
+    const dc = drag.dropCell;
+    const cellLeft = layout.colX[dc.stageId];
+    const cellTop  = layout.rowY[dc.streamId] + ROW_PADDING;
+    const cellHeight = layout.rowHeights[dc.streamId] - ROW_PADDING * 2;
+    content += '<rect class="drop-target-cell" x="' + cellLeft + '" y="' + cellTop + '" width="' + NODE_WIDTH + '" height="' + cellHeight + '" rx="5"></rect>';
+    // Insertion line — sits between nodes at the insert index, NODE_GAP_Y / 2 above the slot's top.
+    const slotY = cellTop + dc.insertIndex * (NODE_HEIGHT + NODE_GAP_Y);
+    const lineY = dc.insertIndex === 0 ? cellTop - 3 : slotY - NODE_GAP_Y / 2;
+    content += '<line class="drop-line" x1="' + cellLeft + '" y1="' + lineY + '" x2="' + (cellLeft + NODE_WIDTH) + '" y2="' + lineY + '"></line>';
+  }
+
   // ───── Row label strip on the left (per stream) ───────────────────────
   // Hidden streams keep their label so the user can click to expand again;
   // they're rendered with a .collapsed class for a dimmer visual treatment.
@@ -202,7 +218,8 @@ function render() {
     // pointer-events:stroke (set in CSS) limits hits to the stroked area.
     content += '<path class="edge-hit" data-edge-id="' + edge.id + '" d="' + pathD + '"></path>';
 
-    const classAttr = ' class="edge-path' + (dimmed ? ' dimmed' : '') + (isEdgeFlashed ? ' flashed' : '') + '"';
+    const isEdgeSelected = edge.id === state.selectedEdgeId;
+    const classAttr = ' class="edge-path' + (dimmed ? ' dimmed' : '') + (isEdgeFlashed ? ' flashed' : '') + (isEdgeSelected ? ' selected' : '') + '"';
     content += '<path' + classAttr + ' data-edge-id="' + edge.id + '" d="' + pathD + '" stroke="' + strokeColor + '" stroke-width="' + strokeWidth + '" stroke-opacity="' + strokeOpacity + '"' + markerEnd + '></path>';
   }
 
@@ -232,6 +249,9 @@ function render() {
     }
     if (state.hoveredNodeId === node.id) nodeClasses += " hovered";
     if (searchMatchIds && searchMatchIds.has(node.id)) nodeClasses += " search-match";
+    // Ghost the source node while it's being dragged — the live preview
+    // (rendered below the node loop) follows the cursor.
+    if (drag && drag.nodeId === node.id) nodeClasses += " dragging-source";
 
     content += '<g class="' + nodeClasses + '" data-node-id="' + node.id + '">';
 
@@ -336,6 +356,26 @@ function render() {
         " " + ex + "," + ey;
       content += '<path class="draft-edge" d="' + draftD + '"></path>';
     }
+  }
+
+  // ───── Drag preview (a translucent copy of the dragged node at cursor) ──
+  if (drag && drag.active && nodeById[drag.nodeId]) {
+    const node = nodeById[drag.nodeId];
+    const category = CATEGORIES[node.category] || { color: "#a3a3a3", textColor: "#ffffff" };
+    const stream   = streamById[node.stream] || { color: "#94a3b8" };
+    const px = drag.currentX - NODE_WIDTH / 2;
+    const py = drag.currentY - NODE_HEIGHT / 2;
+    content += '<g class="node-drag-preview">';
+    content += '<rect x="' + px + '" y="' + py + '" width="' + NODE_WIDTH + '" height="' + NODE_HEIGHT + '" rx="5" fill="' + category.color + '" stroke="rgba(0,0,0,0.4)" stroke-width="1"></rect>';
+    content += '<rect x="' + px + '" y="' + py + '" width="6" height="' + NODE_HEIGHT + '" rx="2" fill="' + stream.color + '"></rect>';
+    const previewLines = wrapLabel(node.label, 24);
+    content += '<text class="node-label" x="' + (px + 14) + '" y="' + (py + 16) + '" fill="' + category.textColor + '" dominant-baseline="middle">';
+    for (let i = 0; i < previewLines.length; i++) {
+      const dy = i === 0 ? "0" : "1.083em";
+      content += '<tspan x="' + (px + 14) + '" dy="' + dy + '">' + escapeHtml(previewLines[i]) + '</tspan>';
+    }
+    content += '</text>';
+    content += '</g>';
   }
 
   // ───── Empty-state hint when no nodes exist ───────────────────────────

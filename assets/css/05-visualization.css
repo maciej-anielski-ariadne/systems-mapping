@@ -288,6 +288,38 @@ body.panning * {
   letter-spacing: 0.04em;
 }
 
+/* Node drag-to-move (move between cells + reorder within a cell, 16e) */
+body.node-dragging,
+body.node-dragging * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+.node-group.dragging-source .node-rect,
+.node-group.dragging-source .edge-handle {
+  opacity: 0.25;
+}
+.node-group.dragging-source {
+  pointer-events: none;   /* the live preview at the cursor owns hit-testing */
+}
+.node-drag-preview {
+  opacity: 0.9;
+  pointer-events: none;
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.45));
+}
+.drop-target-cell {
+  fill: rgba(96, 165, 250, 0.12);
+  stroke: var(--accent-blue);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+  pointer-events: none;
+}
+.drop-line {
+  stroke: var(--accent-blue);
+  stroke-width: 3;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
 /* Inline effect picker that pops up after dropping an edge on a target node */
 .edge-effect-picker {
   position: fixed;

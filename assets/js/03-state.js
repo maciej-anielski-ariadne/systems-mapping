@@ -14,6 +14,10 @@
 // ("ancestor") and downstream ("descendant") nodes for the current selection.
 const state = {
   selectedNodeId: null,
+  selectedEdgeId: null,     // mutually exclusive with selectedNodeId — set by
+                            // selectEdge (09-graph-selection.js); cleared by
+                            // selectNode / deselectAll. Drives the Delete-key
+                            // dispatch in 16e and the .edge-path.selected CSS.
   hoveredNodeId: null,
   hiddenStreams: new Set(),
   hiddenCategories: new Set(),
@@ -47,6 +51,10 @@ const state = {
     editMode: false,             // when false, detail panel is view-only — edit fields are hidden
                                  // behind the "Edit Node" toggle button. Persists across selections.
     hoverCell: null,             // { streamId, stageId } | null — empty cell under cursor
+    draggingNode: null,          // { nodeId, startClientX, startClientY, currentX, currentY,
+                                 //   dropCell: { streamId, stageId, insertIndex } | null,
+                                 //   active: false } — set on .node-group mousedown,
+                                 //   promoted to active once cursor moves past NODE_DRAG_THRESHOLD.
     draftEdge: null,             // { fromNodeId, currentX, currentY } during edge drag
     pendingEdgeDrop: null,       // { fromNodeId, toNodeId, clientX, clientY } awaiting effect pick
     flashedEdgeId: null,         // edge to flash-highlight in the outgoing list (after canvas click)
@@ -54,8 +62,17 @@ const state = {
     editingSidebarItem: null,    // { kind: "stream"|"stage"|"category", id } when a sidebar row is pencil-expanded
     toast: null,                 // { message, undoFn, timerId } | null
   },
-  // Single-level delete-undo stack. Entry: { kind: "node", node, incidentEdges } | { kind: "edge", edge }.
-  undoStack: [],
+  // Multi-level undo/redo. Each stack entry is the CSV string of a prior state.
+  // applyCanvasMutation captures the pre-mutation snapshot from state.lastCsvSnapshot.
+  // historyUndo / historyRedo (16g-canvas-undo.js) round-trip through loadDataFromCsv.
+  history: {
+    past:   [],   // CSV strings older → newer; current state is NOT included
+    future: [],   // cleared on every fresh mutation
+  },
+  // Last CSV serialisation produced by applyCanvasMutation. This is the "pre" image
+  // that the NEXT mutation will push onto history.past. Seeded by loadDataFromCsv
+  // and bootEmptyStateGrid.
+  lastCsvSnapshot: null,
 
   // Working copy used by the Build / Edit wizard (16a-builder-panel.js).
   // While the wizard is open the user mutates THIS rather than the live
