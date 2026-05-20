@@ -51,8 +51,7 @@ const state = {
     pendingEdgeDrop: null,       // { fromNodeId, toNodeId, clientX, clientY } awaiting effect pick
     flashedEdgeId: null,         // edge to flash-highlight in the outgoing list (after canvas click)
     addingEdgeFromNodeId: null,  // when truthy, edit panel shows the "Add outgoing edge" form
-    categoryManagerOpen: false,  // mini-manager expanded in detail panel?
-    editingSidebarItem: null,    // { kind: "stream"|"stage", id } when a sidebar row is pencil-expanded
+    editingSidebarItem: null,    // { kind: "stream"|"stage"|"category", id } when a sidebar row is pencil-expanded
     toast: null,                 // { message, undoFn, timerId } | null
   },
   // Single-level delete-undo stack. Entry: { kind: "node", node, incidentEdges } | { kind: "edge", edge }.
