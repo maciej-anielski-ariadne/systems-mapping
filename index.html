@@ -170,6 +170,16 @@
     </div>
   </aside>
 
+  <!-- ============== PANEL RESIZE HANDLES ==============
+       Slim vertical drag bars between the side panels and the central viz.
+       Drag to resize the adjacent panel; double-click to reset to default.
+       JS wiring + persistence live in 17-events.js. Hidden when the
+       respective panel is unpinned (resize doesn't apply in strip mode). -->
+  <div class="panel-resize-handle sidebar-resize-handle" id="sidebar-resize-handle"
+       title="Drag to resize sidebar · double-click to reset"></div>
+  <div class="panel-resize-handle detail-resize-handle"  id="detail-resize-handle"
+       title="Drag to resize detail panel · double-click to reset"></div>
+
   <!-- ============== CENTER VISUALIZATION ============== -->
   <main class="viz-container" id="viz-container">
     <!-- Scrollable area containing the rendered SVG. JS in 11-rendering.js
