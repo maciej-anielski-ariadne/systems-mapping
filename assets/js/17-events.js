@@ -87,6 +87,19 @@ document.querySelectorAll(".edit-data-trigger").forEach(button => {
   });
 });
 
+// Sidebar "+ Add stream / + Add stage / + Add category" buttons. The buttons
+// live statically in index.html, so this wires them ONCE at startup. (Wiring
+// them inside renderSidebar would stack a fresh listener every render — a
+// single click would then add multiple rows.)
+document.querySelectorAll(".sidebar-add-btn").forEach(button => {
+  button.addEventListener("click", () => {
+    const kind = button.getAttribute("data-add");
+    if (kind === "stream"   && typeof addStream   === "function") addStream();
+    if (kind === "stage"    && typeof addStage    === "function") addStage();
+    if (kind === "category" && typeof addCategory === "function") addCategory();
+  });
+});
+
 // Escape closes the wizard (only when it's open and the user isn't typing
 // into the search box — the search input has its own Escape handler above).
 document.addEventListener("keydown", event => {

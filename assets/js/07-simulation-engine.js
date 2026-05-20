@@ -51,7 +51,9 @@ function computeNodeValues() {
     let logSum = 0;
     for (const edge of incomingEdges[nodeId]) {
       const sourceNode = nodeById[edge.from];
-      if (!sourceNode || sourceNode.baseline === undefined || values[edge.from] === undefined) continue;
+      // Skip if the source has no baseline, a zero baseline (would divide-by-zero
+      // and propagate Infinity/NaN downstream), or hasn't been computed yet.
+      if (!sourceNode || !sourceNode.baseline || values[edge.from] === undefined) continue;
       const sourceRatio = values[edge.from] / sourceNode.baseline;
       const elasticity = resolveEdgeElasticity(edge);
       // Floor at a tiny positive number so log() never blows up.

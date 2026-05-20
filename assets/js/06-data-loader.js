@@ -76,10 +76,20 @@ function rebuildIndexes() {
   }
 
   if (sorted.length !== NODES.length) {
+    const unsorted = NODES.length - sorted.length;
     console.warn(
       "Topological sort incomplete — possible cycle. Sorted:",
       sorted.length, "of", NODES.length,
     );
+    // Surface to the user too — without this, simulation silently degrades
+    // (the unsorted nodes won't get computed values) and there's no
+    // in-app signal of the problem.
+    if (typeof showLoadFeedback === "function") {
+      showLoadFeedback(
+        "Cycle detected — " + unsorted + " of " + NODES.length + " node(s) skipped in simulation. Remove the loop to fix.",
+        true,
+      );
+    }
   }
   topologicalOrder = sorted;
 }
@@ -204,7 +214,7 @@ function loadDataFromCsv(csvText) {
       if (!nodeIdSet.has(row.to))   { errors.push("Edge to unknown node: "   + row.to);   continue; }
 
       const effect = (row.effect || "enables").toLowerCase();
-      if (!["enables", "increases", "decreases"].includes(effect)) {
+      if (!EFFECT_OPTIONS.includes(effect)) {
         errors.push("Edge " + row.from + "→" + row.to + " has invalid effect `" + row.effect + "`.");
         continue;
       }

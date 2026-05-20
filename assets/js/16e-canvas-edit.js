@@ -1,36 +1,37 @@
 // =============================================================================
-// CANVAS DIRECT EDIT — the primary editing path
+// CANVAS DIRECT EDIT — the gestures that drive the map
 // -----------------------------------------------------------------------------
 // Users edit the map directly on the canvas: hover an empty cell to ghost-add
-// a node, click to create, double-click a label to rename, drag from a node's
-// right edge to draw an edge, press Delete to remove with a 6-second undo.
+// a node, click to create, drag from a node's right edge to draw an edge,
+// press Delete to remove with a 6-second undo.
 //
-// Every mutation funnels through applyCanvasMutation() — the single chokepoint
-// that re-runs the existing pipeline (rebuildIndexes → computeLayout → render →
-// renderDetailPanel) and persists the new state to localStorage via the live
-// state CSV serializer.
+// This file owns the *gestures*:
+//   • bootEmptyStateGrid()  — seed an empty 3×3 starter grid on first load.
+//   • initCanvasEdit()      — one-shot wiring of mousemove / keydown listeners.
+//   • attachCanvasEditHandlers() — re-wires per-render listeners on the SVG
+//                                  (ghost-cell click, edge-handle mousedown,
+//                                  edge-hit click). Called by 11-rendering.js
+//                                  after every render.
+//   • handleSvgMouseMove + cellAtLayoutPoint — translate cursor coords to the
+//                                              empty (stream, stage) cell.
+//   • createNodeInCell      — turn a ghost-cell click into a real node.
+//   • beginEdgeDrag / update / end + cancelDraftEdge + nodeAtLayoutPoint —
+//                              edge drag-out from a node's right edge.
+//   • showEffectPicker / commitNewEdge — pick enables / increases / decreases
+//                                        after the edge is dropped.
+//   • deleteSelection / deleteEdgeById — Delete-key removes the selected
+//                                        node (with incident edges) or a
+//                                        specific edge via the edit panel's
+//                                        per-row × button.
 //
-// The full Build / Edit wizard (16a-16d) still works in parallel for bulk
-// imports / structural edits; both write to the same NODES/EDGES/etc.
+// Sidebar-driven mutations (add/delete/reorder stream / stage / category)
+// live in 16f-canvas-mutations.js. Undo bookkeeping + the toast UI live in
+// 16g-canvas-undo.js. The single mutation chokepoint applyCanvasMutation()
+// is in 16f.
+//
+// Shared option lists (EFFECT_OPTIONS, STREAM_COLOR_PALETTE) live in 02-config.js.
+// Edge / node clone helpers (cloneEdgeForUndo, cloneNodeForUndo) live in 04-utils.js.
 // =============================================================================
-
-// ───── Constants ──────────────────────────────────────────────────────────
-// Small palette used when seeding a new stream so adjacent streams visually
-// differ. Cycles by index.
-const STREAM_COLOR_PALETTE = [
-  "#60a5fa",  // blue
-  "#a78bfa",  // purple
-  "#34d399",  // emerald
-  "#f59e0b",  // amber
-  "#f472b6",  // pink
-  "#22d3ee",  // cyan
-  "#fb7185",  // rose
-  "#84cc16",  // lime
-];
-
-const UNDO_TOAST_DURATION_MS = 6000;
-const EFFECT_OPTIONS_FOR_PICKER = ["enables", "increases", "decreases"];
-const EDGE_HANDLE_PIXEL_HITBOX = 10;   // generous mousedown target
 
 // ───── Bootstrapping ──────────────────────────────────────────────────────
 
@@ -126,29 +127,6 @@ function bootEmptyStateGrid() {
   renderSidebar();
   render();
   renderDetailPanel();
-}
-
-// ───── Mutation chokepoint ────────────────────────────────────────────────
-// Every canvas edit ends here. Re-runs the pipeline that data-loader.js runs
-// after parsing a CSV, then persists the new live state to localStorage.
-//
-// `options.skipDetailRender` — true when the mutation came from a text /
-// number input in the detail panel. Re-rendering the panel would destroy
-// the input element and break focus / tabbing.
-// `options.skipSidebarRender` — same idea for the sidebar (preserves focus
-// while the user is typing in the expanded stream / stage edit row).
-function applyCanvasMutation(options) {
-  rebuildIndexes();
-  layout = computeLayout();
-  recomputeValues();
-  if (!options || !options.skipSidebarRender) renderSidebar();
-  render();
-  if (!options || !options.skipDetailRender) renderDetailPanel();
-  try {
-    saveCsvToStorage(serializeLiveStateToCsv());
-  } catch (err) {
-    console.warn("Persisting canvas mutation failed:", err);
-  }
 }
 
 // ───── Per-render event binding ───────────────────────────────────────────
@@ -440,7 +418,7 @@ function showEffectPicker(fromNodeId, toNodeId, clientX, clientY) {
   picker.style.top  = clientY + "px";
   picker.innerHTML =
     '<div class="edge-effect-picker-title">New edge effect</div>' +
-    EFFECT_OPTIONS_FOR_PICKER.map(eff =>
+    EFFECT_OPTIONS.map(eff =>
       '<button class="edge-effect-picker-btn ' + eff + '" data-effect="' + eff + '">' + eff + '</button>'
     ).join("") +
     '<button class="edge-effect-picker-btn cancel" data-effect="">Cancel</button>';
@@ -493,20 +471,21 @@ function commitNewEdge(fromNodeId, toNodeId, effect) {
   applyCanvasMutation();
 }
 
-// ───── Delete + undo ──────────────────────────────────────────────────────
+// ───── Delete + undo (node and edge) ──────────────────────────────────────
 // Keyboard Delete only deletes the currently-selected NODE (with its incident
 // edges). Individual edges are deleted via the per-row × button inside the
 // node's edit panel; that path calls deleteEdgeById() directly.
+//
+// Stream / stage / category deletion (which also cascades to nodes + edges)
+// lives in 16f-canvas-mutations.js. Undo bookkeeping is in 16g-canvas-undo.js.
 function deleteSelection() {
   if (state.selectedNodeId) {
     const node = nodeById[state.selectedNodeId];
     if (!node) return false;
-    const incidentEdges = EDGES.filter(e => e.from === node.id || e.to === node.id).map(e => ({
-      from: e.from, to: e.to, effect: e.effect, elasticity: e.elasticity, description: e.description,
-    }));
+    const incidentEdges = EDGES.filter(e => e.from === node.id || e.to === node.id).map(cloneEdgeForUndo);
     const snapshot = {
       kind: "node",
-      node: Object.assign({}, node),
+      node: cloneNodeForUndo(node),
       incidentEdges: incidentEdges,
     };
     NODES = NODES.filter(n => n.id !== node.id);
@@ -530,306 +509,10 @@ function deleteEdgeById(edgeId) {
   if (!edge) return;
   const snapshot = {
     kind: "edge",
-    edge: { from: edge.from, to: edge.to, effect: edge.effect, elasticity: edge.elasticity, description: edge.description },
+    edge: cloneEdgeForUndo(edge),
   };
   EDGES = EDGES.filter(e => e.id !== edgeId);
   pushUndo(snapshot);
   applyCanvasMutation();
   showUndoToast("Edge deleted", () => restoreFromUndo(snapshot));
-}
-
-function pushUndo(entry) {
-  state.undoStack = [entry];   // single-level cap
-}
-
-function restoreFromUndo(entry) {
-  if (!entry) return;
-  if (entry.kind === "node") {
-    NODES.push(entry.node);
-    for (const e of entry.incidentEdges) {
-      // Only re-add edges whose other endpoint still exists. If the user
-      // deleted-then-deleted again on a connected node, that incident edge
-      // is gone.
-      EDGES.push({ from: e.from, to: e.to, effect: e.effect, elasticity: e.elasticity, description: e.description });
-    }
-    applyCanvasMutation();
-    selectNode(entry.node.id);
-  } else if (entry.kind === "edge") {
-    EDGES.push(entry.edge);
-    applyCanvasMutation();
-  } else if (entry.kind === "stream") {
-    const idx = Math.min(Math.max(entry.streamIndex, 0), STREAMS.length);
-    STREAMS.splice(idx, 0, Object.assign({}, entry.stream));
-    for (const n of entry.nodes) NODES.push(Object.assign({}, n));
-    for (const e of entry.edges) EDGES.push({ from: e.from, to: e.to, effect: e.effect, elasticity: e.elasticity, description: e.description });
-    applyCanvasMutation();
-  } else if (entry.kind === "stage") {
-    const idx = Math.min(Math.max(entry.stageIndex, 0), STAGES.length);
-    STAGES.splice(idx, 0, { id: entry.stage.id, label: entry.stage.label });
-    for (const n of entry.nodes) NODES.push(Object.assign({}, n));
-    for (const e of entry.edges) EDGES.push({ from: e.from, to: e.to, effect: e.effect, elasticity: e.elasticity, description: e.description });
-    applyCanvasMutation();
-  } else if (entry.kind === "category") {
-    // Re-insert the deleted category at its original index by rebuilding
-    // CATEGORIES in the right order. Insertion order is the only "index"
-    // categories have.
-    const ids = Object.keys(CATEGORIES);
-    const idx = Math.min(Math.max(entry.catIndex, 0), ids.length);
-    ids.splice(idx, 0, entry.catId);
-    const rebuilt = {};
-    for (const id of ids) {
-      rebuilt[id] = (id === entry.catId) ? Object.assign({}, entry.cat) : CATEGORIES[id];
-    }
-    CATEGORIES = rebuilt;
-    for (const n of entry.nodes) NODES.push(Object.assign({}, n));
-    for (const e of entry.edges) EDGES.push({ from: e.from, to: e.to, effect: e.effect, elasticity: e.elasticity, description: e.description });
-    applyCanvasMutation();
-  }
-  state.undoStack = [];
-}
-
-// ───── Undo toast ─────────────────────────────────────────────────────────
-function ensureUndoToastEl() {
-  if (document.getElementById("canvas-undo-toast")) return;
-  const el = document.createElement("div");
-  el.id = "canvas-undo-toast";
-  el.className = "undo-toast";
-  el.style.display = "none";
-  el.innerHTML = '<span class="undo-toast-msg"></span><button class="undo-link">Undo</button>';
-  document.body.appendChild(el);
-}
-
-function showUndoToast(message, undoFn) {
-  ensureUndoToastEl();
-  const el = document.getElementById("canvas-undo-toast");
-  if (!el) return;
-  el.querySelector(".undo-toast-msg").textContent = message;
-  el.style.display = "flex";
-
-  const undoBtn = el.querySelector(".undo-link");
-  // Clone-and-replace to drop any previous click handler.
-  const freshBtn = undoBtn.cloneNode(true);
-  undoBtn.parentNode.replaceChild(freshBtn, undoBtn);
-  freshBtn.addEventListener("click", () => {
-    dismissUndoToast();
-    undoFn();
-  });
-
-  // Clear any pre-existing timer.
-  if (state.canvasEdit.toast && state.canvasEdit.toast.timerId) {
-    clearTimeout(state.canvasEdit.toast.timerId);
-  }
-  const timerId = setTimeout(dismissUndoToast, UNDO_TOAST_DURATION_MS);
-  state.canvasEdit.toast = { message: message, undoFn: undoFn, timerId: timerId };
-}
-
-function dismissUndoToast() {
-  const el = document.getElementById("canvas-undo-toast");
-  if (el) el.style.display = "none";
-  if (state.canvasEdit.toast && state.canvasEdit.toast.timerId) {
-    clearTimeout(state.canvasEdit.toast.timerId);
-  }
-  state.canvasEdit.toast = null;
-}
-
-// ───── Add stream / stage ─────────────────────────────────────────────────
-function addStream() {
-  const counter = STREAMS.length + 1;
-  let id = "row_" + counter;
-  // Avoid id collision if user renamed previous ones to numbers.
-  let n = counter;
-  while (streamById[id]) { n++; id = "row_" + n; }
-  const color = STREAM_COLOR_PALETTE[STREAMS.length % STREAM_COLOR_PALETTE.length];
-  const label = "Stream " + counter;
-  STREAMS.push({ id: id, label: label, short: deriveShortLabel(label), color: color });
-  // Open the new row's pencil-expanded edit view in the sidebar so the user
-  // can immediately rename / re-colour it.
-  state.canvasEdit.editingSidebarItem = { kind: "stream", id: id };
-  applyCanvasMutation();
-  focusSidebarEditLabel("stream", id);
-}
-
-function addStage() {
-  const counter = STAGES.length + 1;
-  let id = "stage_" + counter;
-  let n = counter;
-  while (stageById[id]) { n++; id = "stage_" + n; }
-  STAGES.push({ id: id, label: "Stage " + counter });
-  state.canvasEdit.editingSidebarItem = { kind: "stage", id: id };
-  applyCanvasMutation();
-  focusSidebarEditLabel("stage", id);
-}
-
-// Sidebar — confirm + cascade delete a stream. Pulls every node in that
-// stream + every incident edge into a single undo snapshot.
-function deleteStreamWithCascade(streamId) {
-  const stream = streamById[streamId];
-  if (!stream) return;
-  const nodesToDelete = NODES.filter(n => n.stream === streamId);
-  const nodeIdSet = new Set(nodesToDelete.map(n => n.id));
-  const edgesToDelete = EDGES.filter(e => nodeIdSet.has(e.from) || nodeIdSet.has(e.to));
-  const msg = nodesToDelete.length === 0
-    ? 'Delete stream "' + stream.label + '"?'
-    : 'Delete stream "' + stream.label + '"?\n\n' + nodesToDelete.length + ' node(s) and ' + edgesToDelete.length + ' edge(s) will also be removed.';
-  if (!confirm(msg)) return;
-
-  const snapshot = {
-    kind: "stream",
-    stream: Object.assign({}, stream),
-    streamIndex: STREAMS.findIndex(s => s.id === streamId),
-    nodes: nodesToDelete.map(n => Object.assign({}, n)),
-    edges: edgesToDelete.map(e => ({ from: e.from, to: e.to, effect: e.effect, elasticity: e.elasticity, description: e.description })),
-  };
-  STREAMS = STREAMS.filter(s => s.id !== streamId);
-  NODES = NODES.filter(n => !nodeIdSet.has(n.id));
-  EDGES = EDGES.filter(e => !nodeIdSet.has(e.from) && !nodeIdSet.has(e.to));
-  if (state.selectedNodeId && nodeIdSet.has(state.selectedNodeId)) {
-    state.selectedNodeId = null;
-    state.ancestorSet = new Set();
-    state.descendantSet = new Set();
-    state.highlightedEdgeIds = new Set();
-  }
-  state.canvasEdit.editingSidebarItem = null;
-  pushUndo(snapshot);
-  applyCanvasMutation();
-  showUndoToast("Stream deleted", () => restoreFromUndo(snapshot));
-}
-
-function deleteStageWithCascade(stageId) {
-  const stage = stageById[stageId];
-  if (!stage) return;
-  const nodesToDelete = NODES.filter(n => n.stage === stageId);
-  const nodeIdSet = new Set(nodesToDelete.map(n => n.id));
-  const edgesToDelete = EDGES.filter(e => nodeIdSet.has(e.from) || nodeIdSet.has(e.to));
-  const msg = nodesToDelete.length === 0
-    ? 'Delete stage "' + stage.label + '"?'
-    : 'Delete stage "' + stage.label + '"?\n\n' + nodesToDelete.length + ' node(s) and ' + edgesToDelete.length + ' edge(s) will also be removed.';
-  if (!confirm(msg)) return;
-
-  const snapshot = {
-    kind: "stage",
-    stage: { id: stage.id, label: stage.label },
-    stageIndex: STAGES.findIndex(s => s.id === stageId),
-    nodes: nodesToDelete.map(n => Object.assign({}, n)),
-    edges: edgesToDelete.map(e => ({ from: e.from, to: e.to, effect: e.effect, elasticity: e.elasticity, description: e.description })),
-  };
-  STAGES = STAGES.filter(s => s.id !== stageId);
-  NODES = NODES.filter(n => !nodeIdSet.has(n.id));
-  EDGES = EDGES.filter(e => !nodeIdSet.has(e.from) && !nodeIdSet.has(e.to));
-  if (state.selectedNodeId && nodeIdSet.has(state.selectedNodeId)) {
-    state.selectedNodeId = null;
-    state.ancestorSet = new Set();
-    state.descendantSet = new Set();
-    state.highlightedEdgeIds = new Set();
-  }
-  state.canvasEdit.editingSidebarItem = null;
-  pushUndo(snapshot);
-  applyCanvasMutation();
-  showUndoToast("Stage deleted", () => restoreFromUndo(snapshot));
-}
-
-// Sidebar — reorder STREAMS / STAGES by moving the item at fromIndex to
-// targetIndex (insertion before that position). Called by the sidebar's
-// drag-and-drop wiring.
-function reorderStreams(fromIndex, targetIndex) {
-  if (fromIndex === targetIndex || fromIndex === targetIndex - 1) return;
-  const item = STREAMS[fromIndex];
-  if (!item) return;
-  STREAMS.splice(fromIndex, 1);
-  const insertAt = targetIndex > fromIndex ? targetIndex - 1 : targetIndex;
-  STREAMS.splice(insertAt, 0, item);
-  applyCanvasMutation();
-}
-
-function reorderStages(fromIndex, targetIndex) {
-  if (fromIndex === targetIndex || fromIndex === targetIndex - 1) return;
-  const item = STAGES[fromIndex];
-  if (!item) return;
-  STAGES.splice(fromIndex, 1);
-  const insertAt = targetIndex > fromIndex ? targetIndex - 1 : targetIndex;
-  STAGES.splice(insertAt, 0, item);
-  applyCanvasMutation();
-}
-
-// ───── Categories (sidebar-driven) ────────────────────────────────────────
-// Categories are stored in a plain object — Object.keys() preserves insertion
-// order, so reordering means rebuilding the object in the new order.
-function addCategory() {
-  const counter = Object.keys(CATEGORIES).length + 1;
-  let id = "category_" + counter;
-  let n = counter;
-  while (CATEGORIES[id]) { n++; id = "category_" + n; }
-  const palette = (typeof STREAM_COLOR_PALETTE !== "undefined" && STREAM_COLOR_PALETTE.length)
-    ? STREAM_COLOR_PALETTE
-    : ["#94a3b8"];
-  const color = palette[Object.keys(CATEGORIES).length % palette.length];
-  CATEGORIES[id] = {
-    label: "Category " + counter,
-    color: color,
-    textColor: "#ffffff",
-  };
-  state.canvasEdit.editingSidebarItem = { kind: "category", id: id };
-  applyCanvasMutation();
-  focusSidebarEditLabel("category", id);
-}
-
-function deleteCategoryWithCascade(catId) {
-  const cat = CATEGORIES[catId];
-  if (!cat) return;
-  const nodesToDelete = NODES.filter(n => n.category === catId);
-  const nodeIdSet = new Set(nodesToDelete.map(n => n.id));
-  const edgesToDelete = EDGES.filter(e => nodeIdSet.has(e.from) || nodeIdSet.has(e.to));
-  const msg = nodesToDelete.length === 0
-    ? 'Delete category "' + cat.label + '"?'
-    : 'Delete category "' + cat.label + '"?\n\n' + nodesToDelete.length + ' node(s) and ' + edgesToDelete.length + ' edge(s) will also be removed.';
-  if (!confirm(msg)) return;
-
-  const ids = Object.keys(CATEGORIES);
-  const snapshot = {
-    kind: "category",
-    catId: catId,
-    cat: Object.assign({}, cat),
-    catIndex: ids.indexOf(catId),
-    nodes: nodesToDelete.map(n => Object.assign({}, n)),
-    edges: edgesToDelete.map(e => ({ from: e.from, to: e.to, effect: e.effect, elasticity: e.elasticity, description: e.description })),
-  };
-  delete CATEGORIES[catId];
-  NODES = NODES.filter(n => !nodeIdSet.has(n.id));
-  EDGES = EDGES.filter(e => !nodeIdSet.has(e.from) && !nodeIdSet.has(e.to));
-  state.hiddenCategories.delete(catId);
-  if (state.selectedNodeId && nodeIdSet.has(state.selectedNodeId)) {
-    state.selectedNodeId = null;
-    state.ancestorSet = new Set();
-    state.descendantSet = new Set();
-    state.highlightedEdgeIds = new Set();
-  }
-  state.canvasEdit.editingSidebarItem = null;
-  pushUndo(snapshot);
-  applyCanvasMutation();
-  showUndoToast("Category deleted", () => restoreFromUndo(snapshot));
-}
-
-function reorderCategories(fromIndex, targetIndex) {
-  if (fromIndex === targetIndex || fromIndex === targetIndex - 1) return;
-  const ids = Object.keys(CATEGORIES);
-  if (fromIndex < 0 || fromIndex >= ids.length) return;
-  const movedId = ids[fromIndex];
-  ids.splice(fromIndex, 1);
-  const insertAt = targetIndex > fromIndex ? targetIndex - 1 : targetIndex;
-  ids.splice(insertAt, 0, movedId);
-  const reordered = {};
-  for (const id of ids) reordered[id] = CATEGORIES[id];
-  CATEGORIES = reordered;
-  applyCanvasMutation();
-}
-
-// After renderSidebar repaints, focus the freshly-opened label input.
-function focusSidebarEditLabel(kind, id) {
-  setTimeout(() => {
-    const input = document.querySelector(".sidebar-edit-row.expanded[data-kind='" + kind + "'][data-id='" + id + "'] [data-field='label']");
-    if (input && typeof input.focus === "function") {
-      input.focus();
-      if (typeof input.select === "function") input.select();
-    }
-  }, 0);
 }

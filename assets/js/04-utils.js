@@ -78,3 +78,21 @@ function getMapTextScale(zoomLevel) {
   if (!zoomLevel || isNaN(zoomLevel) || zoomLevel <= 0) return 1;
   return Math.min(TEXT_SCALE_MAX, Math.max(1, TEXT_SCALE_RATIO / zoomLevel));
 }
+
+// Shallow clone of an edge object — used wherever we snapshot edges into an
+// undo entry. Centralised so adding a new edge field doesn't require hunting
+// through every undo path.
+function cloneEdgeForUndo(edge) {
+  return {
+    from: edge.from,
+    to: edge.to,
+    effect: edge.effect,
+    elasticity: edge.elasticity,
+    description: edge.description,
+  };
+}
+
+// Shallow clone of a node object — same role as cloneEdgeForUndo, for nodes.
+function cloneNodeForUndo(node) {
+  return Object.assign({}, node);
+}

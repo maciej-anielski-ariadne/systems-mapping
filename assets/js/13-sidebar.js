@@ -30,16 +30,10 @@ function renderSidebar() {
   // Newly-rendered rows have data-tooltip; wire them up to the tooltip system.
   if (typeof wireDataTooltips === "function") wireDataTooltips(sidebarEl);
 
-  // Wire the "+ Add stream / + Add stage" buttons (re-runs every render —
-  // cheap, and avoids stale closures over removed buttons).
-  document.querySelectorAll(".sidebar-add-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const kind = btn.getAttribute("data-add");
-      if (kind === "stream"   && typeof addStream   === "function") addStream();
-      if (kind === "stage"    && typeof addStage    === "function") addStage();
-      if (kind === "category" && typeof addCategory === "function") addCategory();
-    });
-  });
+  // NOTE: the "+ Add stream / + Add stage / + Add category" buttons live in
+  // index.html (they persist across renders), so they're wired ONCE from
+  // 17-events.js at startup. Wiring them here would stack a fresh click
+  // listener every render — one click would then add many rows.
 }
 
 // ───── Stages ──────────────────────────────────────────────────────────

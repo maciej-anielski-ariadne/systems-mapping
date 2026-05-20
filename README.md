@@ -7,14 +7,13 @@ Domain-agnostic — any system you can express as nodes-with-streams-and-stages 
 ## Quick start
 
 1. Open `index.html` in any modern browser. (Works fully offline — fonts and code are bundled locally.)
-2. Pick a starting point:
-   - **Build map** — guided in-app wizard, blank canvas. Fill in forms instead of editing CSV. Recommended for non-technical users and workshop sessions.
-   - **Edit map** — same wizard, but pre-populated with the currently-loaded map.
-   - **Import map** — pick a previously-saved CSV from your computer. Drag-dropping a .csv onto the window does the same thing.
-   - **Load sample** — the small bundled worked example.
-3. Iterate. Re-open **Edit map** at any time to tweak the live map; **Apply to map** re-renders instantly. From inside the wizard, **Download CSV** saves your work.
+2. The app boots into an **empty 3×3 starter grid** — three streams (rows), three stages (columns), no nodes yet. From here you have three paths:
+   - **Build directly on the canvas** (recommended for non-technical users). Click any empty cell to add a node, then rename it in the right panel. Drag from the right edge of a node to another node to draw an edge. Edit streams / stages / categories from the left sidebar (pencil icon to rename / delete, drag handle to reorder, **+ Add** buttons at the bottom of each section).
+   - **Import an existing CSV** — click **Import Data** in the header, or drag-drop a `.csv` onto the window.
+   - **Bulk edit via the wizard** — click **Edit Data** in the header to open a six-step form (streams → stages → categories → nodes → edges → review). Useful for big edits where the canvas is too fiddly. Hit **Apply to map** to re-render, or **Download CSV** to save a snapshot.
+3. Iterate freely. Every canvas edit auto-saves to your browser, so a page refresh restores everything. Click **Export Data** in the header to download the current map as a CSV.
 
-The app starts empty — a drop zone with four buttons (Choose CSV file / Build from scratch / Load sample data / Download sample CSV) until you load something. The header has seven buttons left-to-right: **Build map · Edit map · Import map · Load sample · Download sample · Simulate · Reset view**. (`Edit map` is dimmed until a map is loaded.)
+The header has six buttons left-to-right: **Create Map · Edit Data · Import Data · Export Data · Simulate · Reset view**. (**Create Map** clears the canvas and starts a fresh empty grid, asking for confirmation if a map is loaded. **Edit Data** is dimmed until a map exists.)
 
 ## What you get
 
@@ -22,14 +21,15 @@ The app starts empty — a drop zone with four buttons (Choose CSV file / Build 
 - Click a node → highlights upstream causes (blue) and downstream impacts (amber), dims everything else.
 - Click a stream label (sidebar or row header) → collapse / expand the whole stream.
 - **Smart search** → fuzzy match on node labels, descriptions, and IDs (handles typos like "brder" → "Border" and word-initials like "bff" → "Border Force FTE"). Top results show as a dropdown below the search box; matching nodes get an amber halo on the map. Press `/` from anywhere on the page to jump to the search box.
-- Detail panel → category, stream, stage, baseline + current values, all direct inputs/impacts with per-edge elasticities, click-through navigation.
-- **Build / Edit wizard** → six-step in-app form (streams → stages → categories → nodes → edges → review) with dropdowns for every cross-reference, live validation, and round-trip with the current map. No spreadsheet required.
+- Detail panel → category, stream, stage, baseline + current values, all direct inputs/impacts with per-edge elasticities, click-through navigation. **Edit Node** toggle turns the panel into an edit form (every field as an input, per-row outgoing-edge editor, delete button).
+- **Canvas direct edit** → click an empty grid cell to add a node, drag from a node's right edge to another node to draw an edge, press Delete on a selected node to remove it (with a 6-second undo toast). Streams / stages / categories are edited from the left sidebar (pencil to rename / re-colour, drag handle to reorder, **+ Add** at the bottom of each section).
+- **Build / Edit wizard** → optional six-step in-app form (streams → stages → categories → nodes → edges → review) with dropdowns for every cross-reference, live validation, and round-trip with the current map. Click **Edit Data** in the header. Useful for bulk edits where the canvas is too fiddly.
 - **Simulation mode** → sliders **and** typeable number inputs on every controllable node, grouped by stream. Downstream values recompute live (Cobb-Douglas propagation). The selected node's `Current` value is also editable from the detail panel.
 - Outcome nodes get green / red halo colouring when their direction-of-merit metric moves materially from baseline.
 - **Collapsible side panels** → click the pin icon in either panel header to collapse it to a thin strip; hover the strip to peek the contents, click the pin again to re-pin.
 - **Zoom** → bottom-right `−` / `+` buttons, `Ctrl/Cmd` + scroll-wheel (or trackpad pinch), or `Ctrl/Cmd + =/-/0` to zoom in / out / reset. Pinching anchors on the cursor.
 - **Pan** → click-and-drag any empty area of the map to pan around it. Plain scroll-wheel and trackpad two-finger scroll also pan.
-- **Survives a refresh** → the loaded CSV, hidden filters, simulation mode + slider positions, selected node, zoom level, panel pin state, and any unsaved wizard work are all persisted in `localStorage`. Close the tab, reopen, keep going. (Loading a different CSV / applying a wizard / clicking **Load sample** replaces what's stored.)
+- **Survives a refresh** → the loaded CSV, hidden filters, simulation mode + slider positions, selected node, zoom level, panel pin state, and any unsaved wizard work are all persisted in `localStorage`. Close the tab, reopen, keep going. (Loading a different CSV via **Import Data** / applying the wizard replaces what's stored.)
 
 ## CSV format
 
@@ -108,7 +108,7 @@ Key-value rows. Three keys used when an edge's `elasticity` cell is blank:
 
 ## Build / Edit wizard
 
-Click **Build map** (blank canvas) or **Edit map** (pre-populated with whatever's loaded) in the header — or **Build from scratch** on the drop zone — to open a full-screen wizard that constructs the same CSV without you typing any CSV syntax.
+Click **Edit Data** in the header (or **Create Map** first if you want a fresh start) to open a full-screen wizard that constructs the same CSV without you typing any CSV syntax. The canvas direct-edit flow is usually faster for small tweaks; the wizard shines when you're doing bulk edits or want to see all fields for a row at once.
 
 Six steps in build order:
 
@@ -187,9 +187,9 @@ systems_mapping/
     │   └── 13-search.css            Search dropdown + map-match halo
     ├── js/
     │   ├── 01-sample-data.js        Embedded SAMPLE_CSV string (sample.csv copy)
-    │   ├── 02-config.js             Pixel sizes (NODE_WIDTH etc.)
+    │   ├── 02-config.js             Pixel sizes (NODE_WIDTH etc.) + shared option lists
     │   ├── 03-state.js              Shared globals (state, NODES, EDGES, …)
-    │   ├── 04-utils.js              wrapLabel / escapeHtml / formatScalar
+    │   ├── 04-utils.js              wrapLabel / escapeHtml / formatScalar / clone helpers
     │   ├── 04a-storage.js           localStorage persistence (CSV, UI, wizard)
     │   ├── 05-csv-parser.js         Multi-section CSV parser (CSV → data)
     │   ├── 05a-csv-serializer.js    Multi-section CSV serializer (data → CSV)
@@ -208,6 +208,11 @@ systems_mapping/
     │   ├── 16b-builder-render.js    Wizard: HTML output for the six steps
     │   ├── 16c-builder-editor.js    Wizard: floating "expand this cell" editor
     │   ├── 16d-builder-events.js    Wizard: click / typing / drag handlers
+    │   ├── 16e-canvas-edit.js       Canvas gestures: ghost cell, edge drag, delete
+    │   ├── 16f-canvas-mutations.js  Sidebar mutations: add/delete/reorder for
+    │   │                            streams, stages, categories + the single
+    │   │                            applyCanvasMutation() chokepoint
+    │   ├── 16g-canvas-undo.js       Undo snapshots + the bottom-of-screen toast
     │   ├── 17-events.js             Wires up search box, buttons, drag-drop, zoom, pan, pins
     │   ├── 17a-search.js            Fuzzy search: scoring, dropdown, map highlights
     │   └── 18-main.js               Startup — restores persisted state
@@ -229,11 +234,17 @@ The app was originally a single ~2,500-line HTML file. Splitting it into
   app in context.
 
 Each file opens with a comment header explaining its job and which other
-file calls into it. Most JS files are under 300 lines. The Build / Edit
-wizard is the biggest feature and is split across four files
-(`16a-builder-state.js`, `16b-builder-render.js`, `16c-builder-editor.js`,
-`16d-builder-events.js`); see the comment header of `16a-builder-state.js`
-for an overview of how they fit together.
+file calls into it. Most JS files are under 300 lines. The two biggest
+features are split across multiple files:
+
+- The **Build / Edit wizard** is split across `16a-builder-state.js`,
+  `16b-builder-render.js`, `16c-builder-editor.js`, `16d-builder-events.js`.
+  See the comment header of `16a-builder-state.js` for the overview.
+- **Canvas direct edit** (the primary editing path — click a cell to add
+  a node, drag from a node edge to draw a link) is split across
+  `16e-canvas-edit.js` (the gestures), `16f-canvas-mutations.js` (the
+  sidebar-driven add/delete/reorder helpers), and `16g-canvas-undo.js`
+  (snapshot + toast). See the comment header of `16e-canvas-edit.js`.
 
 ## Editing the app
 
@@ -242,21 +253,25 @@ for an overview of how they fit together.
 | Colours, fonts | `assets/css/01-variables.css` |
 | The sample CSV that comes built-in | `assets/data/sample.csv` (and re-export the JS constant — see note below) |
 | The size of nodes / spacing | `assets/js/02-config.js` |
+| The list of valid edge effects, outcome directions, stream colour palette | `assets/js/02-config.js` |
 | How nodes propagate values | `assets/js/07-simulation-engine.js` |
 | How nodes are positioned | `assets/js/08-layout.js` |
 | How nodes/edges are drawn | `assets/js/11-rendering.js` |
 | The right detail panel | `assets/js/15-detail-panel.js` |
+| Canvas direct-edit gestures (click a cell → node, drag from edge → arrow) | `assets/js/16e-canvas-edit.js` |
+| Sidebar add / delete / reorder for streams, stages, categories | `assets/js/16f-canvas-mutations.js` |
 | The Build / Edit wizard | `assets/js/16a-builder-state.js` (state + validation), `16b-builder-render.js` (UI), `16c-builder-editor.js` (cell editor), `16d-builder-events.js` (events), `assets/css/11-builder.css` (styles), `assets/js/05a-csv-serializer.js` (CSV writer) |
+| Undo snapshot behaviour / toast | `assets/js/16g-canvas-undo.js` |
 | Search behaviour / fuzzy matching | `assets/js/17a-search.js`, `assets/css/13-search.css` |
 | Button behaviour | `assets/js/17-events.js` |
 | Sample data dataset | `assets/data/sample.csv` |
 | Strip every border (or restore them) | `assets/css/12-no-borders.css` |
 
-> **Note on sample data:** the in-page "Load sample" / "Download sample"
-> buttons read from the `SAMPLE_CSV` constant in `assets/js/01-sample-data.js`.
-> The same content is duplicated as an editable CSV in
-> `assets/data/sample.csv`. After editing the CSV, regenerate the JS file —
-> see *Updating the sample CSV* below.
+> **Note on sample data:** the `SAMPLE_CSV` constant in
+> `assets/js/01-sample-data.js` is a byte-for-byte copy of
+> `assets/data/sample.csv` so the app works offline without an HTTP server.
+> After editing the CSV, regenerate the JS file — see *Updating the sample
+> CSV* below.
 
 ## Updating the sample CSV
 
