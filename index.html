@@ -82,19 +82,17 @@
       <div id="search-results" class="search-results" hidden></div>
     </div>
 
-    <!-- Header action buttons. Classes (load-csv-trigger, load-sample-trigger,
-         etc.) are picked up by the JS in 17-events.js and wired to their
-         handlers — see that file. -->
-    <button class="header-button build-map-trigger"       data-tooltip="Open the wizard to build a new systems map from scratch. Applying replaces the current map.">Build map</button>
-    <button class="header-button edit-map-trigger"        data-tooltip="Open the wizard pre-populated with the currently-loaded map. Disabled until a map is loaded.">Edit map</button>
-    <button class="header-button load-csv-trigger"        data-tooltip="Import a CSV map file from your computer. Same as drag-dropping a .csv onto the window.">Import map</button>
-    <button class="header-button load-sample-trigger"     data-tooltip="Load the bundled neutral sample (3 streams, 12 nodes, 12 edges) so you can explore how the app behaves.">Load sample</button>
-    <button class="header-button download-sample-trigger" data-tooltip="Download the bundled sample as a .csv file to study or edit in Excel / Google Sheets.">Download sample</button>
-    <button id="sim-toggle-button" class="header-button"  data-tooltip="Toggle simulation mode — sliders on every controllable input, downstream values recompute live.">Simulate</button>
-    <button id="reset-button"      class="header-button"  data-tooltip="Clear hidden streams / categories, simulation overrides, selection, and the search box.">Reset view</button>
+    <!-- Header action buttons. Classes are picked up by JS in 17-events.js
+         and wired to their handlers — see that file. -->
+    <button class="header-button create-map-trigger"   data-tooltip="Clear the canvas and start a fresh map from an empty 3×3 starter grid. Asks for confirmation if a map is loaded.">Create Map</button>
+    <button class="header-button edit-data-trigger"    data-tooltip="Open the form-based wizard pre-populated with the current map. Useful for bulk edits.">Edit Data</button>
+    <button class="header-button import-data-trigger"  data-tooltip="Import a CSV map file from your computer. Same as drag-dropping a .csv onto the window.">Import Data</button>
+    <button class="header-button export-data-trigger"  data-tooltip="Download the current map as a CSV (openable in Excel / Sheets, or re-importable here).">Export Data</button>
+    <button id="sim-toggle-button" class="header-button" data-tooltip="Toggle simulation mode — sliders on every controllable input, downstream values recompute live.">Simulate</button>
+    <button id="reset-button"      class="header-button" data-tooltip="Clear hidden streams / categories, simulation overrides, selection, and the search box.">Reset view</button>
   </header>
 
-  <!-- Hidden file picker. Clicking any .load-csv-trigger button triggers it. -->
+  <!-- Hidden file picker. Clicking any .import-data-trigger button triggers it. -->
   <input type="file" id="hidden-file-input" accept=".csv,text/csv" style="display: none;">
   <!-- Toast container — JS fills it via showLoadFeedback() -->
   <div id="load-feedback" class="load-feedback" style="display: none;"></div>
@@ -133,6 +131,16 @@
         <span>Node Categories</span>
       </div>
       <div id="category-filters"></div>
+    </div>
+
+    <!-- Nodes list — JS fills it in 13-sidebar.js. Click any row to select
+         that node on the map (also scrolls the map to centre on it). -->
+    <div class="sidebar-section" id="nodes-list-section">
+      <div class="sidebar-section-title">
+        <span>Nodes</span>
+        <span class="count" id="nodes-list-count"></span>
+      </div>
+      <div id="nodes-list"></div>
     </div>
 
     <!-- Edge legend (static) -->
@@ -218,22 +226,13 @@
         </div>
         <div class="drop-zone-title">Drop a CSV here to load a systems map</div>
         <div class="drop-zone-subtitle">
-          Or use the buttons below. The map is driven by a CSV defining streams,
-          stages, categories, nodes, and edges — build it from scratch in the
-          in-app wizard, or hand-edit in Excel / Google Sheets.
+          Drop a CSV here, or use the buttons below. The map is driven by a CSV
+          defining streams, stages, categories, nodes, and edges — build it
+          directly on the canvas, or hand-edit in Excel / Google Sheets.
         </div>
         <div class="drop-zone-buttons">
-          <button class="drop-zone-button primary load-csv-trigger">Choose CSV file</button>
-          <button class="drop-zone-button build-map-trigger">Build from scratch</button>
-          <button class="drop-zone-button load-sample-trigger">Load sample data</button>
-          <button class="drop-zone-button download-sample-trigger">Download sample CSV</button>
-        </div>
-        <div class="drop-zone-hint">
-          The bundled sample is a small neutral example (3 streams, 12 nodes,
-          12 edges) you can use as a placeholder while learning the schema.
-          Click <b>Build from scratch</b> for a guided wizard with dropdowns
-          and live validation, or <b>Download sample CSV</b> to study it in a
-          spreadsheet.
+          <button class="drop-zone-button primary import-data-trigger">Choose CSV file</button>
+          <button class="drop-zone-button create-map-trigger">Start from empty grid</button>
         </div>
       </div>
     </div>

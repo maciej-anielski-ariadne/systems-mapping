@@ -213,13 +213,18 @@ body.no-data .panel-pin {
   border-color: var(--accent-blue);
 }
 
-/* "Edit map" needs an existing map to edit; dim it while there's nothing
- * loaded so the user knows it isn't actionable yet. */
-body.no-data .edit-map-trigger {
+/* "Edit Data" needs an existing map to edit; dim it while there's nothing
+ * loaded so the user knows it isn't actionable yet. Same treatment for
+ * "Export Data". (body.no-data is set only when the drop-zone overlay is
+ * shown — the empty-grid boot path leaves data "loaded" with zero nodes,
+ * which is still editable.) */
+body.no-data .edit-data-trigger,
+body.no-data .export-data-trigger {
   opacity: 0.4;
   cursor: not-allowed;
 }
-body.no-data .edit-map-trigger:hover {
+body.no-data .edit-data-trigger:hover,
+body.no-data .export-data-trigger:hover {
   background: var(--bg-mid);
   color: var(--text-secondary);
   border-color: var(--border-subtle);

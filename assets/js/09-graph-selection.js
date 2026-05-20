@@ -83,6 +83,7 @@ function selectNode(nodeId) {
   state.highlightedEdgeIds = computeHighlightedEdges(nodeId);
   render();
   renderDetailPanel();
+  updateNodeListSelectionHighlight();
   saveUiStateToStorage();
 }
 
@@ -93,7 +94,21 @@ function deselectNode() {
   state.highlightedEdgeIds = new Set();
   render();
   renderDetailPanel();
+  updateNodeListSelectionHighlight();
   saveUiStateToStorage();
+}
+
+// Lightweight DOM patch: refresh the .selected class on the sidebar Nodes
+// list without re-rendering the entire sidebar. Called from select/deselect
+// so the highlight follows the current selection.
+function updateNodeListSelectionHighlight() {
+  const list = document.getElementById("nodes-list");
+  if (!list) return;
+  list.querySelectorAll(".node-list-row").forEach(row => {
+    const id = row.getAttribute("data-node-id");
+    if (id === state.selectedNodeId) row.classList.add("selected");
+    else                              row.classList.remove("selected");
+  });
 }
 
 // Select an edge (mutually exclusive with selectedNodeId). Used by the
