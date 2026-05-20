@@ -44,6 +44,8 @@ const state = {
   // the user is currently doing on-canvas (which empty cell is hovered, which
   // edge is being dragged, etc.).
   canvasEdit: {
+    editMode: false,             // when false, detail panel is view-only — edit fields are hidden
+                                 // behind the "Edit Node" toggle button. Persists across selections.
     hoverCell: null,             // { streamId, stageId } | null — empty cell under cursor
     editingNodeId: null,         // node currently in inline-label edit
     editingHeader: null,         // { kind: "stream"|"stage", id } when row/col label is being renamed

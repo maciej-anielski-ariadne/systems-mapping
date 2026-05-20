@@ -59,6 +59,8 @@ function renderDetailPanel() {
     otherNode: nodeById[edge.to],
   }));
 
+  const editMode = !!(state.canvasEdit && state.canvasEdit.editMode);
+
   let html = "";
 
   // ───── Tags row ──────────────────────────────────────────────────────
@@ -68,6 +70,17 @@ function renderDetailPanel() {
   }
   if (stream) html += '<span class="detail-tag">' + escapeHtml(stream.label) + '</span>';
   if (stage)  html += '<span class="detail-tag">' + escapeHtml(stage.label) + '</span>';
+  html += '</div>';
+
+  // ───── Mode toggle (View / Edit) ─────────────────────────────────────
+  // When OFF (default) the panel shows static read-only details — useful for
+  // tracing causal chains without accidentally mutating anything. Clicking
+  // "Edit Node" reveals the inline form fields below. The toggle persists
+  // across selections so a user editing many nodes only flips it once.
+  html += '<div class="detail-mode-toggle">';
+  html +=   '<button class="detail-mode-button' + (editMode ? " active" : "") + '" data-action="toggle-edit-mode">' +
+              (editMode ? "Done editing" : "Edit Node") +
+            '</button>';
   html += '</div>';
 
   // ───── Name + description ────────────────────────────────────────────
@@ -116,8 +129,10 @@ function renderDetailPanel() {
     html += '</div>';
   }
 
-  // ───── Inline edit fields ────────────────────────────────────────────
-  html += renderNodeEditBlock(node);
+  // ───── Inline edit fields (only when Edit Node is toggled on) ────────
+  if (editMode) {
+    html += renderNodeEditBlock(node);
+  }
 
   // ───── Direct inputs + impacts lists ────────────────────────────────
   html += renderEdgeList("Direct Inputs",  directInputs,  "from", "No direct inputs (root cause / exogenous resource)");
@@ -130,14 +145,29 @@ function renderDetailPanel() {
   html +=   '<div><span style="color: var(--edge-descendant);">●</span> ' + state.descendantSet.size + ' downstream impact node(s)</div>';
   html += '</div>';
 
-  // ───── Delete button ────────────────────────────────────────────────
-  html += '<div class="detail-actions" style="margin-top:18px;">';
-  html +=   '<button class="detail-button detail-delete-btn" data-action="delete-node">Delete node</button>';
-  html += '</div>';
+  // ───── Delete button (only in edit mode) ────────────────────────────
+  if (editMode) {
+    html += '<div class="detail-actions" style="margin-top:18px;">';
+    html +=   '<button class="detail-button detail-delete-btn" data-action="delete-node">Delete node</button>';
+    html += '</div>';
+  }
 
   contentState.innerHTML = html;
 
+  // "Edit Node" toggle — always wired, regardless of which mode we're in.
+  const editToggle = contentState.querySelector("[data-action='toggle-edit-mode']");
+  if (editToggle) {
+    editToggle.addEventListener("click", () => {
+      state.canvasEdit.editMode = !state.canvasEdit.editMode;
+      // Toggling off also closes the inline category manager so re-opening
+      // the panel later doesn't reveal it unexpectedly.
+      if (!state.canvasEdit.editMode) state.canvasEdit.categoryManagerOpen = false;
+      renderDetailPanel();
+    });
+  }
+
   // Wire all editable behaviour, including the mini category manager.
+  // No-op when not in edit mode (the inputs aren't in the DOM).
   wireNodeEditHandlers(node, contentState);
 
   // Clicking an edge item navigates to that node.

@@ -114,6 +114,42 @@
   color: var(--text-secondary);
 }
 
+/* === View / Edit toggle ===
+ * Small button shown just below the tags row when a node is selected.
+ * Off = read-only details panel. On = inline edit fields appear. */
+.detail-mode-toggle {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+.detail-mode-button {
+  background: var(--bg-mid);
+  color: var(--text-secondary);
+  border-radius: 4px;
+  padding: 5px 11px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.detail-mode-button:hover {
+  background: var(--bg-light);
+  color: var(--text-primary);
+}
+
+.detail-mode-button.active {
+  background: var(--accent-blue);
+  color: var(--bg-deepest);
+}
+
+.detail-mode-button.active:hover {
+  background: #93c5fd;
+}
+
 /* === Tags row at the top of a selected node's details === */
 .detail-tags {
   display: flex;

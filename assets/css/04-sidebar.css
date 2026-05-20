@@ -145,6 +145,83 @@
   color: var(--text-tertiary);
 }
 
+/* === Nodes list (one row per node, grouped by stream) === */
+.node-list-group {
+  margin-bottom: 10px;
+}
+
+.node-list-group:last-child {
+  margin-bottom: 0;
+}
+
+.node-list-group-header {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-tertiary);
+  padding: 4px 8px 4px 12px;
+  margin-top: 4px;
+  border-left: 2px solid var(--stream-color, var(--border-strong));
+}
+
+.node-list-row {
+  display: flex;
+  align-items: center;
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.12s;
+  user-select: none;
+  margin-bottom: 1px;
+}
+
+.node-list-row:hover {
+  background: var(--bg-mid);
+}
+
+.node-list-row.selected {
+  background: var(--bg-light);
+}
+
+.node-list-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+.node-list-label {
+  flex: 1;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-list-row.selected .node-list-label {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+/* Surface placeholder node labels so they're easy to spot and rename */
+.node-list-row.placeholder .node-list-label {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+/* Generic empty-state text used by the Nodes section when there are no
+ * nodes yet. Same neutral treatment regardless of which section uses it. */
+.sidebar-empty {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-tertiary);
+  padding: 6px 4px;
+  font-style: italic;
+}
+
 /* === Legend rows (one per arrow type / node-border type) === */
 .legend-row {
   display: flex;
