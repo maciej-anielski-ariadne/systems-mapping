@@ -497,53 +497,48 @@
   margin: 4px 2px 16px 2px;
 }
 
-/* ───── Floating cell editor ─────────────────────────────────────────────
- * Opens on focus of any text / number cell. Big readable textarea so long
- * descriptions are easy to read and edit. Keeps the underlying <input> as
- * the source of truth — the editor just mirrors it back and forth.
- * Lives on document.body (not inside the overlay) so it can spill outside
- * the wizard card if the cell is near an edge. */
+/* ───── Anchored cell editor ─────────────────────────────────────────────
+ * Opens only when a cell's value overflows its visible width, anchored
+ * flush below the cell so it looks like the cell grew downward. JS sets
+ * width / left / top inline (see positionCellEditor in 16c). Lives on
+ * document.body so it can float above neighbouring rows. */
 .builder-cell-editor {
   position: fixed;
   z-index: 300;
-  width: 480px;
   max-width: calc(100vw - 40px);
   background: var(--bg-deep);
   border: 1px solid var(--accent-blue);
-  border-radius: 6px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
-  padding: 10px 12px 12px 12px;
+  border-top: none;                    /* shared edge with the cell above */
+  border-radius: 0 0 6px 6px;          /* bottom corners only */
+  box-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.55);
+  padding: 4px 8px 8px 8px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
+  box-sizing: border-box;
 }
 
 .builder-cell-editor-title {
   font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.06em;
+  font-size: 9px;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--text-tertiary);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.builder-cell-editor-title b {
-  color: var(--text-secondary);
+  opacity: 0.75;
+  margin-bottom: 2px;
 }
 
 .builder-cell-editor-textarea {
   width: 100%;
-  min-height: 130px;
+  min-height: 80px;
   max-height: 360px;
   background: var(--bg-mid);
   color: var(--text-primary);
   border: 1px solid var(--border-subtle);
   border-radius: 4px;
-  padding: 10px 12px;
+  padding: 8px 10px;
   font-family: var(--font-ui);
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.5;
   outline: none;
   resize: vertical;
@@ -554,19 +549,10 @@
   border-color: var(--accent-blue);
 }
 
-.builder-cell-editor-hint {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--text-tertiary);
-  letter-spacing: 0.04em;
-}
-
-.builder-cell-editor-hint kbd {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  background: var(--bg-light);
-  border: 1px solid var(--border-subtle);
-  border-radius: 3px;
-  padding: 1px 5px;
-  color: var(--text-secondary);
+/* When the editor is open, fuse the cell input into it: drop the input's
+ * bottom border and bottom corner radii so the two shapes read as one. */
+.builder-table input.editor-open {
+  border-bottom-color: transparent;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
 }
