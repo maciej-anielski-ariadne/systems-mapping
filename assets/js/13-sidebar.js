@@ -35,8 +35,9 @@ function renderSidebar() {
   document.querySelectorAll(".sidebar-add-btn").forEach(btn => {
     btn.addEventListener("click", () => {
       const kind = btn.getAttribute("data-add");
-      if (kind === "stream" && typeof addStream === "function") addStream();
-      if (kind === "stage"  && typeof addStage  === "function") addStage();
+      if (kind === "stream"   && typeof addStream   === "function") addStream();
+      if (kind === "stage"    && typeof addStage    === "function") addStage();
+      if (kind === "category" && typeof addCategory === "function") addCategory();
     });
   });
 }
@@ -138,28 +139,61 @@ function renderStreamsList() {
   wireRowHandlers(container, "stream");
 }
 
-// ───── Categories (filter-only, no edit-from-sidebar yet) ──────────────
+// ───── Categories ──────────────────────────────────────────────────────
+// Same edit pattern as streams: compact row toggles the filter on click;
+// pencil expands an inline form with label, fill colour, text colour, and a
+// delete button (cascade with confirm + undo). Drag-to-reorder via the same
+// handle. Categories are stored in an insertion-order-preserving object —
+// reorderCategories rebuilds it to commit a new order.
 function renderCategoriesList() {
   const container = document.getElementById("category-filters");
+  const countEl   = document.getElementById("categories-count");
   if (!container) return;
-  let html = "";
-  for (const [catId, cat] of Object.entries(CATEGORIES)) {
-    const isHidden = state.hiddenCategories.has(catId);
-    const count = categoryNodeCount[catId] || 0;
-    if (count === 0) continue;
-    const tip = (isHidden ? "Click to show " : "Click to hide ") + cat.label + " nodes — " + count + " on the map.";
-    html += '<div class="filter-row ' + (isHidden ? "disabled" : "") + '" data-cat-id="' + escapeHtml(catId) + '" data-tooltip="' + escapeHtml(tip) + '">';
-    html +=   '<div class="filter-swatch" style="background: ' + cat.color + ';"></div>';
-    html +=   '<div class="filter-label">' + escapeHtml(cat.label) + '</div>';
-    html +=   '<div class="filter-count">' + count + '</div>';
-    html += '</div>';
+  const ids = Object.keys(CATEGORIES);
+  if (countEl) countEl.textContent = ids.length;
+
+  if (ids.length === 0) {
+    container.innerHTML = '<div class="sidebar-empty">No categories yet. Click "+ Add category" to create one.</div>';
+    return;
   }
+
+  let html = "";
+  for (let i = 0; i < ids.length; i++) {
+    const catId = ids[i];
+    const cat = CATEGORIES[catId];
+    const isHidden   = state.hiddenCategories.has(catId);
+    const isExpanded = isExpandedSidebarItem("category", catId);
+    const count = categoryNodeCount[catId] || 0;
+
+    if (isExpanded) {
+      html += '<div class="sidebar-edit-row expanded" data-kind="category" data-id="' + escapeHtml(catId) + '" data-index="' + i + '" draggable="true">';
+      html +=   '<div class="sidebar-edit-row-top">';
+      html +=     '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
+      html +=     '<input type="color" class="sidebar-edit-color" data-field="color" value="' + escapeHtml(cat.color || "#94a3b8") + '" title="Fill colour">';
+      html +=     '<input type="color" class="sidebar-edit-color" data-field="textColor" value="' + escapeHtml(cat.textColor || "#ffffff") + '" title="Label text colour">';
+      html +=     '<input type="text" class="sidebar-edit-input" data-field="label" value="' + escapeHtml(cat.label) + '" aria-label="Category label">';
+      html +=     '<button class="sidebar-edit-collapse" data-action="collapse" title="Close edit">×</button>';
+      html +=   '</div>';
+      html +=   '<div class="sidebar-edit-row-bottom">';
+      html +=     '<span class="sidebar-edit-meta">' + count + ' node' + (count === 1 ? '' : 's') + '</span>';
+      html +=     '<button class="sidebar-edit-delete" data-action="delete">Delete category</button>';
+      html +=   '</div>';
+      html += '</div>';
+    } else {
+      const tip = (isHidden ? "Click to show " : "Click to hide ") + cat.label + " — " + count + " node" + (count === 1 ? "" : "s") + " on the map.";
+      html += '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="category" data-id="' + escapeHtml(catId) + '" data-index="' + i + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
+      html +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
+      html +=   '<div class="filter-swatch" style="background: ' + cat.color + ';" data-action="toggle-filter"></div>';
+      html +=   '<div class="filter-label" data-action="toggle-filter">' + escapeHtml(cat.label) + '</div>';
+      html +=   '<div class="filter-count">' + count + '</div>';
+      html +=   '<button class="sidebar-edit-pencil" data-action="expand" title="Edit category">✎</button>';
+      html += '</div>';
+    }
+  }
+  html += '<div class="sidebar-drop-end" data-kind="category" data-target-index="' + ids.length + '"></div>';
   container.innerHTML = html;
-  container.querySelectorAll(".filter-row").forEach(row => {
-    row.addEventListener("click", () => {
-      toggleCategory(row.getAttribute("data-cat-id"));
-    });
-  });
+
+  wireRowHandlers(container, "category");
 }
 
 // ───── Per-row wiring (expand / collapse / edit / delete / drag) ───────
@@ -196,24 +230,27 @@ function wireRowHandlers(container, kind) {
       });
     });
 
-    // Delete stream / stage (cascade with confirm + undo).
+    // Delete (cascade with confirm + undo for all three kinds).
     const delBtn = row.querySelector("[data-action='delete']");
     if (delBtn) {
       delBtn.addEventListener("click", event => {
         event.stopPropagation();
-        if (kind === "stream" && typeof deleteStreamWithCascade === "function") deleteStreamWithCascade(id);
-        if (kind === "stage"  && typeof deleteStageWithCascade  === "function") deleteStageWithCascade(id);
+        if (kind === "stream"   && typeof deleteStreamWithCascade   === "function") deleteStreamWithCascade(id);
+        if (kind === "stage"    && typeof deleteStageWithCascade    === "function") deleteStageWithCascade(id);
+        if (kind === "category" && typeof deleteCategoryWithCascade === "function") deleteCategoryWithCascade(id);
       });
     }
 
-    // Filter toggle (compact streams only — clicking the row body or its
-    // swatch / label toggles hide/show).
-    if (kind === "stream" && !row.classList.contains("expanded")) {
+    // Filter toggle — clicking the compact row body / swatch / label
+    // hides or shows that stream / category on the map. Stages don't have
+    // a filter behaviour.
+    if ((kind === "stream" || kind === "category") && !row.classList.contains("expanded")) {
       row.addEventListener("click", event => {
         // Pencil and drag handle have their own handlers — let them bubble
         // out of this block.
         if (event.target.closest(".sidebar-edit-pencil, .sidebar-edit-drag")) return;
-        toggleStream(id);
+        if (kind === "stream")   toggleStream(id);
+        if (kind === "category") toggleCategory(id);
       });
     }
   });
@@ -262,8 +299,9 @@ function wireRowHandlers(container, kind) {
       } else {
         targetIndex = parseInt(target.getAttribute("data-index"), 10);
       }
-      if (kind === "stream" && typeof reorderStreams === "function") reorderStreams(draggedIndex, targetIndex);
-      if (kind === "stage"  && typeof reorderStages  === "function") reorderStages(draggedIndex, targetIndex);
+      if (kind === "stream"   && typeof reorderStreams    === "function") reorderStreams(draggedIndex, targetIndex);
+      if (kind === "stage"    && typeof reorderStages     === "function") reorderStages(draggedIndex, targetIndex);
+      if (kind === "category" && typeof reorderCategories === "function") reorderCategories(draggedIndex, targetIndex);
     });
   });
 }
@@ -303,6 +341,20 @@ function applySidebarFieldEdit(kind, id, field, input) {
       if (inArray) inArray.label = newLabel;
       if (typeof applyCanvasMutation === "function") applyCanvasMutation({ skipDetailRender: true, skipSidebarRender: true });
     }
+  } else if (kind === "category") {
+    const cat = CATEGORIES[id];
+    if (!cat) return;
+    if (field === "label") {
+      const newLabel = String(input.value || "").trim() || cat.label;
+      cat.label = newLabel;
+    } else if (field === "color") {
+      cat.color = input.value;
+    } else if (field === "textColor") {
+      cat.textColor = input.value;
+    }
+    // Re-render the detail panel here too — the Category dropdown over there
+    // shows the updated label / colour swatch.
+    if (typeof applyCanvasMutation === "function") applyCanvasMutation({ skipDetailRender: true, skipSidebarRender: true });
   }
 }
 

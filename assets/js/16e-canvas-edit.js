@@ -46,6 +46,7 @@ function initCanvasEdit() {
     vizSvg.addEventListener("mouseleave", () => {
       if (state.canvasEdit && state.canvasEdit.hoverCell) {
         state.canvasEdit.hoverCell = null;
+        layout = computeLayout();
         render();
       }
     });
@@ -206,6 +207,11 @@ function handleSvgMouseMove(event) {
                (!prev && !cell);
   if (same) return;
   state.canvasEdit.hoverCell = cell;
+  // Recompute layout — entering or leaving a partially-filled cell may add
+  // or remove a reserved "+ add another" slot in the row's height. Cheap:
+  // computeLayout is O(NODES × STAGES) and only runs on cell-boundary
+  // crossings.
+  layout = computeLayout();
   render();
 }
 
@@ -250,10 +256,16 @@ function cellAtLayoutPoint(x, y) {
   }
   if (!foundStage) return null;
 
-  // Only show ghost on EMPTY cells — if there's already a node here, the
-  // user should drag-to-edge or click the node itself.
+  // If the cursor is over one of the cell's existing nodes, let that node's
+  // own click handler win (select / drag-edge). Otherwise the cell is a
+  // valid drop target — either empty (new node) or partially-filled (stack
+  // another node below the existing ones).
   for (const node of NODES) {
-    if (node.stream === foundStream.id && node.stage === foundStage.id) return null;
+    if (node.stream !== foundStream.id || node.stage !== foundStage.id) continue;
+    const pos = layout.positions[node.id];
+    if (pos && x >= pos.x && x < pos.x + pos.width && y >= pos.y && y < pos.y + pos.height) {
+      return null;
+    }
   }
   return { streamId: foundStream.id, stageId: foundStage.id };
 }
@@ -557,6 +569,21 @@ function restoreFromUndo(entry) {
     for (const n of entry.nodes) NODES.push(Object.assign({}, n));
     for (const e of entry.edges) EDGES.push({ from: e.from, to: e.to, effect: e.effect, elasticity: e.elasticity, description: e.description });
     applyCanvasMutation();
+  } else if (entry.kind === "category") {
+    // Re-insert the deleted category at its original index by rebuilding
+    // CATEGORIES in the right order. Insertion order is the only "index"
+    // categories have.
+    const ids = Object.keys(CATEGORIES);
+    const idx = Math.min(Math.max(entry.catIndex, 0), ids.length);
+    ids.splice(idx, 0, entry.catId);
+    const rebuilt = {};
+    for (const id of ids) {
+      rebuilt[id] = (id === entry.catId) ? Object.assign({}, entry.cat) : CATEGORIES[id];
+    }
+    CATEGORIES = rebuilt;
+    for (const n of entry.nodes) NODES.push(Object.assign({}, n));
+    for (const e of entry.edges) EDGES.push({ from: e.from, to: e.to, effect: e.effect, elasticity: e.elasticity, description: e.description });
+    applyCanvasMutation();
   }
   state.undoStack = [];
 }
@@ -721,6 +748,78 @@ function reorderStages(fromIndex, targetIndex) {
   STAGES.splice(fromIndex, 1);
   const insertAt = targetIndex > fromIndex ? targetIndex - 1 : targetIndex;
   STAGES.splice(insertAt, 0, item);
+  applyCanvasMutation();
+}
+
+// ───── Categories (sidebar-driven) ────────────────────────────────────────
+// Categories are stored in a plain object — Object.keys() preserves insertion
+// order, so reordering means rebuilding the object in the new order.
+function addCategory() {
+  const counter = Object.keys(CATEGORIES).length + 1;
+  let id = "category_" + counter;
+  let n = counter;
+  while (CATEGORIES[id]) { n++; id = "category_" + n; }
+  const palette = (typeof STREAM_COLOR_PALETTE !== "undefined" && STREAM_COLOR_PALETTE.length)
+    ? STREAM_COLOR_PALETTE
+    : ["#94a3b8"];
+  const color = palette[Object.keys(CATEGORIES).length % palette.length];
+  CATEGORIES[id] = {
+    label: "Category " + counter,
+    color: color,
+    textColor: "#ffffff",
+  };
+  state.canvasEdit.editingSidebarItem = { kind: "category", id: id };
+  applyCanvasMutation();
+  focusSidebarEditLabel("category", id);
+}
+
+function deleteCategoryWithCascade(catId) {
+  const cat = CATEGORIES[catId];
+  if (!cat) return;
+  const nodesToDelete = NODES.filter(n => n.category === catId);
+  const nodeIdSet = new Set(nodesToDelete.map(n => n.id));
+  const edgesToDelete = EDGES.filter(e => nodeIdSet.has(e.from) || nodeIdSet.has(e.to));
+  const msg = nodesToDelete.length === 0
+    ? 'Delete category "' + cat.label + '"?'
+    : 'Delete category "' + cat.label + '"?\n\n' + nodesToDelete.length + ' node(s) and ' + edgesToDelete.length + ' edge(s) will also be removed.';
+  if (!confirm(msg)) return;
+
+  const ids = Object.keys(CATEGORIES);
+  const snapshot = {
+    kind: "category",
+    catId: catId,
+    cat: Object.assign({}, cat),
+    catIndex: ids.indexOf(catId),
+    nodes: nodesToDelete.map(n => Object.assign({}, n)),
+    edges: edgesToDelete.map(e => ({ from: e.from, to: e.to, effect: e.effect, elasticity: e.elasticity, description: e.description })),
+  };
+  delete CATEGORIES[catId];
+  NODES = NODES.filter(n => !nodeIdSet.has(n.id));
+  EDGES = EDGES.filter(e => !nodeIdSet.has(e.from) && !nodeIdSet.has(e.to));
+  state.hiddenCategories.delete(catId);
+  if (state.selectedNodeId && nodeIdSet.has(state.selectedNodeId)) {
+    state.selectedNodeId = null;
+    state.ancestorSet = new Set();
+    state.descendantSet = new Set();
+    state.highlightedEdgeIds = new Set();
+  }
+  state.canvasEdit.editingSidebarItem = null;
+  pushUndo(snapshot);
+  applyCanvasMutation();
+  showUndoToast("Category deleted", () => restoreFromUndo(snapshot));
+}
+
+function reorderCategories(fromIndex, targetIndex) {
+  if (fromIndex === targetIndex || fromIndex === targetIndex - 1) return;
+  const ids = Object.keys(CATEGORIES);
+  if (fromIndex < 0 || fromIndex >= ids.length) return;
+  const movedId = ids[fromIndex];
+  ids.splice(fromIndex, 1);
+  const insertAt = targetIndex > fromIndex ? targetIndex - 1 : targetIndex;
+  ids.splice(insertAt, 0, movedId);
+  const reordered = {};
+  for (const id of ids) reordered[id] = CATEGORIES[id];
+  CATEGORIES = reordered;
   applyCanvasMutation();
 }
 

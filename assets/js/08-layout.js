@@ -23,6 +23,12 @@ function computeLayout() {
   // ───── Height of each stream row (max nodes in any of its cells) ──────
   // Hidden streams get a compact COLLAPSED_ROW_HEIGHT instead — their row
   // label stays visible as a clickable stub so the user can re-expand.
+  //
+  // While the user is hovering a cell whose contents are already at the
+  // row's max-slot count, we reserve one extra slot so the ghost preview
+  // ("+ add another") has somewhere to sit without overlapping the row
+  // below. The slot disappears the moment the hover leaves.
+  const hoverCell = (state.canvasEdit && state.canvasEdit.hoverCell) || null;
   const rowHeights = {};
   for (const stream of STREAMS) {
     if (state.hiddenStreams.has(stream.id)) {
@@ -33,6 +39,10 @@ function computeLayout() {
     for (const stage of STAGES) {
       const cellNodes = cells[stream.id + ":" + stage.id] || [];
       if (cellNodes.length > maxNodesInCell) maxNodesInCell = cellNodes.length;
+    }
+    if (hoverCell && hoverCell.streamId === stream.id) {
+      const inHoverCell = (cells[stream.id + ":" + hoverCell.stageId] || []).length;
+      if (inHoverCell + 1 > maxNodesInCell) maxNodesInCell = inHoverCell + 1;
     }
     // Minimum 1 unit tall even if every cell is empty, so the row header
     // still has somewhere to sit.

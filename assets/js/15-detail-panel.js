@@ -207,15 +207,7 @@ function renderNodeEditBlock(node) {
     selectInput("stage", STAGES.map(s => ({ value: s.id, label: s.label })), node.stage));
 
   const catOptions = Object.keys(CATEGORIES).map(id => ({ value: id, label: CATEGORIES[id].label }));
-  html += editRow("Category",
-    selectInput("category", catOptions, node.category) +
-    '<button class="detail-edit-link" data-action="toggle-category-manager">' +
-      (state.canvasEdit && state.canvasEdit.categoryManagerOpen ? "Hide categories" : "Manage categories") +
-    '</button>');
-
-  if (state.canvasEdit && state.canvasEdit.categoryManagerOpen) {
-    html += renderCategoryManager();
-  }
+  html += editRow("Category", selectInput("category", catOptions, node.category));
 
   html += editRow("Baseline",
     '<input type="number" step="any" class="detail-edit-input detail-edit-number" data-field="baseline" value="' + (node.baseline !== undefined && node.baseline !== null ? node.baseline : "") + '" placeholder="(blank = no value)">');
@@ -245,30 +237,6 @@ function selectInput(field, options, currentValue) {
     html += '<option value="' + escapeHtml(opt.value) + '"' + (isSelected ? " selected" : "") + '>' + escapeHtml(opt.label) + '</option>';
   }
   html += '</select>';
-  return html;
-}
-
-// ───── Mini category manager ──────────────────────────────────────────
-function renderCategoryManager() {
-  let html = '<div class="detail-category-manager">';
-  html +=   '<div class="detail-category-manager-title">Categories</div>';
-  const ids = Object.keys(CATEGORIES);
-  if (ids.length === 0) {
-    html += '<div class="detail-category-manager-empty">No categories yet. Add one below.</div>';
-  } else {
-    for (const id of ids) {
-      const cat = CATEGORIES[id];
-      const count = categoryNodeCount[id] || 0;
-      html += '<div class="detail-category-row" data-cat-id="' + escapeHtml(id) + '">';
-      html +=   '<input type="text" class="detail-edit-input detail-category-label" data-cat-field="label" value="' + escapeHtml(cat.label) + '">';
-      html +=   '<input type="color" class="detail-category-color" data-cat-field="color" value="' + escapeHtml(cat.color) + '" title="Fill colour">';
-      html +=   '<input type="color" class="detail-category-color" data-cat-field="textColor" value="' + escapeHtml(cat.textColor) + '" title="Label text colour">';
-      html +=   '<button class="detail-category-delete' + (count > 0 ? " disabled" : "") + '" data-cat-action="delete"' + (count > 0 ? ' title="Used by ' + count + ' node(s) — reassign first" disabled' : ' title="Delete category"') + '>×</button>';
-      html += '</div>';
-    }
-  }
-  html += '<button class="detail-edit-link" data-cat-action="add">+ Add category</button>';
-  html += '</div>';
   return html;
 }
 
@@ -356,7 +324,6 @@ function wireSharedHandlers(node, contentState) {
     editToggle.addEventListener("click", () => {
       state.canvasEdit.editMode = !state.canvasEdit.editMode;
       if (!state.canvasEdit.editMode) {
-        state.canvasEdit.categoryManagerOpen = false;
         state.canvasEdit.addingEdgeFromNodeId = null;
       }
       renderDetailPanel();
@@ -402,44 +369,6 @@ function wireEditModeHandlers(node, contentState) {
       applyNodeFieldEdit(node, field, input);
     });
   });
-
-  // "Manage categories" toggle.
-  const toggleBtn = contentState.querySelector("[data-action='toggle-category-manager']");
-  if (toggleBtn) {
-    toggleBtn.addEventListener("click", event => {
-      event.preventDefault();
-      state.canvasEdit.categoryManagerOpen = !state.canvasEdit.categoryManagerOpen;
-      renderDetailPanel();
-    });
-  }
-
-  // Category manager rows.
-  contentState.querySelectorAll(".detail-category-row").forEach(row => {
-    const catId = row.getAttribute("data-cat-id");
-    row.querySelectorAll("[data-cat-field]").forEach(input => {
-      const catField = input.getAttribute("data-cat-field");
-      input.addEventListener("change", () => {
-        applyCategoryFieldEdit(catId, catField, input);
-      });
-    });
-    const delBtn = row.querySelector("[data-cat-action='delete']");
-    if (delBtn) {
-      delBtn.addEventListener("click", event => {
-        event.preventDefault();
-        if (delBtn.hasAttribute("disabled")) return;
-        delete CATEGORIES[catId];
-        if (typeof applyCanvasMutation === "function") applyCanvasMutation();
-      });
-    }
-  });
-
-  const addCatBtn = contentState.querySelector("[data-cat-action='add']");
-  if (addCatBtn) {
-    addCatBtn.addEventListener("click", event => {
-      event.preventDefault();
-      addNewCategory();
-    });
-  }
 
   // Outgoing-edges row edits + delete.
   contentState.querySelectorAll(".outgoing-edge-row [data-edge-field]").forEach(input => {
@@ -562,29 +491,6 @@ function applyNodeFieldEdit(node, field, input) {
   }
 
   if (typeof applyCanvasMutation === "function") applyCanvasMutation({ skipDetailRender: skipDetailRender });
-}
-
-function applyCategoryFieldEdit(catId, field, input) {
-  const cat = CATEGORIES[catId];
-  if (!cat) return;
-  if (field === "label") {
-    cat.label = String(input.value).trim() || cat.label;
-  } else if (field === "color" || field === "textColor") {
-    cat[field] = input.value;
-  }
-  if (typeof applyCanvasMutation === "function") applyCanvasMutation();
-}
-
-function addNewCategory() {
-  let n = Object.keys(CATEGORIES).length + 1;
-  let id = "category_" + n;
-  while (CATEGORIES[id]) { n++; id = "category_" + n; }
-  CATEGORIES[id] = {
-    label: "Category " + n,
-    color: "#a3a3a3",
-    textColor: "#1c1917",
-  };
-  if (typeof applyCanvasMutation === "function") applyCanvasMutation();
 }
 
 function applyEdgeFieldEdit(edgeId, field, input) {

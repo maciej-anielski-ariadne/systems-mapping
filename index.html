@@ -139,12 +139,17 @@
       <button class="sidebar-add-btn" data-add="stream">+ Add stream</button>
     </div>
 
-    <!-- Category filters -->
+    <!-- Category filters + editing — JS fills the list in 13-sidebar.js.
+         Categories follow the same edit pattern as streams: per-row pencil
+         expands to an inline form (label / fill colour / text colour /
+         delete). Click the compact row to toggle visibility. -->
     <div class="sidebar-section" id="category-filters-section">
       <div class="sidebar-section-title">
-        <span>Node Categories</span>
+        <span>Categories</span>
+        <span class="count" id="categories-count"></span>
       </div>
       <div id="category-filters"></div>
+      <button class="sidebar-add-btn" data-add="category">+ Add category</button>
     </div>
 
     <!-- Edge legend (static) -->
@@ -202,7 +207,7 @@
 
     <!-- Small status pill at the bottom-left of the map -->
     <div class="status-bar" id="status-bar">
-      <b>Click empty cell</b> add node &nbsp;·&nbsp;
+      <b>Click cell</b> add node (stack below to add more) &nbsp;·&nbsp;
       <b>Drag node edge</b> draw arrow &nbsp;·&nbsp;
       <b>Click edge</b> edit &nbsp;·&nbsp;
       <b>Del</b> remove node

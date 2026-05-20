@@ -101,14 +101,20 @@ function render() {
 
   // ───── Ghost cell (hover preview for adding a new node) ───────────────
   // Drawn here so it sits ABOVE background stripes but BELOW row labels and
-  // nodes. The ghost is shown only when the user is hovering an empty cell.
+  // nodes. Shown over any cell whose existing-node rects don't already cover
+  // the cursor position — for partially-filled cells the ghost sits in the
+  // next stack slot. computeLayout reserves an extra slot of row height when
+  // the hovered cell is at the row's max-slot count, so the ghost always
+  // has somewhere to land without clipping into the row below.
   const hoverCell = state.canvasEdit && state.canvasEdit.hoverCell;
   if (hoverCell && layout.rowY[hoverCell.streamId] !== undefined && layout.colX[hoverCell.stageId] !== undefined) {
+    const existingInCell = NODES.reduce((acc, n) => (n.stream === hoverCell.streamId && n.stage === hoverCell.stageId) ? acc + 1 : acc, 0);
     const ghostX = layout.colX[hoverCell.stageId];
-    const ghostY = layout.rowY[hoverCell.streamId] + ROW_PADDING;
+    const ghostY = layout.rowY[hoverCell.streamId] + ROW_PADDING + existingInCell * (NODE_HEIGHT + NODE_GAP_Y);
+    const ghostLabel = existingInCell > 0 ? "+ add another" : "+ add node";
     content += '<g class="ghost-cell" data-stream-id="' + escapeHtml(hoverCell.streamId) + '" data-stage-id="' + escapeHtml(hoverCell.stageId) + '">';
     content +=   '<rect x="' + ghostX + '" y="' + ghostY + '" width="' + NODE_WIDTH + '" height="' + NODE_HEIGHT + '" rx="5"></rect>';
-    content +=   '<text x="' + (ghostX + NODE_WIDTH / 2) + '" y="' + (ghostY + NODE_HEIGHT / 2) + '" text-anchor="middle" dominant-baseline="central">+ add node</text>';
+    content +=   '<text x="' + (ghostX + NODE_WIDTH / 2) + '" y="' + (ghostY + NODE_HEIGHT / 2) + '" text-anchor="middle" dominant-baseline="central">' + ghostLabel + '</text>';
     content += '</g>';
   }
 
