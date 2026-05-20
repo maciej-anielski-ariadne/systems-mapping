@@ -38,6 +38,24 @@ const state = {
   searchMatches: [],
   searchFocusIndex: 0,
 
+  // Canvas direct-edit state. All transient — none of this is persisted.
+  // See 16e-canvas-edit.js. The single source of truth for the map is still
+  // NODES/EDGES/STREAMS/STAGES/CATEGORIES; this namespace just tracks what
+  // the user is currently doing on-canvas (which empty cell is hovered, which
+  // edge is being dragged, etc.).
+  canvasEdit: {
+    hoverCell: null,             // { streamId, stageId } | null — empty cell under cursor
+    editingNodeId: null,         // node currently in inline-label edit
+    editingHeader: null,         // { kind: "stream"|"stage", id } when row/col label is being renamed
+    draftEdge: null,             // { fromNodeId, currentX, currentY } during edge drag
+    pendingEdgeDrop: null,       // { fromNodeId, toNodeId, clientX, clientY } awaiting effect pick
+    selectedEdgeId: null,        // selected edge (mutually exclusive with selectedNodeId)
+    categoryManagerOpen: false,  // mini-manager expanded in detail panel?
+    toast: null,                 // { message, undoFn, timerId } | null
+  },
+  // Single-level delete-undo stack. Entry: { kind: "node", node, incidentEdges } | { kind: "edge", edge }.
+  undoStack: [],
+
   // Working copy used by the Build / Edit wizard (16a-builder-panel.js).
   // While the wizard is open the user mutates THIS rather than the live
   // STREAMS/STAGES/CATEGORIES/NODES/EDGES, so cancelling discards changes.

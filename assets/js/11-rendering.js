@@ -16,16 +16,25 @@
 // Single grabbed reference to the SVG element we draw into.
 const svg = document.getElementById("viz-svg");
 
-// One-time listener: clicking the empty SVG background deselects the
-// currently-selected node. Registered ONCE here so it does not accumulate
+// One-time listener: clicking the empty SVG background deselects whatever
+// is selected (node OR edge). Registered ONCE here so it does not accumulate
 // each time render() replaces svg.innerHTML.
-svg.addEventListener("click", () => {
-  if (state.selectedNodeId) deselectNode();
+svg.addEventListener("click", event => {
+  // Ignore clicks on canvas-edit affordances — they manage their own state.
+  if (event.target.closest && event.target.closest(".node-group, .row-label-group, .edge-handle, .add-row-btn, .add-col-btn, .ghost-cell, .stream-swatch, .canvas-edit-foreign, .edge-hit, .edge-path")) {
+    return;
+  }
+  if (state.selectedNodeId || (state.canvasEdit && state.canvasEdit.selectedEdgeId)) {
+    deselectAll();
+  }
 });
 
 function render() {
-  // When no CSV is loaded, blank the SVG completely.
-  if (!state.dataLoaded || NODES.length === 0) {
+  // When no CSV is loaded at all, blank the SVG. The empty-state grid path
+  // boots via bootEmptyStateGrid() which sets state.dataLoaded = true and
+  // seeds 3 streams x 3 stages with no nodes — so an empty NODES array is
+  // a valid render state and we proceed below.
+  if (!state.dataLoaded) {
     svg.setAttribute("width", 0);
     svg.setAttribute("height", 0);
     svg.innerHTML = "";
@@ -81,13 +90,37 @@ function render() {
   // ───── Column headers + vertical dividers ─────────────────────────────
   for (const stage of STAGES) {
     const x = layout.colX[stage.id] + NODE_WIDTH / 2;
-    content += '<text class="col-header-text" x="' + x + '" y="' + (SVG_PADDING_TOP + 24) + '" text-anchor="middle">' + stage.label + '</text>';
+    content += '<text class="col-header-text" data-stage-id="' + escapeHtml(stage.id) + '" x="' + x + '" y="' + (SVG_PADDING_TOP + 24) + '" text-anchor="middle">' + escapeHtml(stage.label) + '</text>';
 
     // Dotted divider between columns (skip after the last one)
     if (stage.id !== STAGES[STAGES.length - 1].id) {
       const dividerX = layout.colX[stage.id] + NODE_WIDTH + COL_GAP / 2;
       content += '<line class="col-divider" x1="' + dividerX + '" y1="' + (SVG_PADDING_TOP + COL_HEADER_HEIGHT) + '" x2="' + dividerX + '" y2="' + layout.totalHeight + '"></line>';
     }
+  }
+
+  // '+' button after the last stage — clicking it appends a new stage.
+  if (STAGES.length > 0) {
+    const lastStage = STAGES[STAGES.length - 1];
+    const addColX = layout.colX[lastStage.id] + NODE_WIDTH + COL_GAP / 2;
+    const addColY = SVG_PADDING_TOP + 24;
+    content += '<g class="add-col-btn" data-tooltip="Add a stage (column)">';
+    content +=   '<circle cx="' + addColX + '" cy="' + addColY + '" r="11"></circle>';
+    content +=   '<text x="' + addColX + '" y="' + addColY + '" text-anchor="middle" dominant-baseline="central">+</text>';
+    content += '</g>';
+  }
+
+  // ───── Ghost cell (hover preview for adding a new node) ───────────────
+  // Drawn here so it sits ABOVE background stripes but BELOW row labels and
+  // nodes. The ghost is shown only when the user is hovering an empty cell.
+  const hoverCell = state.canvasEdit && state.canvasEdit.hoverCell;
+  if (hoverCell && layout.rowY[hoverCell.streamId] !== undefined && layout.colX[hoverCell.stageId] !== undefined) {
+    const ghostX = layout.colX[hoverCell.stageId];
+    const ghostY = layout.rowY[hoverCell.streamId] + ROW_PADDING;
+    content += '<g class="ghost-cell" data-stream-id="' + escapeHtml(hoverCell.streamId) + '" data-stage-id="' + escapeHtml(hoverCell.stageId) + '">';
+    content +=   '<rect x="' + ghostX + '" y="' + ghostY + '" width="' + NODE_WIDTH + '" height="' + NODE_HEIGHT + '" rx="5"></rect>';
+    content +=   '<text x="' + (ghostX + NODE_WIDTH / 2) + '" y="' + (ghostY + NODE_HEIGHT / 2) + '" text-anchor="middle" dominant-baseline="central">+ add node</text>';
+    content += '</g>';
   }
 
   // ───── Row label strip on the left (per stream) ───────────────────────
@@ -103,11 +136,31 @@ function render() {
     content += '<rect class="row-label-bg" x="0" y="' + rowYPos + '" width="' + ROW_HEADER_WIDTH + '" height="' + rowHeight + '"></rect>';
     // Thin coloured stripe on the right edge of the strip
     content += '<rect x="' + (ROW_HEADER_WIDTH - 4) + '" y="' + rowYPos + '" width="4" height="' + rowHeight + '" fill="' + stream.color + '" opacity="' + (isCollapsed ? 0.4 : 0.7) + '"></rect>';
-    content += '<text class="row-label-text" fill="' + stream.color + '" x="' + (ROW_HEADER_WIDTH / 2) + '" y="' + (rowYPos + rowHeight / 2) + '" text-anchor="middle" dominant-baseline="middle">' + labelText + '</text>';
+    content += '<text class="row-label-text" fill="' + stream.color + '" x="' + (ROW_HEADER_WIDTH / 2) + '" y="' + (rowYPos + rowHeight / 2) + '" text-anchor="middle" dominant-baseline="middle">' + escapeHtml(labelText) + '</text>';
+    // Small clickable colour swatch in the bottom-left of the row label area.
+    // Click opens a hidden <input type="color"> via 16e-canvas-edit.js.
+    if (!isCollapsed) {
+      const swatchSize = 10;
+      const swatchX = 8;
+      const swatchY = rowYPos + rowHeight - swatchSize - 6;
+      content += '<rect class="stream-swatch" data-stream-id="' + escapeHtml(stream.id) + '" x="' + swatchX + '" y="' + swatchY + '" width="' + swatchSize + '" height="' + swatchSize + '" rx="2" fill="' + stream.color + '"></rect>';
+    }
+    content += '</g>';
+  }
+
+  // '+' button below the last stream row — appends a new stream.
+  if (STREAMS.length > 0) {
+    const lastStream = STREAMS[STREAMS.length - 1];
+    const addRowY = layout.rowY[lastStream.id] + layout.rowHeights[lastStream.id] + 12;
+    const addRowX = ROW_HEADER_WIDTH / 2;
+    content += '<g class="add-row-btn" data-tooltip="Add a stream (row)">';
+    content +=   '<circle cx="' + addRowX + '" cy="' + addRowY + '" r="11"></circle>';
+    content +=   '<text x="' + addRowX + '" y="' + addRowY + '" text-anchor="middle" dominant-baseline="central">+</text>';
     content += '</g>';
   }
 
   // ───── Edges (drawn BEFORE nodes so nodes sit on top) ─────────────────
+  const selectedEdgeId = state.canvasEdit && state.canvasEdit.selectedEdgeId;
   for (const edge of EDGES) {
     const fromNode = nodeById[edge.from];
     const toNode   = nodeById[edge.to];
@@ -141,6 +194,7 @@ function render() {
     let strokeOpacity = 0.45;
     let markerEnd     = "";
     let dimmed        = false;
+    const isEdgeSelected = edge.id === selectedEdgeId;
 
     if (state.selectedNodeId) {
       const isHighlighted = state.highlightedEdgeIds.has(edge.id);
@@ -154,10 +208,23 @@ function render() {
       } else {
         dimmed = true;
       }
+    } else if (isEdgeSelected) {
+      // Direct edge selection (clicked the edge itself) — colour by effect
+      // and bump the stroke so it stands out.
+      if      (edge.effect === "increases") strokeColor = "var(--edge-increases)";
+      else if (edge.effect === "decreases") strokeColor = "var(--edge-decreases)";
+      else                                  strokeColor = "var(--edge-enables)";
+      strokeWidth = 2.5;
+      strokeOpacity = 1;
+      markerEnd = ' marker-end="url(#arrow_' + edge.effect + ')"';
     }
 
-    const classAttr = ' class="edge-path' + (dimmed ? ' dimmed' : '') + '"';
-    content += '<path' + classAttr + ' d="' + pathD + '" stroke="' + strokeColor + '" stroke-width="' + strokeWidth + '" stroke-opacity="' + strokeOpacity + '"' + markerEnd + '></path>';
+    // Wide invisible hit-path drawn UNDER the visible edge for easier clicking.
+    // pointer-events:stroke (set in CSS) limits hits to the stroked area.
+    content += '<path class="edge-hit" data-edge-id="' + edge.id + '" d="' + pathD + '"></path>';
+
+    const classAttr = ' class="edge-path' + (dimmed ? ' dimmed' : '') + (isEdgeSelected ? ' selected' : '') + '"';
+    content += '<path' + classAttr + ' data-edge-id="' + edge.id + '" d="' + pathD + '" stroke="' + strokeColor + '" stroke-width="' + strokeWidth + '" stroke-opacity="' + strokeOpacity + '"' + markerEnd + '></path>';
   }
 
   // Pre-compute the set of search-match ids once so the per-node check
@@ -265,7 +332,41 @@ function render() {
       }
     }
 
+    // Edge-drag handle on the right edge of every node. Visible only on hover
+    // via CSS. Mousedown starts an edge-drag (see 16e-canvas-edit.js).
+    content += '<circle class="edge-handle" data-node-id="' + escapeHtml(node.id) + '" cx="' + (pos.x + pos.width) + '" cy="' + (pos.y + pos.height / 2) + '" r="6"></circle>';
+
     content += '</g>';
+  }
+
+  // ───── Draft edge preview (while user drags from a node's edge handle) ───
+  const draft = state.canvasEdit && state.canvasEdit.draftEdge;
+  if (draft) {
+    const fromPos = layout.positions[draft.fromNodeId];
+    if (fromPos) {
+      const sx = fromPos.x + fromPos.width;
+      const sy = fromPos.y + fromPos.height / 2;
+      const ex = draft.currentX;
+      const ey = draft.currentY;
+      const dx = ex - sx;
+      const ctrl = Math.max(40, Math.abs(dx) * 0.5);
+      const draftD =
+        "M " + sx + "," + sy +
+        " C " + (sx + ctrl) + "," + sy +
+        " " + (ex - ctrl) + "," + ey +
+        " " + ex + "," + ey;
+      content += '<path class="draft-edge" d="' + draftD + '"></path>';
+    }
+  }
+
+  // ───── Empty-state hint when no nodes exist ───────────────────────────
+  if (NODES.length === 0) {
+    const cx = (ROW_HEADER_WIDTH + layout.totalWidth) / 2;
+    const cy = (SVG_PADDING_TOP + COL_HEADER_HEIGHT + layout.totalHeight) / 2;
+    content += '<text class="empty-state-hint" x="' + cx + '" y="' + cy + '" text-anchor="middle" dominant-baseline="middle">';
+    content +=   '<tspan x="' + cx + '" dy="0">Click any cell to add your first node.</tspan>';
+    content +=   '<tspan x="' + cx + '" dy="1.5em" class="empty-state-hint-sub">Drag from a node\'s right edge to draw an edge. Press Delete to remove. Need bulk import? Use Build map.</tspan>';
+    content += '</text>';
   }
 
   // Commit the markup, then wire up event listeners.
@@ -296,17 +397,29 @@ function attachSvgEventHandlers() {
   });
 
   // Clicking the row label toggles the whole stream. Also wire a tooltip
-  // so the user knows the click target is interactive.
+  // so the user knows the click target is interactive. The single-click
+  // toggle is DEFERRED ~220ms so a double-click (handled in 16e-canvas-edit.js
+  // → renames the stream) can cancel it before the toggle fires.
   svg.querySelectorAll(".row-label-group").forEach(group => {
     const streamId = group.getAttribute("data-stream-id");
     const stream = streamById[streamId];
     group.addEventListener("click", event => {
+      // Ignore clicks on the colour swatch — it has its own handler.
+      if (event.target.closest && event.target.closest(".stream-swatch")) return;
       event.stopPropagation();
-      toggleStream(streamId);
+      // Defer so dblclick can cancel via state.canvasEdit._pendingToggleTimer.
+      if (state.canvasEdit && state.canvasEdit._pendingToggleTimer) {
+        clearTimeout(state.canvasEdit._pendingToggleTimer);
+      }
+      const timer = setTimeout(() => {
+        if (state.canvasEdit) state.canvasEdit._pendingToggleTimer = null;
+        toggleStream(streamId);
+      }, 220);
+      if (state.canvasEdit) state.canvasEdit._pendingToggleTimer = timer;
     });
     if (stream) {
       const collapsed = state.hiddenStreams.has(streamId);
-      const text = (collapsed ? "Click to expand " : "Click to collapse ") + stream.label + " — hides every node in this stream from the map.";
+      const text = (collapsed ? "Click to expand " : "Click to collapse ") + stream.label + " — double-click to rename.";
       if (typeof attachTooltip === "function") attachTooltip(group, text);
     }
   });
@@ -314,4 +427,8 @@ function attachSvgEventHandlers() {
   // (The svg-background click → deselect listener is registered once at
   // the top of this file, not here — see the comment above the file's
   // `const svg = …` line.)
+
+  // Canvas direct-edit affordances (ghost cell click, edge handles, '+' buttons,
+  // edge clicks, label double-clicks). Defined in 16e-canvas-edit.js.
+  if (typeof attachCanvasEditHandlers === "function") attachCanvasEditHandlers();
 }

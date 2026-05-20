@@ -190,9 +190,10 @@
 
     <!-- Small status pill at the bottom-left of the map -->
     <div class="status-bar" id="status-bar">
-      <b>Click</b> a node to trace its causal chain &nbsp;·&nbsp;
-      <b>Click stream</b> to hide/show &nbsp;·&nbsp;
-      <b>Simulation</b> mode for live what-if sliders
+      <b>Click cell</b> add node &nbsp;·&nbsp;
+      <b>Dbl-click</b> rename &nbsp;·&nbsp;
+      <b>Drag node edge</b> draw arrow &nbsp;·&nbsp;
+      <b>Del</b> remove
     </div>
 
     <!-- Zoom controls (bottom-right). JS in 17-events.js wires them. -->
@@ -202,9 +203,11 @@
       <button class="viz-zoom-button" id="viz-zoom-in"   title="Zoom in (Ctrl+=)"  aria-label="Zoom in">+</button>
     </div>
 
-    <!-- Empty-state overlay shown until a CSV is loaded. JS hides it via
-         hideDropZone() once data arrives. -->
-    <div id="drop-zone" class="drop-zone">
+    <!-- Optional CSV-import overlay. No longer shown at startup — the
+         canvas boots into an empty 3x3 starter grid instead, and you click
+         a cell to add your first node. Kept here for future use (e.g. a
+         dedicated "Import map" page). -->
+    <div id="drop-zone" class="drop-zone" style="display: none;">
       <div class="drop-zone-inner">
         <div class="drop-zone-icon">
           <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -302,6 +305,7 @@
 <script src="assets/js/16b-builder-render.js"></script>    <!-- wizard: render functions     -->
 <script src="assets/js/16c-builder-editor.js"></script>    <!-- wizard: floating cell editor -->
 <script src="assets/js/16d-builder-events.js"></script>    <!-- wizard: event wiring         -->
+<script src="assets/js/16e-canvas-edit.js"></script>       <!-- direct canvas editing    -->
 <script src="assets/js/17-events.js"></script>             <!-- wire up controls         -->
 <script src="assets/js/17a-search.js"></script>            <!-- fuzzy search + dropdown  -->
 <script src="assets/js/18-main.js"></script>               <!-- startup                  -->

@@ -25,6 +25,52 @@
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4), 0 0 0 2px var(--accent-red);
 }
 
+/* === Undo toast (bottom-centre) ===
+ * Shown briefly after a canvas-edit delete. Click "Undo" to restore. */
+.undo-toast {
+  position: fixed;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-light);
+  color: var(--text-primary);
+  padding: 10px 14px 10px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--border-strong);
+  z-index: 220;
+  animation: undo-toast-slide-in 0.22s ease;
+}
+
+@keyframes undo-toast-slide-in {
+  from { opacity: 0; transform: translate(-50%, 6px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.undo-toast .undo-toast-msg {
+  color: var(--text-primary);
+}
+
+.undo-toast .undo-link {
+  background: none;
+  color: var(--accent-blue);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background 0.12s, color 0.12s;
+}
+.undo-toast .undo-link:hover {
+  background: rgba(96, 165, 250, 0.15);
+  color: var(--text-primary);
+}
+
 /* === When no data is loaded, the side panels are dimmed and inert === */
 body.no-data .sidebar,
 body.no-data .detail-panel {
