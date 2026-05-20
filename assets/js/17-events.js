@@ -377,7 +377,7 @@ if (_vizSvgEl && vizScrollEl) {
 
   _vizSvgEl.addEventListener("mousedown", event => {
     if (event.button !== 0) return;                            // left button only
-    if (event.target.closest && event.target.closest(".node-group, .row-label-group, .ghost-cell, .edge-handle, .stream-swatch, .add-row-btn, .add-col-btn, .canvas-edit-foreign, .edge-hit, .edge-path")) return;
+    if (event.target.closest && event.target.closest(".node-group, .row-label-group, .ghost-cell, .edge-handle, .edge-hit, .edge-path")) return;
     panStart = {
       clientX:    event.clientX,
       clientY:    event.clientY,

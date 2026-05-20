@@ -21,7 +21,7 @@ const svg = document.getElementById("viz-svg");
 // each time render() replaces svg.innerHTML.
 svg.addEventListener("click", event => {
   // Ignore clicks on canvas-edit affordances — they manage their own state.
-  if (event.target.closest && event.target.closest(".node-group, .row-label-group, .edge-handle, .add-row-btn, .add-col-btn, .ghost-cell, .stream-swatch, .canvas-edit-foreign, .edge-hit, .edge-path")) {
+  if (event.target.closest && event.target.closest(".node-group, .row-label-group, .edge-handle, .ghost-cell, .edge-hit, .edge-path")) {
     return;
   }
   if (state.selectedNodeId) {
@@ -99,17 +99,6 @@ function render() {
     }
   }
 
-  // '+' button after the last stage — clicking it appends a new stage.
-  if (STAGES.length > 0) {
-    const lastStage = STAGES[STAGES.length - 1];
-    const addColX = layout.colX[lastStage.id] + NODE_WIDTH + COL_GAP / 2;
-    const addColY = SVG_PADDING_TOP + 24;
-    content += '<g class="add-col-btn" data-tooltip="Add a stage (column)">';
-    content +=   '<circle cx="' + addColX + '" cy="' + addColY + '" r="11"></circle>';
-    content +=   '<text x="' + addColX + '" y="' + addColY + '" text-anchor="middle" dominant-baseline="central">+</text>';
-    content += '</g>';
-  }
-
   // ───── Ghost cell (hover preview for adding a new node) ───────────────
   // Drawn here so it sits ABOVE background stripes but BELOW row labels and
   // nodes. The ghost is shown only when the user is hovering an empty cell.
@@ -126,6 +115,8 @@ function render() {
   // ───── Row label strip on the left (per stream) ───────────────────────
   // Hidden streams keep their label so the user can click to expand again;
   // they're rendered with a .collapsed class for a dimmer visual treatment.
+  // Renaming / re-colouring streams happens in the sidebar — the canvas
+  // row label is click-to-toggle-only.
   for (const stream of STREAMS) {
     const isCollapsed = state.hiddenStreams.has(stream.id);
     const rowYPos = layout.rowY[stream.id];
@@ -137,25 +128,6 @@ function render() {
     // Thin coloured stripe on the right edge of the strip
     content += '<rect x="' + (ROW_HEADER_WIDTH - 4) + '" y="' + rowYPos + '" width="4" height="' + rowHeight + '" fill="' + stream.color + '" opacity="' + (isCollapsed ? 0.4 : 0.7) + '"></rect>';
     content += '<text class="row-label-text" fill="' + stream.color + '" x="' + (ROW_HEADER_WIDTH / 2) + '" y="' + (rowYPos + rowHeight / 2) + '" text-anchor="middle" dominant-baseline="middle">' + escapeHtml(labelText) + '</text>';
-    // Small clickable colour swatch in the bottom-left of the row label area.
-    // Click opens a hidden <input type="color"> via 16e-canvas-edit.js.
-    if (!isCollapsed) {
-      const swatchSize = 10;
-      const swatchX = 8;
-      const swatchY = rowYPos + rowHeight - swatchSize - 6;
-      content += '<rect class="stream-swatch" data-stream-id="' + escapeHtml(stream.id) + '" x="' + swatchX + '" y="' + swatchY + '" width="' + swatchSize + '" height="' + swatchSize + '" rx="2" fill="' + stream.color + '"></rect>';
-    }
-    content += '</g>';
-  }
-
-  // '+' button below the last stream row — appends a new stream.
-  if (STREAMS.length > 0) {
-    const lastStream = STREAMS[STREAMS.length - 1];
-    const addRowY = layout.rowY[lastStream.id] + layout.rowHeights[lastStream.id] + 12;
-    const addRowX = ROW_HEADER_WIDTH / 2;
-    content += '<g class="add-row-btn" data-tooltip="Add a stream (row)">';
-    content +=   '<circle cx="' + addRowX + '" cy="' + addRowY + '" r="11"></circle>';
-    content +=   '<text x="' + addRowX + '" y="' + addRowY + '" text-anchor="middle" dominant-baseline="central">+</text>';
     content += '</g>';
   }
 
@@ -397,30 +369,18 @@ function attachSvgEventHandlers() {
     });
   });
 
-  // Clicking the row label toggles the whole stream. Also wire a tooltip
-  // so the user knows the click target is interactive. The single-click
-  // toggle is DEFERRED ~220ms so a double-click (handled in 16e-canvas-edit.js
-  // → renames the stream) can cancel it before the toggle fires.
+  // Clicking the row label toggles the whole stream (hide / show its row
+  // on the map). Renaming and re-colouring streams happens in the sidebar.
   svg.querySelectorAll(".row-label-group").forEach(group => {
     const streamId = group.getAttribute("data-stream-id");
     const stream = streamById[streamId];
     group.addEventListener("click", event => {
-      // Ignore clicks on the colour swatch — it has its own handler.
-      if (event.target.closest && event.target.closest(".stream-swatch")) return;
       event.stopPropagation();
-      // Defer so dblclick can cancel via state.canvasEdit._pendingToggleTimer.
-      if (state.canvasEdit && state.canvasEdit._pendingToggleTimer) {
-        clearTimeout(state.canvasEdit._pendingToggleTimer);
-      }
-      const timer = setTimeout(() => {
-        if (state.canvasEdit) state.canvasEdit._pendingToggleTimer = null;
-        toggleStream(streamId);
-      }, 220);
-      if (state.canvasEdit) state.canvasEdit._pendingToggleTimer = timer;
+      toggleStream(streamId);
     });
     if (stream) {
       const collapsed = state.hiddenStreams.has(streamId);
-      const text = (collapsed ? "Click to expand " : "Click to collapse ") + stream.label + " — double-click to rename.";
+      const text = (collapsed ? "Click to expand " : "Click to collapse ") + stream.label + " on the map.";
       if (typeof attachTooltip === "function") attachTooltip(group, text);
     }
   });

@@ -47,13 +47,12 @@ const state = {
     editMode: false,             // when false, detail panel is view-only — edit fields are hidden
                                  // behind the "Edit Node" toggle button. Persists across selections.
     hoverCell: null,             // { streamId, stageId } | null — empty cell under cursor
-    editingNodeId: null,         // node currently in inline-label edit
-    editingHeader: null,         // { kind: "stream"|"stage", id } when row/col label is being renamed
     draftEdge: null,             // { fromNodeId, currentX, currentY } during edge drag
     pendingEdgeDrop: null,       // { fromNodeId, toNodeId, clientX, clientY } awaiting effect pick
     flashedEdgeId: null,         // edge to flash-highlight in the outgoing list (after canvas click)
     addingEdgeFromNodeId: null,  // when truthy, edit panel shows the "Add outgoing edge" form
     categoryManagerOpen: false,  // mini-manager expanded in detail panel?
+    editingSidebarItem: null,    // { kind: "stream"|"stage", id } when a sidebar row is pencil-expanded
     toast: null,                 // { message, undoFn, timerId } | null
   },
   // Single-level delete-undo stack. Entry: { kind: "node", node, incidentEdges } | { kind: "edge", edge }.

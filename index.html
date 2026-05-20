@@ -116,13 +116,27 @@
       <div id="simulation-panel" style="display: none;"></div>
     </div>
 
-    <!-- Stream filters — JS fills the list in 13-sidebar.js -->
+    <!-- Stages — JS fills the list in 13-sidebar.js. Editable: rename,
+         add, drag-to-reorder, confirm + cascade delete. Stages don't have
+         a filter toggle (filtering by stage isn't a feature), so each row
+         is just a label + drag handle + pencil. -->
+    <div class="sidebar-section" id="stages-section">
+      <div class="sidebar-section-title">
+        <span>Stages</span>
+        <span class="count" id="stages-count"></span>
+      </div>
+      <div id="stages-list"></div>
+      <button class="sidebar-add-btn" data-add="stage">+ Add stage</button>
+    </div>
+
+    <!-- Stream filters + editing — JS fills the list in 13-sidebar.js -->
     <div class="sidebar-section" id="stream-filters-section">
       <div class="sidebar-section-title">
         <span>Streams</span>
         <span class="count" id="visible-streams-count"></span>
       </div>
       <div id="stream-filters"></div>
+      <button class="sidebar-add-btn" data-add="stream">+ Add stream</button>
     </div>
 
     <!-- Category filters -->
@@ -188,10 +202,10 @@
 
     <!-- Small status pill at the bottom-left of the map -->
     <div class="status-bar" id="status-bar">
-      <b>Click cell</b> add node &nbsp;·&nbsp;
-      <b>Dbl-click</b> rename &nbsp;·&nbsp;
+      <b>Click empty cell</b> add node &nbsp;·&nbsp;
       <b>Drag node edge</b> draw arrow &nbsp;·&nbsp;
-      <b>Del</b> remove
+      <b>Click edge</b> edit &nbsp;·&nbsp;
+      <b>Del</b> remove node
     </div>
 
     <!-- Zoom controls (bottom-right). JS in 17-events.js wires them. -->

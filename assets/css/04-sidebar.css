@@ -145,6 +145,268 @@
   color: var(--text-tertiary);
 }
 
+/* === Sidebar edit rows (Streams, Stages) ===
+ * Two states: compact (drag handle + label + count + pencil) and expanded
+ * (inline form with label / colour / short / delete). Drag-to-reorder via
+ * native HTML5 DnD. Visual feedback comes from .dragging and .drop-target. */
+.sidebar-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px 5px 4px;
+  border-radius: 5px;
+  transition: background 0.12s;
+  user-select: none;
+  margin-bottom: 1px;
+  position: relative;
+}
+
+.sidebar-edit-row:not(.expanded) {
+  cursor: pointer;
+}
+
+.sidebar-edit-row:hover {
+  background: var(--bg-mid);
+}
+
+.sidebar-edit-row.expanded {
+  background: var(--bg-mid);
+  border-radius: 6px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: default;
+}
+
+.sidebar-edit-row.dragging {
+  opacity: 0.4;
+}
+
+.sidebar-edit-row.drop-target {
+  box-shadow: 0 -2px 0 var(--accent-blue);
+}
+
+.sidebar-edit-drag {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1;
+  cursor: grab;
+  padding: 0 1px;
+  user-select: none;
+}
+
+.sidebar-edit-drag:active {
+  cursor: grabbing;
+}
+
+.sidebar-edit-label {
+  flex: 1 1 auto;
+  font-size: 13px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-edit-row.filter-row.disabled .sidebar-edit-label,
+.sidebar-edit-row.filter-row.disabled .filter-label {
+  text-decoration: line-through;
+}
+
+.sidebar-edit-row.filter-row.disabled {
+  opacity: 0.4;
+}
+
+.sidebar-edit-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
+
+.sidebar-edit-pencil {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  color: var(--text-tertiary);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  transition: background 0.12s, color 0.12s;
+}
+
+.sidebar-edit-pencil:hover {
+  background: var(--bg-light);
+  color: var(--text-primary);
+}
+
+/* Expanded layout — two rows of inputs */
+.sidebar-edit-row-top,
+.sidebar-edit-row-bottom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.sidebar-edit-row-bottom {
+  padding-left: 18px;       /* aligns under the drag handle in row-top */
+  gap: 8px;
+}
+
+.sidebar-edit-input {
+  flex: 1 1 auto;
+  background: var(--bg-deepest);
+  color: var(--text-primary);
+  border-radius: 4px;
+  padding: 5px 8px;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  outline: none;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.sidebar-edit-input:focus {
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.5);
+}
+
+.sidebar-edit-input-short {
+  flex: 0 0 64px;
+  font-family: var(--font-mono);
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.sidebar-edit-color {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.sidebar-edit-color::-webkit-color-swatch-wrapper { padding: 0; }
+.sidebar-edit-color::-webkit-color-swatch         { border-radius: 4px; border: none; }
+.sidebar-edit-color::-moz-color-swatch            { border-radius: 4px; border: none; }
+
+.sidebar-edit-meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+  flex: 1 1 auto;
+}
+
+.sidebar-edit-collapse {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  background: var(--bg-deep);
+  color: var(--text-tertiary);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  transition: background 0.12s, color 0.12s;
+}
+.sidebar-edit-collapse:hover {
+  background: var(--bg-light);
+  color: var(--text-primary);
+}
+
+.sidebar-edit-delete {
+  flex: 0 0 auto;
+  background: var(--bg-deep);
+  color: var(--accent-red);
+  border-radius: 4px;
+  padding: 5px 10px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.sidebar-edit-delete:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+}
+
+/* Filter-row variant: existing .filter-swatch + .filter-label sit between
+ * the drag handle and the count. Use the same alignment as the compact
+ * sidebar-edit-row layout. */
+.sidebar-edit-row.filter-row .filter-swatch {
+  margin: 0;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+}
+
+.sidebar-edit-row.filter-row .filter-label {
+  flex: 1 1 auto;
+  font-size: 13px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-edit-row.filter-row .filter-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+  flex: 0 0 auto;
+}
+
+/* Tiny invisible sentinel at the end of the list — accepts drop events so
+ * the user can reorder an item to the very end. .drop-target highlights it
+ * during drag-over. */
+.sidebar-drop-end {
+  height: 6px;
+  margin-top: 2px;
+  border-radius: 3px;
+}
+.sidebar-drop-end.drop-target {
+  background: var(--accent-blue);
+  opacity: 0.6;
+}
+
+/* "+ Add stream" / "+ Add stage" buttons */
+.sidebar-add-btn {
+  margin-top: 8px;
+  width: 100%;
+  background: transparent;
+  color: var(--accent-blue);
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.sidebar-add-btn:hover {
+  background: var(--bg-mid);
+  color: var(--text-primary);
+}
+
+/* Generic empty-state text for sidebar sections */
+.sidebar-empty {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+  padding: 4px 4px 8px;
+  font-style: italic;
+}
+
 /* === Legend rows (one per arrow type / node-border type) === */
 .legend-row {
   display: flex;
