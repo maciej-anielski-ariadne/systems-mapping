@@ -65,12 +65,13 @@ function initCanvasEdit() {
 
     if (event.key === "Escape") {
       if (cancelDraftEdge())        { event.preventDefault(); return; }
+      if (cancelDraftNodeDrag())    { event.preventDefault(); return; }
       if (state.canvasEdit && state.canvasEdit.pendingEdgeDrop) {
         dismissEffectPicker();
         event.preventDefault();
         return;
       }
-      if (state.selectedNodeId) {
+      if (state.selectedNodeId || state.selectedEdgeId) {
         deselectAll();
         event.preventDefault();
         return;
@@ -78,6 +79,19 @@ function initCanvasEdit() {
     }
     if ((event.key === "Delete" || event.key === "Backspace") && state.dataLoaded) {
       if (deleteSelection()) event.preventDefault();
+    }
+
+    // Multi-level undo / redo. Native browser-level undo wins inside text
+    // inputs thanks to the input-target guard above.
+    const cmdOrCtrl = event.metaKey || event.ctrlKey;
+    if (cmdOrCtrl && (event.key === "z" || event.key === "Z")) {
+      if (event.shiftKey) { if (typeof historyRedo === "function" && historyRedo()) event.preventDefault(); }
+      else                { if (typeof historyUndo === "function" && historyUndo()) event.preventDefault(); }
+      return;
+    }
+    if (cmdOrCtrl && (event.key === "y" || event.key === "Y")) {
+      if (typeof historyRedo === "function" && historyRedo()) event.preventDefault();
+      return;
     }
   });
 }
@@ -127,6 +141,12 @@ function bootEmptyStateGrid() {
   renderSidebar();
   render();
   renderDetailPanel();
+  // Seed the undo "previous snapshot" so the first mutation after boot has
+  // something to push onto history.past, and start with an empty stack.
+  try {
+    state.lastCsvSnapshot = serializeLiveStateToCsv();
+  } catch (err) { /* serializer unavailable yet — first applyCanvasMutation will set it */ }
+  if (typeof clearHistory === "function") clearHistory();
 }
 
 // ───── Per-render event binding ───────────────────────────────────────────
@@ -166,6 +186,20 @@ function attachCanvasEditHandlers() {
       event.stopPropagation();
       const edgeId = path.getAttribute("data-edge-id");
       if (typeof selectEdge === "function") selectEdge(edgeId);
+    });
+  });
+
+  // Node mousedown → candidate drag-to-move. We don't preventDefault or
+  // stopPropagation here so the existing click → selectNode (in
+  // attachSvgEventHandlers, 11-rendering.js) still fires when the gesture
+  // turns out to be a click. Promotion to a real drag happens in
+  // maybePromoteNodeDrag once the cursor moves past NODE_DRAG_THRESHOLD.
+  vizSvg.querySelectorAll(".node-group").forEach(group => {
+    group.addEventListener("mousedown", event => {
+      if (event.button !== 0) return;
+      if (event.target && event.target.closest && event.target.closest(".edge-handle")) return;
+      const nodeId = group.getAttribute("data-node-id");
+      beginNodeDragCandidate(nodeId, event.clientX, event.clientY);
     });
   });
 }
@@ -407,6 +441,237 @@ function nodeAtLayoutPoint(x, y) {
   return null;
 }
 
+// ───── Node drag (move between cells + reorder within a cell) ────────────
+// Two phases:
+//   1. Candidate phase. Mousedown registers _pendingNodeDrag and binds window
+//      mousemove/up so we can either promote to a real drag (cursor crosses
+//      NODE_DRAG_THRESHOLD) or fall through to a normal click.
+//   2. Active phase. Once promoted, state.canvasEdit.draggingNode is set and
+//      render() draws the dragged node ghosted in place + a preview at the
+//      cursor + a drop-target outline + an insertion line. On mouseup we
+//      either splice the node into its new cell position or no-op.
+const NODE_DRAG_THRESHOLD = 4;
+let _pendingNodeDrag    = null;
+let _nodeDragMoveBound  = null;
+let _nodeDragUpBound    = null;
+let _nodeDragSwallowClickBound = null;
+
+function beginNodeDragCandidate(nodeId, clientX, clientY) {
+  _pendingNodeDrag = { nodeId: nodeId, startClientX: clientX, startClientY: clientY };
+  _nodeDragMoveBound = (e) => maybePromoteNodeDrag(e);
+  _nodeDragUpBound   = (e) => cleanupPendingNodeDrag(e);
+  window.addEventListener("mousemove", _nodeDragMoveBound);
+  window.addEventListener("mouseup",   _nodeDragUpBound);
+}
+
+function maybePromoteNodeDrag(event) {
+  if (!_pendingNodeDrag) return;
+  const dx = event.clientX - _pendingNodeDrag.startClientX;
+  const dy = event.clientY - _pendingNodeDrag.startClientY;
+  if (Math.abs(dx) < NODE_DRAG_THRESHOLD && Math.abs(dy) < NODE_DRAG_THRESHOLD) return;
+  const nodeId = _pendingNodeDrag.nodeId;
+  // Tear down candidate listeners — startNodeDrag re-binds with the real handlers.
+  window.removeEventListener("mousemove", _nodeDragMoveBound);
+  window.removeEventListener("mouseup",   _nodeDragUpBound);
+  _pendingNodeDrag = null;
+  _nodeDragMoveBound = null;
+  _nodeDragUpBound   = null;
+  startNodeDrag(nodeId, event);
+}
+
+function cleanupPendingNodeDrag() {
+  if (!_pendingNodeDrag) return;
+  window.removeEventListener("mousemove", _nodeDragMoveBound);
+  window.removeEventListener("mouseup",   _nodeDragUpBound);
+  _pendingNodeDrag = null;
+  _nodeDragMoveBound = null;
+  _nodeDragUpBound   = null;
+}
+
+function startNodeDrag(nodeId, event) {
+  const point = clientPointToLayout(event.clientX, event.clientY);
+  if (!point) return;
+  // Suspend hover-cell tracking so the ghost preview doesn't compete.
+  state.canvasEdit.hoverCell = null;
+  state.canvasEdit.draggingNode = {
+    nodeId: nodeId,
+    currentX: point.x,
+    currentY: point.y,
+    dropCell: dropCellForDrag(point.x, point.y, nodeId),
+    active: true,
+  };
+  document.body.classList.add("node-dragging");
+  _nodeDragMoveBound = (e) => updateNodeDrag(e);
+  _nodeDragUpBound   = (e) => endNodeDrag(e);
+  window.addEventListener("mousemove", _nodeDragMoveBound);
+  window.addEventListener("mouseup",   _nodeDragUpBound);
+  layout = computeLayout();
+  render();
+}
+
+function updateNodeDrag(event) {
+  const drag = state.canvasEdit && state.canvasEdit.draggingNode;
+  if (!drag) return;
+  const point = clientPointToLayout(event.clientX, event.clientY);
+  if (!point) return;
+  drag.currentX = point.x;
+  drag.currentY = point.y;
+  const next = dropCellForDrag(point.x, point.y, drag.nodeId);
+  const prev = drag.dropCell;
+  drag.dropCell = next;
+  // Recompute layout when the dragged cell changes — entering a non-empty
+  // cell expands its row to make room for the inserted slot.
+  const samePrev = prev && next && prev.streamId === next.streamId && prev.stageId === next.stageId && prev.insertIndex === next.insertIndex;
+  if (!samePrev) layout = computeLayout();
+  render();
+}
+
+function endNodeDrag(event) {
+  const drag = state.canvasEdit && state.canvasEdit.draggingNode;
+  window.removeEventListener("mousemove", _nodeDragMoveBound);
+  window.removeEventListener("mouseup",   _nodeDragUpBound);
+  _nodeDragMoveBound = null;
+  _nodeDragUpBound   = null;
+  document.body.classList.remove("node-dragging");
+  if (!drag) return;
+
+  const point = clientPointToLayout(event.clientX, event.clientY);
+  const target = point ? dropCellForDrag(point.x, point.y, drag.nodeId) : null;
+  const node = nodeById[drag.nodeId];
+  state.canvasEdit.draggingNode = null;
+
+  if (!node || !target) {
+    layout = computeLayout();
+    render();
+    swallowNextClick();
+    return;
+  }
+
+  if (!moveNodeToCell(node, target.streamId, target.stageId, target.insertIndex)) {
+    // No-op (same cell, same slot). Still swallow the trailing click so the
+    // node doesn't toggle selection just because we dragged it ~1 pixel.
+    layout = computeLayout();
+    render();
+  }
+  swallowNextClick();
+}
+
+function cancelDraftNodeDrag() {
+  if (!state.canvasEdit || !state.canvasEdit.draggingNode) return false;
+  state.canvasEdit.draggingNode = null;
+  if (_nodeDragMoveBound) {
+    window.removeEventListener("mousemove", _nodeDragMoveBound);
+    window.removeEventListener("mouseup",   _nodeDragUpBound);
+    _nodeDragMoveBound = null;
+    _nodeDragUpBound   = null;
+  }
+  document.body.classList.remove("node-dragging");
+  layout = computeLayout();
+  render();
+  return true;
+}
+
+// Swallow the click event that fires after the drop. Without this, a drop on
+// the dragged node's original cell would also trigger the node-group click
+// handler (selectNode) and toggle selection. Mirrors the pan-end pattern in
+// 17-events.js:422-425.
+function swallowNextClick() {
+  if (_nodeDragSwallowClickBound) return;
+  _nodeDragSwallowClickBound = (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    window.removeEventListener("click", _nodeDragSwallowClickBound, true);
+    _nodeDragSwallowClickBound = null;
+  };
+  window.addEventListener("click", _nodeDragSwallowClickBound, { capture: true, once: true });
+}
+
+// Given a layout point, return the cell the cursor is over PLUS the insertion
+// index inside that cell (0..siblingCount). The dragged node is excluded from
+// sibling enumeration so its current slot isn't counted. Hidden streams are
+// skipped — dragging into a collapsed row is a no-op.
+function dropCellForDrag(x, y, draggedNodeId) {
+  if (x < ROW_HEADER_WIDTH) return null;
+  if (y < SVG_PADDING_TOP + COL_HEADER_HEIGHT) return null;
+
+  let foundStream = null;
+  for (const stream of STREAMS) {
+    if (state.hiddenStreams.has(stream.id)) continue;
+    const top = layout.rowY[stream.id];
+    const bot = top + layout.rowHeights[stream.id];
+    if (y >= top && y < bot) { foundStream = stream; break; }
+  }
+  if (!foundStream) return null;
+
+  let foundStage = null;
+  for (const stage of STAGES) {
+    const left = layout.colX[stage.id];
+    if (left === undefined) continue;
+    const right = left + NODE_WIDTH;
+    if (x >= left && x < right) { foundStage = stage; break; }
+  }
+  if (!foundStage) return null;
+
+  const siblings = [];
+  for (const n of NODES) {
+    if (n.id === draggedNodeId) continue;
+    if (n.stream === foundStream.id && n.stage === foundStage.id) siblings.push(n);
+  }
+
+  // Insertion index = position before the first sibling whose vertical mid is
+  // below the cursor. If past all of them, append.
+  const cellTopY = layout.rowY[foundStream.id] + ROW_PADDING;
+  let insertIndex = siblings.length;
+  for (let i = 0; i < siblings.length; i++) {
+    const slotMidY = cellTopY + i * (NODE_HEIGHT + NODE_GAP_Y) + NODE_HEIGHT / 2;
+    if (y < slotMidY) { insertIndex = i; break; }
+  }
+  return { streamId: foundStream.id, stageId: foundStage.id, insertIndex: insertIndex };
+}
+
+// Apply the move: mutate node.stream/stage and splice the global NODES array
+// so the dragged node ends up at the right cell-relative slot. NODES order is
+// what layout uses (siblings are stacked top-to-bottom by NODES array order),
+// so a splice is all we need — no schema change, round-trips through CSV.
+// Returns true if a real mutation happened, false on no-op.
+function moveNodeToCell(node, targetStreamId, targetStageId, cellInsertIdx) {
+  // Compute current cell-relative index (so we can detect same-slot no-ops).
+  const sameCell = (node.stream === targetStreamId && node.stage === targetStageId);
+  let currentCellIdx = -1;
+  if (sameCell) {
+    let count = 0;
+    for (const n of NODES) {
+      if (n === node) { currentCellIdx = count; break; }
+      if (n.stream === targetStreamId && n.stage === targetStageId) count++;
+    }
+    // Dropping in the same slot OR the slot immediately after — both are no-ops
+    // (since the splice would put the node back where it started).
+    if (cellInsertIdx === currentCellIdx || cellInsertIdx === currentCellIdx + 1) return false;
+  }
+
+  // Remove from NODES, then translate cellInsertIdx → global index in the
+  // post-splice array. Walk NODES counting siblings until we've passed
+  // cellInsertIdx of them.
+  const oldGlobalIdx = NODES.indexOf(node);
+  if (oldGlobalIdx < 0) return false;
+  NODES.splice(oldGlobalIdx, 1);
+
+  let count = 0;
+  let globalInsertIdx = NODES.length;
+  for (let i = 0; i < NODES.length; i++) {
+    if (NODES[i].stream === targetStreamId && NODES[i].stage === targetStageId) {
+      if (count === cellInsertIdx) { globalInsertIdx = i; break; }
+      count++;
+    }
+  }
+  node.stream = targetStreamId;
+  node.stage  = targetStageId;
+  NODES.splice(globalInsertIdx, 0, node);
+
+  applyCanvasMutation();
+  return true;
+}
+
 // ───── Effect picker (after edge drop) ────────────────────────────────────
 let _effectPickerEl = null;
 
@@ -479,6 +744,15 @@ function commitNewEdge(fromNodeId, toNodeId, effect) {
 // Stream / stage / category deletion (which also cascades to nodes + edges)
 // lives in 16f-canvas-mutations.js. Undo bookkeeping is in 16g-canvas-undo.js.
 function deleteSelection() {
+  // Edge selection wins when both are set — selectEdge sets selectedEdgeId
+  // additively without clearing selectedNodeId. Without this dispatch the
+  // node would be deleted instead of the edge the user just clicked.
+  if (state.selectedEdgeId) {
+    const edgeId = state.selectedEdgeId;
+    state.selectedEdgeId = null;
+    deleteEdgeById(edgeId);
+    return true;
+  }
   if (state.selectedNodeId) {
     const node = nodeById[state.selectedNodeId];
     if (!node) return false;

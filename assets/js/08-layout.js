@@ -29,6 +29,13 @@ function computeLayout() {
   // ("+ add another") has somewhere to sit without overlapping the row
   // below. The slot disappears the moment the hover leaves.
   const hoverCell = (state.canvasEdit && state.canvasEdit.hoverCell) || null;
+  // During a node drag, the dropCell behaves like hoverCell: we reserve one
+  // extra slot in the target cell so the insertion drop-line has somewhere to
+  // sit without overlapping nodes below. The dragged node is still in NODES
+  // (rendered ghosted in its source cell), so the source row already has the
+  // right height.
+  const dragDropCell = (state.canvasEdit && state.canvasEdit.draggingNode && state.canvasEdit.draggingNode.dropCell) || null;
+  const draggedNodeId = (state.canvasEdit && state.canvasEdit.draggingNode && state.canvasEdit.draggingNode.nodeId) || null;
   const rowHeights = {};
   for (const stream of STREAMS) {
     if (state.hiddenStreams.has(stream.id)) {
@@ -43,6 +50,14 @@ function computeLayout() {
     if (hoverCell && hoverCell.streamId === stream.id) {
       const inHoverCell = (cells[stream.id + ":" + hoverCell.stageId] || []).length;
       if (inHoverCell + 1 > maxNodesInCell) maxNodesInCell = inHoverCell + 1;
+    }
+    if (dragDropCell && dragDropCell.streamId === stream.id) {
+      // Count cell-occupants excluding the dragged node (which will leave
+      // its source cell when the drop commits, but is still in NODES now).
+      const cellNodes = cells[stream.id + ":" + dragDropCell.stageId] || [];
+      let inCell = 0;
+      for (const n of cellNodes) if (n.id !== draggedNodeId) inCell++;
+      if (inCell + 1 > maxNodesInCell) maxNodesInCell = inCell + 1;
     }
     // Minimum 1 unit tall even if every cell is empty, so the row header
     // still has somewhere to sit.

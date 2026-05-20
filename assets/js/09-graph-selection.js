@@ -76,6 +76,7 @@ function selectNode(nodeId) {
     return;
   }
   state.selectedNodeId = nodeId;
+  state.selectedEdgeId = null;   // node and edge selection are mutually exclusive
   state.ancestorSet = getAncestors(nodeId);
   state.descendantSet = getDescendants(nodeId);
   state.highlightedEdgeIds = computeHighlightedEdges(nodeId);
@@ -86,6 +87,7 @@ function selectNode(nodeId) {
 
 function deselectNode() {
   state.selectedNodeId = null;
+  state.selectedEdgeId = null;
   state.ancestorSet = new Set();
   state.descendantSet = new Set();
   state.highlightedEdgeIds = new Set();
@@ -105,6 +107,9 @@ function selectEdge(edgeId) {
   if (!edge) return;
   state.canvasEdit.editMode = true;
   state.canvasEdit.flashedEdgeId = edgeId;
+  // Promote to a real selection so Delete-key dispatch (16e:deleteSelection)
+  // and the .edge-path.selected CSS (05-visualization.css:260) both fire.
+  state.selectedEdgeId = edgeId;
 
   if (state.selectedNodeId === edge.from) {
     render();
@@ -141,6 +146,7 @@ function selectEdge(edgeId) {
 // selectEdge above, which is just a navigation helper.)
 function deselectAll() {
   state.selectedNodeId = null;
+  state.selectedEdgeId = null;
   state.ancestorSet = new Set();
   state.descendantSet = new Set();
   state.highlightedEdgeIds = new Set();

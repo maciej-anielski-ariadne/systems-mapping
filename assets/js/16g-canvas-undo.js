@@ -1,81 +1,121 @@
 // =============================================================================
-// CANVAS UNDO — single-level snapshot stack + dismissable toast
+// CANVAS UNDO — multi-level undo/redo via full-CSV snapshots + soft delete toast
 // -----------------------------------------------------------------------------
-// When the user deletes a node, edge, stream, stage, or category, we save a
-// snapshot here and surface a small toast at the bottom of the screen with an
-// "Undo" link. Clicking it restores the snapshot; ignoring it lets the toast
-// auto-dismiss after a few seconds.
+// Two layers, one storage:
 //
-//   pushUndo(entry)      — store a snapshot (single-level cap: each push
-//                          replaces any previous entry).
-//   restoreFromUndo(e)   — re-insert the snapshot's rows into the live
-//                          STREAMS / STAGES / CATEGORIES / NODES / EDGES.
-//   showUndoToast(msg, fn) — show the toast with Undo wired to `fn`.
-//   dismissUndoToast()   — hide the toast (called on timeout or undo click).
+//   • Multi-level undo/redo. Every call to applyCanvasMutation (16f) pushes
+//     the prior state's CSV onto state.history.past. Undo restores by feeding
+//     a snapshot back through loadDataFromCsv. Triggered by Ctrl/Cmd+Z and
+//     Ctrl/Cmd+Shift+Z (16e keydown handler).
 //
-// All the actual delete entry points (deleteSelection / deleteEdgeById in
-// 16e-canvas-edit.js; deleteStreamWithCascade / Stage / Category in
-// 16f-canvas-mutations.js) build their own snapshot, call pushUndo + the
-// mutation, then call showUndoToast with `() => restoreFromUndo(snapshot)`.
+//   • Soft delete toast. Deletes additionally surface a 6-second toast with
+//     an "Undo" link, so non-keyboard users have a discoverable recovery
+//     path. The link just calls historyUndo() — same machinery.
+//
+// Public API:
+//   historyUndo()       — pop past, push current to future, reload past top.
+//   historyRedo()       — pop future, push current to past, reload future top.
+//   clearHistory()      — wipe both stacks (called by data-loader on fresh CSV).
+//   showUndoToast(msg)  — show the bottom-of-screen toast for a delete.
+//   dismissUndoToast()  — hide it.
+//
+// Back-compat shims (kept so existing delete call sites don't need rewrites):
+//   pushUndo()       — no-op; capture now happens inside applyCanvasMutation.
+//   restoreFromUndo() — thin wrapper around historyUndo().
 // =============================================================================
 
 const UNDO_TOAST_DURATION_MS = 6000;
+const HISTORY_CAP = 50;
 
-// ───── Snapshot stack (single level) ──────────────────────────────────────
-function pushUndo(entry) {
-  state.undoStack = [entry];   // single-level cap
+// Flag set while restoring so the auto-capture in applyCanvasMutation doesn't
+// fire and double-snapshot the round-trip.
+let _suspendUndoCapture = false;
+function isUndoCaptureSuspended() { return _suspendUndoCapture; }
+
+// ───── Multi-level history ────────────────────────────────────────────────
+function clearHistory() {
+  state.history.past.length = 0;
+  state.history.future.length = 0;
 }
 
-// Restore a snapshot. Dispatches on entry.kind to handle each shape:
-//   "node"     → re-add the node + its incident edges
-//   "edge"     → re-add just the edge
-//   "stream"   → splice the stream back in + its nodes + incident edges
-//   "stage"    → same shape as stream
-//   "category" → re-insert into CATEGORIES at its original position + nodes + edges
-function restoreFromUndo(entry) {
-  if (!entry) return;
-  if (entry.kind === "node") {
-    NODES.push(entry.node);
-    for (const e of entry.incidentEdges) {
-      // Only re-add edges whose other endpoint still exists. If the user
-      // deleted-then-deleted again on a connected node, that incident edge
-      // is gone.
-      EDGES.push(cloneEdgeForUndo(e));
-    }
-    applyCanvasMutation();
-    selectNode(entry.node.id);
-  } else if (entry.kind === "edge") {
-    EDGES.push(entry.edge);
-    applyCanvasMutation();
-  } else if (entry.kind === "stream") {
-    const idx = Math.min(Math.max(entry.streamIndex, 0), STREAMS.length);
-    STREAMS.splice(idx, 0, Object.assign({}, entry.stream));
-    for (const n of entry.nodes) NODES.push(cloneNodeForUndo(n));
-    for (const e of entry.edges) EDGES.push(cloneEdgeForUndo(e));
-    applyCanvasMutation();
-  } else if (entry.kind === "stage") {
-    const idx = Math.min(Math.max(entry.stageIndex, 0), STAGES.length);
-    STAGES.splice(idx, 0, { id: entry.stage.id, label: entry.stage.label });
-    for (const n of entry.nodes) NODES.push(cloneNodeForUndo(n));
-    for (const e of entry.edges) EDGES.push(cloneEdgeForUndo(e));
-    applyCanvasMutation();
-  } else if (entry.kind === "category") {
-    // Re-insert the deleted category at its original index by rebuilding
-    // CATEGORIES in the right order. Insertion order is the only "index"
-    // categories have.
-    const ids = Object.keys(CATEGORIES);
-    const idx = Math.min(Math.max(entry.catIndex, 0), ids.length);
-    ids.splice(idx, 0, entry.catId);
-    const rebuilt = {};
-    for (const id of ids) {
-      rebuilt[id] = (id === entry.catId) ? Object.assign({}, entry.cat) : CATEGORIES[id];
-    }
-    CATEGORIES = rebuilt;
-    for (const n of entry.nodes) NODES.push(cloneNodeForUndo(n));
-    for (const e of entry.edges) EDGES.push(cloneEdgeForUndo(e));
-    applyCanvasMutation();
+function historyUndo() {
+  if (state.history.past.length === 0) return false;
+  const beforeCsv = state.history.past.pop();
+  const currentCsv = (typeof serializeLiveStateToCsv === "function") ? serializeLiveStateToCsv() : state.lastCsvSnapshot;
+  if (currentCsv) state.history.future.push(currentCsv);
+  if (state.history.future.length > HISTORY_CAP) state.history.future.shift();
+  return _restoreSnapshot(beforeCsv);
+}
+
+function historyRedo() {
+  if (state.history.future.length === 0) return false;
+  const afterCsv = state.history.future.pop();
+  const currentCsv = (typeof serializeLiveStateToCsv === "function") ? serializeLiveStateToCsv() : state.lastCsvSnapshot;
+  if (currentCsv) state.history.past.push(currentCsv);
+  if (state.history.past.length > HISTORY_CAP) state.history.past.shift();
+  return _restoreSnapshot(afterCsv);
+}
+
+// Reload a snapshot via the trusted data-loader path. Preserves selection,
+// edit mode, zoom, and scroll position across the round-trip so undo doesn't
+// jump the user away from what they were doing.
+function _restoreSnapshot(csv) {
+  const saved = {
+    selectedNodeId: state.selectedNodeId,
+    selectedEdgeId: state.selectedEdgeId || null,
+    editMode:       state.canvasEdit && state.canvasEdit.editMode,
+    zoomLevel:      state.zoomLevel,
+    scrollTop:      0,
+    scrollLeft:     0,
+  };
+  const vizScrollEl = document.getElementById("viz-scroll");
+  if (vizScrollEl) {
+    saved.scrollTop  = vizScrollEl.scrollTop;
+    saved.scrollLeft = vizScrollEl.scrollLeft;
   }
-  state.undoStack = [];
+
+  _suspendUndoCapture = true;
+  let ok = false;
+  try {
+    ok = loadDataFromCsv(csv);
+    // loadDataFromCsv resets state.lastCsvSnapshot via the save path; keep it
+    // aligned to the snapshot we just restored.
+    state.lastCsvSnapshot = csv;
+  } finally {
+    _suspendUndoCapture = false;
+  }
+  if (!ok) return false;
+
+  // Re-apply transient UI state.
+  if (saved.zoomLevel && typeof applyZoom === "function") {
+    state.zoomLevel = saved.zoomLevel;
+    applyZoom();
+  }
+  if (state.canvasEdit) state.canvasEdit.editMode = !!saved.editMode;
+  if (saved.selectedNodeId && nodeById[saved.selectedNodeId] && typeof selectNode === "function") {
+    selectNode(saved.selectedNodeId);
+  }
+  if (saved.selectedEdgeId) {
+    const edgeStillExists = EDGES.some(e => e.id === saved.selectedEdgeId);
+    if (edgeStillExists) state.selectedEdgeId = saved.selectedEdgeId;
+  }
+  if (typeof renderDetailPanel === "function") renderDetailPanel();
+  if (typeof render === "function") render();
+  if (vizScrollEl) {
+    vizScrollEl.scrollTop  = saved.scrollTop;
+    vizScrollEl.scrollLeft = saved.scrollLeft;
+  }
+  return true;
+}
+
+// ───── Back-compat shims (existing delete call sites still call these) ────
+// The actual snapshot now happens inside applyCanvasMutation, so pushUndo is
+// a no-op. restoreFromUndo redirects to the new history machinery.
+function pushUndo(_entry) {
+  // No-op — applyCanvasMutation auto-captures the pre-mutation snapshot.
+}
+function restoreFromUndo(_entry) {
+  historyUndo();
 }
 
 // ───── Toast UI ───────────────────────────────────────────────────────────
@@ -102,7 +142,9 @@ function showUndoToast(message, undoFn) {
   undoBtn.parentNode.replaceChild(freshBtn, undoBtn);
   freshBtn.addEventListener("click", () => {
     dismissUndoToast();
-    undoFn();
+    // Prefer the explicit closure (legacy) if provided; otherwise pop history.
+    if (typeof undoFn === "function") undoFn();
+    else historyUndo();
   });
 
   // Clear any pre-existing timer.
