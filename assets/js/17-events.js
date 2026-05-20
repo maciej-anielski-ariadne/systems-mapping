@@ -46,32 +46,41 @@ if (hiddenFileInput) {
   });
 }
 
-// Any button with class "load-csv-trigger" opens the file picker.
-document.querySelectorAll(".load-csv-trigger").forEach(button => {
+// "Import Data" — opens the file picker.
+document.querySelectorAll(".import-data-trigger").forEach(button => {
   button.addEventListener("click", () => {
     if (hiddenFileInput) hiddenFileInput.click();
   });
 });
 
-// Any button with class "load-sample-trigger" loads the embedded sample CSV.
-document.querySelectorAll(".load-sample-trigger").forEach(button => {
-  button.addEventListener("click", loadEmbeddedSample);
+// "Export Data" — downloads the current live state as a CSV.
+document.querySelectorAll(".export-data-trigger").forEach(button => {
+  button.addEventListener("click", () => {
+    if (!state.dataLoaded) return;
+    if (typeof serializeLiveStateToCsv !== "function" || typeof downloadCsvBlob !== "function") return;
+    downloadCsvBlob(serializeLiveStateToCsv(), "systems_map.csv");
+  });
 });
 
-// Any button with class "download-sample-trigger" downloads the sample CSV.
-document.querySelectorAll(".download-sample-trigger").forEach(button => {
-  button.addEventListener("click", downloadSampleCsv);
+// "Create Map" — clears the canvas and resets to the empty 3×3 starter grid.
+// The user can then build directly on the canvas; for bulk editing they can
+// click "Edit Data" afterwards to open the wizard pre-populated with what
+// they've drawn. Confirms first when there's existing data to avoid wiping
+// work by accident.
+document.querySelectorAll(".create-map-trigger").forEach(button => {
+  button.addEventListener("click", () => {
+    const hasData = state.dataLoaded && (NODES.length > 0 || EDGES.length > 0);
+    if (hasData && !confirm("Clear the current map and start with an empty grid? This cannot be undone.")) return;
+    if (typeof clearCsvFromStorage === "function") clearCsvFromStorage();
+    if (typeof bootEmptyStateGrid === "function") bootEmptyStateGrid();
+  });
 });
 
-// "Build map" opens the wizard with a blank slate — applying a build
-// replaces whatever is currently loaded.
-document.querySelectorAll(".build-map-trigger").forEach(button => {
-  button.addEventListener("click", () => openBuilder({ fromLoadedData: false }));
-});
-
-// "Edit map" opens the wizard pre-populated with the live map. No-op (with
-// the disabled visual styling from CSS) when no map has been loaded yet.
-document.querySelectorAll(".edit-map-trigger").forEach(button => {
+// "Edit Data" — opens the form-based wizard pre-populated with the current
+// map (live STREAMS / STAGES / CATEGORIES / NODES / EDGES). Useful for bulk
+// table-style edits; canvas direct-edit is still available without leaving
+// this screen.
+document.querySelectorAll(".edit-data-trigger").forEach(button => {
   button.addEventListener("click", () => {
     if (!state.dataLoaded) return;
     openBuilder({ fromLoadedData: true });
