@@ -75,6 +75,8 @@ function selectNode(nodeId) {
     deselectNode();
     return;
   }
+  // Selecting a node clears any edge selection — the two are mutually exclusive.
+  if (state.canvasEdit) state.canvasEdit.selectedEdgeId = null;
   state.selectedNodeId = nodeId;
   state.ancestorSet = getAncestors(nodeId);
   state.descendantSet = getDescendants(nodeId);
@@ -89,6 +91,35 @@ function deselectNode() {
   state.ancestorSet = new Set();
   state.descendantSet = new Set();
   state.highlightedEdgeIds = new Set();
+  render();
+  renderDetailPanel();
+  saveUiStateToStorage();
+}
+
+// Select an edge (mutually exclusive with selectedNodeId). Used by the
+// canvas direct-edit path so the detail panel can show / edit edge fields.
+function selectEdge(edgeId) {
+  if (!state.canvasEdit) return;
+  if (state.canvasEdit.selectedEdgeId === edgeId) {
+    deselectAll();
+    return;
+  }
+  state.selectedNodeId = null;
+  state.ancestorSet = new Set();
+  state.descendantSet = new Set();
+  state.highlightedEdgeIds = new Set();
+  state.canvasEdit.selectedEdgeId = edgeId;
+  render();
+  renderDetailPanel();
+}
+
+// Clears both node and edge selection. The empty-SVG click handler calls this.
+function deselectAll() {
+  state.selectedNodeId = null;
+  state.ancestorSet = new Set();
+  state.descendantSet = new Set();
+  state.highlightedEdgeIds = new Set();
+  if (state.canvasEdit) state.canvasEdit.selectedEdgeId = null;
   render();
   renderDetailPanel();
   saveUiStateToStorage();

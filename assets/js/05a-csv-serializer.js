@@ -47,6 +47,35 @@ function csvRow(cells) {
 //     edges:      [{ from, to, effect, elasticity, description }],
 //   }
 function serializeBuilderToCsv(builder) {
+  return _serializeShape(builder || {});
+}
+
+// Serialize the LIVE runtime state (NODES/EDGES/STREAMS/STAGES/CATEGORIES) to
+// the same CSV format. Used by the canvas direct-edit path (16e-canvas-edit.js)
+// to persist every change without round-tripping through the builder.
+function serializeLiveStateToCsv() {
+  return _serializeShape({
+    streams: STREAMS,
+    stages: STAGES,
+    categories: Object.keys(CATEGORIES).map(id => ({
+      id: id,
+      label: CATEGORIES[id].label,
+      color: CATEGORIES[id].color,
+      textColor: CATEGORIES[id].textColor,
+    })),
+    defaults: {
+      enables:   DEFAULT_ELASTICITY_BY_EFFECT.enables,
+      increases: DEFAULT_ELASTICITY_BY_EFFECT.increases,
+      decreases: DEFAULT_ELASTICITY_BY_EFFECT.decreases,
+    },
+    nodes: NODES,
+    edges: EDGES,
+  });
+}
+
+// Shared serialization core used by both the builder and the live-state paths.
+function _serializeShape(data) {
+  const builder = data;
   const lines = [];
 
   // ───── File-level header ─────────────────────────────────────────────────

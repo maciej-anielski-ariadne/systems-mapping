@@ -201,3 +201,204 @@ body.panning * {
   stroke-width: 1;
   stroke-dasharray: 2 4;
 }
+
+/* === Canvas direct-edit affordances === */
+
+/* Ghost cell (empty-cell hover preview) — faint dashed rectangle + "+" hint */
+.ghost-cell rect {
+  fill: rgba(96, 165, 250, 0.08);
+  stroke: var(--accent-blue);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+  cursor: pointer;
+  transition: fill 0.12s;
+}
+.ghost-cell:hover rect {
+  fill: rgba(96, 165, 250, 0.18);
+}
+.ghost-cell text {
+  fill: var(--accent-blue);
+  font-family: var(--font-mono);
+  font-size: calc(11px * var(--map-text-scale, 1));
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.85;
+}
+
+/* Edge handle on the right edge of every node. Hidden by default, fades in
+ * on node hover. Mousedown starts an edge drag (16e-canvas-edit.js). */
+.edge-handle {
+  fill: var(--accent-blue);
+  stroke: var(--bg-deepest);
+  stroke-width: 1.5;
+  opacity: 0;
+  cursor: crosshair;
+  transition: opacity 0.15s, r 0.15s;
+  pointer-events: all;
+}
+.node-group:hover .edge-handle,
+.node-group.selected .edge-handle {
+  opacity: 0.9;
+}
+.edge-handle:hover {
+  opacity: 1;
+  r: 7;
+}
+
+/* Wide invisible hit-path under each visible edge for easier click targeting */
+.edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+/* Selected edge — thicker, brighter, with a soft halo */
+.edge-path.selected {
+  filter: drop-shadow(0 0 6px currentColor);
+}
+
+/* Draft edge preview (during drag) */
+.draft-edge {
+  fill: none;
+  stroke: var(--accent-blue);
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+/* '+' affordances at the end of the rows / columns */
+.add-row-btn circle,
+.add-col-btn circle {
+  fill: var(--bg-mid);
+  stroke: var(--border-strong);
+  stroke-width: 1;
+  cursor: pointer;
+  transition: fill 0.15s, stroke 0.15s;
+}
+.add-row-btn:hover circle,
+.add-col-btn:hover circle {
+  fill: var(--accent-blue);
+  stroke: var(--accent-blue);
+}
+.add-row-btn text,
+.add-col-btn text {
+  fill: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 400;
+  pointer-events: none;
+  user-select: none;
+}
+.add-row-btn:hover text,
+.add-col-btn:hover text {
+  fill: #ffffff;
+}
+
+/* Stream colour swatch (click to open colour picker) */
+.stream-swatch {
+  cursor: pointer;
+  stroke: rgba(255, 255, 255, 0.25);
+  stroke-width: 1;
+  transition: stroke 0.15s, transform 0.1s;
+}
+.stream-swatch:hover {
+  stroke: #ffffff;
+  stroke-width: 1.5;
+}
+
+/* Inline label / header rename input (rendered inside an SVG foreignObject) */
+.canvas-edit-foreign {
+  overflow: visible;
+}
+.canvas-edit-input {
+  width: 100%;
+  height: 100%;
+  background: var(--bg-deepest);
+  color: var(--text-primary);
+  border-radius: 4px;
+  padding: 4px 7px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-blue);
+  box-sizing: border-box;
+}
+.canvas-edit-input-header {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
+}
+.canvas-edit-input-label {
+  font-weight: 500;
+}
+
+/* Empty-state hint text (when NODES.length === 0) */
+.empty-state-hint {
+  fill: var(--text-secondary);
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 18px;
+  pointer-events: none;
+  user-select: none;
+}
+.empty-state-hint-sub {
+  fill: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-style: normal;
+  letter-spacing: 0.04em;
+}
+
+/* Inline effect picker that pops up after dropping an edge on a target node */
+.edge-effect-picker {
+  position: fixed;
+  z-index: 250;
+  background: var(--bg-mid);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transform: translate(-50%, 12px);
+  min-width: 160px;
+}
+.edge-effect-picker-title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+  padding: 2px 6px 4px;
+}
+.edge-effect-picker-btn {
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.edge-effect-picker-btn:hover {
+  background: var(--bg-light);
+}
+.edge-effect-picker-btn.increases:hover { color: var(--accent-green);  }
+.edge-effect-picker-btn.decreases:hover { color: var(--accent-red);    }
+.edge-effect-picker-btn.enables:hover   { color: var(--accent-purple); }
+.edge-effect-picker-btn.cancel {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
