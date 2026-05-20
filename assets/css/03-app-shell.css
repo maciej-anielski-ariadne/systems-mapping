@@ -224,3 +224,46 @@ body.no-data .edit-map-trigger:hover {
   color: var(--text-secondary);
   border-color: var(--border-subtle);
 }
+
+/* === Panel resize handles ===
+ * 6px-wide drag strips sitting in the gap between each side panel and the
+ * central viz. Visually invisible by default — a faint tint appears on
+ * hover, a brighter one while dragging — so they don't add chrome but are
+ * still discoverable via the col-resize cursor. JS in 17-events.js wires
+ * the drag (live updates --sidebar-w-full / --detail-w-full) and the
+ * double-click (resets to the variables' defaults). */
+.panel-resize-handle {
+  position: absolute;
+  top: 64px;       /* below the header */
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 35;     /* above unpinned panel strips (30), below header (40) */
+  background: transparent;
+  transition: background 0.12s ease;
+}
+
+.sidebar-resize-handle { left:  var(--sidebar-w); }
+.detail-resize-handle  { right: var(--detail-w);  }
+
+.panel-resize-handle:hover {
+  background: rgba(96, 165, 250, 0.25);   /* accent-blue, faint */
+}
+
+.panel-resize-handle.dragging {
+  background: rgba(96, 165, 250, 0.55);
+}
+
+/* Resize handle only makes sense when its panel is in pinned (full-width)
+ * mode — when unpinned the panel collapses to a hover-expand strip. */
+.app.sidebar-unpinned .sidebar-resize-handle,
+.app.detail-unpinned  .detail-resize-handle {
+  display: none;
+}
+
+/* While dragging, suppress text selection app-wide and force the
+ * col-resize cursor even when the pointer drifts off the handle. */
+body.panel-resizing {
+  cursor: col-resize !important;
+  user-select: none;
+}

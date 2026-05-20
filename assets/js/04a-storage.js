@@ -47,6 +47,8 @@ function saveUiStateToStorage() {
       selectedNodeId:       state.selectedNodeId || null,
       sidebarPinned:        !!state.sidebarPinned,
       detailPanelPinned:    !!state.detailPanelPinned,
+      sidebarWidth:         typeof state.sidebarWidth      === "number" ? state.sidebarWidth      : 280,
+      detailPanelWidth:     typeof state.detailPanelWidth  === "number" ? state.detailPanelWidth  : 340,
       zoomLevel:            typeof state.zoomLevel === "number" ? state.zoomLevel : 1.0,
     };
     localStorage.setItem(STORAGE_KEY_UI, JSON.stringify(payload));
@@ -80,6 +82,10 @@ function applyRestoredUiState(ui) {
     state.detailPanelPinned = !ui.detailPanelCollapsed;
   }
   if (typeof applyPanelPinnedClasses === "function") applyPanelPinnedClasses();
+
+  if (typeof ui.sidebarWidth     === "number" && !isNaN(ui.sidebarWidth))     state.sidebarWidth     = ui.sidebarWidth;
+  if (typeof ui.detailPanelWidth === "number" && !isNaN(ui.detailPanelWidth)) state.detailPanelWidth = ui.detailPanelWidth;
+  if (typeof applyPanelWidths === "function") applyPanelWidths();
 
   if (typeof ui.zoomLevel === "number" && !isNaN(ui.zoomLevel)) {
     state.zoomLevel = ui.zoomLevel;

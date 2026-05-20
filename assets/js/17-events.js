@@ -130,6 +130,84 @@ if (detailPinButton) {
   });
 }
 
+// ───── Sidebar / detail-panel resizing ──────────────────────────────────
+// Slim drag-handles between each side panel and the central viz let the
+// user resize them. The CSS custom properties --sidebar-w-full /
+// --detail-w-full on .app drive both the grid track width (pinned mode)
+// and the hover-expanded width (unpinned mode); we update them live as
+// the user drags. Sizes are persisted via saveUiStateToStorage.
+//
+// Defaults match the values declared in 03-app-shell.css's .app rule;
+// they're duplicated here so a double-click reset has a number to apply
+// even if the user has already overridden the CSS value.
+const SIDEBAR_WIDTH_DEFAULT = 280;
+const DETAIL_WIDTH_DEFAULT  = 340;
+const PANEL_WIDTH_MIN       = 180;
+const PANEL_WIDTH_MAX       = 720;
+
+function clampPanelWidth(w) {
+  return Math.max(PANEL_WIDTH_MIN, Math.min(PANEL_WIDTH_MAX, w));
+}
+
+function applyPanelWidths() {
+  const app = document.querySelector(".app");
+  if (!app) return;
+  const sw = (typeof state.sidebarWidth     === "number" && !isNaN(state.sidebarWidth))     ? state.sidebarWidth     : SIDEBAR_WIDTH_DEFAULT;
+  const dw = (typeof state.detailPanelWidth === "number" && !isNaN(state.detailPanelWidth)) ? state.detailPanelWidth : DETAIL_WIDTH_DEFAULT;
+  app.style.setProperty("--sidebar-w-full", sw + "px");
+  app.style.setProperty("--detail-w-full",  dw + "px");
+}
+
+function wirePanelResizer(handle, which) {
+  if (!handle) return;
+  const defaultWidth = which === "sidebar" ? SIDEBAR_WIDTH_DEFAULT : DETAIL_WIDTH_DEFAULT;
+  let dragStart = null;   // { x, startWidth }
+
+  handle.addEventListener("mousedown", event => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const currentWidth = which === "sidebar"
+      ? (typeof state.sidebarWidth     === "number" ? state.sidebarWidth     : defaultWidth)
+      : (typeof state.detailPanelWidth === "number" ? state.detailPanelWidth : defaultWidth);
+    dragStart = { x: event.clientX, startWidth: currentWidth };
+    handle.classList.add("dragging");
+    document.body.classList.add("panel-resizing");
+  });
+
+  // Bind move/up on window so the gesture survives the cursor leaving the
+  // 6px-wide handle (which it does very quickly during a drag).
+  window.addEventListener("mousemove", event => {
+    if (!dragStart) return;
+    const dx = event.clientX - dragStart.x;
+    // Left handle: drag right grows the sidebar. Right handle: drag right
+    // SHRINKS the detail panel — invert the delta.
+    const signedDx = which === "sidebar" ? dx : -dx;
+    const newWidth = clampPanelWidth(dragStart.startWidth + signedDx);
+    if (which === "sidebar") state.sidebarWidth     = newWidth;
+    else                     state.detailPanelWidth = newWidth;
+    applyPanelWidths();
+  });
+
+  window.addEventListener("mouseup", () => {
+    if (!dragStart) return;
+    dragStart = null;
+    handle.classList.remove("dragging");
+    document.body.classList.remove("panel-resizing");
+    saveUiStateToStorage();
+  });
+
+  handle.addEventListener("dblclick", () => {
+    if (which === "sidebar") state.sidebarWidth     = defaultWidth;
+    else                     state.detailPanelWidth = defaultWidth;
+    applyPanelWidths();
+    saveUiStateToStorage();
+  });
+}
+
+wirePanelResizer(document.getElementById("sidebar-resize-handle"), "sidebar");
+wirePanelResizer(document.getElementById("detail-resize-handle"),  "detail");
+applyPanelWidths();
+
 // ───── Map zoom controls ────────────────────────────────────────────────
 // Zoom is purely visual: we keep the SVG's viewBox at the original layout
 // dimensions and scale the rendered width/height by state.zoomLevel. The

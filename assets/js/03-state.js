@@ -27,6 +27,8 @@ const state = {
   loadErrors: [],         // validation errors from the most recent load
   sidebarPinned: true,         // when false, left sidebar shows as a narrow strip and expands on hover
   detailPanelPinned: true,     // when false, right detail panel shows as a narrow strip and expands on hover
+  sidebarWidth: 280,           // pinned left sidebar width in px (drag the divider to change; double-click resets)
+  detailPanelWidth: 340,       // pinned right detail panel width in px (same UX as sidebarWidth)
   zoomLevel: 1.0,              // map zoom multiplier (0.25 .. 3.0). Applied to the SVG width/height.
   // Search — populated by 17a-search.js as the user types. searchMatches is
   // an array of { node, score, bestField, bestPositions } objects sorted by
