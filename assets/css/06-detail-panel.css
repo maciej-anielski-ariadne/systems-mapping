@@ -115,30 +115,32 @@
 }
 
 /* === View / Edit toggle ===
- * Small button shown just below the tags row when a node is selected.
- * Off = read-only details panel. On = inline edit fields appear. */
+ * Prominent full-width button. In view mode it sits between the
+ * quantification block and Direct Inputs and reads "Edit Node". In edit
+ * mode it sits at the top of the form and reads "Done editing" (filled
+ * accent style). Clicking flips between the two modes. */
 .detail-mode-toggle {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 12px;
+  margin: 14px 0 16px;
 }
 
 .detail-mode-button {
+  display: block;
+  width: 100%;
   background: var(--bg-mid);
-  color: var(--text-secondary);
-  border-radius: 4px;
-  padding: 5px 11px;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  color: var(--text-primary);
+  border-radius: 5px;
+  padding: 9px 12px;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-align: center;
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
 }
 
 .detail-mode-button:hover {
   background: var(--bg-light);
-  color: var(--text-primary);
 }
 
 .detail-mode-button.active {
@@ -539,30 +541,163 @@
   cursor: not-allowed;
 }
 
-/* === Edge-selected view === */
-.detail-edge-endpoints {
+/* === Outgoing edges block (edit mode) ===
+ * Sits between the node-fields edit block and the delete-node action.
+ * Each row lets the user edit the edge's effect, elasticity, description
+ * and delete the edge. The header link at the top of each row jumps to
+ * the target node when clicked. */
+.outgoing-edges-block {
+  margin: 14px 0 0;
+}
+
+.outgoing-edges-empty {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-style: italic;
+  padding: 6px 0 8px;
+  line-height: 1.5;
+}
+
+.outgoing-edge-row {
+  --edge-color: var(--border-strong);
+  padding: 8px 10px 8px 12px;
+  background: var(--bg-mid);
+  border-radius: 0 5px 5px 0;
+  box-shadow: inset 3px 0 0 var(--edge-color);
+  margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.outgoing-edge-row.increases { --edge-color: var(--accent-green);  }
+.outgoing-edge-row.decreases { --edge-color: var(--accent-red);    }
+.outgoing-edge-row.enables   { --edge-color: var(--accent-purple); }
+
+/* Brief background highlight when an edge was just clicked on the canvas.
+ * The .flash class is removed automatically by the JS after the animation
+ * settles (no class-removal needed mid-animation because the animation
+ * runs once and ends with the base styling). */
+@keyframes outgoing-edge-flash {
+  0%   { background: rgba(96, 165, 250, 0.5); }
+  100% { background: var(--bg-mid); }
+}
+.outgoing-edge-row.flash {
+  animation: outgoing-edge-flash 1.4s ease;
+}
+
+.outgoing-edge-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.outgoing-edge-target-link {
+  flex: 1 1 auto;
+  background: none;
+  color: var(--text-primary);
+  text-align: left;
+  font-size: 12.5px;
+  font-weight: 500;
+  padding: 2px 0;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.outgoing-edge-target-link:hover {
+  color: var(--accent-blue);
+}
+
+.outgoing-edge-delete {
+  width: 22px;
+  height: 22px;
+  background: var(--bg-deep);
+  color: var(--text-tertiary);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  flex: 0 0 22px;
+  transition: background 0.12s, color 0.12s;
+}
+.outgoing-edge-delete:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: var(--accent-red);
+}
+
+.outgoing-edge-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.outgoing-edge-controls .detail-edit-select {
+  flex: 1 1 auto;
+  padding-right: 22px;
+}
+
+.outgoing-edge-elasticity {
+  flex: 0 0 88px;
+  text-align: right;
+}
+
+.outgoing-edge-description {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  min-height: 32px;
+}
+
+.outgoing-edge-add-toggle {
+  margin-top: 4px;
+}
+
+.outgoing-edge-add {
+  margin: 6px 0 10px;
+  padding: 10px;
+  background: var(--bg-deepest);
+  border-radius: 5px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-bottom: 16px;
 }
 
-.detail-edge-endpoint {
+.outgoing-edge-add-title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+}
+
+.outgoing-edge-add-row {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
+  gap: 6px;
 }
 
-.detail-edge-endpoint-link {
-  background: var(--bg-mid);
-  color: var(--text-primary);
-  text-align: left;
-  padding: 7px 10px;
-  border-radius: 4px;
-  font-size: 12.5px;
-  cursor: pointer;
-  transition: background 0.12s;
+.outgoing-edge-add-row .detail-edit-select {
+  flex: 1 1 auto;
 }
-.detail-edge-endpoint-link:hover {
-  background: var(--bg-light);
+
+.outgoing-edge-add-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+}
+
+.outgoing-edge-add-actions .detail-button {
+  flex: 0 0 auto;
+  padding: 6px 14px;
+}
+
+/* Inline checkbox + label (used by Controllable). The default
+ * .detail-edit-label is a separate uppercase row; for booleans the label
+ * sits inline next to the checkbox. */
+.detail-edit-label-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  cursor: pointer;
 }

@@ -24,7 +24,7 @@ svg.addEventListener("click", event => {
   if (event.target.closest && event.target.closest(".node-group, .row-label-group, .edge-handle, .add-row-btn, .add-col-btn, .ghost-cell, .stream-swatch, .canvas-edit-foreign, .edge-hit, .edge-path")) {
     return;
   }
-  if (state.selectedNodeId || (state.canvasEdit && state.canvasEdit.selectedEdgeId)) {
+  if (state.selectedNodeId) {
     deselectAll();
   }
 });
@@ -160,7 +160,7 @@ function render() {
   }
 
   // ───── Edges (drawn BEFORE nodes so nodes sit on top) ─────────────────
-  const selectedEdgeId = state.canvasEdit && state.canvasEdit.selectedEdgeId;
+  const flashedEdgeId = state.canvasEdit && state.canvasEdit.flashedEdgeId;
   for (const edge of EDGES) {
     const fromNode = nodeById[edge.from];
     const toNode   = nodeById[edge.to];
@@ -194,7 +194,7 @@ function render() {
     let strokeOpacity = 0.45;
     let markerEnd     = "";
     let dimmed        = false;
-    const isEdgeSelected = edge.id === selectedEdgeId;
+    const isEdgeFlashed = edge.id === flashedEdgeId;
 
     if (state.selectedNodeId) {
       const isHighlighted = state.highlightedEdgeIds.has(edge.id);
@@ -208,22 +208,23 @@ function render() {
       } else {
         dimmed = true;
       }
-    } else if (isEdgeSelected) {
-      // Direct edge selection (clicked the edge itself) — colour by effect
-      // and bump the stroke so it stands out.
+    }
+    if (isEdgeFlashed) {
+      // Edge was just clicked — paint it boldly until the flash flag clears.
       if      (edge.effect === "increases") strokeColor = "var(--edge-increases)";
       else if (edge.effect === "decreases") strokeColor = "var(--edge-decreases)";
       else                                  strokeColor = "var(--edge-enables)";
       strokeWidth = 2.5;
       strokeOpacity = 1;
       markerEnd = ' marker-end="url(#arrow_' + edge.effect + ')"';
+      dimmed = false;
     }
 
     // Wide invisible hit-path drawn UNDER the visible edge for easier clicking.
     // pointer-events:stroke (set in CSS) limits hits to the stroked area.
     content += '<path class="edge-hit" data-edge-id="' + edge.id + '" d="' + pathD + '"></path>';
 
-    const classAttr = ' class="edge-path' + (dimmed ? ' dimmed' : '') + (isEdgeSelected ? ' selected' : '') + '"';
+    const classAttr = ' class="edge-path' + (dimmed ? ' dimmed' : '') + (isEdgeFlashed ? ' flashed' : '') + '"';
     content += '<path' + classAttr + ' data-edge-id="' + edge.id + '" d="' + pathD + '" stroke="' + strokeColor + '" stroke-width="' + strokeWidth + '" stroke-opacity="' + strokeOpacity + '"' + markerEnd + '></path>';
   }
 

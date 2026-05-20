@@ -118,7 +118,8 @@ function bootEmptyStateGrid() {
     state.canvasEdit.editingHeader = null;
     state.canvasEdit.draftEdge = null;
     state.canvasEdit.pendingEdgeDrop = null;
-    state.canvasEdit.selectedEdgeId = null;
+    state.canvasEdit.flashedEdgeId = null;
+    state.canvasEdit.addingEdgeFromNodeId = null;
   }
 
   rebuildIndexes();
@@ -703,6 +704,9 @@ function commitNewEdge(fromNodeId, toNodeId, effect) {
 }
 
 // ───── Delete + undo ──────────────────────────────────────────────────────
+// Keyboard Delete only deletes the currently-selected NODE (with its incident
+// edges). Individual edges are deleted via the per-row × button inside the
+// node's edit panel; that path calls deleteEdgeById() directly.
 function deleteSelection() {
   if (state.selectedNodeId) {
     const node = nodeById[state.selectedNodeId];
@@ -726,22 +730,22 @@ function deleteSelection() {
     showUndoToast("Node deleted", () => restoreFromUndo(snapshot));
     return true;
   }
-  if (state.canvasEdit && state.canvasEdit.selectedEdgeId) {
-    const edgeId = state.canvasEdit.selectedEdgeId;
-    const edge = EDGES.find(e => e.id === edgeId);
-    if (!edge) return false;
-    const snapshot = {
-      kind: "edge",
-      edge: { from: edge.from, to: edge.to, effect: edge.effect, elasticity: edge.elasticity, description: edge.description },
-    };
-    EDGES = EDGES.filter(e => e.id !== edgeId);
-    state.canvasEdit.selectedEdgeId = null;
-    pushUndo(snapshot);
-    applyCanvasMutation();
-    showUndoToast("Edge deleted", () => restoreFromUndo(snapshot));
-    return true;
-  }
   return false;
+}
+
+// Delete a single edge by id, push an undo snapshot, show the toast. Called
+// from the edit panel's per-row × buttons.
+function deleteEdgeById(edgeId) {
+  const edge = EDGES.find(e => e.id === edgeId);
+  if (!edge) return;
+  const snapshot = {
+    kind: "edge",
+    edge: { from: edge.from, to: edge.to, effect: edge.effect, elasticity: edge.elasticity, description: edge.description },
+  };
+  EDGES = EDGES.filter(e => e.id !== edgeId);
+  pushUndo(snapshot);
+  applyCanvasMutation();
+  showUndoToast("Edge deleted", () => restoreFromUndo(snapshot));
 }
 
 function pushUndo(entry) {

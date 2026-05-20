@@ -51,7 +51,8 @@ const state = {
     editingHeader: null,         // { kind: "stream"|"stage", id } when row/col label is being renamed
     draftEdge: null,             // { fromNodeId, currentX, currentY } during edge drag
     pendingEdgeDrop: null,       // { fromNodeId, toNodeId, clientX, clientY } awaiting effect pick
-    selectedEdgeId: null,        // selected edge (mutually exclusive with selectedNodeId)
+    flashedEdgeId: null,         // edge to flash-highlight in the outgoing list (after canvas click)
+    addingEdgeFromNodeId: null,  // when truthy, edit panel shows the "Add outgoing edge" form
     categoryManagerOpen: false,  // mini-manager expanded in detail panel?
     toast: null,                 // { message, undoFn, timerId } | null
   },
