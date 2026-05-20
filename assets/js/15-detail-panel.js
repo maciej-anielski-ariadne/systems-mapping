@@ -1,27 +1,38 @@
 // =============================================================================
 // RIGHT DETAIL PANEL RENDERING
 // -----------------------------------------------------------------------------
-// Builds the HTML that appears on the right when a node or edge is selected:
-//   • Tags (category / stream / stage)
-//   • Node name + description
-//   • Quantification block (baseline / current / delta)
-//   • Inline edit fields (every node attribute is mutable here)
-//   • Mini category manager (collapsible)
-//   • Lists of direct inputs and direct impacts
-//   • Counts of full upstream / downstream chain
+// Two completely separate modes for a selected node:
 //
-// When an edge is selected (canvas-edit clicked an edge), the panel renders
-// an edge view: from / to / effect / elasticity / description / delete.
+//   View mode (default): tags, name, description, quant block, "Edit Node"
+//     button (full-width, centred), direct inputs, direct impacts, causal
+//     chain summary. Read-only — the user is exploring / tracing.
+//
+//   Edit mode (toggled on via the button above): tags, "Done editing"
+//     button, every node field as an editable input, mini category manager,
+//     OUTGOING EDGES (each row editable, each deletable, plus an "Add
+//     outgoing edge" affordance), and a delete-node button at the bottom.
+//     Replaces the view-mode UI entirely so the user can focus on editing.
+//
+// Edges no longer have a dedicated panel: clicking one on the canvas opens
+// the from-node's edit panel and flashes the corresponding outgoing-edges
+// row so the user lands on the edge they wanted to edit.
 // =============================================================================
 
 function renderDetailPanel() {
   const emptyState   = document.getElementById("detail-empty");
   const contentState = document.getElementById("detail-content");
 
-  const selectedEdgeId = state.canvasEdit && state.canvasEdit.selectedEdgeId;
-
   // Nothing selected → show the empty-state placeholder.
-  if (!state.selectedNodeId && !selectedEdgeId) {
+  if (!state.selectedNodeId) {
+    emptyState.style.display   = "block";
+    contentState.style.display = "none";
+    return;
+  }
+
+  const node = nodeById[state.selectedNodeId];
+  if (!node) {
+    // Defensive: node was deleted out from under the panel.
+    state.selectedNodeId = null;
     emptyState.style.display   = "block";
     contentState.style.display = "none";
     return;
@@ -30,26 +41,27 @@ function renderDetailPanel() {
   emptyState.style.display   = "none";
   contentState.style.display = "block";
 
-  if (selectedEdgeId) {
-    renderEdgeDetail(selectedEdgeId, contentState);
-    return;
-  }
+  const editMode = !!(state.canvasEdit && state.canvasEdit.editMode);
+  contentState.innerHTML = editMode ? renderEditMode(node) : renderViewMode(node);
 
-  const node     = nodeById[state.selectedNodeId];
-  if (!node) {
-    // Defensive: node was deleted out from under the panel.
-    state.selectedNodeId = null;
-    emptyState.style.display = "block";
-    contentState.style.display = "none";
-    return;
+  // Wire up handlers for whichever mode just rendered.
+  wireSharedHandlers(node, contentState);
+  if (editMode) {
+    wireEditModeHandlers(node, contentState);
+  } else {
+    wireViewModeHandlers(node, contentState);
   }
+}
+
+// =============================================================================
+// VIEW MODE
+// =============================================================================
+
+function renderViewMode(node) {
   const stream   = streamById[node.stream];
   const category = CATEGORIES[node.category];
   const stage    = stageById[node.stage];
 
-  // Pull lists of incoming/outgoing edges paired with their "other" node.
-  // (incomingEdges / outgoingEdges always have an array for every node id —
-  // rebuildIndexes guarantees it.)
   const directInputs = incomingEdges[node.id].map(edge => ({
     edge: edge,
     otherNode: nodeById[edge.from],
@@ -58,8 +70,6 @@ function renderDetailPanel() {
     edge: edge,
     otherNode: nodeById[edge.to],
   }));
-
-  const editMode = !!(state.canvasEdit && state.canvasEdit.editMode);
 
   let html = "";
 
@@ -72,17 +82,6 @@ function renderDetailPanel() {
   if (stage)  html += '<span class="detail-tag">' + escapeHtml(stage.label) + '</span>';
   html += '</div>';
 
-  // ───── Mode toggle (View / Edit) ─────────────────────────────────────
-  // When OFF (default) the panel shows static read-only details — useful for
-  // tracing causal chains without accidentally mutating anything. Clicking
-  // "Edit Node" reveals the inline form fields below. The toggle persists
-  // across selections so a user editing many nodes only flips it once.
-  html += '<div class="detail-mode-toggle">';
-  html +=   '<button class="detail-mode-button' + (editMode ? " active" : "") + '" data-action="toggle-edit-mode">' +
-              (editMode ? "Done editing" : "Edit Node") +
-            '</button>';
-  html += '</div>';
-
   // ───── Name + description ────────────────────────────────────────────
   html += '<div class="detail-name">' + escapeHtml(node.label) + '</div>';
   if (node.description) {
@@ -91,85 +90,281 @@ function renderDetailPanel() {
 
   // ───── Quantification block ──────────────────────────────────────────
   if (node.baseline !== undefined && node.baseline !== null) {
-    const currentValue = state.computedValues[node.id];
-    const deltaInfo = formatNodeDelta(node.id);
-    const unit = node.unit || "";
-
-    // Colour the delta value based on whether change is "good" for this node.
-    let deltaColor = "var(--text-secondary)";
-    if (Math.abs(deltaInfo.pct) >= 0.5) {
-      if      (node.direction === "higher_better") deltaColor = deltaInfo.pct > 0 ? "var(--status-good)" : "var(--status-bad)";
-      else if (node.direction === "lower_better")  deltaColor = deltaInfo.pct < 0 ? "var(--status-good)" : "var(--status-bad)";
-      else                                         deltaColor = deltaInfo.pct > 0 ? "var(--accent-blue)" : "var(--accent-orange)";
-    }
-
-    html += '<div class="detail-quant-block">';
-    html +=   '<div class="detail-quant-row"><span class="detail-quant-label">Baseline</span><span class="detail-quant-value">' + escapeHtml(formatScalar(node.baseline)) + ' ' + escapeHtml(unit) + '</span></div>';
-
-    // "Current" row: editable input when in sim mode for controllable
-    // (exogenous) nodes — lets the user type a precise value here without
-    // hunting down the slider. For everything else (sim-mode downstream
-    // nodes, or non-sim mode) it's a read-only display.
-    if (state.simulationMode && node.controllable) {
-      html += '<div class="detail-quant-row"><span class="detail-quant-label">Current</span><span class="detail-quant-value" style="font-weight:600;">' +
-                '<input type="number" class="detail-value-input" step="any" value="' + (currentValue !== undefined ? formatScalar(currentValue) : node.baseline) + '" data-node-id="' + escapeHtml(node.id) + '" aria-label="Current value of ' + escapeHtml(node.label) + '" />' +
-                (unit ? ' ' + escapeHtml(unit) : '') +
-              '</span></div>';
-    } else {
-      html += '<div class="detail-quant-row"><span class="detail-quant-label">Current</span><span class="detail-quant-value" style="font-weight:600;">' + escapeHtml(currentValue !== undefined ? formatScalar(currentValue) + ' ' + unit : '—') + '</span></div>';
-    }
-
-    html +=   '<div class="detail-quant-row"><span class="detail-quant-label">Δ vs baseline</span><span class="detail-quant-value" style="color:' + deltaColor + '; font-weight:600;">' + escapeHtml(deltaInfo.text || '—') + '</span></div>';
-    if (node.controllable) {
-      html += '<div class="detail-quant-row"><span class="detail-quant-label">Type</span><span class="detail-quant-value" style="color: var(--text-tertiary);">Exogenous input (sliderable)</span></div>';
-    }
-    if      (node.direction === "higher_better") html += '<div class="detail-quant-row"><span class="detail-quant-label">Outcome</span><span class="detail-quant-value" style="color: var(--status-good);">↑ higher is better</span></div>';
-    else if (node.direction === "lower_better")  html += '<div class="detail-quant-row"><span class="detail-quant-label">Outcome</span><span class="detail-quant-value" style="color: var(--status-good);">↓ lower is better</span></div>';
-    else if (node.direction === "neutral")       html += '<div class="detail-quant-row"><span class="detail-quant-label">Outcome</span><span class="detail-quant-value" style="color: var(--text-tertiary);">context-dependent</span></div>';
-    html += '</div>';
+    html += renderQuantBlock(node);
   }
 
-  // ───── Inline edit fields (only when Edit Node is toggled on) ────────
-  if (editMode) {
-    html += renderNodeEditBlock(node);
-  }
+  // ───── Edit Node button (full-width, centred, above Direct Inputs) ──
+  html += '<div class="detail-mode-toggle">';
+  html +=   '<button class="detail-mode-button" data-action="toggle-edit-mode">Edit Node</button>';
+  html += '</div>';
 
-  // ───── Direct inputs + impacts lists ────────────────────────────────
+  // ───── Direct inputs + impacts ──────────────────────────────────────
   html += renderEdgeList("Direct Inputs",  directInputs,  "from", "No direct inputs (root cause / exogenous resource)");
   html += renderEdgeList("Direct Impacts", directImpacts, "to",   "No direct impacts (terminal outcome)");
 
-  // ───── Full causal chain summary ─────────────────────────────────────
+  // ───── Full causal chain ─────────────────────────────────────────────
   html += '<div class="detail-list-title"><span>Full Causal Chain</span></div>';
   html += '<div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); line-height: 1.7;">';
   html +=   '<div><span style="color: var(--edge-ancestor);">●</span> '   + state.ancestorSet.size   + ' upstream ancestor node(s)</div>';
   html +=   '<div><span style="color: var(--edge-descendant);">●</span> ' + state.descendantSet.size + ' downstream impact node(s)</div>';
   html += '</div>';
 
-  // ───── Delete button (only in edit mode) ────────────────────────────
-  if (editMode) {
-    html += '<div class="detail-actions" style="margin-top:18px;">';
-    html +=   '<button class="detail-button detail-delete-btn" data-action="delete-node">Delete node</button>';
-    html += '</div>';
+  return html;
+}
+
+function renderQuantBlock(node) {
+  const currentValue = state.computedValues[node.id];
+  const deltaInfo = formatNodeDelta(node.id);
+  const unit = node.unit || "";
+
+  let deltaColor = "var(--text-secondary)";
+  if (Math.abs(deltaInfo.pct) >= 0.5) {
+    if      (node.direction === "higher_better") deltaColor = deltaInfo.pct > 0 ? "var(--status-good)" : "var(--status-bad)";
+    else if (node.direction === "lower_better")  deltaColor = deltaInfo.pct < 0 ? "var(--status-good)" : "var(--status-bad)";
+    else                                         deltaColor = deltaInfo.pct > 0 ? "var(--accent-blue)" : "var(--accent-orange)";
   }
 
-  contentState.innerHTML = html;
+  let html = '<div class="detail-quant-block">';
+  html +=   '<div class="detail-quant-row"><span class="detail-quant-label">Baseline</span><span class="detail-quant-value">' + escapeHtml(formatScalar(node.baseline)) + ' ' + escapeHtml(unit) + '</span></div>';
 
-  // "Edit Node" toggle — always wired, regardless of which mode we're in.
+  if (state.simulationMode && node.controllable) {
+    html += '<div class="detail-quant-row"><span class="detail-quant-label">Current</span><span class="detail-quant-value" style="font-weight:600;">' +
+              '<input type="number" class="detail-value-input" step="any" value="' + (currentValue !== undefined ? formatScalar(currentValue) : node.baseline) + '" data-node-id="' + escapeHtml(node.id) + '" aria-label="Current value of ' + escapeHtml(node.label) + '" />' +
+              (unit ? ' ' + escapeHtml(unit) : '') +
+            '</span></div>';
+  } else {
+    html += '<div class="detail-quant-row"><span class="detail-quant-label">Current</span><span class="detail-quant-value" style="font-weight:600;">' + escapeHtml(currentValue !== undefined ? formatScalar(currentValue) + ' ' + unit : '—') + '</span></div>';
+  }
+
+  html +=   '<div class="detail-quant-row"><span class="detail-quant-label">Δ vs baseline</span><span class="detail-quant-value" style="color:' + deltaColor + '; font-weight:600;">' + escapeHtml(deltaInfo.text || '—') + '</span></div>';
+  if (node.controllable) {
+    html += '<div class="detail-quant-row"><span class="detail-quant-label">Type</span><span class="detail-quant-value" style="color: var(--text-tertiary);">Exogenous input (sliderable)</span></div>';
+  }
+  if      (node.direction === "higher_better") html += '<div class="detail-quant-row"><span class="detail-quant-label">Outcome</span><span class="detail-quant-value" style="color: var(--status-good);">↑ higher is better</span></div>';
+  else if (node.direction === "lower_better")  html += '<div class="detail-quant-row"><span class="detail-quant-label">Outcome</span><span class="detail-quant-value" style="color: var(--status-good);">↓ lower is better</span></div>';
+  else if (node.direction === "neutral")       html += '<div class="detail-quant-row"><span class="detail-quant-label">Outcome</span><span class="detail-quant-value" style="color: var(--text-tertiary);">context-dependent</span></div>';
+  html += '</div>';
+  return html;
+}
+
+// =============================================================================
+// EDIT MODE
+// =============================================================================
+
+function renderEditMode(node) {
+  const stream   = streamById[node.stream];
+  const category = CATEGORIES[node.category];
+  const stage    = stageById[node.stage];
+
+  let html = "";
+
+  // ───── Tags row (kept for at-a-glance context) ───────────────────────
+  html += '<div class="detail-tags">';
+  if (category) {
+    html += '<span class="detail-tag category" style="background: ' + category.color + '; color: ' + category.textColor + ';">' + escapeHtml(category.label) + '</span>';
+  }
+  if (stream) html += '<span class="detail-tag">' + escapeHtml(stream.label) + '</span>';
+  if (stage)  html += '<span class="detail-tag">' + escapeHtml(stage.label) + '</span>';
+  html += '</div>';
+
+  // ───── Done editing button (full-width, top of edit mode) ────────────
+  html += '<div class="detail-mode-toggle">';
+  html +=   '<button class="detail-mode-button active" data-action="toggle-edit-mode">Done editing</button>';
+  html += '</div>';
+
+  // ───── Edit form ─────────────────────────────────────────────────────
+  html += renderNodeEditBlock(node);
+
+  // ───── Outgoing edges ───────────────────────────────────────────────
+  html += renderOutgoingEdgesBlock(node);
+
+  // ───── Delete node ───────────────────────────────────────────────────
+  html += '<div class="detail-actions">';
+  html +=   '<button class="detail-button detail-delete-btn" data-action="delete-node">Delete node</button>';
+  html += '</div>';
+
+  return html;
+}
+
+// ───── Edit form ──────────────────────────────────────────────────────
+function renderNodeEditBlock(node) {
+  const directionOptions = [
+    { value: "",              label: "— none —" },
+    { value: "higher_better", label: "Higher is better" },
+    { value: "lower_better",  label: "Lower is better" },
+    { value: "neutral",       label: "Neutral / context" },
+  ];
+  let html = '<div class="detail-edit-block">';
+  html +=   '<div class="detail-list-title"><span>Node fields</span></div>';
+
+  html += editRow("Label",
+    '<input type="text" class="detail-edit-input" data-field="label" value="' + escapeHtml(node.label || "") + '">');
+  html += editRow("Description",
+    '<textarea class="detail-edit-input detail-edit-textarea" data-field="description" rows="2">' + escapeHtml(node.description || "") + '</textarea>');
+  html += editRow("Stream",
+    selectInput("stream", STREAMS.map(s => ({ value: s.id, label: s.label })), node.stream));
+  html += editRow("Stage",
+    selectInput("stage", STAGES.map(s => ({ value: s.id, label: s.label })), node.stage));
+
+  const catOptions = Object.keys(CATEGORIES).map(id => ({ value: id, label: CATEGORIES[id].label }));
+  html += editRow("Category",
+    selectInput("category", catOptions, node.category) +
+    '<button class="detail-edit-link" data-action="toggle-category-manager">' +
+      (state.canvasEdit && state.canvasEdit.categoryManagerOpen ? "Hide categories" : "Manage categories") +
+    '</button>');
+
+  if (state.canvasEdit && state.canvasEdit.categoryManagerOpen) {
+    html += renderCategoryManager();
+  }
+
+  html += editRow("Baseline",
+    '<input type="number" step="any" class="detail-edit-input detail-edit-number" data-field="baseline" value="' + (node.baseline !== undefined && node.baseline !== null ? node.baseline : "") + '" placeholder="(blank = no value)">');
+  html += editRow("Unit",
+    '<input type="text" class="detail-edit-input" data-field="unit" value="' + escapeHtml(node.unit || "") + '" placeholder="e.g. FTE, %, hours">');
+
+  html += '<div class="detail-edit-row">';
+  html +=   '<label class="detail-edit-label-inline"><input type="checkbox" data-field="controllable"' + (node.controllable ? " checked" : "") + '> Controllable (sliderable)</label>';
+  html += '</div>';
+
+  html += editRow("Outcome direction", selectInput("direction", directionOptions, node.direction || ""));
+  html += editRow("Slider max",
+    '<input type="number" step="any" class="detail-edit-input detail-edit-number" data-field="sliderMax" value="' + (node.sliderMax !== undefined && node.sliderMax !== null ? node.sliderMax : "") + '" placeholder="default = 2 × baseline">');
+
+  html += '</div>';
+  return html;
+}
+
+function editRow(label, controlHtml) {
+  return '<div class="detail-edit-row"><span class="detail-edit-label">' + escapeHtml(label) + '</span><div class="detail-edit-control">' + controlHtml + '</div></div>';
+}
+
+function selectInput(field, options, currentValue) {
+  let html = '<select class="detail-edit-input detail-edit-select" data-field="' + field + '">';
+  for (const opt of options) {
+    const isSelected = (opt.value === currentValue || (currentValue === undefined && opt.value === ""));
+    html += '<option value="' + escapeHtml(opt.value) + '"' + (isSelected ? " selected" : "") + '>' + escapeHtml(opt.label) + '</option>';
+  }
+  html += '</select>';
+  return html;
+}
+
+// ───── Mini category manager ──────────────────────────────────────────
+function renderCategoryManager() {
+  let html = '<div class="detail-category-manager">';
+  html +=   '<div class="detail-category-manager-title">Categories</div>';
+  const ids = Object.keys(CATEGORIES);
+  if (ids.length === 0) {
+    html += '<div class="detail-category-manager-empty">No categories yet. Add one below.</div>';
+  } else {
+    for (const id of ids) {
+      const cat = CATEGORIES[id];
+      const count = categoryNodeCount[id] || 0;
+      html += '<div class="detail-category-row" data-cat-id="' + escapeHtml(id) + '">';
+      html +=   '<input type="text" class="detail-edit-input detail-category-label" data-cat-field="label" value="' + escapeHtml(cat.label) + '">';
+      html +=   '<input type="color" class="detail-category-color" data-cat-field="color" value="' + escapeHtml(cat.color) + '" title="Fill colour">';
+      html +=   '<input type="color" class="detail-category-color" data-cat-field="textColor" value="' + escapeHtml(cat.textColor) + '" title="Label text colour">';
+      html +=   '<button class="detail-category-delete' + (count > 0 ? " disabled" : "") + '" data-cat-action="delete"' + (count > 0 ? ' title="Used by ' + count + ' node(s) — reassign first" disabled' : ' title="Delete category"') + '>×</button>';
+      html += '</div>';
+    }
+  }
+  html += '<button class="detail-edit-link" data-cat-action="add">+ Add category</button>';
+  html += '</div>';
+  return html;
+}
+
+// ───── Outgoing edges (edit mode) ─────────────────────────────────────
+function renderOutgoingEdgesBlock(node) {
+  const outgoing = outgoingEdges[node.id] || [];
+  const flashedId = state.canvasEdit && state.canvasEdit.flashedEdgeId;
+  const adding = state.canvasEdit && state.canvasEdit.addingEdgeFromNodeId === node.id;
+
+  let html = '<div class="outgoing-edges-block">';
+  html +=   '<div class="detail-list-title"><span>Outgoing edges</span><span class="count">' + outgoing.length + '</span></div>';
+
+  if (outgoing.length === 0) {
+    html += '<div class="outgoing-edges-empty">No outgoing edges yet. Drag from the right edge of this node on the canvas, or add one below.</div>';
+  } else {
+    for (const edge of outgoing) {
+      const target = nodeById[edge.to];
+      const defaultElasticity = DEFAULT_ELASTICITY_BY_EFFECT[edge.effect];
+      const flashClass = (edge.id === flashedId) ? " flash" : "";
+      html += '<div class="outgoing-edge-row ' + edge.effect + flashClass + '" data-edge-row-id="' + escapeHtml(edge.id) + '">';
+      html +=   '<div class="outgoing-edge-header">';
+      html +=     '<button class="outgoing-edge-target-link" data-jump-node="' + escapeHtml(edge.to) + '" title="Jump to target node">→ ' + escapeHtml(target ? target.label : edge.to) + '</button>';
+      html +=     '<button class="outgoing-edge-delete" data-edge-action="delete" data-edge-id="' + escapeHtml(edge.id) + '" title="Delete this edge">×</button>';
+      html +=   '</div>';
+      html +=   '<div class="outgoing-edge-controls">';
+      html +=     '<select class="detail-edit-input detail-edit-select" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="effect">';
+      for (const eff of ["enables", "increases", "decreases"]) {
+        html +=     '<option value="' + eff + '"' + (edge.effect === eff ? " selected" : "") + '>' + eff + '</option>';
+      }
+      html +=     '</select>';
+      html +=     '<input type="number" step="any" class="detail-edit-input detail-edit-number outgoing-edge-elasticity" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="elasticity" value="' + (edge.elasticity !== undefined && edge.elasticity !== null ? edge.elasticity : "") + '" placeholder="ε = ' + defaultElasticity + '" title="Elasticity (blank = default for this effect)">';
+      html +=   '</div>';
+      html +=   '<textarea class="detail-edit-input detail-edit-textarea outgoing-edge-description" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="description" rows="2" placeholder="Optional description">' + escapeHtml(edge.description || "") + '</textarea>';
+      html += '</div>';
+    }
+  }
+
+  // Add affordance — collapsed by default, expands to a target/effect form.
+  if (adding) {
+    const otherNodes = NODES.filter(n => n.id !== node.id);
+    // Skip nodes that already have an outgoing edge from this one with all
+    // three effect types — there's nothing left to add.
+    const existingTargets = new Set(outgoing.map(e => e.to + ":" + e.effect));
+    html += '<div class="outgoing-edge-add">';
+    if (otherNodes.length === 0) {
+      html +=   '<div class="outgoing-edges-empty">Add at least one other node before connecting edges.</div>';
+      html +=   '<button class="detail-edit-link" data-action="cancel-add-edge">Cancel</button>';
+    } else {
+      html +=   '<div class="outgoing-edge-add-title">Add outgoing edge</div>';
+      html +=   '<div class="outgoing-edge-add-row">';
+      html +=     '<select class="detail-edit-input detail-edit-select" data-action="pick-add-target">';
+      for (const n of otherNodes) {
+        html +=     '<option value="' + escapeHtml(n.id) + '">' + escapeHtml(n.label) + '</option>';
+      }
+      html +=     '</select>';
+      html +=     '<select class="detail-edit-input detail-edit-select" data-action="pick-add-effect">';
+      for (const eff of ["enables", "increases", "decreases"]) {
+        html +=     '<option value="' + eff + '"' + (eff === "increases" ? " selected" : "") + '>' + eff + '</option>';
+      }
+      html +=     '</select>';
+      html +=   '</div>';
+      html +=   '<div class="outgoing-edge-add-actions">';
+      html +=     '<button class="detail-edit-link" data-action="cancel-add-edge">Cancel</button>';
+      html +=     '<button class="detail-button" data-action="confirm-add-edge">Add edge</button>';
+      html +=   '</div>';
+    }
+    html += '</div>';
+  } else {
+    html += '<button class="detail-edit-link outgoing-edge-add-toggle" data-action="show-add-edge">+ Add outgoing edge</button>';
+  }
+
+  html += '</div>';
+  return html;
+}
+
+// =============================================================================
+// HANDLERS
+// =============================================================================
+
+function wireSharedHandlers(node, contentState) {
+  // Toggle between View and Edit. Shared by both modes (just the label and
+  // styling differ).
   const editToggle = contentState.querySelector("[data-action='toggle-edit-mode']");
   if (editToggle) {
     editToggle.addEventListener("click", () => {
       state.canvasEdit.editMode = !state.canvasEdit.editMode;
-      // Toggling off also closes the inline category manager so re-opening
-      // the panel later doesn't reveal it unexpectedly.
-      if (!state.canvasEdit.editMode) state.canvasEdit.categoryManagerOpen = false;
+      if (!state.canvasEdit.editMode) {
+        state.canvasEdit.categoryManagerOpen = false;
+        state.canvasEdit.addingEdgeFromNodeId = null;
+      }
       renderDetailPanel();
     });
   }
+}
 
-  // Wire all editable behaviour, including the mini category manager.
-  // No-op when not in edit mode (the inputs aren't in the DOM).
-  wireNodeEditHandlers(node, contentState);
-
+function wireViewModeHandlers(node, contentState) {
   // Clicking an edge item navigates to that node.
   contentState.querySelectorAll(".detail-edge-item").forEach(item => {
     item.addEventListener("click", () => {
@@ -195,129 +390,21 @@ function renderDetailPanel() {
       }
     });
   });
-
-  // Delete-node button.
-  const delBtn = contentState.querySelector("[data-action='delete-node']");
-  if (delBtn) {
-    delBtn.addEventListener("click", () => {
-      if (typeof deleteSelection === "function") deleteSelection();
-    });
-  }
 }
 
-// ───── Render: node edit block ──────────────────────────────────────────
-function renderNodeEditBlock(node) {
-  const directionOptions = [
-    { value: "",              label: "— none —" },
-    { value: "higher_better", label: "Higher is better" },
-    { value: "lower_better",  label: "Lower is better" },
-    { value: "neutral",       label: "Neutral / context" },
-  ];
-  let html = '<div class="detail-edit-block">';
-  html +=   '<div class="detail-list-title"><span>Edit</span></div>';
-
-  // Label.
-  html += editRow("Label",
-    '<input type="text" class="detail-edit-input" data-field="label" value="' + escapeHtml(node.label || "") + '">');
-
-  // Description.
-  html += editRow("Description",
-    '<textarea class="detail-edit-input detail-edit-textarea" data-field="description" rows="2">' + escapeHtml(node.description || "") + '</textarea>');
-
-  // Stream.
-  html += editRow("Stream", selectInput("stream", STREAMS.map(s => ({ value: s.id, label: s.label })), node.stream));
-
-  // Stage.
-  html += editRow("Stage", selectInput("stage", STAGES.map(s => ({ value: s.id, label: s.label })), node.stage));
-
-  // Category (with Manage categories toggle).
-  const catOptions = Object.keys(CATEGORIES).map(id => ({ value: id, label: CATEGORIES[id].label }));
-  html += editRow("Category",
-    selectInput("category", catOptions, node.category) +
-    '<button class="detail-edit-link" data-action="toggle-category-manager">' +
-      (state.canvasEdit && state.canvasEdit.categoryManagerOpen ? "Hide categories" : "Manage categories") +
-    '</button>');
-
-  if (state.canvasEdit && state.canvasEdit.categoryManagerOpen) {
-    html += renderCategoryManager();
-  }
-
-  // Baseline.
-  html += editRow("Baseline",
-    '<input type="number" step="any" class="detail-edit-input detail-edit-number" data-field="baseline" value="' + (node.baseline !== undefined && node.baseline !== null ? node.baseline : "") + '" placeholder="(blank = no value)">');
-
-  // Unit.
-  html += editRow("Unit",
-    '<input type="text" class="detail-edit-input" data-field="unit" value="' + escapeHtml(node.unit || "") + '" placeholder="e.g. FTE, %, hours">');
-
-  // Controllable.
-  html += '<div class="detail-edit-row">';
-  html +=   '<label class="detail-edit-label"><input type="checkbox" data-field="controllable"' + (node.controllable ? " checked" : "") + '> Controllable (sliderable)</label>';
-  html += '</div>';
-
-  // Direction.
-  html += editRow("Outcome direction", selectInput("direction", directionOptions, node.direction || ""));
-
-  // Slider max.
-  html += editRow("Slider max",
-    '<input type="number" step="any" class="detail-edit-input detail-edit-number" data-field="sliderMax" value="' + (node.sliderMax !== undefined && node.sliderMax !== null ? node.sliderMax : "") + '" placeholder="default = 2 × baseline">');
-
-  html += '</div>';
-  return html;
-}
-
-function editRow(label, controlHtml) {
-  return '<div class="detail-edit-row"><span class="detail-edit-label">' + escapeHtml(label) + '</span><div class="detail-edit-control">' + controlHtml + '</div></div>';
-}
-
-function selectInput(field, options, currentValue) {
-  let html = '<select class="detail-edit-input detail-edit-select" data-field="' + field + '">';
-  for (const opt of options) {
-    const isSelected = (opt.value === currentValue || (currentValue === undefined && opt.value === ""));
-    html += '<option value="' + escapeHtml(opt.value) + '"' + (isSelected ? " selected" : "") + '>' + escapeHtml(opt.label) + '</option>';
-  }
-  html += '</select>';
-  return html;
-}
-
-// ───── Render: mini category manager ───────────────────────────────────
-function renderCategoryManager() {
-  let html = '<div class="detail-category-manager">';
-  html +=   '<div class="detail-category-manager-title">Categories</div>';
-  const ids = Object.keys(CATEGORIES);
-  if (ids.length === 0) {
-    html += '<div class="detail-category-manager-empty">No categories yet. Add one below.</div>';
-  } else {
-    for (const id of ids) {
-      const cat = CATEGORIES[id];
-      const count = categoryNodeCount[id] || 0;
-      html += '<div class="detail-category-row" data-cat-id="' + escapeHtml(id) + '">';
-      html +=   '<input type="text" class="detail-edit-input detail-category-label" data-cat-field="label" value="' + escapeHtml(cat.label) + '">';
-      html +=   '<input type="color" class="detail-category-color" data-cat-field="color" value="' + escapeHtml(cat.color) + '" title="Fill colour">';
-      html +=   '<input type="color" class="detail-category-color" data-cat-field="textColor" value="' + escapeHtml(cat.textColor) + '" title="Label text colour">';
-      html +=   '<button class="detail-category-delete' + (count > 0 ? " disabled" : "") + '" data-cat-action="delete"' + (count > 0 ? ' title="Used by ' + count + ' node(s) — reassign first" disabled' : ' title="Delete category"') + '>×</button>';
-      html += '</div>';
-    }
-  }
-  html += '<button class="detail-edit-link" data-cat-action="add">+ Add category</button>';
-  html += '</div>';
-  return html;
-}
-
-// ───── Wire: handlers for the edit block + category manager ────────────
-function wireNodeEditHandlers(node, root) {
-  // Generic node-field edits.
-  root.querySelectorAll(".detail-edit-input[data-field], input[data-field]").forEach(input => {
+function wireEditModeHandlers(node, contentState) {
+  // Node-field edits.
+  contentState.querySelectorAll("[data-field]").forEach(input => {
+    if (input.hasAttribute("data-edge-field")) return;     // edge inputs wired below
     const field = input.getAttribute("data-field");
     if (!field) return;
-    const eventName = (input.tagName === "SELECT" || input.type === "checkbox") ? "change" : "change";
-    input.addEventListener(eventName, () => {
+    input.addEventListener("change", () => {
       applyNodeFieldEdit(node, field, input);
     });
   });
 
   // "Manage categories" toggle.
-  const toggleBtn = root.querySelector("[data-action='toggle-category-manager']");
+  const toggleBtn = contentState.querySelector("[data-action='toggle-category-manager']");
   if (toggleBtn) {
     toggleBtn.addEventListener("click", event => {
       event.preventDefault();
@@ -327,7 +414,7 @@ function wireNodeEditHandlers(node, root) {
   }
 
   // Category manager rows.
-  root.querySelectorAll(".detail-category-row").forEach(row => {
+  contentState.querySelectorAll(".detail-category-row").forEach(row => {
     const catId = row.getAttribute("data-cat-id");
     row.querySelectorAll("[data-cat-field]").forEach(input => {
       const catField = input.getAttribute("data-cat-field");
@@ -346,14 +433,81 @@ function wireNodeEditHandlers(node, root) {
     }
   });
 
-  const addBtn = root.querySelector("[data-cat-action='add']");
-  if (addBtn) {
-    addBtn.addEventListener("click", event => {
+  const addCatBtn = contentState.querySelector("[data-cat-action='add']");
+  if (addCatBtn) {
+    addCatBtn.addEventListener("click", event => {
       event.preventDefault();
       addNewCategory();
     });
   }
+
+  // Outgoing-edges row edits + delete.
+  contentState.querySelectorAll(".outgoing-edge-row [data-edge-field]").forEach(input => {
+    const edgeId = input.getAttribute("data-edge-id");
+    const field  = input.getAttribute("data-edge-field");
+    input.addEventListener("change", () => {
+      applyEdgeFieldEdit(edgeId, field, input);
+    });
+  });
+  contentState.querySelectorAll(".outgoing-edge-target-link").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const targetId = btn.getAttribute("data-jump-node");
+      if (nodeById[targetId]) {
+        selectNode(targetId);
+        scrollNodeIntoView(targetId);
+      }
+    });
+  });
+  contentState.querySelectorAll("[data-edge-action='delete']").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const edgeId = btn.getAttribute("data-edge-id");
+      if (typeof deleteEdgeById === "function") deleteEdgeById(edgeId);
+    });
+  });
+
+  // Add-outgoing-edge affordance.
+  const showAddBtn = contentState.querySelector("[data-action='show-add-edge']");
+  if (showAddBtn) {
+    showAddBtn.addEventListener("click", event => {
+      event.preventDefault();
+      state.canvasEdit.addingEdgeFromNodeId = node.id;
+      renderDetailPanel();
+    });
+  }
+  const cancelAddBtn = contentState.querySelector("[data-action='cancel-add-edge']");
+  if (cancelAddBtn) {
+    cancelAddBtn.addEventListener("click", event => {
+      event.preventDefault();
+      state.canvasEdit.addingEdgeFromNodeId = null;
+      renderDetailPanel();
+    });
+  }
+  const confirmAddBtn = contentState.querySelector("[data-action='confirm-add-edge']");
+  if (confirmAddBtn) {
+    confirmAddBtn.addEventListener("click", event => {
+      event.preventDefault();
+      const targetSel = contentState.querySelector("[data-action='pick-add-target']");
+      const effectSel = contentState.querySelector("[data-action='pick-add-effect']");
+      if (!targetSel || !effectSel) return;
+      const targetId = targetSel.value;
+      const effect   = effectSel.value;
+      state.canvasEdit.addingEdgeFromNodeId = null;
+      if (typeof commitNewEdge === "function") commitNewEdge(node.id, targetId, effect);
+    });
+  }
+
+  // Delete-node button.
+  const delBtn = contentState.querySelector("[data-action='delete-node']");
+  if (delBtn) {
+    delBtn.addEventListener("click", () => {
+      if (typeof deleteSelection === "function") deleteSelection();
+    });
+  }
 }
+
+// =============================================================================
+// FIELD WRITES
+// =============================================================================
 
 function applyNodeFieldEdit(node, field, input) {
   let value;
@@ -372,7 +526,6 @@ function applyNodeFieldEdit(node, field, input) {
   // the new state.
   let skipDetailRender = false;
 
-  // Field-specific validation and write.
   if (field === "label") {
     const trimmed = String(value).trim();
     node.label = trimmed || "Untitled";
@@ -392,7 +545,7 @@ function applyNodeFieldEdit(node, field, input) {
     node.category = value;
   } else if (field === "baseline") {
     if (value === undefined) { delete node.baseline; }
-    else if (value === 0)    { delete node.baseline; input.value = ""; }   // reject 0 (simulation divides by it)
+    else if (value === 0)    { delete node.baseline; input.value = ""; }   // simulation divides by baseline
     else                     { node.baseline = value; }
     skipDetailRender = true;
   } else if (field === "unit") {
@@ -423,7 +576,6 @@ function applyCategoryFieldEdit(catId, field, input) {
 }
 
 function addNewCategory() {
-  // Pick a stable id like "category_N".
   let n = Object.keys(CATEGORIES).length + 1;
   let id = "category_" + n;
   while (CATEGORIES[id]) { n++; id = "category_" + n; }
@@ -435,109 +587,31 @@ function addNewCategory() {
   if (typeof applyCanvasMutation === "function") applyCanvasMutation();
 }
 
-// ───── Render: edge detail (when an edge is selected) ───────────────────
-function renderEdgeDetail(edgeId, contentState) {
+function applyEdgeFieldEdit(edgeId, field, input) {
   const edge = EDGES.find(e => e.id === edgeId);
-  if (!edge) {
-    if (state.canvasEdit) state.canvasEdit.selectedEdgeId = null;
-    document.getElementById("detail-empty").style.display = "block";
-    contentState.style.display = "none";
+  if (!edge) return;
+  if (field === "effect") {
+    if (!["enables", "increases", "decreases"].includes(input.value)) return;
+    edge.effect = input.value;
+  } else if (field === "elasticity") {
+    const v = parseFloat(input.value);
+    if (input.value === "" || isNaN(v)) delete edge.elasticity;
+    else                                  edge.elasticity = v;
+    // Editing elasticity / description doesn't change layout — preserve focus.
+    if (typeof applyCanvasMutation === "function") applyCanvasMutation({ skipDetailRender: true });
+    return;
+  } else if (field === "description") {
+    edge.description = String(input.value || "");
+    if (typeof applyCanvasMutation === "function") applyCanvasMutation({ skipDetailRender: true });
     return;
   }
-  const fromNode = nodeById[edge.from];
-  const toNode   = nodeById[edge.to];
-  const effectColors = {
-    enables:    "var(--accent-purple)",
-    increases:  "var(--accent-green)",
-    decreases:  "var(--accent-red)",
-  };
-
-  let html = "";
-  html += '<div class="detail-tags">';
-  html +=   '<span class="detail-tag" style="background:' + effectColors[edge.effect] + '; color: var(--bg-deepest); border:none; font-weight:600;">' + escapeHtml(edge.effect) + '</span>';
-  html += '</div>';
-
-  html += '<div class="detail-name">Edge</div>';
-
-  // From / to links.
-  html += '<div class="detail-edge-endpoints">';
-  html +=   '<div class="detail-edge-endpoint"><span class="detail-edit-label">From</span>';
-  html +=     '<button class="detail-edge-endpoint-link" data-jump-node="' + escapeHtml(edge.from) + '">' + escapeHtml(fromNode ? fromNode.label : edge.from) + '</button>';
-  html +=   '</div>';
-  html +=   '<div class="detail-edge-endpoint"><span class="detail-edit-label">To</span>';
-  html +=     '<button class="detail-edge-endpoint-link" data-jump-node="' + escapeHtml(edge.to) + '">' + escapeHtml(toNode ? toNode.label : edge.to) + '</button>';
-  html +=   '</div>';
-  html += '</div>';
-
-  // Effect / elasticity / description.
-  html += '<div class="detail-edit-block">';
-  html +=   '<div class="detail-list-title"><span>Edit</span></div>';
-
-  const effectOptions = ["enables", "increases", "decreases"].map(e => ({ value: e, label: e }));
-  html += editRow("Effect", selectInput("edge-effect", effectOptions, edge.effect));
-
-  const defaultElasticity = DEFAULT_ELASTICITY_BY_EFFECT[edge.effect];
-  html += editRow("Elasticity",
-    '<input type="number" step="any" class="detail-edit-input detail-edit-number" data-field="edge-elasticity" value="' + (edge.elasticity !== undefined && edge.elasticity !== null ? edge.elasticity : "") + '" placeholder="default = ' + defaultElasticity + '">');
-
-  html += editRow("Description",
-    '<textarea class="detail-edit-input detail-edit-textarea" data-field="edge-description" rows="2">' + escapeHtml(edge.description || "") + '</textarea>');
-  html += '</div>';
-
-  // Delete button.
-  html += '<div class="detail-actions" style="margin-top:18px;">';
-  html +=   '<button class="detail-button detail-delete-btn" data-action="delete-edge">Delete edge</button>';
-  html += '</div>';
-
-  contentState.innerHTML = html;
-
-  // From/to navigation.
-  contentState.querySelectorAll("[data-jump-node]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const nid = btn.getAttribute("data-jump-node");
-      if (nodeById[nid]) {
-        selectNode(nid);
-        scrollNodeIntoView(nid);
-      }
-    });
-  });
-
-  // Effect / elasticity / description edits.
-  const effectSelect = contentState.querySelector("[data-field='edge-effect']");
-  if (effectSelect) {
-    effectSelect.addEventListener("change", () => {
-      edge.effect = effectSelect.value;
-      if (typeof applyCanvasMutation === "function") applyCanvasMutation();
-    });
-  }
-  const elasticityInput = contentState.querySelector("[data-field='edge-elasticity']");
-  if (elasticityInput) {
-    elasticityInput.addEventListener("change", () => {
-      const v = parseFloat(elasticityInput.value);
-      if (elasticityInput.value === "" || isNaN(v)) delete edge.elasticity;
-      else edge.elasticity = v;
-      if (typeof applyCanvasMutation === "function") applyCanvasMutation();
-    });
-  }
-  const descInput = contentState.querySelector("[data-field='edge-description']");
-  if (descInput) {
-    descInput.addEventListener("change", () => {
-      edge.description = descInput.value;
-      if (typeof applyCanvasMutation === "function") applyCanvasMutation();
-    });
-  }
-
-  const delBtn = contentState.querySelector("[data-action='delete-edge']");
-  if (delBtn) {
-    delBtn.addEventListener("click", () => {
-      if (typeof deleteSelection === "function") deleteSelection();
-    });
-  }
+  if (typeof applyCanvasMutation === "function") applyCanvasMutation();
 }
 
-// Render a titled list of edge items (used for both "Direct Inputs" and
-// "Direct Impacts"). `items` is an array of { edge, otherNode } pairs;
-// `direction` is "from" or "to" (controls the arrow glyph in the row).
+// =============================================================================
+// SHARED — edge-list rendering used by view mode
+// =============================================================================
+
 function renderEdgeList(title, items, direction, emptyText) {
   let html = '<div class="detail-list-title">';
   html +=     '<span>' + escapeHtml(title) + '</span>';
@@ -553,8 +627,6 @@ function renderEdgeList(title, items, direction, emptyText) {
   return html;
 }
 
-// One row in either the "Direct Inputs" or "Direct Impacts" list.
-// `direction` is "from" (this edge comes INTO the selected node) or "to".
 function renderEdgeItem(otherNode, edge, direction) {
   const effectClass = edge.effect;
   const arrow = direction === "from" ? "←" : "→";

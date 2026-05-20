@@ -75,15 +75,12 @@ function selectNode(nodeId) {
     deselectNode();
     return;
   }
-  // Selecting a node clears any edge selection — the two are mutually exclusive.
-  if (state.canvasEdit) state.canvasEdit.selectedEdgeId = null;
   state.selectedNodeId = nodeId;
   state.ancestorSet = getAncestors(nodeId);
   state.descendantSet = getDescendants(nodeId);
   state.highlightedEdgeIds = computeHighlightedEdges(nodeId);
   render();
   renderDetailPanel();
-  updateNodeListSelectionHighlight();
   saveUiStateToStorage();
 }
 
@@ -94,47 +91,60 @@ function deselectNode() {
   state.highlightedEdgeIds = new Set();
   render();
   renderDetailPanel();
-  updateNodeListSelectionHighlight();
   saveUiStateToStorage();
 }
 
-// Lightweight DOM patch: refresh the .selected class on the sidebar Nodes
-// list without re-rendering the entire sidebar. Called from select/deselect
-// so the highlight follows the current selection.
-function updateNodeListSelectionHighlight() {
-  const list = document.getElementById("nodes-list");
-  if (!list) return;
-  list.querySelectorAll(".node-list-row").forEach(row => {
-    const id = row.getAttribute("data-node-id");
-    if (id === state.selectedNodeId) row.classList.add("selected");
-    else                              row.classList.remove("selected");
-  });
-}
-
-// Select an edge (mutually exclusive with selectedNodeId). Used by the
-// canvas direct-edit path so the detail panel can show / edit edge fields.
+// Clicking an edge on the canvas selects the edge's source node and opens
+// the detail panel in edit mode, scrolling the corresponding row in the
+// outgoing-edges list into view and briefly flashing it so the user sees
+// which edge they clicked. Edges no longer have their own detail panel —
+// they're always edited from their from-node.
 function selectEdge(edgeId) {
   if (!state.canvasEdit) return;
-  if (state.canvasEdit.selectedEdgeId === edgeId) {
-    deselectAll();
-    return;
+  const edge = EDGES.find(e => e.id === edgeId);
+  if (!edge) return;
+  state.canvasEdit.editMode = true;
+  state.canvasEdit.flashedEdgeId = edgeId;
+
+  if (state.selectedNodeId === edge.from) {
+    render();
+    renderDetailPanel();
+  } else {
+    // selectNode toggles when called with the current id; we already handled
+    // that above so it's safe to set directly here.
+    state.selectedNodeId = edge.from;
+    state.ancestorSet = getAncestors(edge.from);
+    state.descendantSet = getDescendants(edge.from);
+    state.highlightedEdgeIds = computeHighlightedEdges(edge.from);
+    render();
+    renderDetailPanel();
+    saveUiStateToStorage();
   }
-  state.selectedNodeId = null;
-  state.ancestorSet = new Set();
-  state.descendantSet = new Set();
-  state.highlightedEdgeIds = new Set();
-  state.canvasEdit.selectedEdgeId = edgeId;
-  render();
-  renderDetailPanel();
+
+  // After the panel renders, scroll the flashed row into view + auto-clear
+  // the flash flag once the CSS animation has run.
+  setTimeout(() => {
+    const row = document.querySelector('[data-edge-row-id="' + CSS.escape(edgeId) + '"]');
+    if (row && typeof row.scrollIntoView === "function") {
+      row.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, 30);
+  setTimeout(() => {
+    if (state.canvasEdit && state.canvasEdit.flashedEdgeId === edgeId) {
+      state.canvasEdit.flashedEdgeId = null;
+    }
+  }, 1800);
 }
 
-// Clears both node and edge selection. The empty-SVG click handler calls this.
+// Clears node selection. The empty-SVG click handler calls this. (Edges
+// don't get their own selection any more — clicking an edge goes through
+// selectEdge above, which is just a navigation helper.)
 function deselectAll() {
   state.selectedNodeId = null;
   state.ancestorSet = new Set();
   state.descendantSet = new Set();
   state.highlightedEdgeIds = new Set();
-  if (state.canvasEdit) state.canvasEdit.selectedEdgeId = null;
+  if (state.canvasEdit) state.canvasEdit.flashedEdgeId = null;
   render();
   renderDetailPanel();
   saveUiStateToStorage();

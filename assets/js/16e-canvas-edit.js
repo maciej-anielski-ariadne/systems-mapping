@@ -39,7 +39,6 @@ const EDGE_HANDLE_PIXEL_HITBOX = 10;   // generous mousedown target
 // the undo-toast element to <body>.
 function initCanvasEdit() {
   ensureUndoToastEl();
-  ensureColorPickerEl();
 
   const vizSvg = document.getElementById("viz-svg");
   if (vizSvg) {
@@ -63,14 +62,13 @@ function initCanvasEdit() {
     if (state.builder && state.builder.open) return;
 
     if (event.key === "Escape") {
-      if (cancelActiveLabelEdit())  { event.preventDefault(); return; }
       if (cancelDraftEdge())        { event.preventDefault(); return; }
       if (state.canvasEdit && state.canvasEdit.pendingEdgeDrop) {
         dismissEffectPicker();
         event.preventDefault();
         return;
       }
-      if (state.selectedNodeId || (state.canvasEdit && state.canvasEdit.selectedEdgeId)) {
+      if (state.selectedNodeId) {
         deselectAll();
         event.preventDefault();
         return;
@@ -114,11 +112,11 @@ function bootEmptyStateGrid() {
   state.computedValues = {};
   if (state.canvasEdit) {
     state.canvasEdit.hoverCell = null;
-    state.canvasEdit.editingNodeId = null;
-    state.canvasEdit.editingHeader = null;
     state.canvasEdit.draftEdge = null;
     state.canvasEdit.pendingEdgeDrop = null;
-    state.canvasEdit.selectedEdgeId = null;
+    state.canvasEdit.flashedEdgeId = null;
+    state.canvasEdit.addingEdgeFromNodeId = null;
+    state.canvasEdit.editingSidebarItem = null;
   }
 
   rebuildIndexes();
@@ -133,16 +131,16 @@ function bootEmptyStateGrid() {
 // Every canvas edit ends here. Re-runs the pipeline that data-loader.js runs
 // after parsing a CSV, then persists the new live state to localStorage.
 //
-// `options.skipDetailRender` — set true when the mutation came from a text/
-// number input in the detail panel. Re-rendering the panel destroys the input
-// element and breaks focus / tabbing, so the caller is responsible for ensuring
-// the panel's visible state matches the mutation (true for label/description/
-// unit-style fields; false for stream/stage which change layout).
+// `options.skipDetailRender` — true when the mutation came from a text /
+// number input in the detail panel. Re-rendering the panel would destroy
+// the input element and break focus / tabbing.
+// `options.skipSidebarRender` — same idea for the sidebar (preserves focus
+// while the user is typing in the expanded stream / stage edit row).
 function applyCanvasMutation(options) {
   rebuildIndexes();
   layout = computeLayout();
   recomputeValues();
-  renderSidebar();
+  if (!options || !options.skipSidebarRender) renderSidebar();
   render();
   if (!options || !options.skipDetailRender) renderDetailPanel();
   try {
@@ -154,6 +152,10 @@ function applyCanvasMutation(options) {
 
 // ───── Per-render event binding ───────────────────────────────────────────
 // Called by attachSvgEventHandlers() in 11-rendering.js after every render.
+// The canvas hosts only spatial gestures: ghost-cell click to add, drag
+// from a node's right edge to draw an edge, edge click to navigate. All
+// rename / re-colour / reorder / add-stream / add-stage flows live in
+// the sidebar and the right detail panel.
 function attachCanvasEditHandlers() {
   const vizSvg = document.getElementById("viz-svg");
   if (!vizSvg) return;
@@ -179,72 +181,12 @@ function attachCanvasEditHandlers() {
     });
   });
 
-  // Edge click (wide hit-path) → select edge.
+  // Edge click (wide hit-path) → select the from-node + open edit mode.
   vizSvg.querySelectorAll(".edge-hit").forEach(path => {
     path.addEventListener("click", event => {
       event.stopPropagation();
       const edgeId = path.getAttribute("data-edge-id");
       if (typeof selectEdge === "function") selectEdge(edgeId);
-    });
-  });
-
-  // Node label double-click → enter inline-rename mode.
-  vizSvg.querySelectorAll(".node-group").forEach(group => {
-    group.addEventListener("dblclick", event => {
-      event.stopPropagation();
-      const nodeId = group.getAttribute("data-node-id");
-      enterLabelEdit(nodeId);
-    });
-  });
-
-  // Row label double-click → rename stream. Cancels the deferred toggle.
-  vizSvg.querySelectorAll(".row-label-group").forEach(group => {
-    group.addEventListener("dblclick", event => {
-      if (event.target.closest && event.target.closest(".stream-swatch")) return;
-      event.stopPropagation();
-      if (state.canvasEdit && state.canvasEdit._pendingToggleTimer) {
-        clearTimeout(state.canvasEdit._pendingToggleTimer);
-        state.canvasEdit._pendingToggleTimer = null;
-      }
-      const streamId = group.getAttribute("data-stream-id");
-      enterHeaderEdit("stream", streamId);
-    });
-  });
-
-  // Column header text double-click → rename stage.
-  vizSvg.querySelectorAll(".col-header-text").forEach(text => {
-    text.addEventListener("dblclick", event => {
-      event.stopPropagation();
-      const stageId = text.getAttribute("data-stage-id");
-      enterHeaderEdit("stage", stageId);
-    });
-  });
-
-  // Stream colour swatch click → open hidden colour picker.
-  vizSvg.querySelectorAll(".stream-swatch").forEach(swatch => {
-    swatch.addEventListener("click", event => {
-      event.stopPropagation();
-      // Suppress the row-label single-click toggle.
-      if (state.canvasEdit && state.canvasEdit._pendingToggleTimer) {
-        clearTimeout(state.canvasEdit._pendingToggleTimer);
-        state.canvasEdit._pendingToggleTimer = null;
-      }
-      const streamId = swatch.getAttribute("data-stream-id");
-      openStreamColorPicker(streamId);
-    });
-  });
-
-  // '+' row / column buttons.
-  vizSvg.querySelectorAll(".add-row-btn").forEach(btn => {
-    btn.addEventListener("click", event => {
-      event.stopPropagation();
-      addStream();
-    });
-  });
-  vizSvg.querySelectorAll(".add-col-btn").forEach(btn => {
-    btn.addEventListener("click", event => {
-      event.stopPropagation();
-      addStage();
     });
   });
 }
@@ -337,11 +279,19 @@ function createNodeInCell(streamId, stageId) {
   };
   NODES.push(newNode);
   state.canvasEdit.hoverCell = null;
+  // Open the detail panel in edit mode so the user lands in the rename
+  // flow immediately. selectNode triggers the panel render; we then focus
+  // the Label input on the next tick once the DOM exists.
+  state.canvasEdit.editMode = true;
   applyCanvasMutation();
-
-  // Auto-select + enter rename mode so the user can immediately type a name.
   selectNode(newNode.id);
-  enterLabelEdit(newNode.id);
+  setTimeout(() => {
+    const labelInput = document.querySelector("#detail-content [data-field='label']");
+    if (labelInput && typeof labelInput.focus === "function") {
+      labelInput.focus();
+      if (typeof labelInput.select === "function") labelInput.select();
+    }
+  }, 0);
 }
 
 // Build a node id from a label that doesn't collide with any existing one.
@@ -364,176 +314,6 @@ function ensureDefaultCategory() {
   };
 }
 
-// ───── Inline label edit ──────────────────────────────────────────────────
-// Renders a <foreignObject> containing a focused <input> positioned over the
-// node label, then commits the change on Enter / blur (Esc cancels).
-function enterLabelEdit(nodeId) {
-  cancelActiveLabelEdit();
-  const node = nodeById[nodeId];
-  const pos = layout.positions[nodeId];
-  if (!node || !pos) return;
-
-  const svgEl = document.getElementById("viz-svg");
-  if (!svgEl) return;
-
-  state.canvasEdit.editingNodeId = nodeId;
-
-  const ns = "http://www.w3.org/2000/svg";
-  const fo = document.createElementNS(ns, "foreignObject");
-  fo.setAttribute("class", "canvas-edit-foreign");
-  fo.setAttribute("x", pos.x + 8);
-  fo.setAttribute("y", pos.y + 6);
-  fo.setAttribute("width", pos.width - 16);
-  fo.setAttribute("height", 28);
-
-  const input = document.createElement("input");
-  input.type = "text";
-  input.className = "canvas-edit-input canvas-edit-input-label";
-  input.value = node.label || "";
-  input.setAttribute("aria-label", "Rename node");
-  fo.appendChild(input);
-  svgEl.appendChild(fo);
-
-  // Safari occasionally drops the focus when an SVG foreignObject is added
-  // synchronously; deferring to the next tick avoids that.
-  setTimeout(() => { input.focus(); input.select(); }, 0);
-
-  let committed = false;
-  const commit = () => {
-    if (committed) return;
-    committed = true;
-    const newLabel = input.value.trim() || "Untitled";
-    fo.remove();
-    state.canvasEdit.editingNodeId = null;
-    if (node.label !== newLabel) {
-      node.label = newLabel;
-      applyCanvasMutation();
-    } else {
-      render();
-    }
-  };
-  const cancel = () => {
-    if (committed) return;
-    committed = true;
-    fo.remove();
-    state.canvasEdit.editingNodeId = null;
-    render();
-  };
-
-  input.addEventListener("keydown", event => {
-    if (event.key === "Enter")        { event.preventDefault(); commit(); }
-    else if (event.key === "Escape")  { event.preventDefault(); cancel(); }
-    event.stopPropagation();
-  });
-  input.addEventListener("blur", commit);
-}
-
-// Cancel any in-flight label or header edit. Returns true if there was one.
-function cancelActiveLabelEdit() {
-  const svgEl = document.getElementById("viz-svg");
-  if (!svgEl) return false;
-  const fos = svgEl.querySelectorAll("foreignObject.canvas-edit-foreign");
-  if (fos.length === 0) return false;
-  fos.forEach(fo => fo.remove());
-  state.canvasEdit.editingNodeId = null;
-  state.canvasEdit.editingHeader = null;
-  return true;
-}
-
-// ───── Header rename (stream or stage) ────────────────────────────────────
-function enterHeaderEdit(kind, id) {
-  cancelActiveLabelEdit();
-  const svgEl = document.getElementById("viz-svg");
-  if (!svgEl) return;
-
-  let x, y, width, height, currentLabel, commitFn;
-  if (kind === "stream") {
-    const stream = streamById[id];
-    if (!stream || state.hiddenStreams.has(id)) return;
-    const rowYPos = layout.rowY[id];
-    const rowHeight = layout.rowHeights[id];
-    x = 0;
-    y = rowYPos + rowHeight / 2 - 12;
-    width = ROW_HEADER_WIDTH - 4;
-    height = 24;
-    currentLabel = stream.label;
-    commitFn = (newLabel) => {
-      stream.label = newLabel;
-      // Update the short code as well so the visible row label tracks the
-      // rename — but only when the user hasn't customised the short code
-      // away from the previous derived form. To keep this simple, derive a
-      // short from the first letters of the new label (uppercase, ~6 chars).
-      stream.short = deriveShortLabel(newLabel);
-      applyCanvasMutation();
-    };
-  } else if (kind === "stage") {
-    const stage = stageById[id];
-    if (!stage) return;
-    x = layout.colX[id];
-    y = SVG_PADDING_TOP + 8;
-    width = NODE_WIDTH;
-    height = 24;
-    currentLabel = stage.label;
-    commitFn = (newLabel) => {
-      // stageById has its own {label, index}; STAGES is the array we render
-      // from. Update the array entry too.
-      stage.label = newLabel;
-      const stageInArray = STAGES.find(s => s.id === id);
-      if (stageInArray) stageInArray.label = newLabel;
-      applyCanvasMutation();
-    };
-  } else {
-    return;
-  }
-
-  state.canvasEdit.editingHeader = { kind: kind, id: id };
-
-  const ns = "http://www.w3.org/2000/svg";
-  const fo = document.createElementNS(ns, "foreignObject");
-  fo.setAttribute("class", "canvas-edit-foreign");
-  fo.setAttribute("x", x);
-  fo.setAttribute("y", y);
-  fo.setAttribute("width", width);
-  fo.setAttribute("height", height);
-
-  const input = document.createElement("input");
-  input.type = "text";
-  input.className = "canvas-edit-input canvas-edit-input-header";
-  input.value = currentLabel || "";
-  input.setAttribute("aria-label", "Rename " + kind);
-  fo.appendChild(input);
-  svgEl.appendChild(fo);
-  setTimeout(() => { input.focus(); input.select(); }, 0);
-
-  let committed = false;
-  const commit = () => {
-    if (committed) return;
-    committed = true;
-    const newLabel = input.value.trim();
-    fo.remove();
-    state.canvasEdit.editingHeader = null;
-    if (newLabel && newLabel !== currentLabel) {
-      commitFn(newLabel);
-    } else {
-      render();
-    }
-  };
-  const cancel = () => {
-    if (committed) return;
-    committed = true;
-    fo.remove();
-    state.canvasEdit.editingHeader = null;
-    render();
-  };
-
-  input.addEventListener("keydown", event => {
-    if (event.key === "Enter")        { event.preventDefault(); commit(); }
-    else if (event.key === "Escape")  { event.preventDefault(); cancel(); }
-    event.stopPropagation();
-  });
-  input.addEventListener("blur", commit);
-}
-
 // Derive a short label (uppercase, ~6 chars) for a stream. First two letters
 // of each word, capped at 6 chars total.
 function deriveShortLabel(label) {
@@ -552,7 +332,6 @@ let _draftEdgeMoveBound = null;
 let _draftEdgeUpBound   = null;
 
 function beginEdgeDrag(fromNodeId, clientX, clientY) {
-  cancelActiveLabelEdit();
   const point = clientPointToLayout(clientX, clientY);
   if (!point) return;
   state.canvasEdit.draftEdge = {
@@ -703,6 +482,9 @@ function commitNewEdge(fromNodeId, toNodeId, effect) {
 }
 
 // ───── Delete + undo ──────────────────────────────────────────────────────
+// Keyboard Delete only deletes the currently-selected NODE (with its incident
+// edges). Individual edges are deleted via the per-row × button inside the
+// node's edit panel; that path calls deleteEdgeById() directly.
 function deleteSelection() {
   if (state.selectedNodeId) {
     const node = nodeById[state.selectedNodeId];
@@ -726,22 +508,22 @@ function deleteSelection() {
     showUndoToast("Node deleted", () => restoreFromUndo(snapshot));
     return true;
   }
-  if (state.canvasEdit && state.canvasEdit.selectedEdgeId) {
-    const edgeId = state.canvasEdit.selectedEdgeId;
-    const edge = EDGES.find(e => e.id === edgeId);
-    if (!edge) return false;
-    const snapshot = {
-      kind: "edge",
-      edge: { from: edge.from, to: edge.to, effect: edge.effect, elasticity: edge.elasticity, description: edge.description },
-    };
-    EDGES = EDGES.filter(e => e.id !== edgeId);
-    state.canvasEdit.selectedEdgeId = null;
-    pushUndo(snapshot);
-    applyCanvasMutation();
-    showUndoToast("Edge deleted", () => restoreFromUndo(snapshot));
-    return true;
-  }
   return false;
+}
+
+// Delete a single edge by id, push an undo snapshot, show the toast. Called
+// from the edit panel's per-row × buttons.
+function deleteEdgeById(edgeId) {
+  const edge = EDGES.find(e => e.id === edgeId);
+  if (!edge) return;
+  const snapshot = {
+    kind: "edge",
+    edge: { from: edge.from, to: edge.to, effect: edge.effect, elasticity: edge.elasticity, description: edge.description },
+  };
+  EDGES = EDGES.filter(e => e.id !== edgeId);
+  pushUndo(snapshot);
+  applyCanvasMutation();
+  showUndoToast("Edge deleted", () => restoreFromUndo(snapshot));
 }
 
 function pushUndo(entry) {
@@ -762,6 +544,18 @@ function restoreFromUndo(entry) {
     selectNode(entry.node.id);
   } else if (entry.kind === "edge") {
     EDGES.push(entry.edge);
+    applyCanvasMutation();
+  } else if (entry.kind === "stream") {
+    const idx = Math.min(Math.max(entry.streamIndex, 0), STREAMS.length);
+    STREAMS.splice(idx, 0, Object.assign({}, entry.stream));
+    for (const n of entry.nodes) NODES.push(Object.assign({}, n));
+    for (const e of entry.edges) EDGES.push({ from: e.from, to: e.to, effect: e.effect, elasticity: e.elasticity, description: e.description });
+    applyCanvasMutation();
+  } else if (entry.kind === "stage") {
+    const idx = Math.min(Math.max(entry.stageIndex, 0), STAGES.length);
+    STAGES.splice(idx, 0, { id: entry.stage.id, label: entry.stage.label });
+    for (const n of entry.nodes) NODES.push(Object.assign({}, n));
+    for (const e of entry.edges) EDGES.push({ from: e.from, to: e.to, effect: e.effect, elasticity: e.elasticity, description: e.description });
     applyCanvasMutation();
   }
   state.undoStack = [];
@@ -821,9 +615,11 @@ function addStream() {
   const color = STREAM_COLOR_PALETTE[STREAMS.length % STREAM_COLOR_PALETTE.length];
   const label = "Stream " + counter;
   STREAMS.push({ id: id, label: label, short: deriveShortLabel(label), color: color });
+  // Open the new row's pencil-expanded edit view in the sidebar so the user
+  // can immediately rename / re-colour it.
+  state.canvasEdit.editingSidebarItem = { kind: "stream", id: id };
   applyCanvasMutation();
-  // Auto-focus the rename input so the user can immediately name it.
-  enterHeaderEdit("stream", id);
+  focusSidebarEditLabel("stream", id);
 }
 
 function addStage() {
@@ -832,51 +628,109 @@ function addStage() {
   let n = counter;
   while (stageById[id]) { n++; id = "stage_" + n; }
   STAGES.push({ id: id, label: "Stage " + counter });
+  state.canvasEdit.editingSidebarItem = { kind: "stage", id: id };
   applyCanvasMutation();
-  enterHeaderEdit("stage", id);
+  focusSidebarEditLabel("stage", id);
 }
 
-// ───── Stream colour picker ───────────────────────────────────────────────
-// We keep a single hidden <input type="color"> in the DOM and reuse it for
-// every swatch — opening multiple pickers would be confusing, and most
-// browsers only show the OS picker for one input at a time anyway.
-let _colorPickerStreamId = null;
-function ensureColorPickerEl() {
-  if (document.getElementById("canvas-edit-color-picker")) return;
-  const input = document.createElement("input");
-  input.type = "color";
-  input.id = "canvas-edit-color-picker";
-  // Off-screen but tabbable so click() programmatic open works.
-  input.style.position = "fixed";
-  input.style.left = "-1000px";
-  input.style.top  = "-1000px";
-  input.style.opacity = "0";
-  input.style.width = "0";
-  input.style.height = "0";
-  input.addEventListener("input", () => {
-    if (!_colorPickerStreamId) return;
-    const stream = streamById[_colorPickerStreamId];
-    if (!stream) return;
-    stream.color = input.value;
-    applyCanvasMutation();
-  });
-  input.addEventListener("change", () => {
-    _colorPickerStreamId = null;
-  });
-  document.body.appendChild(input);
-}
-
-function openStreamColorPicker(streamId) {
-  ensureColorPickerEl();
-  const input = document.getElementById("canvas-edit-color-picker");
+// Sidebar — confirm + cascade delete a stream. Pulls every node in that
+// stream + every incident edge into a single undo snapshot.
+function deleteStreamWithCascade(streamId) {
   const stream = streamById[streamId];
-  if (!input || !stream) return;
-  _colorPickerStreamId = streamId;
-  input.value = stream.color || "#94a3b8";
-  input.click();
+  if (!stream) return;
+  const nodesToDelete = NODES.filter(n => n.stream === streamId);
+  const nodeIdSet = new Set(nodesToDelete.map(n => n.id));
+  const edgesToDelete = EDGES.filter(e => nodeIdSet.has(e.from) || nodeIdSet.has(e.to));
+  const msg = nodesToDelete.length === 0
+    ? 'Delete stream "' + stream.label + '"?'
+    : 'Delete stream "' + stream.label + '"?\n\n' + nodesToDelete.length + ' node(s) and ' + edgesToDelete.length + ' edge(s) will also be removed.';
+  if (!confirm(msg)) return;
+
+  const snapshot = {
+    kind: "stream",
+    stream: Object.assign({}, stream),
+    streamIndex: STREAMS.findIndex(s => s.id === streamId),
+    nodes: nodesToDelete.map(n => Object.assign({}, n)),
+    edges: edgesToDelete.map(e => ({ from: e.from, to: e.to, effect: e.effect, elasticity: e.elasticity, description: e.description })),
+  };
+  STREAMS = STREAMS.filter(s => s.id !== streamId);
+  NODES = NODES.filter(n => !nodeIdSet.has(n.id));
+  EDGES = EDGES.filter(e => !nodeIdSet.has(e.from) && !nodeIdSet.has(e.to));
+  if (state.selectedNodeId && nodeIdSet.has(state.selectedNodeId)) {
+    state.selectedNodeId = null;
+    state.ancestorSet = new Set();
+    state.descendantSet = new Set();
+    state.highlightedEdgeIds = new Set();
+  }
+  state.canvasEdit.editingSidebarItem = null;
+  pushUndo(snapshot);
+  applyCanvasMutation();
+  showUndoToast("Stream deleted", () => restoreFromUndo(snapshot));
 }
 
-// ───── Sidebar widget for the deferred toggle cancel ──────────────────────
-// Exposed so attachSvgEventHandlers can find it on the canvasEdit namespace
-// without depending on this file existing (the renderer guards with typeof).
-if (!state.canvasEdit._pendingToggleTimer) state.canvasEdit._pendingToggleTimer = null;
+function deleteStageWithCascade(stageId) {
+  const stage = stageById[stageId];
+  if (!stage) return;
+  const nodesToDelete = NODES.filter(n => n.stage === stageId);
+  const nodeIdSet = new Set(nodesToDelete.map(n => n.id));
+  const edgesToDelete = EDGES.filter(e => nodeIdSet.has(e.from) || nodeIdSet.has(e.to));
+  const msg = nodesToDelete.length === 0
+    ? 'Delete stage "' + stage.label + '"?'
+    : 'Delete stage "' + stage.label + '"?\n\n' + nodesToDelete.length + ' node(s) and ' + edgesToDelete.length + ' edge(s) will also be removed.';
+  if (!confirm(msg)) return;
+
+  const snapshot = {
+    kind: "stage",
+    stage: { id: stage.id, label: stage.label },
+    stageIndex: STAGES.findIndex(s => s.id === stageId),
+    nodes: nodesToDelete.map(n => Object.assign({}, n)),
+    edges: edgesToDelete.map(e => ({ from: e.from, to: e.to, effect: e.effect, elasticity: e.elasticity, description: e.description })),
+  };
+  STAGES = STAGES.filter(s => s.id !== stageId);
+  NODES = NODES.filter(n => !nodeIdSet.has(n.id));
+  EDGES = EDGES.filter(e => !nodeIdSet.has(e.from) && !nodeIdSet.has(e.to));
+  if (state.selectedNodeId && nodeIdSet.has(state.selectedNodeId)) {
+    state.selectedNodeId = null;
+    state.ancestorSet = new Set();
+    state.descendantSet = new Set();
+    state.highlightedEdgeIds = new Set();
+  }
+  state.canvasEdit.editingSidebarItem = null;
+  pushUndo(snapshot);
+  applyCanvasMutation();
+  showUndoToast("Stage deleted", () => restoreFromUndo(snapshot));
+}
+
+// Sidebar — reorder STREAMS / STAGES by moving the item at fromIndex to
+// targetIndex (insertion before that position). Called by the sidebar's
+// drag-and-drop wiring.
+function reorderStreams(fromIndex, targetIndex) {
+  if (fromIndex === targetIndex || fromIndex === targetIndex - 1) return;
+  const item = STREAMS[fromIndex];
+  if (!item) return;
+  STREAMS.splice(fromIndex, 1);
+  const insertAt = targetIndex > fromIndex ? targetIndex - 1 : targetIndex;
+  STREAMS.splice(insertAt, 0, item);
+  applyCanvasMutation();
+}
+
+function reorderStages(fromIndex, targetIndex) {
+  if (fromIndex === targetIndex || fromIndex === targetIndex - 1) return;
+  const item = STAGES[fromIndex];
+  if (!item) return;
+  STAGES.splice(fromIndex, 1);
+  const insertAt = targetIndex > fromIndex ? targetIndex - 1 : targetIndex;
+  STAGES.splice(insertAt, 0, item);
+  applyCanvasMutation();
+}
+
+// After renderSidebar repaints, focus the freshly-opened label input.
+function focusSidebarEditLabel(kind, id) {
+  setTimeout(() => {
+    const input = document.querySelector(".sidebar-edit-row.expanded[data-kind='" + kind + "'][data-id='" + id + "'] [data-field='label']");
+    if (input && typeof input.focus === "function") {
+      input.focus();
+      if (typeof input.select === "function") input.select();
+    }
+  }, 0);
+}
