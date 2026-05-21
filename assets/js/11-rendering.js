@@ -99,6 +99,33 @@ function render() {
     }
   }
 
+  // ───── Keyboard cursor slot (arrow-key navigation on an empty slot) ───
+  // The cursor can park on any slot within a stream — including empty slots
+  // inside a partially-filled multi-node cell. Render the placeholder at the
+  // exact slot position so up/down navigation feels continuous. Suppressed
+  // if a hoverCell is already drawing in the same place (mouse-driven hover
+  // wins for immediacy).
+  const cursorCell = state.canvasEdit && state.canvasEdit.cursorCell;
+  if (cursorCell && layout.rowY[cursorCell.streamId] !== undefined && layout.colX[cursorCell.stageId] !== undefined) {
+    const hov = state.canvasEdit && state.canvasEdit.hoverCell;
+    const sameAsHover = hov && hov.streamId === cursorCell.streamId && hov.stageId === cursorCell.stageId;
+    if (!sameAsHover) {
+      // Defensive clamp — a delete elsewhere can shrink streamRowCount while
+      // the cursor still references the now-out-of-range slot. Use the
+      // row's height-in-slots from the layout to bound the placeholder
+      // rather than rendering below the row.
+      const rowH = layout.rowHeights[cursorCell.streamId] || NODE_HEIGHT + ROW_PADDING * 2;
+      const slotCapacity = Math.max(1, Math.floor((rowH - ROW_PADDING * 2 + NODE_GAP_Y) / (NODE_HEIGHT + NODE_GAP_Y)));
+      const slot = Math.max(0, Math.min(slotCapacity - 1, cursorCell.slotIndex || 0));
+      const x = layout.colX[cursorCell.stageId];
+      const y = layout.rowY[cursorCell.streamId] + ROW_PADDING + slot * (NODE_HEIGHT + NODE_GAP_Y);
+      content += '<g class="cursor-cell">';
+      content +=   '<rect x="' + x + '" y="' + y + '" width="' + NODE_WIDTH + '" height="' + NODE_HEIGHT + '" rx="5"></rect>';
+      content +=   '<text x="' + (x + NODE_WIDTH / 2) + '" y="' + (y + NODE_HEIGHT / 2) + '" text-anchor="middle" dominant-baseline="central">Type to create a node</text>';
+      content += '</g>';
+    }
+  }
+
   // ───── Ghost cell (hover preview for adding a new node) ───────────────
   // Drawn here so it sits ABOVE background stripes but BELOW row labels and
   // nodes. Shown over any cell whose existing-node rects don't already cover
@@ -213,13 +240,29 @@ function render() {
       markerEnd = ' marker-end="url(#arrow_' + edge.effect + ')"';
       dimmed = false;
     }
+    const isEdgeSelected = edge.id === state.selectedEdgeId;
+    // The currently-selected edge always renders in its effect colour, bold
+    // and undimmed — so creation (auto-select) and arrow-key effect cycling
+    // both show an unambiguous colour change without depending on whether
+    // the from-node is also selected.
+    if (isEdgeSelected) {
+      if      (edge.effect === "increases") strokeColor = "var(--edge-increases)";
+      else if (edge.effect === "decreases") strokeColor = "var(--edge-decreases)";
+      else                                  strokeColor = "var(--edge-enables)";
+      strokeWidth = 3;
+      strokeOpacity = 1;
+      markerEnd = ' marker-end="url(#arrow_' + edge.effect + ')"';
+      dimmed = false;
+    }
 
     // Wide invisible hit-path drawn UNDER the visible edge for easier clicking.
     // pointer-events:stroke (set in CSS) limits hits to the stroked area.
     content += '<path class="edge-hit" data-edge-id="' + edge.id + '" d="' + pathD + '"></path>';
 
-    const isEdgeSelected = edge.id === state.selectedEdgeId;
-    const classAttr = ' class="edge-path' + (dimmed ? ' dimmed' : '') + (isEdgeFlashed ? ' flashed' : '') + (isEdgeSelected ? ' selected' : '') + '"';
+    // Effect class lets CSS bind colour-based styles (selected-edge halo, etc)
+    // without having to parse the inline stroke value.
+    const effectClass = edge.effect ? ' effect-' + edge.effect : '';
+    const classAttr = ' class="edge-path' + effectClass + (dimmed ? ' dimmed' : '') + (isEdgeFlashed ? ' flashed' : '') + (isEdgeSelected ? ' selected' : '') + '"';
     content += '<path' + classAttr + ' data-edge-id="' + edge.id + '" d="' + pathD + '" stroke="' + strokeColor + '" stroke-width="' + strokeWidth + '" stroke-opacity="' + strokeOpacity + '"' + markerEnd + '></path>';
   }
 

@@ -50,17 +50,46 @@ const state = {
   canvasEdit: {
     editMode: false,             // when false, detail panel is view-only — edit fields are hidden
                                  // behind the "Edit Node" toggle button. Persists across selections.
+    shiftHeld: false,            // mirrors whether Shift is currently held down. Direct-manipulation
+                                 // gestures on the canvas (ghost-cell click, edge-handle drag, node
+                                 // drag-to-move) are gated on this so the map is read-only by default.
+                                 // Maintained by initCanvasEdit's keydown/keyup/blur listeners.
     hoverCell: null,             // { streamId, stageId } | null — empty cell under cursor
     draggingNode: null,          // { nodeId, startClientX, startClientY, currentX, currentY,
                                  //   dropCell: { streamId, stageId, insertIndex } | null,
                                  //   active: false } — set on .node-group mousedown,
                                  //   promoted to active once cursor moves past NODE_DRAG_THRESHOLD.
     draftEdge: null,             // { fromNodeId, currentX, currentY } during edge drag
-    pendingEdgeDrop: null,       // { fromNodeId, toNodeId, clientX, clientY } awaiting effect pick
     flashedEdgeId: null,         // edge to flash-highlight in the outgoing list (after canvas click)
     addingEdgeFromNodeId: null,  // when truthy, edit panel shows the "Add outgoing edge" form
     editingSidebarItem: null,    // { kind: "stream"|"stage"|"category", id } when a sidebar row is pencil-expanded
     toast: null,                 // { message, undoFn, timerId } | null
+    // While the user is type-renaming the selected node directly on the
+    // canvas (no text-box overlay), this holds { nodeId, originalLabel,
+    // started } so Esc can revert and applyCanvasMutation knows to fold the
+    // whole edit into a single undo step. Cleared on commit / revert.
+    // See 16h-canvas-inline-rename.js.
+    inlineRename: null,
+    // Arrow-key cursor for slot-level navigation when no node is selected.
+    // { streamId, stageId, slotIndex } | null. slotIndex picks a specific
+    // row within the stream (streams have as many slots as their busiest
+    // cell). When set, the canvas renders a "Type to create" placeholder
+    // at that exact slot, and a printable key creates a node there. See
+    // 16i-canvas-keyboard-nav.js.
+    cursorCell: null,
+    // Active "Add outgoing edge" overlay launched by Shift+E.
+    // { overlay: HTMLElement, fromNodeId, closeOutsideHandler } | null.
+    edgePicker: null,
+    // Last effect the user picked or cycled to. Seeds new edges (drag-drop
+    // and the typeable target picker) so the common case is one keystroke /
+    // one click. Session-only — not persisted. See 16e-canvas-edit.js.
+    lastUsedEdgeEffect: "enables",
+    // Active arrow-key cycle session on a selected edge. Coalesces a burst
+    // of effect cycles into a single undo step. When non-null, mutations
+    // skip applyCanvasMutation's history push; the saved snapshot is pushed
+    // once when the session ends (deselect / select-other / blur / debounce).
+    // { edgeId, startSnapshot, debounceTimer } | null.
+    edgeCycleSession: null,
   },
   // Multi-level undo/redo. Each stack entry is the CSV string of a prior state.
   // applyCanvasMutation captures the pre-mutation snapshot from state.lastCsvSnapshot.

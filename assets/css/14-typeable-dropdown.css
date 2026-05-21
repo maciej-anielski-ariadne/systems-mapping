@@ -1,0 +1,117 @@
+/* =============================================================================
+ * TYPEABLE DROPDOWN
+ * -----------------------------------------------------------------------------
+ * Replaces native <select> dropdowns with a typable input that filters the
+ * option list as the user types. Picking an option (Enter or click) commits
+ * the value to the original <select> so existing change-handlers still fire.
+ *
+ * Markup, built at runtime by 04b-typeable-dropdown.js:
+ *
+ *   .typeable-dropdown                  ← inline wrapper
+ *     .typeable-dropdown-input          ← visible text input
+ *     .typeable-dropdown-native         ← original <select>, hidden
+ *     .typeable-dropdown-popup          ← floating listbox (position: fixed)
+ *       .typeable-dropdown-item         ← one per matching option
+ * ========================================================================== */
+
+.typeable-dropdown {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+  /* When the wrapper lands in a flex row (e.g. .outgoing-edge-controls or
+   * .outgoing-edge-add-row in the detail panel, where the original select
+   * was given `flex: 1 1 auto`), participate in the flex layout the same
+   * way. Ignored in non-flex contexts (table cells, block forms). min-width
+   * lets us shrink below intrinsic content width when the container is tight. */
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The native <select> stays in the DOM (existing code reads its .value), but
+ * is taken out of layout so only the typable input is visible. */
+.typeable-dropdown-native {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  clip: rect(0 0 0 0);
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+}
+
+/* The typable input picks up styling from whichever container it's in:
+ * `.builder-table input[type="text"]` styles it in the wizard, and the
+ * `detail-edit-input` class (copied from the original <select>) styles it
+ * in the detail panel. The rules below add ONLY what's specific to the
+ * typeable behaviour — a chevron caret and a focus ring matched to the
+ * popup. */
+.typeable-dropdown-input {
+  cursor: text;
+  padding-right: 26px;                            /* room for the chevron */
+  background-image:
+    linear-gradient(45deg,  transparent 50%, var(--text-secondary) 50%),
+    linear-gradient(135deg, var(--text-secondary) 50%, transparent 50%);
+  background-position: calc(100% - 14px) 50%, calc(100% - 9px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.typeable-dropdown.open .typeable-dropdown-input {
+  /* Match the popup's visual prominence while it's open. */
+  border-color: var(--accent-blue);
+}
+
+/* The popup is position:fixed so it floats over scroll containers
+ * (`.builder-step-scroll`, the detail panel itself, etc.) without being
+ * clipped. JS sets left / top / minWidth / maxHeight per-open. */
+.typeable-dropdown-popup {
+  position: fixed;
+  z-index: 400;                                   /* above builder overlay (200) and cell editor (300) */
+  background: var(--bg-deep);
+  border: 1px solid var(--accent-blue);
+  border-radius: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  padding: 4px 0;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  color: var(--text-primary);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.typeable-dropdown-popup[hidden] { display: none; }
+
+.typeable-dropdown-item {
+  padding: 6px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.typeable-dropdown-item.current {
+  color: var(--text-primary);
+}
+
+.typeable-dropdown-item.highlighted {
+  background: var(--accent-blue);
+  color: var(--bg-deepest);
+}
+
+.typeable-dropdown-empty {
+  padding: 8px 12px;
+  color: var(--text-tertiary);
+  font-style: italic;
+  font-size: 12px;
+}
+
+/* Inside builder tables, fall back to mono font (matches the cell inputs). */
+.builder-table .typeable-dropdown-popup {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}

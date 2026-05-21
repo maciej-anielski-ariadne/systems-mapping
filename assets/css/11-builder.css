@@ -497,62 +497,70 @@
   margin: 4px 2px 16px 2px;
 }
 
-/* ───── Anchored cell editor ─────────────────────────────────────────────
- * Opens only when a cell's value overflows its visible width, anchored
- * flush below the cell so it looks like the cell grew downward. JS sets
- * width / left / top inline (see positionCellEditor in 16c). Lives on
- * document.body so it can float above neighbouring rows. */
+/* ───── Cell editor overlay ──────────────────────────────────────────────
+ * Sits ON TOP of the cell input at the input's exact position, so it reads
+ * as the cell itself growing. JS sizes it to fit the text content (see
+ * fitEditorToText in 16c) — horizontally first, then wrapping to multi-line
+ * once it reaches max width.
+ *
+ * Animation: width/height transitions are gated on the `.transitioning`
+ * class so open + close animate smoothly, but per-keystroke resize during
+ * typing is INSTANT — otherwise the 100ms transition starts overlapping on
+ * fast typing and the box visibly jitters. */
 .builder-cell-editor {
   position: fixed;
   z-index: 300;
-  max-width: calc(100vw - 40px);
   background: var(--bg-deep);
-  border: 1px solid var(--accent-blue);
-  border-top: none;                    /* shared edge with the cell above */
-  border-radius: 0 0 6px 6px;          /* bottom corners only */
-  box-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.55);
-  padding: 4px 8px 8px 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  box-sizing: border-box;
-}
-
-.builder-cell-editor-title {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-  opacity: 0.75;
-  margin-bottom: 2px;
-}
-
-.builder-cell-editor-textarea {
-  width: 100%;
-  min-height: 80px;
-  max-height: 360px;
-  background: var(--bg-mid);
   color: var(--text-primary);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--accent-blue);
   border-radius: 4px;
-  padding: 8px 10px;
-  font-family: var(--font-ui);
-  font-size: 13px;
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.25);
+  padding: 6px 8px;                    /* matches .builder-table input */
+  font-family: var(--font-mono);       /* matches .builder-table input */
+  font-size: 12px;                     /* matches .builder-table input */
   line-height: 1.5;
   outline: none;
-  resize: vertical;
+  resize: none;
+  max-width: calc(100vw - 40px);
+  max-height: 360px;
+  margin: 0;
   box-sizing: border-box;
+  /* No horizontal scrollbar — JS keeps width matched to content. Allow
+   * vertical scroll when content exceeds the max-height cap.
+   * scrollbar-gutter: stable reserves the vertical scrollbar's gutter
+   * whether or not the bar is visible — keeps the editor's content area
+   * consistent and matches the measurement mirror (which reserves the
+   * same gutter) so wrap behaviour stays accurate. */
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  overflow-wrap: anywhere;
+  white-space: pre;                    /* JS toggles pre ↔ pre-wrap as it wraps */
 }
 
-.builder-cell-editor-textarea:focus {
-  border-color: var(--accent-blue);
+.builder-cell-editor.transitioning {
+  transition: width 100ms ease-out, height 100ms ease-out;
 }
 
-/* When the editor is open, fuse the cell input into it: drop the input's
- * bottom border and bottom corner radii so the two shapes read as one. */
-.builder-table input.editor-open {
-  border-bottom-color: transparent;
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
+@media (prefers-reduced-motion: reduce) {
+  .builder-cell-editor.transitioning { transition: none; }
+}
+
+/* ───── Focus dim — covers everything but the active cell editor ────── */
+.builder-cell-editor-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 299;                        /* just under the editor (z 300) */
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+  pointer-events: none;                /* let clicks reach the cell behind */
+}
+
+.builder-cell-editor-backdrop.visible {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .builder-cell-editor-backdrop { transition: none; }
 }

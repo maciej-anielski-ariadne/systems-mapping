@@ -44,6 +44,12 @@ function renderDetailPanel() {
   const editMode = !!(state.canvasEdit && state.canvasEdit.editMode);
   contentState.innerHTML = editMode ? renderEditMode(node) : renderViewMode(node);
 
+  // Upgrade every freshly-rendered <select> into a typable filterable dropdown.
+  // Safe to call before the change handlers below are wired: picking an option
+  // dispatches `change` on the underlying <select>, which the wireXxx handlers
+  // then listen for.
+  if (typeof upgradeSelectsIn === "function") upgradeSelectsIn(contentState);
+
   // Wire up handlers for whichever mode just rendered.
   wireSharedHandlers(node, contentState);
   if (editMode) {
@@ -274,13 +280,21 @@ function renderOutgoingEdgesBlock(node) {
 
   // Add affordance — collapsed by default, expands to a target/effect form.
   if (adding) {
-    const otherNodes = NODES.filter(n => n.id !== node.id);
-    // Skip nodes that already have an outgoing edge from this one with all
-    // three effect types — there's nothing left to add.
+    // Exclude nodes the source already has an outgoing edge to — changing
+    // an existing edge's effect goes through arrow-cycling on the canvas,
+    // not a second parallel edge from the form.
+    const connectedTargetIds = new Set(outgoing.map(e => e.to));
+    const otherNodes = NODES.filter(n => n.id !== node.id && !connectedTargetIds.has(n.id));
+    const hasAnyOtherNode = NODES.some(n => n.id !== node.id);
+    // Retained but unused for the dropdown filter — keep for any consumers
+    // that reference effect-level dedupe.
     const existingTargets = new Set(outgoing.map(e => e.to + ":" + e.effect));
     html += '<div class="outgoing-edge-add">';
     if (otherNodes.length === 0) {
-      html +=   '<div class="outgoing-edges-empty">Add at least one other node before connecting edges.</div>';
+      const emptyMsg = hasAnyOtherNode
+        ? "All other nodes are already connected."
+        : "Add at least one other node before connecting edges.";
+      html +=   '<div class="outgoing-edges-empty">' + emptyMsg + '</div>';
       html +=   '<button class="detail-edit-link" data-action="cancel-add-edge">Cancel</button>';
     } else {
       html +=   '<div class="outgoing-edge-add-title">Add outgoing edge</div>';

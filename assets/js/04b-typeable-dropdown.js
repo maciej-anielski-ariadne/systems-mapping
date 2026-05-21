@@ -1,0 +1,357 @@
+// =============================================================================
+// TYPEABLE DROPDOWN — upgrades native <select> elements into filter-as-you-type
+// -----------------------------------------------------------------------------
+// `upgradeSelectsIn(container)` walks `container` for any unupgraded <select>
+// and wraps each one:
+//
+//   <span class="typeable-dropdown">
+//     <input class="typeable-dropdown-input" ...>      ← visible, typable
+//     <select class="typeable-dropdown-native" ...>    ← kept in DOM, hidden
+//     <div  class="typeable-dropdown-popup">…</div>    ← floating listbox
+//   </span>
+//
+// The native <select> stays in the DOM and keeps all its `data-*` attributes.
+// All existing code that reads `select.value` or listens for `change` on
+// `[data-field]` / `[data-section]` keeps working — picking an option in the
+// widget sets `select.value` and dispatches a bubbling `change` event on the
+// select.
+//
+// The added <input> deliberately has NO `data-section`/`data-field` so it
+// doesn't get picked up by per-cell listeners that iterate those attributes.
+// Builder Tab/Enter navigation (16d-builder-events.js) recognises it via the
+// `.typeable-dropdown-input` class.
+//
+// Popup positioning is `position: fixed` so it floats above scroll containers
+// (e.g. the builder table's scroll area, which has overflow:auto).
+// =============================================================================
+
+(function () {
+  // Shared bookkeeping for the popup that is currently open. Only one popup
+  // can be open at a time — opening another closes any in-flight one.
+  let openInstance = null;
+
+  // Public entry point — called from renderers after innerHTML changes.
+  function upgradeSelectsIn(container) {
+    if (!container || typeof container.querySelectorAll !== "function") return;
+    const selects = container.querySelectorAll("select:not(.typeable-dropdown-native)");
+    selects.forEach(upgradeSelect);
+  }
+
+  function upgradeSelect(select) {
+    if (!select || select.classList.contains("typeable-dropdown-native")) return;
+
+    // Wrapper sits inline where the <select> used to. The native select is
+    // hidden via CSS but kept so existing read/write paths still work.
+    const wrap = document.createElement("span");
+    wrap.className = "typeable-dropdown";
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "typeable-dropdown-input";
+    input.setAttribute("autocomplete", "off");
+    input.setAttribute("spellcheck", "false");
+    input.setAttribute("role", "combobox");
+    input.setAttribute("aria-autocomplete", "list");
+    input.setAttribute("aria-expanded", "false");
+
+    // Carry over styling-only classes so the input sits in the same visual
+    // slot as the original <select>. Functional / state classes like
+    // `invalid` are caught too — we want the same red border on the input.
+    // The `typeable-dropdown-native` marker is added below and is not copied.
+    if (select.className) {
+      input.className += " " + select.className;
+    }
+
+    const popup = document.createElement("div");
+    popup.className = "typeable-dropdown-popup";
+    popup.setAttribute("role", "listbox");
+    popup.hidden = true;
+
+    // Splice the wrapper in where the select used to be.
+    const parent = select.parentNode;
+    parent.insertBefore(wrap, select);
+    wrap.appendChild(input);
+    wrap.appendChild(select);
+    wrap.appendChild(popup);
+
+    select.classList.add("typeable-dropdown-native");
+
+    // Reflect the select's current selection in the input's display.
+    syncInputFromSelect(select, input);
+
+    // Local state for the open popup.
+    let items = [];
+    let highlighted = 0;
+
+    const rebuildItems = (query) => {
+      const lower = String(query || "").toLowerCase().trim();
+      items = [];
+      for (let i = 0; i < select.options.length; i++) {
+        const opt = select.options[i];
+        const label = opt.text || "";
+        if (!lower || label.toLowerCase().includes(lower)) {
+          items.push({ value: opt.value, label: label, optionIndex: i });
+        }
+      }
+      // Pre-highlight the option that matches the current value when no query
+      // has been typed — feels natural to open the popup and see the current
+      // pick in focus.
+      if (!lower) {
+        const cur = items.findIndex(it => it.value === select.value);
+        highlighted = cur >= 0 ? cur : 0;
+      } else {
+        highlighted = 0;
+      }
+      renderPopupBody();
+    };
+
+    const renderPopupBody = () => {
+      if (items.length === 0) {
+        popup.innerHTML = '<div class="typeable-dropdown-empty">No matches</div>';
+        return;
+      }
+      let html = "";
+      for (let i = 0; i < items.length; i++) {
+        const cls = "typeable-dropdown-item" +
+                    (i === highlighted ? " highlighted" : "") +
+                    (items[i].value === select.value ? " current" : "");
+        html += '<div class="' + cls + '" data-i="' + i + '" role="option">' +
+                escapeForHtml(items[i].label) + '</div>';
+      }
+      popup.innerHTML = html;
+    };
+
+    const positionPopup = () => {
+      const rect = input.getBoundingClientRect();
+      // Default below; flip above if there isn't room.
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      const desiredMax = 240;
+      let maxHeight = Math.min(desiredMax, Math.max(80, spaceBelow - 8));
+      let top = rect.bottom + 2;
+      if (spaceBelow < 140 && spaceAbove > spaceBelow) {
+        maxHeight = Math.min(desiredMax, Math.max(80, spaceAbove - 8));
+        top = rect.top - 2 - maxHeight;
+      }
+      popup.style.left  = rect.left  + "px";
+      popup.style.top   = top        + "px";
+      popup.style.minWidth = rect.width + "px";
+      popup.style.maxHeight = maxHeight + "px";
+    };
+
+    // Commit pending typed text if it differs from the current selection,
+    // otherwise restore the input to match. Used by Tab, blur, AND the
+    // document-level outside-click handler — that last one is the important
+    // one: when the user types a filter and clicks an action button (e.g.
+    // "Add edge" in the detail panel), the button's click handler reads
+    // `select.value` immediately, before blur would normally fire, so we
+    // have to commit synchronously inside the mousedown that precedes the
+    // click. Returns true if something was committed.
+    const commitOrRevert = () => {
+      const typed = input.value.trim();
+      const currentLabel = currentSelectedLabel(select).trim();
+      if (typed && typed.toLowerCase() !== currentLabel.toLowerCase() && items.length > 0) {
+        commitItem(items[highlighted]);
+        return true;
+      }
+      syncInputFromSelect(select, input);
+      close();
+      return false;
+    };
+
+    const open = (initialQuery) => {
+      // Close any other open popup first — only one at a time.
+      if (openInstance && openInstance.close !== close) openInstance.close();
+      rebuildItems(initialQuery !== undefined ? initialQuery : "");
+      popup.hidden = false;
+      wrap.classList.add("open");
+      input.setAttribute("aria-expanded", "true");
+      positionPopup();
+      openInstance = { close: close, commitOrRevert: commitOrRevert, reposition: positionPopup };
+      window.addEventListener("scroll", positionPopup, true);
+      window.addEventListener("resize", positionPopup);
+      scrollHighlightedIntoView();
+    };
+
+    const close = () => {
+      if (popup.hidden) return;
+      popup.hidden = true;
+      wrap.classList.remove("open");
+      input.setAttribute("aria-expanded", "false");
+      window.removeEventListener("scroll", positionPopup, true);
+      window.removeEventListener("resize", positionPopup);
+      if (openInstance && openInstance.close === close) openInstance = null;
+    };
+
+    const scrollHighlightedIntoView = () => {
+      const el = popup.children[highlighted];
+      if (el && typeof el.scrollIntoView === "function") {
+        el.scrollIntoView({ block: "nearest" });
+      }
+    };
+
+    const setHighlighted = (idx) => {
+      if (idx < 0 || idx >= items.length) return;
+      const prev = popup.children[highlighted];
+      if (prev) prev.classList.remove("highlighted");
+      highlighted = idx;
+      const next = popup.children[highlighted];
+      if (next) next.classList.add("highlighted");
+      scrollHighlightedIntoView();
+    };
+
+    const commitItem = (item) => {
+      if (!item) return;
+      const changed = select.value !== item.value;
+      select.value = item.value;
+      input.value = item.label;
+      close();
+      if (changed) {
+        // Existing handlers listen on `change` of `[data-field]` etc — they
+        // get the right (id) value via `select.value`.
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    };
+
+    // ─── Input events ──────────────────────────────────────────────────────
+    input.addEventListener("focus", () => {
+      // Show the full list when the cell is entered — clearer than starting
+      // with the current label as a filter (which would show one item and
+      // hide the rest).
+      input.select();
+      open("");
+    });
+
+    input.addEventListener("click", () => {
+      if (popup.hidden) open(input.value);
+    });
+
+    input.addEventListener("input", (event) => {
+      // The widget owns the input's value — never bubble its raw typing up
+      // to delegated handlers that would try to write it to state.
+      event.stopPropagation();
+      if (popup.hidden) {
+        open(input.value);
+      } else {
+        rebuildItems(input.value);
+      }
+    });
+
+    // Native browsers fire `change` on text inputs at blur — block it from
+    // bubbling to delegated handlers that would write the typed label to
+    // state. The select dispatches its own `change` when we commit.
+    input.addEventListener("change", (event) => { event.stopPropagation(); });
+
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        if (popup.hidden) { open(input.value); return; }
+        setHighlighted(Math.min(highlighted + 1, items.length - 1));
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        if (popup.hidden) { open(input.value); return; }
+        setHighlighted(Math.max(highlighted - 1, 0));
+      } else if (event.key === "Enter") {
+        if (!popup.hidden && items.length > 0) {
+          event.preventDefault();
+          event.stopPropagation();
+          commitItem(items[highlighted]);
+        } else if (popup.hidden) {
+          event.preventDefault();
+          event.stopPropagation();
+          open(input.value);
+        }
+      } else if (event.key === "Escape") {
+        if (!popup.hidden) {
+          event.preventDefault();
+          event.stopPropagation();
+          syncInputFromSelect(select, input);
+          close();
+        }
+      } else if (event.key === "Tab") {
+        // Tab leaves the cell — auto-commit any typed filter so the user's
+        // intent isn't lost when moving forward. Don't preventDefault: the
+        // builder's keydown handler (16d) takes care of navigation.
+        if (!popup.hidden) commitOrRevert();
+      }
+    });
+
+    input.addEventListener("blur", () => {
+      // Late safety net — the outside-mousedown handler already commits
+      // typed text in time for action-button clicks. By the time this fires,
+      // commitOrRevert may have already run; the function is idempotent so
+      // calling it again is fine.
+      setTimeout(() => {
+        if (document.activeElement === input) return;
+        if (popup.contains(document.activeElement)) return;
+        commitOrRevert();
+      }, 0);
+    });
+
+    // ─── Popup events ─────────────────────────────────────────────────────
+    popup.addEventListener("mousedown", (event) => {
+      // mousedown (not click) so the event fires before the input's blur.
+      // preventDefault keeps focus on the input — the popup's click handler
+      // is then what commits.
+      const item = event.target.closest(".typeable-dropdown-item");
+      if (!item) return;
+      event.preventDefault();
+      const idx = parseInt(item.getAttribute("data-i"), 10);
+      if (!isNaN(idx) && items[idx]) commitItem(items[idx]);
+    });
+
+    popup.addEventListener("mousemove", (event) => {
+      const item = event.target.closest(".typeable-dropdown-item");
+      if (!item) return;
+      const idx = parseInt(item.getAttribute("data-i"), 10);
+      if (isNaN(idx) || idx === highlighted) return;
+      const prev = popup.children[highlighted];
+      if (prev) prev.classList.remove("highlighted");
+      highlighted = idx;
+      item.classList.add("highlighted");
+    });
+  }
+
+  function syncInputFromSelect(select, input) {
+    input.value = currentSelectedLabel(select);
+  }
+
+  function currentSelectedLabel(select) {
+    const opt = select.options[select.selectedIndex];
+    return opt ? (opt.text || "") : "";
+  }
+
+  // Local HTML escape — duplicated (rather than relying on global escapeHtml)
+  // so this widget is self-contained and load-order tolerant.
+  function escapeForHtml(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  // Close-on-outside-click. mousedown (capture) so we run BEFORE the
+  // intercepted button's own click handler — that lets us commit any
+  // typed filter into the underlying <select> in time for the action
+  // button to read the up-to-date value.
+  //
+  // We don't dismiss on clicks INSIDE the dropdown or its popup. The popup
+  // is position:fixed and therefore not always a descendant of the wrapper
+  // for layout purposes, but it remains a DOM child of the wrapper, so the
+  // `.typeable-dropdown` closest() check covers both.
+  document.addEventListener("mousedown", (event) => {
+    if (!openInstance) return;
+    const t = event.target;
+    if (t.closest && (t.closest(".typeable-dropdown") || t.closest(".typeable-dropdown-popup"))) return;
+    if (typeof openInstance.commitOrRevert === "function") {
+      openInstance.commitOrRevert();
+    } else {
+      openInstance.close();
+    }
+  }, true);
+
+  // Expose.
+  window.upgradeSelectsIn = upgradeSelectsIn;
+})();

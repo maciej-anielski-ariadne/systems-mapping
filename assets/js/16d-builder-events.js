@@ -90,7 +90,16 @@ function handleBuilderCellChange(event) {
 //   • Enter (text/number only) → same column, row below. Enter on the last
 //     row of a section appends a new row.
 //   • Selects, checkboxes, color inputs keep native Enter / Space behaviour.
-const BUILDER_EDITABLE_SELECTOR = "[data-section][data-field]:not(:disabled)";
+//
+// Native <select> elements are upgraded to typable filterable inputs by
+// 04b-typeable-dropdown.js — the visible focus target is the
+// `.typeable-dropdown-input`, while the original <select> (which still
+// carries the data-* attrs) is hidden via `.typeable-dropdown-native`.
+// The selector excludes the hidden select and includes the typable input,
+// so Tab/Enter land on the visible cell.
+const BUILDER_EDITABLE_SELECTOR =
+  "[data-section][data-field]:not(:disabled):not(.typeable-dropdown-native), " +
+  ".typeable-dropdown-input";
 
 function builderEditableCells(fromEl) {
   const scope = (fromEl && fromEl.closest("table.builder-table")) ||
@@ -102,6 +111,14 @@ function builderEditableCells(fromEl) {
 // Move focus to the next / previous editable cell in DOM order. Returns the
 // element focused, or null if we ran off the end. Caller is responsible for
 // appending a new row if it wants to handle the off-end case.
+//
+// Caret is placed at the end of the value (not select-all). select() would
+// have two unwanted effects: (a) visually highlights all text, which the
+// user doesn't want when navigating; (b) in some browsers, calling .select()
+// re-focuses the input, which steals focus from the cell editor that
+// handleBuilderFocus just opened — the editor's blur handler then closes
+// it before the expand animation runs. setSelectionRange has no such
+// side effects.
 function navigateEditableCell(fromEl, direction) {
   const cells = builderEditableCells(fromEl);
   const idx = cells.indexOf(fromEl);
@@ -110,10 +127,45 @@ function navigateEditableCell(fromEl, direction) {
   if (targetIdx < 0 || targetIdx >= cells.length) return null;
   const next = cells[targetIdx];
   next.focus();
-  if (next.select && (next.type === "text" || next.type === "number")) {
-    try { next.select(); } catch (_) {}
+  if (next.type === "text" && typeof next.setSelectionRange === "function") {
+    // Typable dropdown inputs already select-all on focus (handled inside
+    // 04b-typeable-dropdown.js) — leaving the selection alone here lets
+    // the user start typing to filter the option list immediately. For
+    // plain text/number cells, place the caret at the end of the value
+    // (see the wider explanation in the surrounding comment block).
+    if (!(next.classList && next.classList.contains("typeable-dropdown-input"))) {
+      try { next.setSelectionRange(next.value.length, next.value.length); } catch (_) {}
+    }
   }
   return next;
+}
+
+// Shared Tab-navigation policy used by both the no-editor Tab path (this
+// file's handleBuilderKeydown) and the editor's keydown handler in 16c.
+// Returns an object describing what happened so the caller can decide
+// whether to preventDefault, refocus the trigger, etc.
+//
+//   { moved: HTMLElement } — focus is now on the next/prev cell.
+//   { addedRow: true }     — appended a row + re-rendered; focus will
+//                            land via applyFocusAfterRender's rAF.
+//   { atStart: true }      — Shift+Tab from the very first cell; no prev.
+//   { atEnd: true }        — Tab from the last cell, can't add a row.
+function builderTabNavigate(fromCell, direction) {
+  const moved = navigateEditableCell(fromCell, direction);
+  if (moved) return { moved };
+  if (direction === "next") {
+    const section = fromCell.getAttribute("data-section");
+    if (section && typeof addBuilderRow === "function") {
+      const newIdx = addBuilderRow(section);
+      if (newIdx >= 0) {
+        state.builder.focusAfterRender = { section, index: newIdx, field: null };
+        renderBuilder();
+        return { addedRow: true };
+      }
+    }
+    return { atEnd: true };
+  }
+  return { atStart: true };
 }
 
 function handleBuilderKeydown(event) {
@@ -126,26 +178,11 @@ function handleBuilderKeydown(event) {
 
   if (event.key === "Tab") {
     const direction = event.shiftKey ? "prev" : "next";
-    const moved = navigateEditableCell(t, direction);
-    if (moved) {
-      event.preventDefault();
-      return;
-    }
-    // Off the end of the table. On forward-Tab we append a new row and
-    // focus its first input. On backward-Tab from the very first cell we
-    // let the browser handle it (focus moves to whatever comes before the
-    // wizard's editable area).
-    if (direction === "next") {
-      const section = t.getAttribute("data-section");
-      if (section && typeof addBuilderRow === "function") {
-        const newIdx = addBuilderRow(section);
-        if (newIdx >= 0) {
-          event.preventDefault();
-          state.builder.focusAfterRender = { section, index: newIdx, field: null };
-          renderBuilder();
-        }
-      }
-    }
+    const result = builderTabNavigate(t, direction);
+    // preventDefault only when we actually handled the navigation. On
+    // atStart / atEnd we leave the browser's native Tab to take focus to
+    // whatever's before/after the table (e.g. the close button or step dots).
+    if (result.moved || result.addedRow) event.preventDefault();
     return;
   }
 
@@ -170,8 +207,9 @@ function handleBuilderKeydown(event) {
     );
     if (sameColNext) {
       sameColNext.focus();
-      if (sameColNext.select && (sameColNext.type === "text" || sameColNext.type === "number")) {
-        try { sameColNext.select(); } catch (_) {}
+      // Caret at end (not select-all) — see navigateEditableCell comment.
+      if (sameColNext.type === "text" && typeof sameColNext.setSelectionRange === "function") {
+        try { sameColNext.setSelectionRange(sameColNext.value.length, sameColNext.value.length); } catch (_) {}
       }
       return;
     }
@@ -290,6 +328,20 @@ function attachBuilderEvents() {
   }
 }
 
+// ───── Footer-refresh debounce ───────────────────────────────────────────
+// Per-keystroke refreshBuilderFooter() replaces the entire footer DOM and
+// re-runs validateBuilder() (which scans all builder arrays). On a complex
+// step this is the most expensive thing in the typing loop, so coalesce
+// rapid keystrokes into a single trailing-edge refresh.
+let _footerRefreshTimer = null;
+function scheduleBuilderFooterRefresh() {
+  if (_footerRefreshTimer) clearTimeout(_footerRefreshTimer);
+  _footerRefreshTimer = setTimeout(() => {
+    _footerRefreshTimer = null;
+    refreshBuilderFooter();
+  }, 150);
+}
+
 // ───── Field updaters ────────────────────────────────────────────────────
 function handleBuilderDefault(event) {
   const key = event.target.getAttribute("data-default");
@@ -343,9 +395,11 @@ function handleBuilderInput(event) {
   }
 
   // Update the footer (validation count + button enabled state) without
-  // doing a full re-render — otherwise we'd wipe focus from the input
-  // the user is currently typing in.
-  refreshBuilderFooter();
+  // doing a full re-render — otherwise we'd wipe focus from the input the
+  // user is currently typing in. Debounced (trailing 150ms) so fast typing
+  // doesn't trigger a footer-DOM rebuild on every keystroke — that was the
+  // single largest per-keystroke cost in the wizard.
+  scheduleBuilderFooterRefresh();
   saveBuilderToStorage();
 
   // If the value just started overflowing, drop the "expanded" textarea

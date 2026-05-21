@@ -23,9 +23,11 @@ function renderBuilder() {
 
   // The floating cell editor references DOM nodes inside the overlay. A
   // full re-render destroys those nodes, so close the editor first to
-  // avoid a stale trigger reference. The dismissed-trigger ref also
-  // points at a soon-to-be-removed input, so clear it too.
-  hideCellEditor();
+  // avoid a stale trigger reference. Skip the close animation — letting
+  // the editor visibly shrink while the new step paints would look broken.
+  // The dismissed-trigger ref also points at a soon-to-be-removed input,
+  // so clear it too.
+  hideCellEditor({ skipAnimation: true });
   clearDismissedTrigger();
 
   if (!state.builder.open) {
@@ -58,6 +60,12 @@ function renderBuilder() {
       renderBuilderFooter() +
     '</div>';
   overlay.classList.add("open");
+
+  // Upgrade every <select> in the freshly-rendered overlay (stream / stage /
+  // category / direction / from / to / effect) into a typable filterable
+  // dropdown. Must run before Tab/Enter navigation queries see the cell —
+  // 16d's BUILDER_EDITABLE_SELECTOR matches the typeable input by class.
+  if (typeof upgradeSelectsIn === "function") upgradeSelectsIn(overlay);
 
   attachBuilderEvents();
   saveBuilderToStorage();
@@ -96,6 +104,14 @@ function applyFocusAfterRender() {
       el = tr ? tr.querySelector('[data-section][data-field]') : null;
     }
     if (!el) return;
+    // If the matched element is a hidden native <select> (upgraded into a
+    // typable dropdown), redirect focus to the visible input that sits next
+    // to it inside the wrapper.
+    if (el.classList && el.classList.contains("typeable-dropdown-native")) {
+      const wrap = el.closest(".typeable-dropdown");
+      const input = wrap && wrap.querySelector(".typeable-dropdown-input");
+      if (input) el = input;
+    }
     el.focus();
     if (typeof el.select === "function" && (el.type === "text" || el.type === "number")) {
       try { el.select(); } catch (_) {}

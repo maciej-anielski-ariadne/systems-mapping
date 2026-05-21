@@ -16,9 +16,14 @@
 //                                              empty (stream, stage) cell.
 //   • createNodeInCell      — turn a ghost-cell click into a real node.
 //   • beginEdgeDrag / update / end + cancelDraftEdge + nodeAtLayoutPoint —
-//                              edge drag-out from a node's right edge.
-//   • showEffectPicker / commitNewEdge — pick enables / increases / decreases
-//                                        after the edge is dropped.
+//                              edge drag-out from a node's right edge. Drop on
+//                              a target commits with the last-used effect; the
+//                              new edge is auto-selected so arrow keys cycle
+//                              the effect (cycleSelectedEdgeEffect below).
+//   • commitNewEdge          — push a new edge and update lastUsedEdgeEffect.
+//   • cycleSelectedEdgeEffect / endEdgeCycleSession — arrow-key effect cycling
+//                              on the currently-selected edge, with coalesced
+//                              undo (one history entry per cycling burst).
 //   • deleteSelection / deleteEdgeById — Delete-key removes the selected
 //                                        node (with incident edges) or a
 //                                        specific edge via the edit panel's
@@ -53,21 +58,101 @@ function initCanvasEdit() {
     });
   }
 
-  // Delete / Backspace removes the selected node or edge. Esc cancels
-  // active label edit / edge drag / clears selection.
+  // Global Shift tracker — gates the three canvas direct-manipulation gestures
+  // (ghost-cell click, edge-handle drag, node drag-to-move). With Shift up the
+  // canvas reads as view-only: no ghost cells, no edge handles, no drag. With
+  // Shift down those affordances appear and the gestures arm. The flag is
+  // mirrored as a body class so CSS can hide the affordances without any
+  // per-render JS.
+  setShiftHeld(false);
+  window.addEventListener("keydown", event => {
+    if (event.key === "Shift" && !state.canvasEdit.shiftHeld) {
+      setShiftHeld(true);
+      // No need to re-render the SVG — the affordance reveal is pure CSS, and
+      // the hoverCell will pick up on the next mousemove.
+    }
+  });
+  window.addEventListener("keyup", event => {
+    if (event.key === "Shift" && state.canvasEdit.shiftHeld) {
+      setShiftHeld(false);
+      // Suppressed hoverCell needs explicit clearing so the row layout
+      // stops reserving the "+ add another" slot.
+      if (state.canvasEdit.hoverCell) {
+        state.canvasEdit.hoverCell = null;
+        layout = computeLayout();
+        render();
+      }
+    }
+  });
+  // Defensively clear Shift state when the window loses focus or visibility —
+  // a keyup we never see (alt-tab while Shift is held) would otherwise leave
+  // the canvas "armed" silently.
+  window.addEventListener("blur", () => {
+    if (state.canvasEdit.shiftHeld) {
+      setShiftHeld(false);
+      if (state.canvasEdit.hoverCell) {
+        state.canvasEdit.hoverCell = null;
+        layout = computeLayout();
+        render();
+      }
+    }
+    if (typeof endEdgeCycleSession === "function") endEdgeCycleSession();
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      if (state.canvasEdit.shiftHeld) {
+        setShiftHeld(false);
+        if (state.canvasEdit.hoverCell) {
+          state.canvasEdit.hoverCell = null;
+          layout = computeLayout();
+          render();
+        }
+      }
+      if (typeof endEdgeCycleSession === "function") endEdgeCycleSession();
+    }
+  });
+
+  // Canvas keyboard model (most-specific handlers first):
+  //   • Esc            — revert rename / cancel draft / dismiss picker / deselect
+  //   • Cmd/Ctrl-Z/Y   — undo / redo (commits any pending rename first)
+  //   • Shift+E        — open the "add outgoing edge" picker (selected node only)
+  //   • Arrows         — cell-by-cell navigation, even across empty cells
+  //   • Tab / S-Tab    — navigate horizontally, creating a node when the
+  //                       destination cell is empty
+  //   • Enter          — commit any pending rename AND create a new node
+  //                       stacked below (spreadsheet-style chained entry)
+  //   • Backspace      — pop a rename char when renaming; otherwise delete node
+  //   • printable key  — append to the rename in progress; start a fresh
+  //                       rename on the selected node; or create a node in
+  //                       the empty cursor cell seeded with the typed char
   document.addEventListener("keydown", event => {
-    // Bail when the user is typing — Backspace must not nuke a node while
-    // editing its label.
+    // Bail when the user is typing in a real form field — Backspace must not
+    // nuke a node while they're editing a label or filter.
     const target = event.target;
     if (target && target.matches && target.matches("input, textarea, select, [contenteditable]")) return;
     // Builder wizard owns its own keyboard handling.
     if (state.builder && state.builder.open) return;
 
     if (event.key === "Escape") {
+      // Edge picker first — it's overlaid on the canvas and the most-recent
+      // user-opened thing wins for Esc.
+      if (state.canvasEdit && state.canvasEdit.edgePicker) {
+        if (typeof closeCanvasEdgePicker === "function") closeCanvasEdgePicker();
+        event.preventDefault();
+        return;
+      }
+      if (typeof revertInlineRename === "function" && revertInlineRename()) {
+        event.preventDefault();
+        return;
+      }
       if (cancelDraftEdge())        { event.preventDefault(); return; }
       if (cancelDraftNodeDrag())    { event.preventDefault(); return; }
-      if (state.canvasEdit && state.canvasEdit.pendingEdgeDrop) {
-        dismissEffectPicker();
+      // Clear the empty-cell cursor before falling through to deselectAll —
+      // the cursor isn't part of selection state, so deselectAll wouldn't
+      // touch it on its own.
+      if (state.canvasEdit && state.canvasEdit.cursorCell) {
+        state.canvasEdit.cursorCell = null;
+        render();
         event.preventDefault();
         return;
       }
@@ -77,23 +162,131 @@ function initCanvasEdit() {
         return;
       }
     }
-    if ((event.key === "Delete" || event.key === "Backspace") && state.dataLoaded) {
-      if (deleteSelection()) event.preventDefault();
-    }
 
-    // Multi-level undo / redo. Native browser-level undo wins inside text
-    // inputs thanks to the input-target guard above.
+    // Multi-level undo / redo (caught BEFORE the printable-key handlers
+    // below so Cmd-Z doesn't route into the rename as a stray character).
     const cmdOrCtrl = event.metaKey || event.ctrlKey;
     if (cmdOrCtrl && (event.key === "z" || event.key === "Z")) {
+      if (typeof commitInlineRename === "function") commitInlineRename();
       if (event.shiftKey) { if (typeof historyRedo === "function" && historyRedo()) event.preventDefault(); }
       else                { if (typeof historyUndo === "function" && historyUndo()) event.preventDefault(); }
       return;
     }
     if (cmdOrCtrl && (event.key === "y" || event.key === "Y")) {
+      if (typeof commitInlineRename === "function") commitInlineRename();
       if (typeof historyRedo === "function" && historyRedo()) event.preventDefault();
       return;
     }
+
+    // Shift+E — open the "add outgoing edge" picker for the selected node.
+    // Caught BEFORE the printable-key handlers so the "E" doesn't get typed
+    // into the rename.
+    if (event.shiftKey && !cmdOrCtrl && !event.altKey && state.selectedNodeId &&
+        (event.key === "E" || event.key === "e") && state.dataLoaded) {
+      if (typeof commitInlineRename === "function") commitInlineRename();
+      if (typeof openCanvasEdgePicker === "function") openCanvasEdgePicker(state.selectedNodeId);
+      event.preventDefault();
+      return;
+    }
+
+    // Arrow keys on a selected edge → cycle its effect. Up/Left = previous
+    // effect in EFFECT_OPTIONS, Down/Right = next. The first arrow press of
+    // a session pushes the pre-cycle snapshot to history; subsequent presses
+    // mutate live without growing history (coalesced undo). Session ends on
+    // 1.5s debounce, blur, or selecting a different edge.
+    if (!cmdOrCtrl && !event.altKey && state.dataLoaded && state.selectedEdgeId &&
+        (event.key === "ArrowUp" || event.key === "ArrowDown" ||
+         event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+      const direction = (event.key === "ArrowUp" || event.key === "ArrowLeft") ? -1 : 1;
+      if (cycleSelectedEdgeEffect(direction)) {
+        event.preventDefault();
+        return;
+      }
+    }
+
+    // Arrow keys — cell-by-cell navigation. Commits any in-flight rename
+    // first so it lands as its own undo step and the new cell starts clean.
+    // preventDefault is unconditional once we've decided this is "our" key —
+    // the browser would otherwise scroll the viewport on ArrowDown/Up at
+    // the grid edges, which feels broken next to a contained navigation.
+    if (!cmdOrCtrl && !event.altKey && state.dataLoaded &&
+        (event.key === "ArrowUp" || event.key === "ArrowDown" ||
+         event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+      event.preventDefault();
+      if (typeof commitInlineRename === "function") commitInlineRename();
+      const dStream = event.key === "ArrowUp"   ? -1 : event.key === "ArrowDown"  ? 1 : 0;
+      const dStage  = event.key === "ArrowLeft" ? -1 : event.key === "ArrowRight" ? 1 : 0;
+      if (typeof moveCanvasCursor === "function") moveCanvasCursor(dStream, dStage);
+      return;
+    }
+
+    const hasCanvasPosition =
+      (state.selectedNodeId && nodeById[state.selectedNodeId]) ||
+      (state.canvasEdit && state.canvasEdit.cursorCell);
+
+    // Tab / Shift-Tab — horizontal step, creating a node if the destination
+    // cell is empty. Routes through commitInlineRename for the same
+    // history-keeping reason as Arrow.
+    if (event.key === "Tab" && hasCanvasPosition && state.dataLoaded && !cmdOrCtrl) {
+      if (typeof commitInlineRename === "function") commitInlineRename();
+      const direction = event.shiftKey ? "prev" : "next";
+      if (typeof handleCanvasTab === "function" && handleCanvasTab(direction)) {
+        event.preventDefault();
+        return;
+      }
+    }
+
+    // Enter — commit any pending rename, then create a new node below
+    // (stacked in the same cell). Same logic regardless of whether a rename
+    // was in flight — chains naturally for spreadsheet-style data entry.
+    if (event.key === "Enter" && hasCanvasPosition && state.dataLoaded && !cmdOrCtrl && !event.shiftKey) {
+      if (typeof commitInlineRename === "function") commitInlineRename();
+      if (typeof handleCanvasEnterCreate === "function" && handleCanvasEnterCreate()) {
+        event.preventDefault();
+        return;
+      }
+    }
+
+    // Inline rename — Backspace edits chars when active; otherwise falls
+    // through to the existing "delete the node" path at the bottom.
+    if (event.key === "Backspace" && typeof isInlineRenameActive === "function" && isInlineRenameActive()) {
+      if (typeof inlineRenameBackspace === "function") inlineRenameBackspace();
+      event.preventDefault();
+      return;
+    }
+
+    // Printable key — three branches:
+    //   • cursorCell on empty cell  → create a node seeded with this char.
+    //   • selectedNodeId, no rename → start a fresh rename (first-key
+    //     replaces the existing label).
+    //   • rename already active     → append the char.
+    if (typeof isPrintableTypingKey === "function" && isPrintableTypingKey(event) && state.dataLoaded) {
+      if (typeof isInlineRenameActive === "function" && isInlineRenameActive()) {
+        inlineRenameAppend(event.key);
+        event.preventDefault();
+        return;
+      }
+      if (state.canvasEdit && state.canvasEdit.cursorCell) {
+        if (typeof createNodeAtCursorWithChar === "function" &&
+            createNodeAtCursorWithChar(event.key)) {
+          event.preventDefault();
+          return;
+        }
+      }
+      if (state.selectedNodeId && nodeById[state.selectedNodeId]) {
+        if (typeof startInlineRename === "function") startInlineRename(state.selectedNodeId);
+        if (typeof inlineRenameAppend === "function") inlineRenameAppend(event.key);
+        event.preventDefault();
+        return;
+      }
+    }
+
+    if ((event.key === "Delete" || event.key === "Backspace") && state.dataLoaded) {
+      if (deleteSelection()) event.preventDefault();
+    }
   });
+
+  if (typeof initCanvasInlineRename === "function") initCanvasInlineRename();
 }
 
 // Boot the app with an empty 3×3 starter grid. Called from 18-main.js when
@@ -129,10 +322,11 @@ function bootEmptyStateGrid() {
   if (state.canvasEdit) {
     state.canvasEdit.hoverCell = null;
     state.canvasEdit.draftEdge = null;
-    state.canvasEdit.pendingEdgeDrop = null;
     state.canvasEdit.flashedEdgeId = null;
     state.canvasEdit.addingEdgeFromNodeId = null;
     state.canvasEdit.editingSidebarItem = null;
+    state.canvasEdit.cursorCell = null;
+    state.canvasEdit.inlineRename = null;
   }
 
   rebuildIndexes();
@@ -149,19 +343,35 @@ function bootEmptyStateGrid() {
   if (typeof clearHistory === "function") clearHistory();
 }
 
+// Mirror the Shift state into both the canvasEdit flag and a body class so
+// CSS can hide the edit affordances without any per-render bookkeeping.
+function setShiftHeld(held) {
+  state.canvasEdit.shiftHeld = !!held;
+  if (document.body) {
+    document.body.classList.toggle("canvas-shift-edit", !!held);
+  }
+}
+
 // ───── Per-render event binding ───────────────────────────────────────────
 // Called by attachSvgEventHandlers() in 11-rendering.js after every render.
 // The canvas hosts only spatial gestures: ghost-cell click to add, drag
 // from a node's right edge to draw an edge, edge click to navigate. All
 // rename / re-colour / reorder / add-stream / add-stage flows live in
 // the sidebar and the right detail panel.
+//
+// The three mutating gestures (ghost-cell click, edge-handle mousedown,
+// node mousedown for drag) are gated on event.shiftKey so the canvas is
+// read-only by default. Edge click → select stays ungated because it's
+// navigation, not a mutation.
 function attachCanvasEditHandlers() {
   const vizSvg = document.getElementById("viz-svg");
   if (!vizSvg) return;
 
-  // Ghost cell click → create a new node in that cell.
+  // Ghost cell click → create a new node in that cell. Shift-gated; without
+  // Shift the ghost cell isn't even visible (see 05-visualization.css).
   vizSvg.querySelectorAll(".ghost-cell").forEach(group => {
     group.addEventListener("click", event => {
+      if (!event.shiftKey) return;
       event.stopPropagation();
       const streamId = group.getAttribute("data-stream-id");
       const stageId  = group.getAttribute("data-stage-id");
@@ -169,14 +379,18 @@ function attachCanvasEditHandlers() {
     });
   });
 
-  // Edge handle mousedown → start an edge drag.
+  // Edge handle mousedown → candidate phase. Drag past threshold promotes to
+  // beginEdgeDrag (in-place edge creation). Mouseup without crossing the
+  // threshold is treated as a click and opens the typeable target picker
+  // (same UI as Shift+E). Shift-gated.
   vizSvg.querySelectorAll(".edge-handle").forEach(handle => {
     handle.addEventListener("mousedown", event => {
       if (event.button !== 0) return;
+      if (!event.shiftKey) return;
       event.stopPropagation();
       event.preventDefault();
       const nodeId = handle.getAttribute("data-node-id");
-      beginEdgeDrag(nodeId, event.clientX, event.clientY);
+      beginEdgeHandleCandidate(nodeId, event.clientX, event.clientY);
     });
   });
 
@@ -189,14 +403,15 @@ function attachCanvasEditHandlers() {
     });
   });
 
-  // Node mousedown → candidate drag-to-move. We don't preventDefault or
-  // stopPropagation here so the existing click → selectNode (in
-  // attachSvgEventHandlers, 11-rendering.js) still fires when the gesture
-  // turns out to be a click. Promotion to a real drag happens in
-  // maybePromoteNodeDrag once the cursor moves past NODE_DRAG_THRESHOLD.
+  // Node mousedown → candidate drag-to-move. Shift-gated: without Shift we
+  // don't arm the drag candidate at all, so the existing click → selectNode
+  // (in attachSvgEventHandlers, 11-rendering.js) still fires normally.
+  // Promotion to a real drag happens in maybePromoteNodeDrag once the cursor
+  // moves past NODE_DRAG_THRESHOLD.
   vizSvg.querySelectorAll(".node-group").forEach(group => {
     group.addEventListener("mousedown", event => {
       if (event.button !== 0) return;
+      if (!event.shiftKey) return;
       if (event.target && event.target.closest && event.target.closest(".edge-handle")) return;
       const nodeId = group.getAttribute("data-node-id");
       beginNodeDragCandidate(nodeId, event.clientX, event.clientY);
@@ -211,6 +426,17 @@ function attachCanvasEditHandlers() {
 function handleSvgMouseMove(event) {
   if (!state.dataLoaded) return;
   if (state.canvasEdit && state.canvasEdit.draftEdge) return;  // dragging an edge — separate render loop owns hoverCell
+  // Suppress ghost-cell hover when Shift isn't held — without Shift the canvas
+  // is read-only and the ghost cell isn't a valid affordance. The cursor-cell
+  // keyboard path (state.canvasEdit.cursorCell, set by 16i) is independent.
+  if (!state.canvasEdit.shiftHeld) {
+    if (state.canvasEdit.hoverCell) {
+      state.canvasEdit.hoverCell = null;
+      layout = computeLayout();
+      render();
+    }
+    return;
+  }
   const layoutPoint = clientPointToLayout(event.clientX, event.clientY);
   if (!layoutPoint) return;
   const cell = cellAtLayoutPoint(layoutPoint.x, layoutPoint.y);
@@ -287,6 +513,11 @@ function createNodeInCell(streamId, stageId) {
   if (!streamId || !stageId) return;
   if (!streamById[streamId] || !stageById[stageId]) return;
 
+  // Flush any pending inline-rename FIRST so it lands as its own history
+  // entry — otherwise it gets bundled with the create below and one undo
+  // would rewind both.
+  if (typeof commitInlineRename === "function") commitInlineRename();
+
   // Guarantee a category exists before we reference it from the new node;
   // otherwise the round-trip through loadDataFromCsv on reload would reject
   // the node (unknown category).
@@ -303,19 +534,16 @@ function createNodeInCell(streamId, stageId) {
   };
   NODES.push(newNode);
   state.canvasEdit.hoverCell = null;
-  // Open the detail panel in edit mode so the user lands in the rename
-  // flow immediately. selectNode triggers the panel render; we then focus
-  // the Label input on the next tick once the DOM exists.
+  // Open the detail panel in edit mode so the user can fill in the rest of
+  // the fields without an extra click. The label itself is renamed by
+  // typing directly onto the node — no text-box focus needed.
   state.canvasEdit.editMode = true;
   applyCanvasMutation();
   selectNode(newNode.id);
-  setTimeout(() => {
-    const labelInput = document.querySelector("#detail-content [data-field='label']");
-    if (labelInput && typeof labelInput.focus === "function") {
-      labelInput.focus();
-      if (typeof labelInput.select === "function") labelInput.select();
-    }
-  }, 0);
+  // Pre-arm the inline rename for the new node so the next keystroke types
+  // straight onto the canvas (no input focus, no overlay text box). See
+  // 16h-canvas-inline-rename.js.
+  if (typeof startInlineRename === "function") startInlineRename(newNode.id);
 }
 
 // Build a node id from a label that doesn't collide with any existing one.
@@ -349,6 +577,53 @@ function deriveShortLabel(label) {
     if (short.length >= 6) break;
   }
   return (short || "X").toUpperCase().slice(0, 6);
+}
+
+// ───── Edge-handle click vs drag ─────────────────────────────────────────
+// Mousedown on an edge handle enters a candidate phase. If the cursor moves
+// past EDGE_HANDLE_DRAG_THRESHOLD we promote to a real edge drag (gray
+// preview line follows the cursor → drop on target node = create edge with
+// last-used effect). Mouseup without crossing the threshold is a click —
+// we open the typeable target picker so the user can pick a destination by
+// name, same as Shift+E.
+const EDGE_HANDLE_DRAG_THRESHOLD = 4;
+let _pendingEdgeHandleClick = null;
+let _edgeHandleMoveBound    = null;
+let _edgeHandleUpBound      = null;
+
+function beginEdgeHandleCandidate(fromNodeId, clientX, clientY) {
+  _pendingEdgeHandleClick = { fromNodeId: fromNodeId, startClientX: clientX, startClientY: clientY };
+  _edgeHandleMoveBound = (e) => maybePromoteEdgeHandleDrag(e);
+  _edgeHandleUpBound   = (e) => handleEdgeHandleClickOrCancel(e);
+  window.addEventListener("mousemove", _edgeHandleMoveBound);
+  window.addEventListener("mouseup",   _edgeHandleUpBound);
+}
+
+function maybePromoteEdgeHandleDrag(event) {
+  if (!_pendingEdgeHandleClick) return;
+  const dx = event.clientX - _pendingEdgeHandleClick.startClientX;
+  const dy = event.clientY - _pendingEdgeHandleClick.startClientY;
+  if (Math.abs(dx) < EDGE_HANDLE_DRAG_THRESHOLD && Math.abs(dy) < EDGE_HANDLE_DRAG_THRESHOLD) return;
+  const fromNodeId = _pendingEdgeHandleClick.fromNodeId;
+  // Tear down candidate listeners — beginEdgeDrag rebinds its own pair.
+  window.removeEventListener("mousemove", _edgeHandleMoveBound);
+  window.removeEventListener("mouseup",   _edgeHandleUpBound);
+  _pendingEdgeHandleClick = null;
+  _edgeHandleMoveBound = null;
+  _edgeHandleUpBound = null;
+  beginEdgeDrag(fromNodeId, event.clientX, event.clientY);
+}
+
+function handleEdgeHandleClickOrCancel() {
+  if (!_pendingEdgeHandleClick) return;
+  const fromNodeId = _pendingEdgeHandleClick.fromNodeId;
+  window.removeEventListener("mousemove", _edgeHandleMoveBound);
+  window.removeEventListener("mouseup",   _edgeHandleUpBound);
+  _pendingEdgeHandleClick = null;
+  _edgeHandleMoveBound = null;
+  _edgeHandleUpBound = null;
+  // No drag was promoted → treat as a click on the edge handle.
+  if (typeof openCanvasEdgePicker === "function") openCanvasEdgePicker(fromNodeId);
 }
 
 // ───── Edge drag ──────────────────────────────────────────────────────────
@@ -403,16 +678,16 @@ function endEdgeDrag(event) {
     return;
   }
 
-  // Show the inline effect picker at the drop point. The picker creates the
-  // edge once the user clicks one of its buttons.
-  state.canvasEdit.pendingEdgeDrop = {
-    fromNodeId: draft.fromNodeId,
-    toNodeId:   targetId,
-    clientX:    event.clientX,
-    clientY:    event.clientY,
-  };
-  render();
-  showEffectPicker(draft.fromNodeId, targetId, event.clientX, event.clientY);
+  // Drop on a valid target → commit immediately with the last-used effect.
+  // The new edge is auto-selected so arrow keys (handled in this file's
+  // keydown listener) cycle its effect without further clicks.
+  const effect = state.canvasEdit.lastUsedEdgeEffect || EFFECT_OPTIONS[0];
+  const newEdge = commitNewEdge(draft.fromNodeId, targetId, effect);
+  if (newEdge && newEdge.id && typeof selectEdge === "function") {
+    selectEdge(newEdge.id);
+  } else {
+    render();
+  }
 }
 
 function cancelDraftEdge() {
@@ -672,68 +947,98 @@ function moveNodeToCell(node, targetStreamId, targetStageId, cellInsertIdx) {
   return true;
 }
 
-// ───── Effect picker (after edge drop) ────────────────────────────────────
-let _effectPickerEl = null;
-
-function showEffectPicker(fromNodeId, toNodeId, clientX, clientY) {
-  dismissEffectPicker();
-  const picker = document.createElement("div");
-  picker.className = "edge-effect-picker";
-  picker.style.left = clientX + "px";
-  picker.style.top  = clientY + "px";
-  picker.innerHTML =
-    '<div class="edge-effect-picker-title">New edge effect</div>' +
-    EFFECT_OPTIONS.map(eff =>
-      '<button class="edge-effect-picker-btn ' + eff + '" data-effect="' + eff + '">' + eff + '</button>'
-    ).join("") +
-    '<button class="edge-effect-picker-btn cancel" data-effect="">Cancel</button>';
-  document.body.appendChild(picker);
-  _effectPickerEl = picker;
-
-  picker.querySelectorAll(".edge-effect-picker-btn").forEach(btn => {
-    btn.addEventListener("click", event => {
-      event.stopPropagation();
-      const effect = btn.getAttribute("data-effect");
-      dismissEffectPicker();
-      if (effect) commitNewEdge(fromNodeId, toNodeId, effect);
-    });
-  });
-
-  // Click outside the picker dismisses it.
-  setTimeout(() => {
-    document.addEventListener("mousedown", _effectPickerOutsideHandler, true);
-  }, 0);
-}
-
-function _effectPickerOutsideHandler(event) {
-  if (!_effectPickerEl) return;
-  if (_effectPickerEl.contains(event.target)) return;
-  dismissEffectPicker();
-}
-
-function dismissEffectPicker() {
-  if (_effectPickerEl) {
-    _effectPickerEl.remove();
-    _effectPickerEl = null;
-  }
-  document.removeEventListener("mousedown", _effectPickerOutsideHandler, true);
-  if (state.canvasEdit) state.canvasEdit.pendingEdgeDrop = null;
-}
-
 function commitNewEdge(fromNodeId, toNodeId, effect) {
-  if (!nodeById[fromNodeId] || !nodeById[toNodeId]) return;
-  if (fromNodeId === toNodeId) return;
+  if (!nodeById[fromNodeId] || !nodeById[toNodeId]) return null;
+  if (fromNodeId === toNodeId) return null;
   // Skip duplicates — an edge with the same (from, to, effect) already exists.
   for (const e of EDGES) {
-    if (e.from === fromNodeId && e.to === toNodeId && e.effect === effect) return;
+    if (e.from === fromNodeId && e.to === toNodeId && e.effect === effect) return null;
   }
-  EDGES.push({
+  const newEdge = {
     from: fromNodeId,
     to: toNodeId,
     effect: effect,
     description: "",
-  });
+  };
+  EDGES.push(newEdge);
+  state.canvasEdit.lastUsedEdgeEffect = effect;
   applyCanvasMutation();
+  // rebuildIndexes() inside applyCanvasMutation assigns edge.id by index,
+  // so by this point newEdge.id is populated and selectable.
+  return newEdge;
+}
+
+// ───── Selected-edge effect cycling ───────────────────────────────────────
+// While an edge is selected, arrow keys cycle its effect through EFFECT_OPTIONS.
+// The first cycle of a session pushes the pre-cycle snapshot to history (via
+// applyCanvasMutation). Subsequent cycles within the same session mutate the
+// live state but bypass history, so a burst of arrow presses collapses into
+// one undo step. A 1.5s debounce / blur / different-edge selection ends the
+// session; the snapshot already in history.past stays as the undo target.
+
+const EDGE_CYCLE_SESSION_DEBOUNCE_MS = 1500;
+
+function cycleSelectedEdgeEffect(direction) {
+  const edgeId = state.selectedEdgeId;
+  if (!edgeId) return false;
+  const edge = EDGES.find(e => e.id === edgeId);
+  if (!edge) return false;
+  const currentIdx = EFFECT_OPTIONS.indexOf(edge.effect);
+  if (currentIdx < 0) return false;
+  const step = (direction < 0) ? -1 : 1;
+  const nextIdx = (currentIdx + step + EFFECT_OPTIONS.length) % EFFECT_OPTIONS.length;
+  const nextEffect = EFFECT_OPTIONS[nextIdx];
+  if (nextEffect === edge.effect) return false;
+
+  // If a session is open for a DIFFERENT edge, close it before starting a new one.
+  const existing = state.canvasEdit.edgeCycleSession;
+  if (existing && existing.edgeId !== edgeId) {
+    endEdgeCycleSession();
+  }
+
+  edge.effect = nextEffect;
+  state.canvasEdit.lastUsedEdgeEffect = nextEffect;
+
+  if (!state.canvasEdit.edgeCycleSession) {
+    // First cycle of a fresh session — go through the normal mutation
+    // chokepoint so the pre-cycle snapshot lands in history.past once.
+    applyCanvasMutation();
+    state.canvasEdit.edgeCycleSession = { edgeId: edgeId, debounceTimer: null };
+  } else {
+    // Continuing a session — skip the history push, just refresh derived state.
+    applyEdgeCycleSubsequent();
+  }
+
+  // Restart the inactivity timer that closes the session.
+  const session = state.canvasEdit.edgeCycleSession;
+  if (session.debounceTimer) clearTimeout(session.debounceTimer);
+  session.debounceTimer = setTimeout(endEdgeCycleSession, EDGE_CYCLE_SESSION_DEBOUNCE_MS);
+  return true;
+}
+
+// Run the post-mutation half of applyCanvasMutation without pushing a new
+// undo entry. Used for the 2nd…Nth arrow press in a cycle session so the
+// whole burst collapses to one undo step.
+function applyEdgeCycleSubsequent() {
+  rebuildIndexes();
+  if (typeof recomputeValues === "function") recomputeValues();
+  render();
+  if (typeof renderDetailPanel === "function") renderDetailPanel();
+  try {
+    if (typeof serializeLiveStateToCsv === "function") {
+      state.lastCsvSnapshot = serializeLiveStateToCsv();
+      if (typeof saveCsvToStorage === "function") saveCsvToStorage(state.lastCsvSnapshot);
+    }
+  } catch (err) {
+    console.warn("Persisting edge-cycle mutation failed:", err);
+  }
+}
+
+function endEdgeCycleSession() {
+  const session = state.canvasEdit.edgeCycleSession;
+  if (!session) return;
+  if (session.debounceTimer) clearTimeout(session.debounceTimer);
+  state.canvasEdit.edgeCycleSession = null;
 }
 
 // ───── Delete + undo (node and edge) ──────────────────────────────────────

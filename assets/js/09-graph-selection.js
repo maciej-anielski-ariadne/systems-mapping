@@ -71,6 +71,18 @@ function computeHighlightedEdges(nodeId) {
 
 // Toggle behaviour: clicking the already-selected node deselects it.
 function selectNode(nodeId) {
+  // Any selection change ends an in-flight inline rename — fold the typed
+  // characters into a single history snapshot before moving on. Safe to call
+  // when no rename is active (no-op). See 16h-canvas-inline-rename.js.
+  if (state.selectedNodeId !== nodeId && typeof commitInlineRename === "function") {
+    commitInlineRename();
+  }
+  // Selecting a node clears any selected-edge cycle session — the burst of
+  // arrow presses on the previously-selected edge is now finalised in history.
+  if (typeof endEdgeCycleSession === "function") endEdgeCycleSession();
+  // Empty-cell keyboard cursor (16i) is mutually exclusive with a selected
+  // node — picking a node retires the placeholder.
+  if (state.canvasEdit) state.canvasEdit.cursorCell = null;
   if (state.selectedNodeId === nodeId) {
     deselectNode();
     return;
@@ -86,6 +98,8 @@ function selectNode(nodeId) {
 }
 
 function deselectNode() {
+  if (typeof commitInlineRename === "function") commitInlineRename();
+  if (typeof endEdgeCycleSession === "function") endEdgeCycleSession();
   state.selectedNodeId = null;
   state.selectedEdgeId = null;
   state.ancestorSet = new Set();
@@ -105,6 +119,13 @@ function selectEdge(edgeId) {
   if (!state.canvasEdit) return;
   const edge = EDGES.find(e => e.id === edgeId);
   if (!edge) return;
+  // Selecting a different edge ends the previous edge's cycle session — its
+  // pre-cycle snapshot is already in history, so undo still rewinds it.
+  if (state.canvasEdit.edgeCycleSession &&
+      state.canvasEdit.edgeCycleSession.edgeId !== edgeId &&
+      typeof endEdgeCycleSession === "function") {
+    endEdgeCycleSession();
+  }
   state.canvasEdit.editMode = true;
   state.canvasEdit.flashedEdgeId = edgeId;
   // Promote to a real selection so Delete-key dispatch (16e:deleteSelection)
@@ -145,6 +166,8 @@ function selectEdge(edgeId) {
 // don't get their own selection any more — clicking an edge goes through
 // selectEdge above, which is just a navigation helper.)
 function deselectAll() {
+  if (typeof commitInlineRename === "function") commitInlineRename();
+  if (state.canvasEdit) state.canvasEdit.cursorCell = null;
   state.selectedNodeId = null;
   state.selectedEdgeId = null;
   state.ancestorSet = new Set();

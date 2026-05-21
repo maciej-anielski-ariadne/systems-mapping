@@ -204,17 +204,18 @@ body.panning * {
 
 /* === Canvas direct-edit affordances === */
 
-/* Ghost cell (empty-cell hover preview) — faint dashed rectangle + "+" hint */
+/* Ghost cell (empty-cell hover preview) — faint dashed rectangle + "+" hint.
+ * Hidden by default; only revealed while the user is holding Shift, which
+ * also arms the click-to-create gesture in 16e-canvas-edit.js. */
 .ghost-cell rect {
   fill: rgba(96, 165, 250, 0.08);
   stroke: var(--accent-blue);
   stroke-width: 1.5;
   stroke-dasharray: 5 4;
   cursor: pointer;
-  transition: fill 0.12s;
-}
-.ghost-cell:hover rect {
-  fill: rgba(96, 165, 250, 0.18);
+  opacity: 0;
+  pointer-events: none;
+  transition: fill 0.12s, opacity 0.1s;
 }
 .ghost-cell text {
   fill: var(--accent-blue);
@@ -224,11 +225,85 @@ body.panning * {
   letter-spacing: 0.04em;
   pointer-events: none;
   user-select: none;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+body.canvas-shift-edit .ghost-cell rect {
+  opacity: 1;
+  pointer-events: auto;
+}
+body.canvas-shift-edit .ghost-cell:hover rect {
+  fill: rgba(96, 165, 250, 0.18);
+}
+body.canvas-shift-edit .ghost-cell text {
   opacity: 0.85;
 }
 
-/* Edge handle on the right edge of every node. Hidden by default, fades in
- * on node hover. Mousedown starts an edge drag (16e-canvas-edit.js). */
+/* Keyboard cursor cell — drawn when the user has arrowed into an empty
+ * cell. Visually similar to the ghost-cell hover preview but with a sharper
+ * solid-blue ring and a "Type to create a node" label, to read as "the
+ * input cursor lives here". No hover/cursor styling — interaction is
+ * keyboard-only (typing creates the node; arrows move the cursor). */
+.cursor-cell rect {
+  fill: rgba(96, 165, 250, 0.06);
+  stroke: var(--accent-blue);
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+  pointer-events: none;
+}
+.cursor-cell text {
+  fill: var(--accent-blue);
+  font-family: var(--font-mono);
+  font-size: calc(11px * var(--map-text-scale, 1));
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.95;
+}
+
+/* Shift+E "add outgoing edge" picker — small floating panel anchored next
+ * to the source node, wraps a typeable dropdown of every other node so the
+ * user can filter by name and hit Enter to commit. Sits above the canvas
+ * but below the builder overlay so it can be opened from view mode. */
+.canvas-edge-picker {
+  position: fixed;
+  z-index: 250;
+  background: var(--bg-deep);
+  border: 1px solid var(--accent-blue);
+  border-radius: 6px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.6);
+  padding: 10px 12px;
+  width: 280px;
+  font-family: var(--font-ui);
+}
+.canvas-edge-picker-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-bottom: 8px;
+}
+.canvas-edge-picker .typeable-dropdown-input {
+  width: 100%;
+  background: var(--bg-deepest);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  outline: none;
+}
+.canvas-edge-picker .typeable-dropdown-input:focus {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.25);
+}
+
+/* Edge handle on the right edge of every node. Hidden by default; reveals
+ * on node hover/selected only while Shift is held (canvas direct-edit
+ * affordance gate). Mousedown starts an edge drag (16e-canvas-edit.js). */
 .edge-handle {
   fill: var(--accent-blue);
   stroke: var(--bg-deepest);
@@ -236,15 +311,27 @@ body.panning * {
   opacity: 0;
   cursor: crosshair;
   transition: opacity 0.15s, r 0.15s;
+  pointer-events: none;
+}
+body.canvas-shift-edit .edge-handle {
   pointer-events: all;
 }
-.node-group:hover .edge-handle,
-.node-group.selected .edge-handle {
+body.canvas-shift-edit .node-group:hover .edge-handle,
+body.canvas-shift-edit .node-group.selected .edge-handle {
   opacity: 0.9;
 }
-.edge-handle:hover {
+body.canvas-shift-edit .edge-handle:hover {
   opacity: 1;
   r: 7;
+}
+/* Grab cursor on nodes while Shift is held, so the user gets a visual cue
+ * that drag-to-move is armed. Without Shift the default cursor signals
+ * "selectable, not draggable". */
+body.canvas-shift-edit .node-group {
+  cursor: grab;
+}
+body.canvas-shift-edit .node-group:active {
+  cursor: grabbing;
 }
 
 /* Wide invisible hit-path under each visible edge for easier click targeting */
@@ -256,18 +343,25 @@ body.panning * {
   cursor: pointer;
 }
 
-/* Selected edge — thicker, brighter, with a soft halo */
+/* Selected edge — thicker, brighter, with a halo coloured to match the
+ * effect. The effect-* class is added in 11-rendering.js so `currentColor`
+ * here resolves to the same accent the inline stroke uses. */
+.edge-path.effect-enables   { color: var(--edge-enables);   }
+.edge-path.effect-increases { color: var(--edge-increases); }
+.edge-path.effect-decreases { color: var(--edge-decreases); }
 .edge-path.selected {
-  filter: drop-shadow(0 0 6px currentColor);
+  filter: drop-shadow(0 0 8px currentColor);
 }
 
-/* Draft edge preview (during drag) */
+/* Draft edge preview (during drag) — neutral gray so it reads as "uncommitted,
+ * not yet an effect". The committed effect colour applies the moment the user
+ * drops on a valid target and the edge is auto-selected for arrow cycling. */
 .draft-edge {
   fill: none;
-  stroke: var(--accent-blue);
+  stroke: var(--text-tertiary);
   stroke-width: 2;
   stroke-dasharray: 6 4;
-  opacity: 0.85;
+  opacity: 0.7;
   pointer-events: none;
 }
 
@@ -320,48 +414,3 @@ body.node-dragging * {
   pointer-events: none;
 }
 
-/* Inline effect picker that pops up after dropping an edge on a target node */
-.edge-effect-picker {
-  position: fixed;
-  z-index: 250;
-  background: var(--bg-mid);
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
-  padding: 8px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  transform: translate(-50%, 12px);
-  min-width: 160px;
-}
-.edge-effect-picker-title {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-tertiary);
-  padding: 2px 6px 4px;
-}
-.edge-effect-picker-btn {
-  background: var(--bg-deep);
-  color: var(--text-primary);
-  border-radius: 4px;
-  padding: 6px 10px;
-  font-family: var(--font-ui);
-  font-size: 12px;
-  text-align: left;
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
-}
-.edge-effect-picker-btn:hover {
-  background: var(--bg-light);
-}
-.edge-effect-picker-btn.increases:hover { color: var(--accent-green);  }
-.edge-effect-picker-btn.decreases:hover { color: var(--accent-red);    }
-.edge-effect-picker-btn.enables:hover   { color: var(--accent-purple); }
-.edge-effect-picker-btn.cancel {
-  margin-top: 4px;
-  font-size: 11px;
-  color: var(--text-tertiary);
-}
