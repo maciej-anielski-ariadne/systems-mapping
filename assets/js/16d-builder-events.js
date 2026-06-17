@@ -45,16 +45,24 @@ function wireBuilderFooterButtons() {
 // Looks at the closest data-* attribute on the click target and dispatches.
 function handleBuilderClick(event) {
   const overlay = document.getElementById("builder-overlay");
-  const target = event.target.closest("[data-step], [data-add], [data-duplicate], [data-delete]");
+  const target = event.target.closest(
+    "[data-step], [data-add], [data-duplicate], [data-delete], " +
+    "[data-bulkdelete], [data-bulkclear], [data-bulkapply]"
+  );
   if (!target || !overlay || !overlay.contains(target)) return;
 
   if (target.hasAttribute("data-step")) {
     const step = parseInt(target.getAttribute("data-step"), 10);
-    if (!isNaN(step)) { state.builder.step = step; renderBuilder(); }
+    if (!isNaN(step)) {
+      clearBuilderSelection();   // indices don't carry across steps
+      state.builder.step = step;
+      renderBuilder();
+    }
     return;
   }
   if (target.hasAttribute("data-add")) {
     const section = target.getAttribute("data-add");
+    clearBuilderSelection();
     const newIdx = addBuilderRow(section);
     if (newIdx >= 0) {
       state.builder.focusAfterRender = { section, index: newIdx, field: null };
@@ -62,10 +70,38 @@ function handleBuilderClick(event) {
     renderBuilder();
     return;
   }
+
+  // ───── Bulk actions (wizard multi-select) ─────
+  if (target.hasAttribute("data-bulkdelete")) {
+    if (typeof deleteBuilderSelectedRows === "function") {
+      deleteBuilderSelectedRows(target.getAttribute("data-bulkdelete"));
+    }
+    renderBuilder();
+    return;
+  }
+  if (target.hasAttribute("data-bulkclear")) {
+    clearBuilderSelection();
+    renderBuilder();
+    return;
+  }
+  if (target.hasAttribute("data-bulkapply")) {
+    const field   = target.getAttribute("data-bulkapply");
+    const section = target.getAttribute("data-bulksection") || "edges";
+    const input   = overlay.querySelector('[data-bulkinput="' + field + '"]');
+    const value   = input ? input.value : "";
+    if (typeof applyBuilderBulkField === "function") {
+      const changed = applyBuilderBulkField(section, field, value);
+      saveBuilderToStorage();
+      if (changed) renderBuilder(); else refreshBuilderBulkBar();
+    }
+    return;
+  }
+
   const index = parseInt(target.getAttribute("data-index"), 10);
   if (isNaN(index)) return;
   if (target.hasAttribute("data-duplicate")) {
     const section = target.getAttribute("data-duplicate");
+    clearBuilderSelection();   // duplicate shifts indices after `index`
     const newIdx = duplicateBuilderRow(section, index);
     if (newIdx >= 0) {
       state.builder.focusAfterRender = { section, index: newIdx, field: null };
@@ -73,6 +109,7 @@ function handleBuilderClick(event) {
     renderBuilder();
   } else if (target.hasAttribute("data-delete")) {
     state.builder[target.getAttribute("data-delete")].splice(index, 1);
+    clearBuilderSelection();   // a removed row shifts later indices
     renderBuilder();
   }
 }
@@ -80,8 +117,71 @@ function handleBuilderClick(event) {
 // Routes input + change events to the appropriate field updater based on
 // which data-* attribute the target carries.
 function handleBuilderCellChange(event) {
-  if      (event.target.matches("[data-section][data-field]")) handleBuilderInput(event);
-  else if (event.target.matches("[data-default]"))             handleBuilderDefault(event);
+  const t = event.target;
+  if      (t.matches("[data-rowselect]")) { handleBuilderRowSelect(event); return; }
+  else if (t.matches("[data-selectall]")) { handleBuilderSelectAll(event); return; }
+  else if (t.matches("[data-bulkfield]")) { handleBuilderBulkField(event); return; }
+  if      (t.matches("[data-section][data-field]")) handleBuilderInput(event);
+  else if (t.matches("[data-default]"))             handleBuilderDefault(event);
+}
+
+// ───── Bulk multi-select handlers ────────────────────────────────────────
+// Tick / untick one row. Updates the selection set + the row highlight, then
+// refreshes just the bulk bar (no full re-render — keeps any open editor and
+// the scroll position untouched). Index stays valid: selection is cleared on
+// any mutation that shifts rows (see handleBuilderClick / handleBuilderDrop).
+function handleBuilderRowSelect(event) {
+  const i = parseInt(event.target.getAttribute("data-index"), 10);
+  if (isNaN(i)) return;
+  if (event.target.checked) state.builder.selected.add(i);
+  else                      state.builder.selected.delete(i);
+  const tr = event.target.closest("tr");
+  if (tr) tr.classList.toggle("selected", event.target.checked);
+  if (typeof refreshBuilderBulkBar === "function") refreshBuilderBulkBar();
+}
+
+// "Select all" header checkbox — select every row in the current section or
+// clear. Full re-render so each row checkbox + highlight repaints (scroll is
+// preserved by renderBuilder's same-step restore).
+function handleBuilderSelectAll(event) {
+  const section = event.target.getAttribute("data-selectall");
+  const arr = state.builder[section];
+  if (!arr) return;
+  if (event.target.checked) state.builder.selected = new Set(arr.map((_, i) => i));
+  else clearBuilderSelection();
+  renderBuilder();
+}
+
+// A bulk-field dropdown changed — apply the picked value to every selected
+// row. Re-render so the row cells reflect the change (selection indices are
+// unchanged, so the same rows stay selected). Empty placeholder → no-op, but
+// still refresh the bar so the dropdown resets to its placeholder.
+function handleBuilderBulkField(event) {
+  const section = event.target.getAttribute("data-bulksection");
+  const field   = event.target.getAttribute("data-bulkfield");
+  const value   = event.target.value;
+  if (!section || !field) return;
+  if (value === "") { if (typeof refreshBuilderBulkBar === "function") refreshBuilderBulkBar(); return; }
+  if (typeof applyBuilderBulkField !== "function") return;
+  const changed = applyBuilderBulkField(section, field, value);
+  saveBuilderToStorage();
+  if (changed) renderBuilder();
+  else if (typeof refreshBuilderBulkBar === "function") refreshBuilderBulkBar();
+}
+
+// After a render, reflect the selection on the "select all" box: checked when
+// every row is selected, indeterminate when only some are. (indeterminate
+// can't be set via an HTML attribute, hence this post-render sync.)
+function syncBuilderSelectAllState() {
+  const overlay = document.getElementById("builder-overlay");
+  if (!overlay) return;
+  const box = overlay.querySelector("[data-selectall]");
+  if (!box) return;
+  const section = box.getAttribute("data-selectall");
+  const total = (state.builder[section] || []).length;
+  const sel = state.builder.selected.size;
+  box.checked = total > 0 && sel === total;
+  box.indeterminate = sel > 0 && sel < total;
 }
 
 // Spreadsheet-style keyboard navigation across editable table cells.
@@ -283,6 +383,7 @@ function handleBuilderDrop(event) {
     arr.splice(toIndex, 0, moved);
   }
   handleBuilderDragEnd();
+  clearBuilderSelection();   // reorder shifts indices
   renderBuilder();
   saveBuilderToStorage();
 }
@@ -309,6 +410,7 @@ function attachBuilderEvents() {
     renderBuilder();
   });
   wireBuilderFooterButtons();
+  syncBuilderSelectAllState();
 
   // Delegated listeners live on the overlay element itself (which persists
   // across renders), so we attach them exactly once. The data-attribute

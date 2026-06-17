@@ -134,6 +134,14 @@ const state = {
     defaults: { enables: 0.30, increases: 0.25, decreases: -0.25 },
     nodes: [],              // [{ id, label, description, stream, stage, category, baseline, unit, controllable, direction, sliderMax }]
     edges: [],              // [{ from, to, effect, elasticity, description }]
+    // Bulk-select state for the wizard tables — a Set of ROW INDICES in the
+    // currently-visible step's section. Index-based and reset on any change
+    // that shifts indices (delete/duplicate/reorder) and on step change, so a
+    // stale index can never edit/delete the wrong row. See 16b/16d.
+    selected: new Set(),
+    // The step renderBuilder last painted — lets it tell a step change (reset
+    // scroll to top) from an in-step re-render (preserve scrollTop).
+    _lastRenderedStep: null,
     // After a full re-render of the wizard, restore focus to this cell.
     // { section, index, field } — field=null means "first editable input in
     // that row". Consumed (and cleared) by renderBuilder().

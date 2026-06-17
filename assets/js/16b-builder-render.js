@@ -36,6 +36,15 @@ function renderBuilder() {
     return;
   }
 
+  // Preserve the table's scroll position across re-renders. A full innerHTML
+  // replace below destroys the old .builder-step-scroll (scrollTop → 0). We
+  // only restore it for an IN-STEP re-render (delete / add / bulk edit /
+  // checkbox toggle); a genuine step change should land at the top.
+  const prevScroll = overlay.querySelector(".builder-step-scroll");
+  const savedScrollTop = prevScroll ? prevScroll.scrollTop : 0;
+  const sameStep = state.builder._lastRenderedStep === state.builder.step;
+  state.builder._lastRenderedStep = state.builder.step;
+
   let body = "";
   switch (state.builder.step) {
     case 1: body = renderBuilderStreamsStep();    break;
@@ -70,6 +79,14 @@ function renderBuilder() {
   attachBuilderEvents();
   saveBuilderToStorage();
   applyFocusAfterRender();
+
+  // Restore scroll after layout settles (same rAF timing as focus restore).
+  if (sameStep) {
+    requestAnimationFrame(() => {
+      const nextScroll = overlay.querySelector(".builder-step-scroll");
+      if (nextScroll) nextScroll.scrollTop = savedScrollTop;
+    });
+  }
 }
 
 // After a full re-render, restore focus to a specific cell so keyboard-driven
@@ -177,6 +194,119 @@ function refreshBuilderFooter() {
   wireBuilderFooterButtons();
 }
 
+// ───── Bulk multi-select helpers ──────────────────────────────────────────
+// Each list step's table gets a leading checkbox column (a per-row checkbox +
+// a "select all" header checkbox) and, when 1+ rows are ticked, a bulk action
+// bar in the always-visible top section. Selection lives in
+// state.builder.selected (a Set of row indices, scoped to the current step) —
+// see 03-state.js and the routing in 16d-builder-events.js.
+
+// Header cell with the "select all" checkbox. `indeterminate` (some-but-not-all
+// selected) can't be expressed in HTML, so it's set post-render by
+// syncBuilderSelectAllState() in 16d.
+function selectAllTh(section) {
+  return '<th class="builder-select-col">' +
+           '<input type="checkbox" data-selectall="' + section + '" title="Select all" />' +
+         '</th>';
+}
+
+// Per-row checkbox cell.
+function rowSelectTd(section, i) {
+  const checked = state.builder.selected.has(i) ? " checked" : "";
+  return '<td class="builder-select-col">' +
+           '<input type="checkbox" data-rowselect="' + section + '" data-index="' + i + '"' + checked + ' />' +
+         '</td>';
+}
+
+// `selected` class for a <tr> so selected rows get a highlight.
+function rowSelectedClass(i) {
+  return state.builder.selected.has(i) ? " selected" : "";
+}
+
+// One labelled <select> for the bulk bar. First option is a non-committal
+// placeholder (mirrors multiSelectFieldMarkup in 16j). Tagged with
+// data-bulksection / data-bulkfield so 16d can route the change.
+function builderBulkFieldMarkup(section, field, placeholder, options) {
+  let html = '<select class="builder-bulk-select" data-bulksection="' + section + '" data-bulkfield="' + field + '">';
+  html += '<option value="">' + escapeHtml(placeholder) + '</option>';
+  for (const opt of options) {
+    html += '<option value="' + escapeHtml(opt.value) + '">' + escapeHtml(opt.label) + '</option>';
+  }
+  html += '</select>';
+  return html;
+}
+
+// The bulk action bar HTML for `section`. Returns "" when nothing is selected
+// (so the bar is hidden). Inserted into each list step's static top area.
+function renderBuilderBulkBar(section) {
+  const n = state.builder.selected.size;
+  if (n < 1) return "";
+
+  let fields = "";
+  if (section === "nodes") {
+    const streamOpts = state.builder.streams.filter(s => s.id).map(s => ({ value: s.id, label: s.label || s.id }));
+    const stageOpts  = state.builder.stages.filter(s => s.id).map(s => ({ value: s.id, label: s.label || s.id }));
+    const catOpts    = state.builder.categories.filter(c => c.id).map(c => ({ value: c.id, label: c.label || c.id }));
+    const dirOpts    = DIRECTION_OPTIONS.filter(o => o !== "").map(o => ({ value: o, label: o }));
+    fields += builderBulkFieldMarkup(section, "stream",       "Set stream…",   streamOpts);
+    fields += builderBulkFieldMarkup(section, "stage",        "Set stage…",    stageOpts);
+    fields += builderBulkFieldMarkup(section, "category",     "Set category…", catOpts);
+    fields += builderBulkFieldMarkup(section, "direction",    "Set direction…", dirOpts);
+    fields += builderBulkFieldMarkup(section, "controllable", "Set slider…",
+                [{ value: "true", label: "On" }, { value: "false", label: "Off" }]);
+  } else if (section === "edges") {
+    const effectOpts = EFFECT_OPTIONS.map(o => ({ value: o, label: o }));
+    fields += builderBulkFieldMarkup(section, "effect", "Set effect…", effectOpts);
+    fields += '<span class="builder-bulk-elasticity">' +
+                '<input type="number" step="any" class="builder-bulk-input" data-bulkinput="elasticity" placeholder="Elasticity" />' +
+                '<button class="builder-action" data-bulkapply="elasticity" data-bulksection="edges">Apply</button>' +
+              '</span>';
+  }
+
+  return '<div class="builder-bulk-bar">' +
+           '<span class="builder-bulk-count">' + n + ' selected</span>' +
+           fields +
+           '<div class="builder-bulk-spacer"></div>' +
+           '<button class="builder-action danger" data-bulkdelete="' + section + '">Delete selected</button>' +
+           '<button class="builder-action" data-bulkclear="1">Clear</button>' +
+         '</div>';
+}
+
+// Rebuild just the bulk bar in place (cheap path for a single checkbox toggle —
+// avoids tearing down the table / open cell editor). Mirrors
+// refreshBuilderFooter. Re-runs upgradeSelectsIn so the new bar's <select>s
+// become typeable dropdowns like the rest of the wizard.
+function refreshBuilderBulkBar() {
+  const overlay = document.getElementById("builder-overlay");
+  if (!overlay) return;
+  const section = BUILDER_STEPS[state.builder.step - 1] && BUILDER_STEPS[state.builder.step - 1].key;
+  if (!section) return;
+  const existing = overlay.querySelector(".builder-bulk-bar");
+  const html = renderBuilderBulkBar(section);
+  if (existing) {
+    if (html) {
+      const wrapper = document.createElement("div");
+      wrapper.innerHTML = html;
+      const fresh = wrapper.firstElementChild;
+      existing.parentNode.replaceChild(fresh, existing);
+      if (typeof upgradeSelectsIn === "function") upgradeSelectsIn(fresh);
+    } else {
+      existing.remove();
+    }
+  } else if (html) {
+    // No bar yet (first selection) — append after the action bar.
+    const actionBar = overlay.querySelector(".builder-step-static .builder-action-bar");
+    if (actionBar) {
+      const wrapper = document.createElement("div");
+      wrapper.innerHTML = html;
+      const fresh = wrapper.firstElementChild;
+      actionBar.parentNode.insertBefore(fresh, actionBar.nextSibling);
+      if (typeof upgradeSelectsIn === "function") upgradeSelectsIn(fresh);
+    }
+  }
+  if (typeof syncBuilderSelectAllState === "function") syncBuilderSelectAllState();
+}
+
 // ───── Step 1: Streams ────────────────────────────────────────────────────
 function renderBuilderStreamsStep() {
   const v = validateBuilder();
@@ -198,10 +328,12 @@ function renderBuilderStreamsStep() {
     html += '<button class="builder-action" id="builder-start-from-sample">Start from sample</button>';
   }
   html += '</div>';
+  html += renderBuilderBulkBar("streams");
 
   html += BUILDER_SPLIT;
   html += '<table class="builder-table">';
   html +=   '<thead><tr>' +
+              selectAllTh("streams") +
               '<th style="width:28px"></th>' +     /* drag handle */
               '<th style="width:120px">ID</th>' +
               '<th>Label</th>' +
@@ -211,11 +343,12 @@ function renderBuilderStreamsStep() {
             '</tr></thead><tbody>';
 
   if (state.builder.streams.length === 0) {
-    html += tableEmptyRow(6, 'No streams yet. Click "+ Add stream" to start.');
+    html += tableEmptyRow(7, 'No streams yet. Click "+ Add stream" to start.');
   } else {
     state.builder.streams.forEach((s, i) => {
       const invalidId = v.dupStreams.has(s.id) || !s.id ? ' invalid' : '';
-      html += '<tr draggable="true" data-section="streams" data-index="' + i + '">';
+      html += '<tr draggable="true" class="' + rowSelectedClass(i).trim() + '" data-section="streams" data-index="' + i + '">';
+      html +=   rowSelectTd("streams", i);
       html +=   rowDragHandleHtml();
       html +=   '<td><input type="text" data-section="streams" data-field="id" data-index="' + i + '" value="' + escapeHtml(s.id) + '" class="' + invalidId + '" placeholder="ops" /></td>';
       html +=   '<td><input type="text" data-section="streams" data-field="label" data-index="' + i + '" value="' + escapeHtml(s.label) + '" placeholder="Operations" /></td>';
@@ -245,10 +378,12 @@ function renderBuilderStagesStep() {
           '</div>';
 
   html += '<div class="builder-action-bar"><button class="builder-action" data-add="stages">+ Add stage</button></div>';
+  html += renderBuilderBulkBar("stages");
 
   html += BUILDER_SPLIT;
   html += '<table class="builder-table">';
   html +=   '<thead><tr>' +
+              selectAllTh("stages") +
               '<th style="width:28px"></th>' +     /* drag handle */
               '<th style="width:200px">ID</th>' +
               '<th>Label</th>' +
@@ -256,11 +391,12 @@ function renderBuilderStagesStep() {
             '</tr></thead><tbody>';
 
   if (state.builder.stages.length === 0) {
-    html += tableEmptyRow(4, 'No stages yet. Click "+ Add stage".');
+    html += tableEmptyRow(5, 'No stages yet. Click "+ Add stage".');
   } else {
     state.builder.stages.forEach((s, i) => {
       const invalidId = v.dupStages.has(s.id) || !s.id ? ' invalid' : '';
-      html += '<tr draggable="true" data-section="stages" data-index="' + i + '">';
+      html += '<tr draggable="true" class="' + rowSelectedClass(i).trim() + '" data-section="stages" data-index="' + i + '">';
+      html +=   rowSelectTd("stages", i);
       html +=   rowDragHandleHtml();
       html +=   '<td><input type="text" data-section="stages" data-field="id" data-index="' + i + '" value="' + escapeHtml(s.id) + '" class="' + invalidId + '" placeholder="inputs" /></td>';
       html +=   '<td><input type="text" data-section="stages" data-field="label" data-index="' + i + '" value="' + escapeHtml(s.label) + '" placeholder="Inputs" /></td>';
@@ -288,10 +424,12 @@ function renderBuilderCategoriesStep() {
           '</div>';
 
   html += '<div class="builder-action-bar"><button class="builder-action" data-add="categories">+ Add category</button></div>';
+  html += renderBuilderBulkBar("categories");
 
   html += BUILDER_SPLIT;
   html += '<table class="builder-table">';
   html +=   '<thead><tr>' +
+              selectAllTh("categories") +
               '<th style="width:28px"></th>' +     /* drag handle */
               '<th style="width:140px">ID</th>' +
               '<th>Label</th>' +
@@ -301,11 +439,12 @@ function renderBuilderCategoriesStep() {
             '</tr></thead><tbody>';
 
   if (state.builder.categories.length === 0) {
-    html += tableEmptyRow(6, 'No categories yet. Click "+ Add category".');
+    html += tableEmptyRow(7, 'No categories yet. Click "+ Add category".');
   } else {
     state.builder.categories.forEach((c, i) => {
       const invalidId = v.dupCategories.has(c.id) || !c.id ? ' invalid' : '';
-      html += '<tr draggable="true" data-section="categories" data-index="' + i + '">';
+      html += '<tr draggable="true" class="' + rowSelectedClass(i).trim() + '" data-section="categories" data-index="' + i + '">';
+      html +=   rowSelectTd("categories", i);
       html +=   rowDragHandleHtml();
       html +=   '<td><input type="text" data-section="categories" data-field="id" data-index="' + i + '" value="' + escapeHtml(c.id) + '" class="' + invalidId + '" placeholder="resource" /></td>';
       html +=   '<td><input type="text" data-section="categories" data-field="label" data-index="' + i + '" value="' + escapeHtml(c.label) + '" placeholder="Resource" /></td>';
@@ -349,10 +488,12 @@ function renderBuilderNodesStep() {
   }
 
   html += '<div class="builder-action-bar"><button class="builder-action" data-add="nodes">+ Add node</button></div>';
+  html += renderBuilderBulkBar("nodes");
 
   html += BUILDER_SPLIT;
   html += '<table class="builder-table">';
   html +=   '<thead><tr>' +
+              selectAllTh("nodes") +
               '<th style="width:160px">ID</th>' +
               '<th style="width:180px">Label</th>' +
               '<th>Description</th>' +
@@ -368,7 +509,7 @@ function renderBuilderNodesStep() {
             '</tr></thead><tbody>';
 
   if (state.builder.nodes.length === 0) {
-    html += tableEmptyRow(12, 'No nodes yet. Click "+ Add node".');
+    html += tableEmptyRow(13, 'No nodes yet. Click "+ Add node".');
   } else {
     state.builder.nodes.forEach((n, i) => {
       const idInvalid       = !n.id || v.dupNodes.has(n.id)   ? ' invalid' : '';
@@ -376,7 +517,8 @@ function renderBuilderNodesStep() {
       const stageInvalid    = !v.stageIds.has(n.stage)        ? ' invalid' : '';
       const categoryInvalid = !v.categoryIds.has(n.category)  ? ' invalid' : '';
 
-      html += '<tr data-index="' + i + '">';
+      html += '<tr class="' + rowSelectedClass(i).trim() + '" data-index="' + i + '">';
+      html +=   rowSelectTd("nodes", i);
       html +=   '<td><input type="text" data-section="nodes" data-field="id" data-index="' + i + '" value="' + escapeHtml(n.id) + '" class="' + idInvalid + '" placeholder="team_size" /></td>';
       html +=   '<td><input type="text" data-section="nodes" data-field="label" data-index="' + i + '" value="' + escapeHtml(n.label) + '" placeholder="Team size" /></td>';
       html +=   '<td><input type="text" data-section="nodes" data-field="description" data-index="' + i + '" value="' + escapeHtml(n.description) + '" placeholder="What this node represents" /></td>';
@@ -430,10 +572,12 @@ function renderBuilderEdgesStep() {
   }
 
   html += '<div class="builder-action-bar"><button class="builder-action" data-add="edges">+ Add edge</button></div>';
+  html += renderBuilderBulkBar("edges");
 
   html += BUILDER_SPLIT;
   html += '<table class="builder-table">';
   html +=   '<thead><tr>' +
+              selectAllTh("edges") +
               '<th style="width:200px">From</th>' +
               '<th style="width:200px">To</th>' +
               '<th style="width:130px">Effect</th>' +
@@ -443,13 +587,14 @@ function renderBuilderEdgesStep() {
             '</tr></thead><tbody>';
 
   if (state.builder.edges.length === 0) {
-    html += tableEmptyRow(6, 'No edges yet. Click "+ Add edge".');
+    html += tableEmptyRow(7, 'No edges yet. Click "+ Add edge".');
   } else {
     state.builder.edges.forEach((e, i) => {
       const fromInvalid = !v.nodeIds.has(e.from) ? ' invalid' : '';
       const toInvalid   = !v.nodeIds.has(e.to)   ? ' invalid' : '';
 
-      html += '<tr data-index="' + i + '">';
+      html += '<tr class="' + rowSelectedClass(i).trim() + '" data-index="' + i + '">';
+      html +=   rowSelectTd("edges", i);
       html +=   '<td><select data-section="edges" data-field="from" data-index="' + i + '" class="' + fromInvalid + '"><option value=""></option>' + nodeOptions(e.from) + '</select></td>';
       html +=   '<td><select data-section="edges" data-field="to"   data-index="' + i + '" class="' + toInvalid   + '"><option value=""></option>' + nodeOptions(e.to)   + '</select></td>';
       html +=   '<td><select data-section="edges" data-field="effect" data-index="' + i + '">' +

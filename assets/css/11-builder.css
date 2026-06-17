@@ -363,6 +363,104 @@
   cursor: not-allowed;
 }
 
+/* ───── Bulk multi-select (wizard tables) ───────────────────────────────
+ * A leading checkbox column on every list table + a bulk action bar that
+ * appears in the static top section when 1+ rows are ticked. Mirrors the
+ * on-canvas multi-select bar (16j) but lives inside the wizard. */
+
+/* The narrow checkbox column. */
+.builder-select-col {
+  width: 34px;
+  text-align: center;
+  padding-left: 10px;
+  padding-right: 4px;
+}
+
+.builder-select-col input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent-blue);
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+/* Selected-row highlight. */
+.builder-table tr.selected td {
+  background: rgba(96, 165, 250, 0.10);
+}
+
+/* The bulk action bar — accent-tinted strip above the table. */
+.builder-bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: rgba(96, 165, 250, 0.08);
+  border: 1px solid var(--accent-blue);
+  border-radius: 6px;
+}
+
+.builder-bulk-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--accent-blue);
+  font-weight: 600;
+  margin-right: 4px;
+  white-space: nowrap;
+}
+
+.builder-bulk-spacer { flex: 1; }
+
+/* Bulk-field dropdowns. The class is copied onto the typeable-dropdown input
+ * when the <select> is upgraded (04b), so it styles both forms. */
+.builder-bulk-select {
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  outline: none;
+  min-width: 130px;
+}
+
+.builder-bulk-select:focus { border-color: var(--accent-blue); }
+
+.builder-bulk-elasticity {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.builder-bulk-input {
+  width: 110px;
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  outline: none;
+}
+
+.builder-bulk-input:focus { border-color: var(--accent-blue); }
+
+.builder-bulk-bar .builder-action.danger {
+  color: var(--accent-red);
+  border-color: var(--accent-red);
+}
+
+.builder-bulk-bar .builder-action.danger:hover {
+  background: var(--accent-red);
+  color: var(--bg-deepest);
+}
+
 /* ───── Defaults panel (just 3 elasticity inputs on step 5) ──────────── */
 .builder-defaults {
   display: flex;
