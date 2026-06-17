@@ -98,22 +98,21 @@ function render() {
     const colLeft = layout.colX[stage.id];
     const isStageCollapsed = state.hiddenStages.has(stage.id);
 
+    const cx = colLeft + colW / 2;
     content += '<g class="col-header-group' + (isStageCollapsed ? ' collapsed' : '') + '" data-stage-id="' + escapeHtml(stage.id) + '">';
+    // Transparent hit area over the header band captures the toggle click (the
+    // label text has pointer-events:none).
+    content += '<rect class="col-header-hit" x="' + colLeft + '" y="0" width="' + colW + '" height="' + headerBandBottom + '"></rect>';
     if (isStageCollapsed) {
       // Faint full-height band so the thin column reads as a strip and can be
-      // clicked anywhere down its length.
+      // clicked anywhere down its length; a "+" invites expansion and the label
+      // runs vertically down the band.
       content += '<rect class="collapsed-col-band" x="' + colLeft + '" y="' + headerBandBottom + '" width="' + colW + '" height="' + (layout.totalHeight - headerBandBottom) + '"></rect>';
-      // Header hit area + "+" affordance.
-      content += '<rect class="col-header-hit" x="' + colLeft + '" y="0" width="' + colW + '" height="' + headerBandBottom + '"></rect>';
-      const cx = colLeft + colW / 2;
       content += '<text class="col-header-text col-header-plus" x="' + cx + '" y="' + (SVG_PADDING_TOP + 24) + '" text-anchor="middle">+</text>';
-      // Vertical label centred down the band.
       const labelY = headerBandBottom + (layout.totalHeight - headerBandBottom) / 2;
       content += '<text class="col-header-text col-header-stub" x="' + cx + '" y="' + labelY + '" text-anchor="middle" transform="rotate(-90 ' + cx + ' ' + labelY + ')">' + escapeHtml(stage.label) + '</text>';
     } else {
-      content += '<rect class="col-header-hit" x="' + colLeft + '" y="0" width="' + colW + '" height="' + headerBandBottom + '"></rect>';
-      const x = colLeft + colW / 2;
-      content += '<text class="col-header-text" x="' + x + '" y="' + (SVG_PADDING_TOP + 24) + '" text-anchor="middle">' + escapeHtml(stage.label) + '</text>';
+      content += '<text class="col-header-text" x="' + cx + '" y="' + (SVG_PADDING_TOP + 24) + '" text-anchor="middle">' + escapeHtml(stage.label) + '</text>';
     }
     content += '</g>';
 

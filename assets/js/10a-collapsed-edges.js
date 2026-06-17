@@ -28,28 +28,30 @@
 
 function computeRenderEdges() {
   const renderEdges = [];
-  const SEP = "";
-  const realPairKey = new Set();   // "fromto" of emitted real visible→visible edges
-  const synthAccum  = new Map();   // "fromto" → { from, to, signs:Set<-1|0|1> }
+  const realPairKey = new Set();   // pairKey() of emitted real visible→visible edges
+  const synthAccum  = new Map();   // pairKey() → { from, to, signs:Set<-1|0|1> }
 
-  const isVisibleId = id => {
-    const n = nodeById[id];
-    return !!(n && isNodeVisible(n));
-  };
+  // Resolve visibility once per node so the DFS hot path below is a single Set
+  // lookup instead of three (stream/category/stage) checks per visit. Unknown
+  // ids simply aren't in the set, so this also subsumes the missing-node guard.
+  const visibleNodeIds = new Set();
+  for (const n of NODES) if (isNodeVisible(n)) visibleNodeIds.add(n.id);
+  const isVisibleId = id => visibleNodeIds.has(id);
+  // node ids are slugs without "->", so "a"+"bc" and "ab"+"c" stay distinct.
+  const pairKey = (from, to) => from + "->" + to;
 
   // ───── (a) Real edges: both endpoints visible ────────────────────────────
   for (const edge of EDGES) {
-    if (!nodeById[edge.from] || !nodeById[edge.to]) continue;
     if (isVisibleId(edge.from) && isVisibleId(edge.to)) {
       renderEdges.push({ synthetic: false, edge, from: edge.from, to: edge.to, effect: edge.effect });
-      realPairKey.add(edge.from + SEP + edge.to);
+      realPairKey.add(pairKey(edge.from, edge.to));
     }
   }
 
   // ───── (b) Synthetic edges: visible → (hidden…) → visible ─────────────────
   function recordSynth(from, to, product) {
     if (from === to) return;                       // drop degenerate self-loops
-    const key = from + SEP + to;
+    const key = pairKey(from, to);
     if (realPairKey.has(key)) return;              // a real edge already shows this pair
     let acc = synthAccum.get(key);
     if (!acc) { acc = { from, to, signs: new Set() }; synthAccum.set(key, acc); }
@@ -75,7 +77,7 @@ function computeRenderEdges() {
   }
 
   for (const a of NODES) {
-    if (!isNodeVisible(a)) continue;
+    if (!visibleNodeIds.has(a.id)) continue;
     for (const e0 of outgoingEdges[a.id]) {
       if (isVisibleId(e0.to)) continue;            // direct visible→visible handled in (a)
       dfsThroughHidden(a.id, e0, resolveEdgeElasticity(e0), new Set([e0.to]));

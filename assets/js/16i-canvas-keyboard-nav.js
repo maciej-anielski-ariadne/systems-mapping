@@ -144,6 +144,16 @@ function scrollCellIntoView(streamId, stageId, slotIndex) {
 function streamIndexFor(streamId) { return STREAMS.findIndex(s => s.id === streamId); }
 function stageIndexFor (stageId)  { return STAGES.findIndex (s => s.id === stageId);  }
 
+// First non-hidden stage index strictly in the given direction from fromIdx
+// (step +1 / -1), or -1 if every stage that way is collapsed. Pass fromIdx = -1
+// with step = +1 to find the first visible stage from the left edge.
+function nextVisibleStageIndex(fromIdx, step) {
+  for (let k = fromIdx + step; k >= 0 && k < STAGES.length; k += step) {
+    if (!state.hiddenStages.has(STAGES[k].id)) return k;
+  }
+  return -1;
+}
+
 // Move the cursor by (dStream, dStage). Internally walks slot-by-slot so
 // stacked nodes within a stream are visited in order before crossing into
 // the next stream. dStream != 0 → slot increments wrap into stream changes;
@@ -152,7 +162,7 @@ function moveCanvasCursor(dStream, dStage) {
   if (STREAMS.length === 0 || STAGES.length === 0) return false;
   const pos = getCanvasCursorPosition();
   if (!pos) {
-    const firstStageIdx = STAGES.findIndex(s => !state.hiddenStages.has(s.id));
+    const firstStageIdx = nextVisibleStageIndex(-1, 1);
     if (firstStageIdx < 0) return false;   // every stage collapsed
     moveCursorToSlot(STREAMS[0].id, STAGES[firstStageIdx].id, 0);
     return true;
@@ -162,14 +172,9 @@ function moveCanvasCursor(dStream, dStage) {
   if (sIdx < 0 || cIdx < 0) return false;
 
   if (dStage !== 0) {
-    // Step to the next NON-hidden stage in the requested direction so the
-    // cursor hops over collapsed columns instead of parking inside one.
-    const step = dStage > 0 ? 1 : -1;
-    let newCIdx = cIdx;
-    for (let k = cIdx + step; k >= 0 && k < STAGES.length; k += step) {
-      if (!state.hiddenStages.has(STAGES[k].id)) { newCIdx = k; break; }
-    }
-    if (newCIdx === cIdx) return false;
+    // Hop to the next NON-hidden stage so the cursor skips collapsed columns.
+    const newCIdx = nextVisibleStageIndex(cIdx, dStage > 0 ? 1 : -1);
+    if (newCIdx < 0) return false;
     moveCursorToSlot(pos.streamId, STAGES[newCIdx].id, pos.slotIndex);
     return true;
   }
@@ -230,11 +235,7 @@ function handleCanvasTab(direction) {
   const cIdx = stageIndexFor(pos.stageId);
   if (cIdx < 0) return false;
   // Skip over collapsed columns when tabbing across stages.
-  const step = direction === "next" ? 1 : -1;
-  let targetCIdx = -1;
-  for (let k = cIdx + step; k >= 0 && k < STAGES.length; k += step) {
-    if (!state.hiddenStages.has(STAGES[k].id)) { targetCIdx = k; break; }
-  }
+  const targetCIdx = nextVisibleStageIndex(cIdx, direction === "next" ? 1 : -1);
   if (targetCIdx < 0) return false;
   const targetStage = STAGES[targetCIdx];
   const cellNodes = NODES.filter(n => n.stream === pos.streamId && n.stage === targetStage.id);
