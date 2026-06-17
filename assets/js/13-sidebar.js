@@ -49,7 +49,9 @@ function renderStagesList() {
   for (let i = 0; i < STAGES.length; i++) {
     const stage = STAGES[i];
     const count = NODES.reduce((acc, n) => n.stage === stage.id ? acc + 1 : acc, 0);
-    html += '<div class="sidebar-edit-row" data-kind="stage" data-id="' + escapeHtml(stage.id) + '" data-index="' + i + '" draggable="true">';
+    const isHidden = state.hiddenStages.has(stage.id);
+    const tip = (isHidden ? "Click to show " : "Click to hide ") + stage.label + " — " + count + " node" + (count === 1 ? "" : "s") + " on the map. Double-click the name to rename.";
+    html += '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="stage" data-id="' + escapeHtml(stage.id) + '" data-index="' + i + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
     html +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
     html +=   '<span class="sidebar-edit-label sidebar-inline-edit" data-field="label" title="Double-click to rename">' + escapeHtml(stage.label) + '</span>';
     html +=   '<span class="sidebar-edit-count">' + count + '</span>';
@@ -206,7 +208,7 @@ function focusSidebarInlineLabel(kind, id) {
 
 // ───── Per-row wiring (inline edit / colour / delete / filter / drag) ─────
 function wireRowHandlers(container, kind) {
-  const isFilter = (kind === "stream" || kind === "category");
+  const isFilter = (kind === "stream" || kind === "category" || kind === "stage");
 
   container.querySelectorAll(".sidebar-edit-row").forEach(row => {
     const id = row.getAttribute("data-id");
@@ -214,6 +216,7 @@ function wireRowHandlers(container, kind) {
     const toggle = () => {
       if (kind === "stream")   toggleStream(id);
       if (kind === "category") toggleCategory(id);
+      if (kind === "stage")    toggleStage(id);
     };
 
     // Inline colour swatch commits on change.

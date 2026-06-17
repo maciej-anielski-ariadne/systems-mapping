@@ -42,6 +42,7 @@ function saveUiStateToStorage() {
     const payload = {
       hiddenStreams:        Array.from(state.hiddenStreams),
       hiddenCategories:     Array.from(state.hiddenCategories),
+      hiddenStages:         Array.from(state.hiddenStages),
       simulationMode:       !!state.simulationMode,
       userOverrides:        state.userOverrides || {},
       selectedNodeId:       state.selectedNodeId || null,
@@ -104,11 +105,12 @@ function applyRestoredUiState(ui) {
 
   state.hiddenStreams    = new Set(Array.isArray(ui.hiddenStreams)    ? ui.hiddenStreams    : []);
   state.hiddenCategories = new Set(Array.isArray(ui.hiddenCategories) ? ui.hiddenCategories : []);
+  state.hiddenStages     = new Set(Array.isArray(ui.hiddenStages)     ? ui.hiddenStages     : []);
   state.userOverrides    = (ui.userOverrides && typeof ui.userOverrides === "object") ? ui.userOverrides : {};
 
-  // Hidden streams change the row heights — recompute layout so the map
-  // renders with collapsed rows where appropriate.
-  if (state.hiddenStreams.size > 0) layout = computeLayout();
+  // Hidden streams change row heights and hidden stages change column widths —
+  // recompute layout so the map renders with collapsed rows/columns.
+  if (state.hiddenStreams.size > 0 || state.hiddenStages.size > 0) layout = computeLayout();
 
   // Simulation mode toggle redraws everything that depends on it.
   if (ui.simulationMode && !state.simulationMode) {

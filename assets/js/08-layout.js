@@ -44,6 +44,7 @@ function computeLayout() {
     }
     let maxNodesInCell = 0;
     for (const stage of STAGES) {
+      if (state.hiddenStages.has(stage.id)) continue;   // hidden column isn't drawn
       const cellNodes = cells[stream.id + ":" + stage.id] || [];
       if (cellNodes.length > maxNodesInCell) maxNodesInCell = cellNodes.length;
     }
@@ -74,12 +75,19 @@ function computeLayout() {
   }
   const totalHeight = cursorY + SVG_PADDING_BOTTOM;
 
-  // ───── X position for each column ─────────────────────────────────────
+  // ───── X position + width for each column ─────────────────────────────
+  // Hidden stages collapse to a compact COLLAPSED_COL_WIDTH stub (the column
+  // header stays as a clickable stub so the user can re-expand). Per-stage
+  // widths are stored so the renderer can place headers/dividers and so
+  // canvas hit-testing knows the true column extents.
   const colX = {};
+  const colWidths = {};
   let cursorX = SVG_PADDING_LEFT + ROW_HEADER_WIDTH;
   for (const stage of STAGES) {
+    const w = state.hiddenStages.has(stage.id) ? COLLAPSED_COL_WIDTH : NODE_WIDTH;
+    colWidths[stage.id] = w;
     colX[stage.id] = cursorX;
-    cursorX += NODE_WIDTH + COL_GAP;
+    cursorX += w + COL_GAP;
   }
   const totalWidth = cursorX - COL_GAP + SVG_PADDING_RIGHT;
 
@@ -96,6 +104,7 @@ function computeLayout() {
   const STEP = NODE_HEIGHT + NODE_GAP_Y;
   for (const stream of STREAMS) {
     for (const stage of STAGES) {
+      if (state.hiddenStages.has(stage.id)) continue;   // hidden column: no node positions
       const cellNodes = cells[stream.id + ":" + stage.id] || [];
       const cellTopY = rowY[stream.id] + ROW_PADDING;
 
@@ -149,6 +158,7 @@ function computeLayout() {
     rowY,
     rowHeights,
     colX,
+    colWidths,
     cells,
   };
 }

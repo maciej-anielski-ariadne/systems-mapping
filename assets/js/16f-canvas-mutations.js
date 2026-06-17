@@ -160,6 +160,7 @@ function deleteStageWithCascade(stageId) {
     edges: edgesToDelete.map(cloneEdgeForUndo),
   };
   STAGES = STAGES.filter(s => s.id !== stageId);
+  state.hiddenStages.delete(stageId);   // don't leave a stale hidden-stage entry
   NODES = NODES.filter(n => !nodeIdSet.has(n.id));
   EDGES = EDGES.filter(e => !nodeIdSet.has(e.from) && !nodeIdSet.has(e.to));
   if (state.selectedNodeId && nodeIdSet.has(state.selectedNodeId)) {

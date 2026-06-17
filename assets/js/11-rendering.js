@@ -21,7 +21,7 @@ const svg = document.getElementById("viz-svg");
 // each time render() replaces svg.innerHTML.
 svg.addEventListener("click", event => {
   // Ignore clicks on canvas-edit affordances — they manage their own state.
-  if (event.target.closest && event.target.closest(".node-group, .row-label-group, .edge-handle, .ghost-cell, .edge-hit, .edge-path")) {
+  if (event.target.closest && event.target.closest(".node-group, .row-label-group, .col-header-group, .edge-handle, .ghost-cell, .edge-hit, .edge-path")) {
     return;
   }
   if (state.selectedNodeId || (state.selectedNodeIds && state.selectedNodeIds.size)) {
@@ -88,14 +88,39 @@ function render() {
   content += '<rect x="0" y="0" width="' + layout.totalWidth + '" height="' + (SVG_PADDING_TOP + COL_HEADER_HEIGHT) + '" fill="var(--bg-deep)"></rect>';
 
   // ───── Column headers + vertical dividers ─────────────────────────────
+  // Each header is a clickable group (toggles its stage's visibility, mirroring
+  // the stream row labels). A hidden stage collapses to a narrow stub: the
+  // header shows a "+" and the label runs vertically down a faint full-height
+  // band, all of which is clickable to expand again.
+  const headerBandBottom = SVG_PADDING_TOP + COL_HEADER_HEIGHT;
   for (const stage of STAGES) {
-    const x = layout.colX[stage.id] + NODE_WIDTH / 2;
-    content += '<text class="col-header-text" data-stage-id="' + escapeHtml(stage.id) + '" x="' + x + '" y="' + (SVG_PADDING_TOP + 24) + '" text-anchor="middle">' + escapeHtml(stage.label) + '</text>';
+    const colW = (layout.colWidths && layout.colWidths[stage.id]) || NODE_WIDTH;
+    const colLeft = layout.colX[stage.id];
+    const isStageCollapsed = state.hiddenStages.has(stage.id);
+
+    content += '<g class="col-header-group' + (isStageCollapsed ? ' collapsed' : '') + '" data-stage-id="' + escapeHtml(stage.id) + '">';
+    if (isStageCollapsed) {
+      // Faint full-height band so the thin column reads as a strip and can be
+      // clicked anywhere down its length.
+      content += '<rect class="collapsed-col-band" x="' + colLeft + '" y="' + headerBandBottom + '" width="' + colW + '" height="' + (layout.totalHeight - headerBandBottom) + '"></rect>';
+      // Header hit area + "+" affordance.
+      content += '<rect class="col-header-hit" x="' + colLeft + '" y="0" width="' + colW + '" height="' + headerBandBottom + '"></rect>';
+      const cx = colLeft + colW / 2;
+      content += '<text class="col-header-text col-header-plus" x="' + cx + '" y="' + (SVG_PADDING_TOP + 24) + '" text-anchor="middle">+</text>';
+      // Vertical label centred down the band.
+      const labelY = headerBandBottom + (layout.totalHeight - headerBandBottom) / 2;
+      content += '<text class="col-header-text col-header-stub" x="' + cx + '" y="' + labelY + '" text-anchor="middle" transform="rotate(-90 ' + cx + ' ' + labelY + ')">' + escapeHtml(stage.label) + '</text>';
+    } else {
+      content += '<rect class="col-header-hit" x="' + colLeft + '" y="0" width="' + colW + '" height="' + headerBandBottom + '"></rect>';
+      const x = colLeft + colW / 2;
+      content += '<text class="col-header-text" x="' + x + '" y="' + (SVG_PADDING_TOP + 24) + '" text-anchor="middle">' + escapeHtml(stage.label) + '</text>';
+    }
+    content += '</g>';
 
     // Dotted divider between columns (skip after the last one)
     if (stage.id !== STAGES[STAGES.length - 1].id) {
-      const dividerX = layout.colX[stage.id] + NODE_WIDTH + COL_GAP / 2;
-      content += '<line class="col-divider" x1="' + dividerX + '" y1="' + (SVG_PADDING_TOP + COL_HEADER_HEIGHT) + '" x2="' + dividerX + '" y2="' + layout.totalHeight + '"></line>';
+      const dividerX = colLeft + colW + COL_GAP / 2;
+      content += '<line class="col-divider" x1="' + dividerX + '" y1="' + headerBandBottom + '" x2="' + dividerX + '" y2="' + layout.totalHeight + '"></line>';
     }
   }
 
@@ -184,15 +209,24 @@ function render() {
   }
 
   // ───── Edges (drawn BEFORE nodes so nodes sit on top) ─────────────────
+  // computeRenderEdges (10a) returns both the REAL visible→visible edges and
+  // the SYNTHETIC "through" edges that re-route causal effects across hidden
+  // stages/streams/categories. Both endpoints of every returned edge are
+  // guaranteed visible, so their layout positions always exist.
   const flashedEdgeId = state.canvasEdit && state.canvasEdit.flashedEdgeId;
-  for (const edge of EDGES) {
-    const fromNode = nodeById[edge.from];
-    const toNode   = nodeById[edge.to];
-    if (!fromNode || !toNode) continue;
-    if (!isNodeVisible(fromNode) || !isNodeVisible(toNode)) continue;
+  // Helper: effect → stroke colour + arrow marker name.
+  const effectStroke = effect =>
+    effect === "increases" ? "var(--edge-increases)" :
+    effect === "decreases" ? "var(--edge-decreases)" :
+    effect === "enables"   ? "var(--edge-enables)"   :
+                             "var(--edge-default)";
+  const effectMarker = effect =>
+    (effect === "increases" || effect === "decreases" || effect === "enables") ? effect : "default";
 
-    const fromPos = layout.positions[edge.from];
-    const toPos   = layout.positions[edge.to];
+  for (const re of computeRenderEdges()) {
+    const fromPos = layout.positions[re.from];
+    const toPos   = layout.positions[re.to];
+    if (!fromPos || !toPos) continue;   // defensive — endpoints should be visible
 
     // Edge starts at the right side of the source, ends at the left side of the target.
     const startX = fromPos.x + fromPos.width;
@@ -212,6 +246,28 @@ function render() {
       " " + ctrl2X + "," + endY +
       " " + endX + "," + endY;
 
+    if (re.synthetic) {
+      // Synthetic "through" edge — presentation only: dashed, no hit-path, not
+      // selectable/editable. Bold + coloured when incident to the selected node
+      // (highlightedEdgeIds only holds real edge ids, so we check incidence
+      // directly); dimmed when some OTHER node is the sole selection.
+      const incident = state.selectedNodeId === re.from || state.selectedNodeId === re.to;
+      let strokeWidth   = 1.5;
+      let strokeOpacity = 0.6;
+      let dimmed        = false;
+      if (state.selectedNodeId && state.selectedNodeIds.size <= 1) {
+        if (incident) { strokeWidth = 2; strokeOpacity = 0.95; }
+        else          { dimmed = true; }
+      }
+      const effectClass = ' effect-' + re.effect;   // increases / decreases / neutral
+      content += '<path class="edge-path synthetic' + effectClass + (dimmed ? ' dimmed' : '') +
+        '" d="' + pathD + '" stroke="' + effectStroke(re.effect) +
+        '" stroke-width="' + strokeWidth + '" stroke-opacity="' + strokeOpacity +
+        '" marker-end="url(#arrow_' + effectMarker(re.effect) + ')"></path>';
+      continue;
+    }
+
+    const edge = re.edge;
     // Default styling — overridden if the edge is highlighted by a selection.
     let strokeColor   = "var(--edge-default)";
     let strokeWidth   = 1;
@@ -226,9 +282,7 @@ function render() {
     if (state.selectedNodeId && state.selectedNodeIds.size <= 1) {
       const isHighlighted = state.highlightedEdgeIds.has(edge.id);
       if (isHighlighted) {
-        if      (edge.effect === "increases") strokeColor = "var(--edge-increases)";
-        else if (edge.effect === "decreases") strokeColor = "var(--edge-decreases)";
-        else                                  strokeColor = "var(--edge-enables)";
+        strokeColor = effectStroke(edge.effect);
         strokeWidth = 2;
         strokeOpacity = 0.9;
         markerEnd = ' marker-end="url(#arrow_' + edge.effect + ')"';
@@ -238,9 +292,7 @@ function render() {
     }
     if (isEdgeFlashed) {
       // Edge was just clicked — paint it boldly until the flash flag clears.
-      if      (edge.effect === "increases") strokeColor = "var(--edge-increases)";
-      else if (edge.effect === "decreases") strokeColor = "var(--edge-decreases)";
-      else                                  strokeColor = "var(--edge-enables)";
+      strokeColor = effectStroke(edge.effect);
       strokeWidth = 2.5;
       strokeOpacity = 1;
       markerEnd = ' marker-end="url(#arrow_' + edge.effect + ')"';
@@ -252,9 +304,7 @@ function render() {
     // both show an unambiguous colour change without depending on whether
     // the from-node is also selected.
     if (isEdgeSelected) {
-      if      (edge.effect === "increases") strokeColor = "var(--edge-increases)";
-      else if (edge.effect === "decreases") strokeColor = "var(--edge-decreases)";
-      else                                  strokeColor = "var(--edge-enables)";
+      strokeColor = effectStroke(edge.effect);
       strokeWidth = 3;
       strokeOpacity = 1;
       markerEnd = ' marker-end="url(#arrow_' + edge.effect + ')"';
@@ -499,6 +549,22 @@ function attachSvgEventHandlers() {
     if (stream) {
       const collapsed = state.hiddenStreams.has(streamId);
       const text = (collapsed ? "Click to expand " : "Click to collapse ") + stream.label + " on the map.";
+      if (typeof attachTooltip === "function") attachTooltip(group, text);
+    }
+  });
+
+  // Clicking a column header toggles the whole stage (collapse / expand its
+  // column on the map). Mirrors the stream row-label behaviour above.
+  svg.querySelectorAll(".col-header-group").forEach(group => {
+    const stageId = group.getAttribute("data-stage-id");
+    const stage = stageById[stageId];
+    group.addEventListener("click", event => {
+      event.stopPropagation();
+      toggleStage(stageId);
+    });
+    if (stage) {
+      const collapsed = state.hiddenStages.has(stageId);
+      const text = (collapsed ? "Click to expand " : "Click to collapse ") + stage.label + " on the map.";
       if (typeof attachTooltip === "function") attachTooltip(group, text);
     }
   });

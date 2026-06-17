@@ -89,6 +89,7 @@ function getCanvasCursorPosition() {
 // Clamps slotIndex to [0, streamRowCount-1].
 function moveCursorToSlot(streamId, stageId, slotIndex) {
   if (!streamById[streamId] || !stageById[stageId]) return;
+  if (state.hiddenStages.has(stageId)) return;   // can't land in a collapsed column
   const rowCount = streamRowCount(streamId);
   const slot = Math.max(0, Math.min(rowCount - 1, slotIndex | 0));
   const cellNodes = NODES.filter(n => n.stream === streamId && n.stage === stageId);
@@ -151,7 +152,9 @@ function moveCanvasCursor(dStream, dStage) {
   if (STREAMS.length === 0 || STAGES.length === 0) return false;
   const pos = getCanvasCursorPosition();
   if (!pos) {
-    moveCursorToSlot(STREAMS[0].id, STAGES[0].id, 0);
+    const firstStageIdx = STAGES.findIndex(s => !state.hiddenStages.has(s.id));
+    if (firstStageIdx < 0) return false;   // every stage collapsed
+    moveCursorToSlot(STREAMS[0].id, STAGES[firstStageIdx].id, 0);
     return true;
   }
   const sIdx = streamIndexFor(pos.streamId);
@@ -159,7 +162,13 @@ function moveCanvasCursor(dStream, dStage) {
   if (sIdx < 0 || cIdx < 0) return false;
 
   if (dStage !== 0) {
-    const newCIdx = Math.max(0, Math.min(STAGES.length - 1, cIdx + dStage));
+    // Step to the next NON-hidden stage in the requested direction so the
+    // cursor hops over collapsed columns instead of parking inside one.
+    const step = dStage > 0 ? 1 : -1;
+    let newCIdx = cIdx;
+    for (let k = cIdx + step; k >= 0 && k < STAGES.length; k += step) {
+      if (!state.hiddenStages.has(STAGES[k].id)) { newCIdx = k; break; }
+    }
     if (newCIdx === cIdx) return false;
     moveCursorToSlot(pos.streamId, STAGES[newCIdx].id, pos.slotIndex);
     return true;
@@ -220,8 +229,13 @@ function handleCanvasTab(direction) {
   if (!pos) return false;
   const cIdx = stageIndexFor(pos.stageId);
   if (cIdx < 0) return false;
-  const targetCIdx = direction === "next" ? cIdx + 1 : cIdx - 1;
-  if (targetCIdx < 0 || targetCIdx >= STAGES.length) return false;
+  // Skip over collapsed columns when tabbing across stages.
+  const step = direction === "next" ? 1 : -1;
+  let targetCIdx = -1;
+  for (let k = cIdx + step; k >= 0 && k < STAGES.length; k += step) {
+    if (!state.hiddenStages.has(STAGES[k].id)) { targetCIdx = k; break; }
+  }
+  if (targetCIdx < 0) return false;
   const targetStage = STAGES[targetCIdx];
   const cellNodes = NODES.filter(n => n.stream === pos.streamId && n.stage === targetStage.id);
   if (typeof commitInlineRename === "function") commitInlineRename();
