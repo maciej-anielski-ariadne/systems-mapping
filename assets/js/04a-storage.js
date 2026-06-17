@@ -94,7 +94,9 @@ function applyRestoredUiState(ui) {
   }
 
   if (typeof ui.highlightDepth === "number" && !isNaN(ui.highlightDepth)) {
-    state.highlightDepth = Math.max(1, Math.min(5, Math.round(ui.highlightDepth)));
+    // Value was already clamped when written (setHighlightDepth), same trust
+    // model as zoomLevel above — just restore and reflect it in the readout.
+    state.highlightDepth = ui.highlightDepth;
     if (typeof applyHighlightDepth === "function") applyHighlightDepth();
   }
 

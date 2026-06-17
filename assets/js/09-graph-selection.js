@@ -18,19 +18,21 @@
 // initialized to [] for every node by rebuildIndexes (06-data-loader.js),
 // so we don't need defensive `|| []` fallbacks when reading them.
 
-// Upstream neighbours up to `depth` hops away: BFS outward following incoming
-// edges. depth 1 = direct inputs only (the historical behaviour); higher depths
-// walk further up the chain. The selected node itself is never included.
-function getAncestors(nodeId, depth = state.highlightDepth) {
+// Breadth-first walk up to `depth` hops from nodeId, following `adjacency`
+// (incomingEdges or outgoingEdges) and reading the far end of each edge via
+// `endpoint` ("from" or "to"). Returns the set of reached node ids; the start
+// node itself is never included.
+function bfsNeighbors(nodeId, depth, adjacency, endpoint) {
   const result = new Set();
   let frontier = [nodeId];
   for (let level = 0; level < depth && frontier.length; level++) {
     const next = [];
     for (const id of frontier) {
-      for (const edge of incomingEdges[id]) {
-        if (edge.from !== nodeId && !result.has(edge.from)) {
-          result.add(edge.from);
-          next.push(edge.from);
+      for (const edge of adjacency[id]) {
+        const neighbour = edge[endpoint];
+        if (neighbour !== nodeId && !result.has(neighbour)) {
+          result.add(neighbour);
+          next.push(neighbour);
         }
       }
     }
@@ -39,23 +41,14 @@ function getAncestors(nodeId, depth = state.highlightDepth) {
   return result;
 }
 
-// Downstream neighbours up to `depth` hops away: same BFS following outgoing edges.
+// Upstream neighbours up to `depth` hops away (depth 1 = direct inputs only, the
+// historical behaviour); downstream is the mirror following outgoing edges.
+function getAncestors(nodeId, depth = state.highlightDepth) {
+  return bfsNeighbors(nodeId, depth, incomingEdges, "from");
+}
+
 function getDescendants(nodeId, depth = state.highlightDepth) {
-  const result = new Set();
-  let frontier = [nodeId];
-  for (let level = 0; level < depth && frontier.length; level++) {
-    const next = [];
-    for (const id of frontier) {
-      for (const edge of outgoingEdges[id]) {
-        if (edge.to !== nodeId && !result.has(edge.to)) {
-          result.add(edge.to);
-          next.push(edge.to);
-        }
-      }
-    }
-    frontier = next;
-  }
-  return result;
+  return bfsNeighbors(nodeId, depth, outgoingEdges, "to");
 }
 
 // Edges crossed while walking up- and downstream within `depth` hops of the

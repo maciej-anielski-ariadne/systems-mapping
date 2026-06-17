@@ -996,11 +996,10 @@ function cancelMarquee() {
   return true;
 }
 
-// Given a layout point, return the cell the cursor is over PLUS the insertion
-// index inside that cell (0..siblingCount). The dragged node is excluded from
-// sibling enumeration so its current slot isn't counted. Hidden streams are
-// skipped — dragging into a collapsed row is a no-op.
-function dropCellForDrag(x, y, draggedNodeId) {
+// Locate the (stream, stage) cell at a layout point, or null if the point is
+// outside the grid, in a hidden row, or past the columns. Shared by the drag
+// drop hit-test and the creation-placeholder hit-test below.
+function cellAtLayoutPoint(x, y) {
   if (x < ROW_HEADER_WIDTH) return null;
   if (y < SVG_PADDING_TOP + COL_HEADER_HEIGHT) return null;
 
@@ -1017,10 +1016,20 @@ function dropCellForDrag(x, y, draggedNodeId) {
   for (const stage of STAGES) {
     const left = layout.colX[stage.id];
     if (left === undefined) continue;
-    const right = left + NODE_WIDTH;
-    if (x >= left && x < right) { foundStage = stage; break; }
+    if (x >= left && x < left + NODE_WIDTH) { foundStage = stage; break; }
   }
   if (!foundStage) return null;
+
+  return { stream: foundStream, stage: foundStage };
+}
+
+// Given a layout point, return the cell the cursor is over PLUS the insertion
+// index inside that cell (0..siblingCount). The dragged node is excluded from
+// sibling enumeration so its current slot isn't counted.
+function dropCellForDrag(x, y, draggedNodeId) {
+  const found = cellAtLayoutPoint(x, y);
+  if (!found) return null;
+  const { stream: foundStream, stage: foundStage } = found;
 
   const siblings = [];
   for (const n of NODES) {
@@ -1047,25 +1056,9 @@ function dropCellForDrag(x, y, draggedNodeId) {
 // sitting entirely above the cursor. Uses the live layout positions, so it
 // stays consistent whether or not the stack is already parted for a placeholder.
 function insertionGapCell(x, y) {
-  if (x < ROW_HEADER_WIDTH) return null;
-  if (y < SVG_PADDING_TOP + COL_HEADER_HEIGHT) return null;
-
-  let foundStream = null;
-  for (const stream of STREAMS) {
-    if (state.hiddenStreams.has(stream.id)) continue;
-    const top = layout.rowY[stream.id];
-    const bot = top + layout.rowHeights[stream.id];
-    if (y >= top && y < bot) { foundStream = stream; break; }
-  }
-  if (!foundStream) return null;
-
-  let foundStage = null;
-  for (const stage of STAGES) {
-    const left = layout.colX[stage.id];
-    if (left === undefined) continue;
-    if (x >= left && x < left + NODE_WIDTH) { foundStage = stage; break; }
-  }
-  if (!foundStage) return null;
+  const found = cellAtLayoutPoint(x, y);
+  if (!found) return null;
+  const { stream: foundStream, stage: foundStage } = found;
 
   const siblings = NODES.filter(n => n.stream === foundStream.id && n.stage === foundStage.id);
 
