@@ -89,10 +89,17 @@ function computeLayout() {
     for (const stage of STAGES) {
       const cellNodes = cells[stream.id + ":" + stage.id] || [];
       const cellTopY = rowY[stream.id] + ROW_PADDING;
+      // While the placeholder hovers this cell, part the stack: every note at
+      // or after the insert slot drops down one slot so the shadow placeholder
+      // has an open gap to sit in (the renderer draws it at the same slot).
+      const gapAt = (hoverCell && hoverCell.streamId === stream.id &&
+                     hoverCell.stageId === stage.id && hoverCell.insertIndex != null)
+                  ? hoverCell.insertIndex : null;
       for (let nodeIdx = 0; nodeIdx < cellNodes.length; nodeIdx++) {
+        const slot = (gapAt !== null && nodeIdx >= gapAt) ? nodeIdx + 1 : nodeIdx;
         positions[cellNodes[nodeIdx].id] = {
           x: colX[stage.id],
-          y: cellTopY + nodeIdx * (NODE_HEIGHT + NODE_GAP_Y),
+          y: cellTopY + slot * (NODE_HEIGHT + NODE_GAP_Y),
           width: NODE_WIDTH,
           height: NODE_HEIGHT,
         };

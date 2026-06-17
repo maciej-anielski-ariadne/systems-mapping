@@ -65,7 +65,9 @@ const state = {
                                  // gestures on the canvas (ghost-cell click, edge-handle drag, node
                                  // drag-to-move) are gated on this so the map is read-only by default.
                                  // Maintained by initCanvasEdit's keydown/keyup/blur listeners.
-    hoverCell: null,             // { streamId, stageId } | null — empty cell under cursor
+    hoverCell: null,             // { streamId, stageId, insertIndex } | null — placeholder cell under
+                                 // cursor while Shift is held. insertIndex (0..siblingCount) is the
+                                 // slot the new note would land in; siblings at/after it displace down.
     draggingNode: null,          // { nodeId, startClientX, startClientY, currentX, currentY,
                                  //   dropCell: { streamId, stageId, insertIndex } | null,
                                  //   active: false } — set on .node-group mousedown,

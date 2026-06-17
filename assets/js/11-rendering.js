@@ -136,10 +136,14 @@ function render() {
   const hoverCell = state.canvasEdit && state.canvasEdit.hoverCell;
   if (hoverCell && layout.rowY[hoverCell.streamId] !== undefined && layout.colX[hoverCell.stageId] !== undefined) {
     const existingInCell = NODES.reduce((acc, n) => (n.stream === hoverCell.streamId && n.stage === hoverCell.stageId) ? acc + 1 : acc, 0);
+    // Sit in the gap computeLayout opened at the cursor's insert slot (siblings
+    // at/after it have displaced down by one). Falls back to the bottom slot
+    // when no insertIndex is set.
+    const insertSlot = hoverCell.insertIndex != null ? hoverCell.insertIndex : existingInCell;
     const ghostX = layout.colX[hoverCell.stageId];
-    const ghostY = layout.rowY[hoverCell.streamId] + ROW_PADDING + existingInCell * (NODE_HEIGHT + NODE_GAP_Y);
+    const ghostY = layout.rowY[hoverCell.streamId] + ROW_PADDING + insertSlot * (NODE_HEIGHT + NODE_GAP_Y);
     const ghostLabel = existingInCell > 0 ? "+ add another" : "+ add node";
-    content += '<g class="ghost-cell" data-stream-id="' + escapeHtml(hoverCell.streamId) + '" data-stage-id="' + escapeHtml(hoverCell.stageId) + '">';
+    content += '<g class="ghost-cell" data-stream-id="' + escapeHtml(hoverCell.streamId) + '" data-stage-id="' + escapeHtml(hoverCell.stageId) + '" data-insert-index="' + insertSlot + '">';
     content +=   '<rect x="' + ghostX + '" y="' + ghostY + '" width="' + NODE_WIDTH + '" height="' + NODE_HEIGHT + '" rx="5"></rect>';
     content +=   '<text x="' + (ghostX + NODE_WIDTH / 2) + '" y="' + (ghostY + NODE_HEIGHT / 2) + '" text-anchor="middle" dominant-baseline="central">' + ghostLabel + '</text>';
     content += '</g>';
