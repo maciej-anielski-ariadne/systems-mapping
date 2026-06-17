@@ -53,6 +53,19 @@
   line-height: 1.4;
 }
 
+/* Warning shown when an active feedback loop fails to converge (runaway
+ * positive feedback). Surfaced inline so a slider drag can reveal it live. */
+.sim-solver-badge {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--status-bad);
+  background: color-mix(in srgb, var(--status-bad) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--status-bad) 40%, transparent);
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin-bottom: 12px;
+}
+
 /* One block per stream — groups sliders for that stream */
 .sim-stream-block {
   margin-bottom: 14px;

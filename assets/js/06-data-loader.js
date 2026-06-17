@@ -75,23 +75,79 @@ function rebuildIndexes() {
     }
   }
 
+  // Any node Kahn couldn't place lies on a feedback loop. Feedback loops are a
+  // supported feature (the iterative solver in 07-simulation-engine.js handles
+  // them), so we don't drop these nodes — we append them so every node is still
+  // swept, and the acyclic prefix keeps providing a good Gauss-Seidel order.
   if (sorted.length !== NODES.length) {
-    const unsorted = NODES.length - sorted.length;
-    console.warn(
-      "Topological sort incomplete — possible cycle. Sorted:",
-      sorted.length, "of", NODES.length,
-    );
-    // Surface to the user too — without this, simulation silently degrades
-    // (the unsorted nodes won't get computed values) and there's no
-    // in-app signal of the problem.
-    if (typeof showLoadFeedback === "function") {
-      showLoadFeedback(
-        "Cycle detected — " + unsorted + " of " + NODES.length + " node(s) skipped in simulation. Remove the loop to fix.",
-        true,
-      );
+    const sortedSet = new Set(sorted);
+    for (const node of NODES) {
+      if (!sortedSet.has(node.id)) sorted.push(node.id);
     }
   }
   topologicalOrder = sorted;
+
+  // Identify which edges/nodes close a loop (for distinct rendering + status).
+  detectCycles();
+}
+
+// Find the edges that close feedback loops and the nodes that lie on them.
+// Runs an iterative depth-first search over outgoingEdges with the classic
+// white/gray/black colouring: an edge into a node currently on the DFS stack
+// (gray) is a "back-edge" that closes a cycle. Iterative (not recursive) so a
+// few hundred deeply-linked nodes can't overflow the JS call stack. Results go
+// into the module-level `cycleInfo` (declared in 03-state.js). Relies on
+// edge.id already being assigned earlier in rebuildIndexes().
+function detectCycles() {
+  const WHITE = 0, GRAY = 1, BLACK = 2;
+  const color = {};
+  for (const node of NODES) color[node.id] = WHITE;
+
+  const backEdgeIds = new Set();
+  const inCycleNodeIds = new Set();
+
+  for (const startNode of NODES) {
+    if (color[startNode.id] !== WHITE) continue;
+
+    // Each frame tracks a node and how far through its outgoing edges we are.
+    const stack = [{ id: startNode.id, edgeIndex: 0 }];
+    color[startNode.id] = GRAY;
+
+    while (stack.length > 0) {
+      const frame = stack[stack.length - 1];
+      const edges = outgoingEdges[frame.id] || [];
+
+      if (frame.edgeIndex < edges.length) {
+        const edge = edges[frame.edgeIndex++];
+        const toColor = color[edge.to];
+        if (toColor === GRAY) {
+          // edge.to is an ancestor on the current path → this edge closes a loop.
+          backEdgeIds.add(edge.id);
+          // Every node currently on the stack from edge.to upward is in the loop.
+          for (let i = stack.length - 1; i >= 0; i--) {
+            inCycleNodeIds.add(stack[i].id);
+            if (stack[i].id === edge.to) break;
+          }
+        } else if (toColor === WHITE) {
+          color[edge.to] = GRAY;
+          stack.push({ id: edge.to, edgeIndex: 0 });
+        }
+        // BLACK targets are fully explored — nothing to do.
+      } else {
+        color[frame.id] = BLACK;
+        stack.pop();
+      }
+    }
+  }
+
+  cycleInfo = {
+    inCycleNodeIds: inCycleNodeIds,
+    backEdgeIds: backEdgeIds,
+    loopCount: backEdgeIds.size,
+  };
+  if (backEdgeIds.size > 0) {
+    console.info(cycleInfo.loopCount + " feedback loop(s) detected — solved iteratively.");
+  }
 }
 
 // Main entry point. Returns true on success, false on fatal validation errors.
@@ -267,8 +323,21 @@ function loadDataFromCsv(csvText) {
   // sidebar filter counts, so we don't need an extra notification.
   if (errors.length > 0) {
     const summary = NODES.length + " nodes, " + EDGES.length + " edges, " + STREAMS.length + " streams";
-    showLoadFeedback("Loaded with " + errors.length + " warning(s). " + summary + ". See console for details.", false);
+    const loopNote = state.solverStatus.feedbackLoopCount > 0
+      ? " " + state.solverStatus.feedbackLoopCount + " feedback loop(s)."
+      : "";
+    showLoadFeedback("Loaded with " + errors.length + " warning(s). " + summary + "." + loopNote + " See console for details.", false);
     console.warn("Load warnings:", errors);
+  }
+
+  // A feedback loop that fails to settle means runaway positive feedback
+  // (loop gain ≥ 1). The values are clamped to something finite, but warn the
+  // user that the loop needs taming rather than letting them trust the numbers.
+  if (!state.solverStatus.converged) {
+    showLoadFeedback(
+      "Feedback loop didn't stabilise (gain ≥ 1) — values clamped. Reduce elasticities on the highlighted loop.",
+      true,
+    );
   }
 
   // Persist the CSV so the map survives a page refresh. Helper is a no-op
