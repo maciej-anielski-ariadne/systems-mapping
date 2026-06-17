@@ -115,7 +115,6 @@ function initCanvasEdit() {
   // Canvas keyboard model (most-specific handlers first):
   //   • Esc            — revert rename / cancel draft / dismiss picker / deselect
   //   • Cmd/Ctrl-Z/Y   — undo / redo (commits any pending rename first)
-  //   • Shift+E        — open the "add outgoing edge" picker (selected node only)
   //   • Arrows         — cell-by-cell navigation, even across empty cells
   //   • Tab / S-Tab    — navigate horizontally, creating a node when the
   //                       destination cell is empty
@@ -175,17 +174,6 @@ function initCanvasEdit() {
     if (cmdOrCtrl && (event.key === "y" || event.key === "Y")) {
       if (typeof commitInlineRename === "function") commitInlineRename();
       if (typeof historyRedo === "function" && historyRedo()) event.preventDefault();
-      return;
-    }
-
-    // Shift+E — open the "add outgoing edge" picker for the selected node.
-    // Caught BEFORE the printable-key handlers so the "E" doesn't get typed
-    // into the rename.
-    if (event.shiftKey && !cmdOrCtrl && !event.altKey && state.selectedNodeId &&
-        (event.key === "E" || event.key === "e") && state.dataLoaded) {
-      if (typeof commitInlineRename === "function") commitInlineRename();
-      if (typeof openCanvasEdgePicker === "function") openCanvasEdgePicker(state.selectedNodeId);
-      event.preventDefault();
       return;
     }
 
@@ -382,7 +370,7 @@ function attachCanvasEditHandlers() {
   // Edge handle mousedown → candidate phase. Drag past threshold promotes to
   // beginEdgeDrag (in-place edge creation). Mouseup without crossing the
   // threshold is treated as a click and opens the typeable target picker
-  // (same UI as Shift+E). Shift-gated.
+  // (the typeable target picker). Shift-gated.
   vizSvg.querySelectorAll(".edge-handle").forEach(handle => {
     handle.addEventListener("mousedown", event => {
       if (event.button !== 0) return;
@@ -585,7 +573,7 @@ function deriveShortLabel(label) {
 // preview line follows the cursor → drop on target node = create edge with
 // last-used effect). Mouseup without crossing the threshold is a click —
 // we open the typeable target picker so the user can pick a destination by
-// name, same as Shift+E.
+// name.
 const EDGE_HANDLE_DRAG_THRESHOLD = 4;
 let _pendingEdgeHandleClick = null;
 let _edgeHandleMoveBound    = null;

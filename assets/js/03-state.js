@@ -81,7 +81,7 @@ const state = {
     // at that exact slot, and a printable key creates a node there. See
     // 16i-canvas-keyboard-nav.js.
     cursorCell: null,
-    // Active "Add outgoing edge" overlay launched by Shift+E.
+    // Active "Add outgoing edge" overlay launched from a node's edge handle.
     // { overlay: HTMLElement, fromNodeId, closeOutsideHandler } | null.
     edgePicker: null,
     // Last effect the user picked or cycled to. Seeds new edges (drag-drop

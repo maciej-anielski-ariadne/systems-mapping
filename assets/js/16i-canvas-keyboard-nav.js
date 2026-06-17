@@ -1,5 +1,5 @@
 // =============================================================================
-// CANVAS KEYBOARD NAVIGATION — arrows / Tab / Enter / Shift+E
+// CANVAS KEYBOARD NAVIGATION — arrows / Tab / Enter
 // -----------------------------------------------------------------------------
 // Keyboard-driven node selection and creation on the canvas:
 //
@@ -16,9 +16,10 @@
 //      rename       cell. Commits any pending inline rename first so the
 //      active)      rename and the create each get their own undo step.
 //
-//   • Shift+E      — open a floating typeable dropdown listing every other
-//                    node. Typing filters; Enter picks the top match and
-//                    creates an "increases" edge from the selected node.
+// The "add outgoing edge" picker (openCanvasEdgePicker) — a floating typeable
+// dropdown listing every other node — is opened by clicking a node's
+// Shift-gated edge handle. Typing filters; Enter picks the top match and
+// creates an "increases" edge from the selected node.
 //
 // Position model — three coordinates, NOT two:
 //

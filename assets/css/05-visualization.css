@@ -269,7 +269,7 @@ body.canvas-shift-edit .ghost-cell text {
   opacity: 0.95;
 }
 
-/* Shift+E "add outgoing edge" picker — small floating panel anchored next
+/* "Add outgoing edge" picker — small floating panel anchored next
  * to the source node, wraps a typeable dropdown of every other node so the
  * user can filter by name and hit Enter to commit. Sits above the canvas
  * but below the builder overlay so it can be opened from view mode. */
