@@ -79,7 +79,6 @@ const state = {
                                  // progress; null otherwise. See 16e-canvas-edit.js.
     flashedEdgeId: null,         // edge to flash-highlight in the outgoing list (after canvas click)
     addingEdgeFromNodeId: null,  // when truthy, edit panel shows the "Add outgoing edge" form
-    editingSidebarItem: null,    // { kind: "stream"|"stage"|"category", id } when a sidebar row is pencil-expanded
     toast: null,                 // { message, undoFn, timerId } | null
     // While the user is type-renaming the selected node directly on the
     // canvas (no text-box overlay), this holds { nodeId, originalLabel,

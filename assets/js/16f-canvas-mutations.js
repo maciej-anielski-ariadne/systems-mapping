@@ -12,8 +12,6 @@
 //                             for undo, splice out, show the undo toast.
 //   • reorderStreams / Stages / Categories — drag-to-reorder hooked up from
 //                             the sidebar's HTML5 DnD wiring (13-sidebar.js).
-//   • focusSidebarEditLabel — small helper that focuses the freshly-opened
-//                             label input after renderSidebar repaints.
 //
 // Edge / node mutations (createNodeInCell, commitNewEdge, deleteSelection,
 // deleteEdgeById) live in 16e-canvas-edit.js because they belong with the
@@ -31,8 +29,8 @@
 // `options.skipDetailRender` — true when the mutation came from a text /
 // number input in the detail panel. Re-rendering the panel would destroy
 // the input element and break focus / tabbing.
-// `options.skipSidebarRender` — same idea for the sidebar (preserves focus
-// while the user is typing in the expanded stream / stage edit row).
+// `options.skipSidebarRender` — same idea for the sidebar (preserves an
+// in-progress inline edit / colour pick instead of tearing down the row).
 function applyCanvasMutation(options) {
   // Push the PREVIOUS state's CSV onto undo history before mutating. The
   // "previous" snapshot is whatever applyCanvasMutation produced last time
@@ -73,11 +71,9 @@ function addStream() {
   const color = STREAM_COLOR_PALETTE[STREAMS.length % STREAM_COLOR_PALETTE.length];
   const label = "Stream " + counter;
   STREAMS.push({ id: id, label: label, short: deriveShortLabel(label), color: color });
-  // Open the new row's pencil-expanded edit view in the sidebar so the user
-  // can immediately rename / re-colour it.
-  state.canvasEdit.editingSidebarItem = { kind: "stream", id: id };
   applyCanvasMutation();
-  focusSidebarEditLabel("stream", id);
+  // Drop straight into renaming the new row inline.
+  if (typeof focusSidebarInlineLabel === "function") focusSidebarInlineLabel("stream", id);
 }
 
 function addStage() {
@@ -86,9 +82,8 @@ function addStage() {
   let n = counter;
   while (stageById[id]) { n++; id = "stage_" + n; }
   STAGES.push({ id: id, label: "Stage " + counter });
-  state.canvasEdit.editingSidebarItem = { kind: "stage", id: id };
   applyCanvasMutation();
-  focusSidebarEditLabel("stage", id);
+  if (typeof focusSidebarInlineLabel === "function") focusSidebarInlineLabel("stage", id);
 }
 
 // Categories are stored in a plain object — Object.keys() preserves insertion
@@ -141,7 +136,6 @@ function deleteStreamWithCascade(streamId) {
     state.descendantSet = new Set();
     state.highlightedEdgeIds = new Set();
   }
-  state.canvasEdit.editingSidebarItem = null;
   pushUndo(snapshot);
   applyCanvasMutation();
   showUndoToast("Stream deleted", () => restoreFromUndo(snapshot));
@@ -174,7 +168,6 @@ function deleteStageWithCascade(stageId) {
     state.descendantSet = new Set();
     state.highlightedEdgeIds = new Set();
   }
-  state.canvasEdit.editingSidebarItem = null;
   pushUndo(snapshot);
   applyCanvasMutation();
   showUndoToast("Stage deleted", () => restoreFromUndo(snapshot));
@@ -210,7 +203,6 @@ function deleteCategoryWithCascade(catId) {
     state.descendantSet = new Set();
     state.highlightedEdgeIds = new Set();
   }
-  state.canvasEdit.editingSidebarItem = null;
   pushUndo(snapshot);
   applyCanvasMutation();
   showUndoToast("Category deleted", () => restoreFromUndo(snapshot));
@@ -251,16 +243,4 @@ function reorderCategories(fromIndex, targetIndex) {
   for (const id of ids) reordered[id] = CATEGORIES[id];
   CATEGORIES = reordered;
   applyCanvasMutation();
-}
-
-// After renderSidebar repaints, focus the freshly-opened label input so the
-// user can start typing the new stream / stage / category name immediately.
-function focusSidebarEditLabel(kind, id) {
-  setTimeout(() => {
-    const input = document.querySelector(".sidebar-edit-row.expanded[data-kind='" + kind + "'][data-id='" + id + "'] [data-field='label']");
-    if (input && typeof input.focus === "function") {
-      input.focus();
-      if (typeof input.select === "function") input.select();
-    }
-  }, 0);
 }

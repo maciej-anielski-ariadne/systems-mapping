@@ -329,7 +329,6 @@ function bootEmptyStateGrid() {
     state.canvasEdit.draftEdge = null;
     state.canvasEdit.flashedEdgeId = null;
     state.canvasEdit.addingEdgeFromNodeId = null;
-    state.canvasEdit.editingSidebarItem = null;
     state.canvasEdit.cursorCell = null;
     state.canvasEdit.inlineRename = null;
   }
