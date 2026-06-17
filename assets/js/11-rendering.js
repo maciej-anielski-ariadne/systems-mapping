@@ -200,32 +200,24 @@ function render() {
     // A feedback edge closes a loop — it runs from a downstream node back to an
     // upstream one, against the normal flow. cycleInfo (rebuilt before every
     // render) flags exactly one loop-closing edge per cycle.
-    const isFeedbackEdge = !!(cycleInfo && cycleInfo.backEdgeIds.has(edge.id));
+    const isFeedbackEdge = cycleInfo.backEdgeIds.has(edge.id);
 
     const deltaX = endX - startX;
     const ctrlOffset = Math.max(40, Math.abs(deltaX) * 0.5);
     const ctrl1X = startX + ctrlOffset;
     const ctrl2X = endX - ctrlOffset;
-    let pathD;
-    if (isFeedbackEdge) {
-      // Bow the curve up and out so the loop reads clearly instead of cutting
-      // straight back through the node band.
-      const ctrl1Y = startY - BACKEDGE_BOW;
-      const ctrl2Y = endY - BACKEDGE_BOW;
-      pathD =
-        "M " + startX + "," + startY +
-        " C " + ctrl1X + "," + ctrl1Y +
-        " " + ctrl2X + "," + ctrl2Y +
-        " " + endX + "," + endY;
-    } else {
-      // Cubic Bezier with horizontal tangents at both ends — produces a smooth
-      // left-to-right curve regardless of vertical offset.
-      pathD =
-        "M " + startX + "," + startY +
-        " C " + ctrl1X + "," + startY +
-        " " + ctrl2X + "," + endY +
-        " " + endX + "," + endY;
-    }
+    // Normal edges keep horizontal tangents (control Y = endpoint Y) for a
+    // smooth left-to-right curve. A feedback edge runs downstream→upstream
+    // against the flow, so we bow its controls up and out of the node band to
+    // keep the loop legible instead of cutting straight back through nodes.
+    const bow = isFeedbackEdge ? BACKEDGE_BOW : 0;
+    const ctrl1Y = startY - bow;
+    const ctrl2Y = endY - bow;
+    const pathD =
+      "M " + startX + "," + startY +
+      " C " + ctrl1X + "," + ctrl1Y +
+      " " + ctrl2X + "," + ctrl2Y +
+      " " + endX + "," + endY;
 
     // Default styling — overridden if the edge is highlighted by a selection.
     let strokeColor   = "var(--edge-default)";

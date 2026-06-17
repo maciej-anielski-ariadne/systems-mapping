@@ -79,7 +79,8 @@ function rebuildIndexes() {
   // supported feature (the iterative solver in 07-simulation-engine.js handles
   // them), so we don't drop these nodes — we append them so every node is still
   // swept, and the acyclic prefix keeps providing a good Gauss-Seidel order.
-  if (sorted.length !== NODES.length) {
+  const hasCycle = sorted.length !== NODES.length;
+  if (hasCycle) {
     const sortedSet = new Set(sorted);
     for (const node of NODES) {
       if (!sortedSet.has(node.id)) sorted.push(node.id);
@@ -88,7 +89,14 @@ function rebuildIndexes() {
   topologicalOrder = sorted;
 
   // Identify which edges/nodes close a loop (for distinct rendering + status).
-  detectCycles();
+  // Only cyclic maps have back-edges, so we skip the DFS entirely for an
+  // acyclic map — Kahn placing every node already proves there are none — and
+  // just clear any cycleInfo left over from a previous load.
+  if (hasCycle) {
+    detectCycles();
+  } else {
+    cycleInfo = { inCycleNodeIds: new Set(), backEdgeIds: new Set(), loopCount: 0 };
+  }
 }
 
 // Find the edges that close feedback loops and the nodes that lie on them.
