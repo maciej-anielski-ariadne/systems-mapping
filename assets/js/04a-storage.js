@@ -50,6 +50,7 @@ function saveUiStateToStorage() {
       sidebarWidth:         typeof state.sidebarWidth      === "number" ? state.sidebarWidth      : 280,
       detailPanelWidth:     typeof state.detailPanelWidth  === "number" ? state.detailPanelWidth  : 340,
       zoomLevel:            typeof state.zoomLevel === "number" ? state.zoomLevel : 1.0,
+      highlightDepth:       typeof state.highlightDepth === "number" ? state.highlightDepth : 1,
     };
     localStorage.setItem(STORAGE_KEY_UI, JSON.stringify(payload));
   } catch (_) {}
@@ -90,6 +91,13 @@ function applyRestoredUiState(ui) {
   if (typeof ui.zoomLevel === "number" && !isNaN(ui.zoomLevel)) {
     state.zoomLevel = ui.zoomLevel;
     if (typeof applyZoom === "function") applyZoom();
+  }
+
+  if (typeof ui.highlightDepth === "number" && !isNaN(ui.highlightDepth)) {
+    // Value was already clamped when written (setHighlightDepth), same trust
+    // model as zoomLevel above — just restore and reflect it in the readout.
+    state.highlightDepth = ui.highlightDepth;
+    if (typeof applyHighlightDepth === "function") applyHighlightDepth();
   }
 
   if (!state.dataLoaded) return;

@@ -79,6 +79,35 @@ function getMapTextScale(zoomLevel) {
   return Math.min(TEXT_SCALE_MAX, Math.max(1, TEXT_SCALE_RATIO / zoomLevel));
 }
 
+// Pick the label colour — pure white or near-black — that maximises contrast
+// against a given background fill, so category labels stay readable whatever
+// fill the user picks. Uses the WCAG relative-luminance crossover (~0.179):
+// light fills get dark text, dark fills get white. Accepts #rgb / #rrggbb;
+// falls back to white for anything unparseable.
+function pickTextColor(bgHex) {
+  const hex = String(bgHex || "").trim().replace(/^#/, "");
+  let r, g, b;
+  if (hex.length === 3) {
+    r = parseInt(hex[0] + hex[0], 16);
+    g = parseInt(hex[1] + hex[1], 16);
+    b = parseInt(hex[2] + hex[2], 16);
+  } else if (hex.length === 6) {
+    r = parseInt(hex.slice(0, 2), 16);
+    g = parseInt(hex.slice(2, 4), 16);
+    b = parseInt(hex.slice(4, 6), 16);
+  } else {
+    return "#ffffff";
+  }
+  if ([r, g, b].some(v => isNaN(v))) return "#ffffff";
+  // Relative luminance (sRGB → linear). Channels normalised to 0..1.
+  const lin = c => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  };
+  const luminance = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+  return luminance > 0.179 ? "#1c1917" : "#ffffff";
+}
+
 // Shallow clone of an edge object — used wherever we snapshot edges into an
 // undo entry. Centralised so adding a new edge field doesn't require hunting
 // through every undo path.

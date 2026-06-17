@@ -59,7 +59,7 @@
   --edge-enables:   #a78bfa;   /* "X enables Y" arrow (purple) */
 
   /* Font families — loaded locally from ../fonts/fonts.css */
-  --font-display:   "Fraunces", Georgia, serif;
-  --font-ui:        "IBM Plex Sans", -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono:      "IBM Plex Mono", "Menlo", monospace;
+  --font-display:   Arial, Helvetica, sans-serif;
+  --font-ui:        Arial, Helvetica, sans-serif;
+  --font-mono:      Arial, Helvetica, sans-serif;
 }

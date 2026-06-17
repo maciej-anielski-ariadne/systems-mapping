@@ -137,26 +137,59 @@ body.no-data .detail-panel {
   pointer-events: none;
 }
 
-/* === Small status pill in the bottom-left of the map === */
-.status-bar {
+/* === Highlight-depth control (bottom-right, sits above the zoom controls) ===
+ * Same glass look + z-index as the zoom controls; positioned one row up. */
+.viz-depth-controls {
   position: absolute;
-  bottom: 12px;
-  left: 12px;
-  z-index: 5;
+  bottom: 50px;
+  right: 12px;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 2px;
   background: rgba(17, 24, 39, 0.85);
   backdrop-filter: blur(8px);
-  border: 1px solid var(--border-subtle);
-  padding: 8px 14px;
-  border-radius: 5px;
+  padding: 3px;
+  border-radius: 6px;
   font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--text-tertiary);
-  letter-spacing: 0.05em;
-  pointer-events: none;
 }
 
-.status-bar b {
+.viz-depth-label {
+  color: var(--text-tertiary);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0 6px;
+}
+
+.viz-depth-button,
+.viz-depth-readout {
+  background: transparent;
   color: var(--text-secondary);
+  border-radius: 4px;
+  height: 26px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.viz-depth-button {
+  width: 26px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.viz-depth-readout {
+  min-width: 22px;
+  font-size: 12px;
+}
+
+.viz-depth-button:hover {
+  color: var(--text-primary);
+  background: var(--bg-light);
 }
 
 /* === Zoom controls (bottom-right of the viz area) ===

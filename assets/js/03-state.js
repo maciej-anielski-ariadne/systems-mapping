@@ -45,6 +45,7 @@ const state = {
   sidebarWidth: 280,           // pinned left sidebar width in px (drag the divider to change; double-click resets)
   detailPanelWidth: 340,       // pinned right detail panel width in px (same UX as sidebarWidth)
   zoomLevel: 1.0,              // map zoom multiplier (0.25 .. 3.0). Applied to the SVG width/height.
+  highlightDepth: 1,           // how many connection levels to highlight on node select (1 .. 5). 1 = direct neighbours only.
   // Search — populated by 17a-search.js as the user types. searchMatches is
   // an array of { node, score, bestField, bestPositions } objects sorted by
   // descending score. searchFocusIndex points at the currently-selected row
@@ -78,7 +79,6 @@ const state = {
                                  // progress; null otherwise. See 16e-canvas-edit.js.
     flashedEdgeId: null,         // edge to flash-highlight in the outgoing list (after canvas click)
     addingEdgeFromNodeId: null,  // when truthy, edit panel shows the "Add outgoing edge" form
-    editingSidebarItem: null,    // { kind: "stream"|"stage"|"category", id } when a sidebar row is pencil-expanded
     toast: null,                 // { message, undoFn, timerId } | null
     // While the user is type-renaming the selected node directly on the
     // canvas (no text-box overlay), this holds { nodeId, originalLabel,
