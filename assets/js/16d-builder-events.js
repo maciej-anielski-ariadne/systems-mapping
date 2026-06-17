@@ -54,7 +54,7 @@ function handleBuilderClick(event) {
   if (target.hasAttribute("data-step")) {
     const step = parseInt(target.getAttribute("data-step"), 10);
     if (!isNaN(step)) {
-      state.builder.selected = new Set();   // indices don't carry across steps
+      clearBuilderSelection();   // indices don't carry across steps
       state.builder.step = step;
       renderBuilder();
     }
@@ -62,7 +62,7 @@ function handleBuilderClick(event) {
   }
   if (target.hasAttribute("data-add")) {
     const section = target.getAttribute("data-add");
-    state.builder.selected = new Set();
+    clearBuilderSelection();
     const newIdx = addBuilderRow(section);
     if (newIdx >= 0) {
       state.builder.focusAfterRender = { section, index: newIdx, field: null };
@@ -80,7 +80,7 @@ function handleBuilderClick(event) {
     return;
   }
   if (target.hasAttribute("data-bulkclear")) {
-    state.builder.selected = new Set();
+    clearBuilderSelection();
     renderBuilder();
     return;
   }
@@ -101,7 +101,7 @@ function handleBuilderClick(event) {
   if (isNaN(index)) return;
   if (target.hasAttribute("data-duplicate")) {
     const section = target.getAttribute("data-duplicate");
-    state.builder.selected = new Set();   // duplicate shifts indices after `index`
+    clearBuilderSelection();   // duplicate shifts indices after `index`
     const newIdx = duplicateBuilderRow(section, index);
     if (newIdx >= 0) {
       state.builder.focusAfterRender = { section, index: newIdx, field: null };
@@ -109,7 +109,7 @@ function handleBuilderClick(event) {
     renderBuilder();
   } else if (target.hasAttribute("data-delete")) {
     state.builder[target.getAttribute("data-delete")].splice(index, 1);
-    state.builder.selected = new Set();   // a removed row shifts later indices
+    clearBuilderSelection();   // a removed row shifts later indices
     renderBuilder();
   }
 }
@@ -147,9 +147,8 @@ function handleBuilderSelectAll(event) {
   const section = event.target.getAttribute("data-selectall");
   const arr = state.builder[section];
   if (!arr) return;
-  state.builder.selected = event.target.checked
-    ? new Set(arr.map((_, i) => i))
-    : new Set();
+  if (event.target.checked) state.builder.selected = new Set(arr.map((_, i) => i));
+  else clearBuilderSelection();
   renderBuilder();
 }
 
@@ -180,7 +179,7 @@ function syncBuilderSelectAllState() {
   if (!box) return;
   const section = box.getAttribute("data-selectall");
   const total = (state.builder[section] || []).length;
-  const sel = (state.builder.selected && state.builder.selected.size) || 0;
+  const sel = state.builder.selected.size;
   box.checked = total > 0 && sel === total;
   box.indeterminate = sel > 0 && sel < total;
 }
@@ -384,7 +383,7 @@ function handleBuilderDrop(event) {
     arr.splice(toIndex, 0, moved);
   }
   handleBuilderDragEnd();
-  state.builder.selected = new Set();   // reorder shifts indices
+  clearBuilderSelection();   // reorder shifts indices
   renderBuilder();
   saveBuilderToStorage();
 }

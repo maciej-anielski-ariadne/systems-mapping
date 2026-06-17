@@ -212,7 +212,7 @@ function selectAllTh(section) {
 
 // Per-row checkbox cell.
 function rowSelectTd(section, i) {
-  const checked = state.builder.selected && state.builder.selected.has(i) ? " checked" : "";
+  const checked = state.builder.selected.has(i) ? " checked" : "";
   return '<td class="builder-select-col">' +
            '<input type="checkbox" data-rowselect="' + section + '" data-index="' + i + '"' + checked + ' />' +
          '</td>';
@@ -220,7 +220,7 @@ function rowSelectTd(section, i) {
 
 // `selected` class for a <tr> so selected rows get a highlight.
 function rowSelectedClass(i) {
-  return state.builder.selected && state.builder.selected.has(i) ? " selected" : "";
+  return state.builder.selected.has(i) ? " selected" : "";
 }
 
 // One labelled <select> for the bulk bar. First option is a non-committal
@@ -239,7 +239,7 @@ function builderBulkFieldMarkup(section, field, placeholder, options) {
 // The bulk action bar HTML for `section`. Returns "" when nothing is selected
 // (so the bar is hidden). Inserted into each list step's static top area.
 function renderBuilderBulkBar(section) {
-  const n = (state.builder.selected && state.builder.selected.size) || 0;
+  const n = state.builder.selected.size;
   if (n < 1) return "";
 
   let fields = "";

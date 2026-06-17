@@ -54,7 +54,7 @@ function openBuilder(options) {
 
 function closeBuilder() {
   state.builder.open = false;
-  state.builder.selected = new Set();
+  clearBuilderSelection();
   hideCellEditor();
   clearBuilderFromStorage();
   const overlay = document.getElementById("builder-overlay");
@@ -72,8 +72,8 @@ function seedBuilderEmpty() {
   state.builder.defaults   = { enables: 0.30, increases: 0.25, decreases: -0.25 };
   state.builder.nodes      = [];
   state.builder.edges      = [];
-  state.builder.selected   = new Set();
   state.builder.focusAfterRender = null;
+  clearBuilderSelection();
 }
 
 function seedBuilderFromLiveData() {
@@ -108,8 +108,8 @@ function seedBuilderFromLiveData() {
     elasticity: e.elasticity !== undefined ? e.elasticity : "",
     description: e.description || "",
   }));
-  state.builder.selected = new Set();
   state.builder.focusAfterRender = null;
+  clearBuilderSelection();
 }
 
 // "Start from sample" button on step 1 — pre-fills streams/stages/categories
@@ -121,7 +121,7 @@ function seedBuilderFromSample() {
     return;
   }
   const sections = parseCsvDocument(SAMPLE_CSV);
-  state.builder.selected = new Set();
+  clearBuilderSelection();
 
   state.builder.streams = (sections.streams || []).map(row => ({
     id: row.id || "", label: row.label || "", short: row.short || "", color: row.color || "#94a3b8",
@@ -187,6 +187,14 @@ function rowDragHandleHtml() {
 
 function tableEmptyRow(colSpan, message) {
   return '<tr class="builder-empty-row"><td colspan="' + colSpan + '">' + escapeHtml(message) + '</td></tr>';
+}
+
+// Reset the wizard's bulk row-selection. The selection is a Set of row
+// INDICES, so anything that shifts indices (add / delete / duplicate /
+// reorder), a step change, or a seed/close must clear it — calling this in one
+// named place keeps that invariant from drifting across call sites.
+function clearBuilderSelection() {
+  state.builder.selected = new Set();
 }
 
 // ───── Validation ────────────────────────────────────────────────────────
@@ -328,7 +336,7 @@ function deleteBuilderSelectedRows(section) {
   const indices = [...state.builder.selected].filter(i => i >= 0 && i < arr.length);
   indices.sort((a, b) => b - a);
   for (const i of indices) arr.splice(i, 1);
-  state.builder.selected = new Set();
+  clearBuilderSelection();
   return indices.length;
 }
 
