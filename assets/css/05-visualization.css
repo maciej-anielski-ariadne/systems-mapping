@@ -139,13 +139,6 @@ body.panning * {
   opacity: 0.05;
 }
 
-/* Feedback edges close a loop (output feeding back to an upstream input).
- * Dashed so they read as "this runs against the normal left-to-right flow".
- * The path itself is also bowed away from the node band (see 11-rendering.js). */
-.edge-path.feedback {
-  stroke-dasharray: 6 4;
-}
-
 /* === Row labels on the left (one per stream) === */
 .row-label-bg {
   fill: var(--bg-deep);
@@ -269,7 +262,7 @@ body.canvas-shift-edit .ghost-cell text {
   opacity: 0.95;
 }
 
-/* Shift+E "add outgoing edge" picker — small floating panel anchored next
+/* "Add outgoing edge" picker — small floating panel anchored next
  * to the source node, wraps a typeable dropdown of every other node so the
  * user can filter by name and hit Enter to commit. Sits above the canvas
  * but below the builder overlay so it can be opened from view mode. */

@@ -17,8 +17,8 @@ The header has six buttons left-to-right: **Create Map · Edit Data · Import Da
 
 ## What you get
 
-- Layered layout: streams (rows) × stages (columns), nodes placed in grid cells, edges as bezier curves. Feedback edges (loops) are drawn dashed and bowed.
-- Click a node → highlights upstream causes (blue) and downstream impacts (amber), dims everything else.
+- Layered layout: streams (rows) × stages (columns), nodes placed in grid cells, edges as bezier curves.
+- Click a node → highlights its direct inputs (blue) and direct impacts (amber), dims everything else.
 - Click a stream label (sidebar or row header) → collapse / expand the whole stream.
 - **Smart search** → fuzzy match on node labels, descriptions, and IDs (handles typos like "brder" → "Border" and word-initials like "bff" → "Border Force FTE"). Top results show as a dropdown below the search box; matching nodes get an amber halo on the map. Press `/` from anywhere on the page to jump to the search box.
 - Detail panel → category, stream, stage, baseline + current values, all direct inputs/impacts with per-edge elasticities, click-through navigation. **Edit Node** toggle turns the panel into an edit form (every field as an input, per-row outgoing-edge editor, delete button).
@@ -145,7 +145,7 @@ value_target = baseline_target × ∏ (current_source / baseline_source) ^ elast
 
 ### Feedback loops
 
-Edges may form loops — an output feeding back to affect an upstream input. Loop-closing edges are drawn dashed and bowed away from the node band so the loop is legible. Negative-feedback loops settle quickly; a runaway positive loop (gain ≥ 1) can't settle, so its values are clamped to something finite and a warning is shown (at load and on the simulation panel). Lower the elasticities on the loop to bring it back into a stable range.
+Edges may form loops — an output feeding back to affect an upstream input. Negative-feedback loops settle quickly; a runaway positive loop (gain ≥ 1) can't settle, so its values are clamped to something finite and a warning is shown (at load and on the simulation panel). Lower the elasticities on the loop to bring it back into a stable range.
 
 ### A note on directional semantics
 

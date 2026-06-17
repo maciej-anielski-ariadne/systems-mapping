@@ -23,11 +23,6 @@ const COLLAPSED_ROW_HEIGHT = 28;
 // Horizontal gap between the columns of nodes.
 const COL_GAP = 90;
 
-// How far a feedback (loop-closing) edge bows vertically away from the node
-// band, in pixels. Feedback edges run right-to-left against the normal flow;
-// bowing them up makes the loop legible instead of cutting back through nodes.
-const BACKEDGE_BOW = 40;
-
 // Width of the row-label strip (e.g. "AIR", "RORO") on the left.
 const ROW_HEADER_WIDTH = 110;
 

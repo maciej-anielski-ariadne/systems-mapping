@@ -98,13 +98,6 @@ function renderViewMode(node) {
   html += renderEdgeList("Direct Inputs",  directInputs,  "from", "No direct inputs (root cause / exogenous resource)");
   html += renderEdgeList("Direct Impacts", directImpacts, "to",   "No direct impacts (terminal outcome)");
 
-  // ───── Full causal chain ─────────────────────────────────────────────
-  html += '<div class="detail-list-title"><span>Full Causal Chain</span></div>';
-  html += '<div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); line-height: 1.7;">';
-  html +=   '<div><span style="color: var(--edge-ancestor);">●</span> '   + state.ancestorSet.size   + ' upstream ancestor node(s)</div>';
-  html +=   '<div><span style="color: var(--edge-descendant);">●</span> ' + state.descendantSet.size + ' downstream impact node(s)</div>';
-  html += '</div>';
-
   return html;
 }
 

@@ -112,7 +112,15 @@ function computeNodeValues() {
       }
     }
 
-    if (maxRelDelta < SOLVER_EPSILON) { converged = true; iterations++; break; }
+    // A sweep with nothing moving means we've reached the fixed point. An
+    // acyclic map is fully resolved by its very first topological sweep, so we
+    // stop after one rather than re-sweeping just to confirm — as long as it
+    // stayed finite (a non-finite sweep means a value blew up, so we keep
+    // going to clamp + flag it).
+    if (maxRelDelta < SOLVER_EPSILON ||
+        (cycleInfo.loopCount === 0 && Number.isFinite(maxRelDelta))) {
+      converged = true; iterations++; break;
+    }
   }
 
   // ───── 3. Defensive clamp ─────────────────────────────────────────────
@@ -142,7 +150,7 @@ function recomputeValues() {
   state.solverStatus = {
     converged: meta.converged,
     iterations: meta.iterations,
-    feedbackLoopCount: (typeof cycleInfo !== "undefined" && cycleInfo) ? cycleInfo.loopCount : 0,
+    feedbackLoopCount: cycleInfo.loopCount,
   };
 }
 
