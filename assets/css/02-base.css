@@ -30,6 +30,24 @@ body {
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  /* Disable text selection app-wide so dragging nodes / edges / panels never
+     accidentally highlights labels and other UI text. Editable fields opt back
+     in below. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Re-enable selection where the user is actually typing/editing text, so they
+   can still select within inputs, textareas, dropdowns and the inline node
+   rename (a contenteditable). Mirrors the editable-target check used in
+   16h-canvas-inline-rename.js / 16e-canvas-edit.js. */
+input,
+textarea,
+select,
+[contenteditable],
+[contenteditable] * {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* Subtle grid pattern drawn behind everything else.
