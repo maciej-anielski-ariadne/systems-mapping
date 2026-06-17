@@ -206,12 +206,15 @@
       <svg id="viz-svg" class="viz-svg"></svg>
     </div>
 
-    <!-- Small status pill at the bottom-left of the map -->
-    <div class="status-bar" id="status-bar">
-      <b>Click cell</b> add node (stack below to add more) &nbsp;·&nbsp;
-      <b>Drag node edge</b> draw arrow &nbsp;·&nbsp;
-      <b>Click edge</b> edit &nbsp;·&nbsp;
-      <b>Del</b> remove node
+    <!-- Highlight-depth control (bottom-right, above the zoom controls).
+         Sets how many connected levels light up when a node is selected.
+         JS in 17-events.js wires the −/+ buttons. -->
+    <div class="viz-depth-controls" id="viz-depth-controls"
+         title="How many connected levels to highlight when a node is selected">
+      <span class="viz-depth-label">Depth</span>
+      <button class="viz-depth-button" id="viz-depth-down" aria-label="Decrease highlight depth">−</button>
+      <span class="viz-depth-readout" id="viz-depth-readout">1</span>
+      <button class="viz-depth-button" id="viz-depth-up" aria-label="Increase highlight depth">+</button>
     </div>
 
     <!-- Zoom controls (bottom-right). JS in 17-events.js wires them. -->

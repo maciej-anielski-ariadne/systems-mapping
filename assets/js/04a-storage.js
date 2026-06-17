@@ -50,6 +50,7 @@ function saveUiStateToStorage() {
       sidebarWidth:         typeof state.sidebarWidth      === "number" ? state.sidebarWidth      : 280,
       detailPanelWidth:     typeof state.detailPanelWidth  === "number" ? state.detailPanelWidth  : 340,
       zoomLevel:            typeof state.zoomLevel === "number" ? state.zoomLevel : 1.0,
+      highlightDepth:       typeof state.highlightDepth === "number" ? state.highlightDepth : 1,
     };
     localStorage.setItem(STORAGE_KEY_UI, JSON.stringify(payload));
   } catch (_) {}
@@ -90,6 +91,11 @@ function applyRestoredUiState(ui) {
   if (typeof ui.zoomLevel === "number" && !isNaN(ui.zoomLevel)) {
     state.zoomLevel = ui.zoomLevel;
     if (typeof applyZoom === "function") applyZoom();
+  }
+
+  if (typeof ui.highlightDepth === "number" && !isNaN(ui.highlightDepth)) {
+    state.highlightDepth = Math.max(1, Math.min(5, Math.round(ui.highlightDepth)));
+    if (typeof applyHighlightDepth === "function") applyHighlightDepth();
   }
 
   if (!state.dataLoaded) return;

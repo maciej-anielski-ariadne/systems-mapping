@@ -18,26 +18,69 @@
 // initialized to [] for every node by rebuildIndexes (06-data-loader.js),
 // so we don't need defensive `|| []` fallbacks when reading them.
 
-// Direct upstream neighbours: nodes with an edge pointing straight into nodeId.
-function getAncestors(nodeId) {
-  const direct = new Set();
-  for (const edge of incomingEdges[nodeId]) direct.add(edge.from);
-  return direct;
+// Upstream neighbours up to `depth` hops away: BFS outward following incoming
+// edges. depth 1 = direct inputs only (the historical behaviour); higher depths
+// walk further up the chain. The selected node itself is never included.
+function getAncestors(nodeId, depth = state.highlightDepth) {
+  const result = new Set();
+  let frontier = [nodeId];
+  for (let level = 0; level < depth && frontier.length; level++) {
+    const next = [];
+    for (const id of frontier) {
+      for (const edge of incomingEdges[id]) {
+        if (edge.from !== nodeId && !result.has(edge.from)) {
+          result.add(edge.from);
+          next.push(edge.from);
+        }
+      }
+    }
+    frontier = next;
+  }
+  return result;
 }
 
-// Direct downstream neighbours: nodes nodeId has an edge pointing straight to.
-function getDescendants(nodeId) {
-  const direct = new Set();
-  for (const edge of outgoingEdges[nodeId]) direct.add(edge.to);
-  return direct;
+// Downstream neighbours up to `depth` hops away: same BFS following outgoing edges.
+function getDescendants(nodeId, depth = state.highlightDepth) {
+  const result = new Set();
+  let frontier = [nodeId];
+  for (let level = 0; level < depth && frontier.length; level++) {
+    const next = [];
+    for (const id of frontier) {
+      for (const edge of outgoingEdges[id]) {
+        if (edge.to !== nodeId && !result.has(edge.to)) {
+          result.add(edge.to);
+          next.push(edge.to);
+        }
+      }
+    }
+    frontier = next;
+  }
+  return result;
 }
 
-// Edges directly connecting the selected node to its neighbours — that is, its
-// own incoming and outgoing edges.
-function computeHighlightedEdges(nodeId) {
+// Edges crossed while walking up- and downstream within `depth` hops of the
+// selected node — i.e. every edge along the highlighted ancestor/descendant
+// chains. BFS by node, collecting edge ids as we step outward.
+function computeHighlightedEdges(nodeId, depth = state.highlightDepth) {
   const edges = new Set();
-  for (const edge of incomingEdges[nodeId]) edges.add(edge.id);
-  for (const edge of outgoingEdges[nodeId]) edges.add(edge.id);
+  for (const [adjacency, endpointKey] of [[incomingEdges, "from"], [outgoingEdges, "to"]]) {
+    const visited = new Set([nodeId]);
+    let frontier = [nodeId];
+    for (let level = 0; level < depth && frontier.length; level++) {
+      const next = [];
+      for (const id of frontier) {
+        for (const edge of adjacency[id]) {
+          edges.add(edge.id);
+          const neighbour = edge[endpointKey];
+          if (!visited.has(neighbour)) {
+            visited.add(neighbour);
+            next.push(neighbour);
+          }
+        }
+      }
+      frontier = next;
+    }
+  }
   return edges;
 }
 

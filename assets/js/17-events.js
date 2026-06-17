@@ -313,6 +313,38 @@ if (zoomInButton)  zoomInButton.addEventListener("click",  () => setZoom(state.z
 if (zoomOutButton) zoomOutButton.addEventListener("click", () => setZoom(state.zoomLevel - ZOOM_STEP));
 if (zoomReadout)   zoomReadout.addEventListener("click",   () => setZoom(1.0));
 
+// ───── Highlight-depth control ────────────────────────────────────────────
+// How many connected levels light up when a node is selected (1 = direct
+// neighbours only). Lives just above the zoom controls.
+const HIGHLIGHT_DEPTH_MIN = 1;
+const HIGHLIGHT_DEPTH_MAX = 5;
+
+// Reflect state.highlightDepth into the on-screen readout.
+function applyHighlightDepth() {
+  const readout = document.getElementById("viz-depth-readout");
+  if (readout) readout.textContent = String(state.highlightDepth);
+}
+
+// Clamp + apply a new highlight depth, re-highlighting the current selection
+// live and persisting the choice.
+function setHighlightDepth(level) {
+  const clamped = Math.max(HIGHLIGHT_DEPTH_MIN, Math.min(HIGHLIGHT_DEPTH_MAX, Math.round(level)));
+  if (clamped === state.highlightDepth) return;
+  state.highlightDepth = clamped;
+  applyHighlightDepth();
+  if (state.selectedNodeId) {
+    refreshNeighborHighlight();
+    render();
+  }
+  saveUiStateToStorage();
+}
+
+const depthDownButton = document.getElementById("viz-depth-down");
+const depthUpButton   = document.getElementById("viz-depth-up");
+if (depthDownButton) depthDownButton.addEventListener("click", () => setHighlightDepth(state.highlightDepth - 1));
+if (depthUpButton)   depthUpButton.addEventListener("click",   () => setHighlightDepth(state.highlightDepth + 1));
+applyHighlightDepth();
+
 // Wheel-to-zoom over the map. Three input paths feed the same handler:
 //   • Ctrl/Cmd + wheel (any device)              → zoom
 //   • macOS trackpad pinch (synth ctrlKey wheel) → zoom
