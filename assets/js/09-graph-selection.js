@@ -77,6 +77,38 @@ function computeHighlightedEdges(nodeId, depth = state.highlightDepth) {
   return edges;
 }
 
+// The deepest highlight that still reveals new nodes: the longest shortest-path
+// distance (in hops) between any two connected nodes. Walking downstream from
+// every node is enough to find it — the longest shortest path, measured
+// downstream from its start, is the same path measured upstream from its end,
+// so we don't need a second upstream sweep. Past this depth, raising the
+// highlight lights up nothing further, so the depth control (17-events.js) uses
+// it as a dynamic cap instead of a fixed ceiling. Cached into the global
+// `maxHighlightDepth` by rebuildIndexes. Falls back to 1 for an edge-less map.
+function computeMaxHighlightDepth() {
+  let max = 1;
+  for (const node of NODES) {
+    const visited = new Set([node.id]);
+    let frontier = [node.id];
+    let level = 0;
+    while (frontier.length) {
+      const next = [];
+      for (const id of frontier) {
+        for (const edge of outgoingEdges[id]) {
+          if (!visited.has(edge.to)) {
+            visited.add(edge.to);
+            next.push(edge.to);
+          }
+        }
+      }
+      if (next.length) level++;
+      frontier = next;
+    }
+    if (level > max) max = level;
+  }
+  return max;
+}
+
 // ───── Select / deselect ──────────────────────────────────────────────────
 
 // Recompute the ancestor / descendant / highlighted-edge sets for the current

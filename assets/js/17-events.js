@@ -315,20 +315,32 @@ if (zoomReadout)   zoomReadout.addEventListener("click",   () => setZoom(1.0));
 
 // ───── Highlight-depth control ────────────────────────────────────────────
 // How many connected levels light up when a node is selected (1 = direct
-// neighbours only). Lives just above the zoom controls.
+// neighbours only). The upper bound isn't a fixed constant — it's
+// `maxHighlightDepth`, the deepest hop the current map can actually reach
+// (cached by rebuildIndexes). Bumping past that lights up nothing new.
 const HIGHLIGHT_DEPTH_MIN = 1;
-const HIGHLIGHT_DEPTH_MAX = 5;
 
-// Reflect state.highlightDepth into the on-screen readout.
+// Control elements, cached once (also wired for the +/- clicks below).
+const depthReadout    = document.getElementById("viz-depth-readout");
+const depthDownButton = document.getElementById("viz-depth-down");
+const depthUpButton   = document.getElementById("viz-depth-up");
+
+// Reflect state.highlightDepth into the on-screen readout, re-clamping to the
+// current map's reachable depth and disabling the −/+ buttons at the ends.
+// maxHighlightDepth is always >= 1 (initialised to 1, computeMaxHighlightDepth
+// never returns less), so it serves as the upper clamp directly.
 function applyHighlightDepth() {
-  const readout = document.getElementById("viz-depth-readout");
-  if (readout) readout.textContent = String(state.highlightDepth);
+  // The map may have shrunk since the depth was last set — pull it back in.
+  if (state.highlightDepth > maxHighlightDepth) state.highlightDepth = maxHighlightDepth;
+  if (depthReadout)    depthReadout.textContent = String(state.highlightDepth);
+  if (depthUpButton)   depthUpButton.disabled   = state.highlightDepth >= maxHighlightDepth;
+  if (depthDownButton) depthDownButton.disabled = state.highlightDepth <= HIGHLIGHT_DEPTH_MIN;
 }
 
 // Clamp + apply a new highlight depth, re-highlighting the current selection
 // live and persisting the choice.
 function setHighlightDepth(level) {
-  const clamped = Math.max(HIGHLIGHT_DEPTH_MIN, Math.min(HIGHLIGHT_DEPTH_MAX, Math.round(level)));
+  const clamped = Math.max(HIGHLIGHT_DEPTH_MIN, Math.min(maxHighlightDepth, Math.round(level)));
   if (clamped === state.highlightDepth) return;
   state.highlightDepth = clamped;
   applyHighlightDepth();
@@ -339,8 +351,6 @@ function setHighlightDepth(level) {
   saveUiStateToStorage();
 }
 
-const depthDownButton = document.getElementById("viz-depth-down");
-const depthUpButton   = document.getElementById("viz-depth-up");
 if (depthDownButton) depthDownButton.addEventListener("click", () => setHighlightDepth(state.highlightDepth - 1));
 if (depthUpButton)   depthUpButton.addEventListener("click",   () => setHighlightDepth(state.highlightDepth + 1));
 applyHighlightDepth();

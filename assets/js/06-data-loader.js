@@ -97,6 +97,15 @@ function rebuildIndexes() {
   } else {
     cycleInfo = { inCycleNodeIds: new Set(), backEdgeIds: new Set(), loopCount: 0 };
   }
+
+  // Cache the deepest reachable highlight hop so the depth control can cap
+  // itself to the current map (no fixed ceiling). Defined in 09-graph-selection;
+  // guarded since rebuildIndexes can run before that file loads.
+  if (typeof computeMaxHighlightDepth === "function") {
+    maxHighlightDepth = computeMaxHighlightDepth();
+  }
+  // Keep the on-screen depth readout / button states in sync with the new map.
+  if (typeof applyHighlightDepth === "function") applyHighlightDepth();
 }
 
 // Find the edges that close feedback loops and the nodes that lie on them.

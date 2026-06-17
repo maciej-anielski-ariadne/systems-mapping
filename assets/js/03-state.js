@@ -45,7 +45,7 @@ const state = {
   sidebarWidth: 280,           // pinned left sidebar width in px (drag the divider to change; double-click resets)
   detailPanelWidth: 340,       // pinned right detail panel width in px (same UX as sidebarWidth)
   zoomLevel: 1.0,              // map zoom multiplier (0.25 .. 3.0). Applied to the SVG width/height.
-  highlightDepth: 1,           // how many connection levels to highlight on node select (1 .. 5). 1 = direct neighbours only.
+  highlightDepth: 1,           // how many connection levels to highlight on node select. 1 = direct neighbours only; capped at `maxHighlightDepth` (the deepest hop the current map can actually reach).
   // Search — populated by 17a-search.js as the user types. searchMatches is
   // an array of { node, score, bestField, bestPositions } objects sorted by
   // descending score. searchFocusIndex points at the currently-selected row
@@ -169,6 +169,7 @@ let topologicalOrder = []; // node ids sorted so causes come before effects
 let cycleInfo = { inCycleNodeIds: new Set(), backEdgeIds: new Set(), loopCount: 0 };
 let streamNodeCount   = {}; // stream id → count of nodes in that stream
 let categoryNodeCount = {}; // category id → count of nodes in that category
+let maxHighlightDepth = 1;  // deepest highlight hop the current map can reach (longest shortest-path distance, up- or downstream). Recomputed by rebuildIndexes; the depth control uses it as a dynamic cap instead of a fixed ceiling.
 
 // Layout result (set by 08-layout.js → computeLayout).
 let layout = {
