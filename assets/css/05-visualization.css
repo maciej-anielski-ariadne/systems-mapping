@@ -204,15 +204,17 @@ body.panning * {
 
 /* === Canvas direct-edit affordances === */
 
-/* Ghost cell (empty-cell hover preview) — faint dashed rectangle + "+" hint.
- * Hidden by default; only revealed while the user is holding Shift, which
- * also arms the click-to-create gesture in 16e-canvas-edit.js. */
+/* Placeholder note (cursor-following insert preview) — faint dashed rectangle
+ * + "+" hint that tracks the cursor and sits in the gap the surrounding notes
+ * open up. Hidden by default; only revealed while the user is holding Shift.
+ * Always pointer-transparent: notes render above it (so a click still selects
+ * the note under the cursor) and a shift+click on the gap reaches the SVG,
+ * which creates the note via the marquee-candidate path in 16e-canvas-edit.js. */
 .ghost-cell rect {
   fill: rgba(96, 165, 250, 0.08);
   stroke: var(--accent-blue);
   stroke-width: 1.5;
   stroke-dasharray: 5 4;
-  cursor: pointer;
   opacity: 0;
   pointer-events: none;
   transition: fill 0.12s, opacity 0.1s;
@@ -230,9 +232,6 @@ body.panning * {
 }
 body.canvas-shift-edit .ghost-cell rect {
   opacity: 1;
-  pointer-events: auto;
-}
-body.canvas-shift-edit .ghost-cell:hover rect {
   fill: rgba(96, 165, 250, 0.18);
 }
 body.canvas-shift-edit .ghost-cell text {
@@ -400,17 +399,26 @@ body.node-dragging * {
   pointer-events: none;
   filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.45));
 }
-.drop-target-cell {
+.node-drag-preview .drag-count-badge {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+}
+/* Marquee selection box (shift+drag on empty canvas). See 16e-canvas-edit.js. */
+.marquee-box {
+  fill: rgba(96, 165, 250, 0.12);
+  stroke: var(--accent-blue, #60a5fa);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
+}
+body.marquee-selecting { cursor: crosshair; }
+body.marquee-selecting .viz-svg { cursor: crosshair; }
+/* Drag landing slot — the gap the siblings parted to open. Mirrors the
+ * new-note placeholder (.ghost-cell) so create and move read the same. */
+.drop-slot {
   fill: rgba(96, 165, 250, 0.12);
   stroke: var(--accent-blue);
   stroke-width: 1.5;
   stroke-dasharray: 5 4;
-  pointer-events: none;
-}
-.drop-line {
-  stroke: var(--accent-blue);
-  stroke-width: 3;
-  stroke-linecap: round;
   pointer-events: none;
 }
 

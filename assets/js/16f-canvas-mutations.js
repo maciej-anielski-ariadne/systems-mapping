@@ -50,6 +50,10 @@ function applyCanvasMutation(options) {
   if (!options || !options.skipSidebarRender) renderSidebar();
   render();
   if (!options || !options.skipDetailRender) renderDetailPanel();
+  // Keep the multi-select action bar's count / dropdowns in sync after any
+  // mutation (batch edit/move/delete and undo round-trips), and hide it when a
+  // batch delete empties the selection.
+  if (typeof renderMultiSelectBar === "function") renderMultiSelectBar();
   try {
     const afterCsv = serializeLiveStateToCsv();
     state.lastCsvSnapshot = afterCsv;

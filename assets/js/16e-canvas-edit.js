@@ -12,9 +12,9 @@
 //                                  (ghost-cell click, edge-handle mousedown,
 //                                  edge-hit click). Called by 11-rendering.js
 //                                  after every render.
-//   • handleSvgMouseMove + cellAtLayoutPoint — translate cursor coords to the
-//                                              empty (stream, stage) cell.
-//   • createNodeInCell      — turn a ghost-cell click into a real node.
+//   • handleSvgMouseMove    — translate cursor coords to the (stream, stage)
+//                              cell + insert slot the placeholder previews.
+//   • createNodeInCell      — turn a shift+click into a real node at a slot.
 //   • beginEdgeDrag / update / end + cancelDraftEdge + nodeAtLayoutPoint —
 //                              edge drag-out from a node's right edge. Drop on
 //                              a target commits with the last-used effect; the
@@ -55,6 +55,19 @@ function initCanvasEdit() {
         layout = computeLayout();
         render();
       }
+    });
+    // Shift+mousedown on blank grid (incl. over the pointer-transparent
+    // placeholder) arms a candidate: a drag past threshold becomes a marquee
+    // multi-select, a no-drag release becomes a shift+click that creates a note
+    // at the placeholder's slot (see cleanupPendingMarquee). Node / edge
+    // affordances arm their own gestures and are excluded here. Plain (no-shift)
+    // drag still pans (17-events.js, which bails when Shift is held).
+    vizSvg.addEventListener("mousedown", event => {
+      if (event.button !== 0) return;
+      if (!event.shiftKey) return;
+      if (event.target.closest &&
+          event.target.closest(".node-group, .row-label-group, .edge-handle, .edge-hit, .edge-path")) return;
+      beginMarqueeCandidate(event.clientX, event.clientY);
     });
   }
 
@@ -146,6 +159,7 @@ function initCanvasEdit() {
       }
       if (cancelDraftEdge())        { event.preventDefault(); return; }
       if (cancelDraftNodeDrag())    { event.preventDefault(); return; }
+      if (cancelMarquee())          { event.preventDefault(); return; }
       // Clear the empty-cell cursor before falling through to deselectAll —
       // the cursor isn't part of selection state, so deselectAll wouldn't
       // touch it on its own.
@@ -155,7 +169,8 @@ function initCanvasEdit() {
         event.preventDefault();
         return;
       }
-      if (state.selectedNodeId || state.selectedEdgeId) {
+      if (state.selectedNodeId || state.selectedEdgeId ||
+          (state.selectedNodeIds && state.selectedNodeIds.size)) {
         deselectAll();
         event.preventDefault();
         return;
@@ -261,7 +276,9 @@ function initCanvasEdit() {
           return;
         }
       }
-      if (state.selectedNodeId && nodeById[state.selectedNodeId]) {
+      // Inline rename only makes sense for a single selected node — typing
+      // with a multi-selection would silently rename just the primary.
+      if (state.selectedNodeId && nodeById[state.selectedNodeId] && state.selectedNodeIds.size <= 1) {
         if (typeof startInlineRename === "function") startInlineRename(state.selectedNodeId);
         if (typeof inlineRenameAppend === "function") inlineRenameAppend(event.key);
         event.preventDefault();
@@ -342,30 +359,23 @@ function setShiftHeld(held) {
 
 // ───── Per-render event binding ───────────────────────────────────────────
 // Called by attachSvgEventHandlers() in 11-rendering.js after every render.
-// The canvas hosts only spatial gestures: ghost-cell click to add, drag
-// from a node's right edge to draw an edge, edge click to navigate. All
-// rename / re-colour / reorder / add-stream / add-stage flows live in
-// the sidebar and the right detail panel.
+// The canvas hosts only spatial gestures: shift+click a cell to add a note
+// (wired in initCanvasEdit, not here), drag from a node's right edge to draw
+// an edge, edge click to navigate. All rename / re-colour / reorder /
+// add-stream / add-stage flows live in the sidebar and the right detail panel.
 //
-// The three mutating gestures (ghost-cell click, edge-handle mousedown,
-// node mousedown for drag) are gated on event.shiftKey so the canvas is
-// read-only by default. Edge click → select stays ungated because it's
-// navigation, not a mutation.
+// The mutating gestures (edge-handle mousedown, node mousedown for drag) are
+// gated on event.shiftKey so the canvas is read-only by default. Edge click →
+// select stays ungated because it's navigation, not a mutation.
 function attachCanvasEditHandlers() {
   const vizSvg = document.getElementById("viz-svg");
   if (!vizSvg) return;
 
-  // Ghost cell click → create a new node in that cell. Shift-gated; without
-  // Shift the ghost cell isn't even visible (see 05-visualization.css).
-  vizSvg.querySelectorAll(".ghost-cell").forEach(group => {
-    group.addEventListener("click", event => {
-      if (!event.shiftKey) return;
-      event.stopPropagation();
-      const streamId = group.getAttribute("data-stream-id");
-      const stageId  = group.getAttribute("data-stage-id");
-      createNodeInCell(streamId, stageId);
-    });
-  });
+  // Note creation is no longer wired to the ghost-cell element. The placeholder
+  // is pointer-transparent and tracks the cursor everywhere; a shift+click on a
+  // cell creates a note at the previewed slot via the marquee-candidate path
+  // (initCanvasEdit mousedown → cleanupPendingMarquee), while a shift+drag in
+  // the same space draws a marquee.
 
   // Edge handle mousedown → candidate phase. Drag past threshold promotes to
   // beginEdgeDrag (in-place edge creation). Mouseup without crossing the
@@ -414,6 +424,8 @@ function attachCanvasEditHandlers() {
 function handleSvgMouseMove(event) {
   if (!state.dataLoaded) return;
   if (state.canvasEdit && state.canvasEdit.draftEdge) return;  // dragging an edge — separate render loop owns hoverCell
+  if (state.canvasEdit && state.canvasEdit.marquee) return;    // marqueeing — its own move loop owns the render
+  if (state.canvasEdit && state.canvasEdit.draggingNode) return; // node drag owns the layout (its own dropCell)
   // Suppress ghost-cell hover when Shift isn't held — without Shift the canvas
   // is read-only and the ghost cell isn't a valid affordance. The cursor-cell
   // keyboard path (state.canvasEdit.cursorCell, set by 16i) is independent.
@@ -427,16 +439,21 @@ function handleSvgMouseMove(event) {
   }
   const layoutPoint = clientPointToLayout(event.clientX, event.clientY);
   if (!layoutPoint) return;
-  const cell = cellAtLayoutPoint(layoutPoint.x, layoutPoint.y);
+  // The placeholder tracks the cursor EVERYWHERE inside a cell — including over
+  // existing notes — and reports the slot the new note would land in. Reuse the
+  // drag's hit-test with no excluded node so it counts every sibling. Notes
+  // render above the (pointer-transparent) placeholder, so a click still lands
+  // on a note when the cursor is over one; the gap just previews insertion.
+  const cell = dropCellForDrag(layoutPoint.x, layoutPoint.y);
   const prev = state.canvasEdit && state.canvasEdit.hoverCell;
-  const same = (prev && cell && prev.streamId === cell.streamId && prev.stageId === cell.stageId) ||
+  const same = (prev && cell && prev.streamId === cell.streamId &&
+                prev.stageId === cell.stageId && prev.insertIndex === cell.insertIndex) ||
                (!prev && !cell);
   if (same) return;
   state.canvasEdit.hoverCell = cell;
-  // Recompute layout — entering or leaving a partially-filled cell may add
-  // or remove a reserved "+ add another" slot in the row's height. Cheap:
-  // computeLayout is O(NODES × STAGES) and only runs on cell-boundary
-  // crossings.
+  // Recompute layout — moving to a new cell or insert slot parts the stack to
+  // open the gap (and may add a reserved slot of row height). Cheap:
+  // computeLayout is O(NODES × STAGES) and only runs on slot crossings.
   layout = computeLayout();
   render();
 }
@@ -455,49 +472,10 @@ function clientPointToLayout(clientX, clientY) {
   };
 }
 
-// Return { streamId, stageId } for the (empty) cell containing layout point,
-// or null if the point is outside the grid, on a non-empty cell, or on the
-// row-label / column-header strip.
-function cellAtLayoutPoint(x, y) {
-  if (x < ROW_HEADER_WIDTH) return null;
-  if (y < SVG_PADDING_TOP + COL_HEADER_HEIGHT) return null;
-
-  // Find row by Y.
-  let foundStream = null;
-  for (const stream of STREAMS) {
-    if (state.hiddenStreams.has(stream.id)) continue;
-    const top = layout.rowY[stream.id];
-    const bot = top + layout.rowHeights[stream.id];
-    if (y >= top && y < bot) { foundStream = stream; break; }
-  }
-  if (!foundStream) return null;
-
-  // Find column by X.
-  let foundStage = null;
-  for (const stage of STAGES) {
-    const left = layout.colX[stage.id];
-    if (left === undefined) continue;
-    const right = left + NODE_WIDTH;
-    if (x >= left && x < right) { foundStage = stage; break; }
-  }
-  if (!foundStage) return null;
-
-  // If the cursor is over one of the cell's existing nodes, let that node's
-  // own click handler win (select / drag-edge). Otherwise the cell is a
-  // valid drop target — either empty (new node) or partially-filled (stack
-  // another node below the existing ones).
-  for (const node of NODES) {
-    if (node.stream !== foundStream.id || node.stage !== foundStage.id) continue;
-    const pos = layout.positions[node.id];
-    if (pos && x >= pos.x && x < pos.x + pos.width && y >= pos.y && y < pos.y + pos.height) {
-      return null;
-    }
-  }
-  return { streamId: foundStream.id, stageId: foundStage.id };
-}
-
 // ───── Create node ────────────────────────────────────────────────────────
-function createNodeInCell(streamId, stageId) {
+// insertIndex (0..siblingCount) is the cell-relative slot to drop the new note
+// into; omitted/undefined appends to the end of the cell.
+function createNodeInCell(streamId, stageId, insertIndex) {
   if (!streamId || !stageId) return;
   if (!streamById[streamId] || !stageById[stageId]) return;
 
@@ -520,7 +498,22 @@ function createNodeInCell(streamId, stageId) {
     stage: stageId,
     category: categoryId,
   };
-  NODES.push(newNode);
+  // Translate the cell-relative insert slot into a global NODES index (count
+  // target-cell siblings until we've passed insertIndex of them). Layout stacks
+  // siblings by NODES order, so the splice position dictates the visual slot.
+  if (insertIndex != null) {
+    let count = 0;
+    let globalInsertIdx = NODES.length;
+    for (let i = 0; i < NODES.length; i++) {
+      if (NODES[i].stream === streamId && NODES[i].stage === stageId) {
+        if (count === insertIndex) { globalInsertIdx = i; break; }
+        count++;
+      }
+    }
+    NODES.splice(globalInsertIdx, 0, newNode);
+  } else {
+    NODES.push(newNode);
+  }
   state.canvasEdit.hoverCell = null;
   // Open the detail panel in edit mode so the user can fill in the rest of
   // the fields without an extra click. The label itself is renamed by
@@ -532,6 +525,15 @@ function createNodeInCell(streamId, stageId) {
   // straight onto the canvas (no input focus, no overlay text box). See
   // 16h-canvas-inline-rename.js.
   if (typeof startInlineRename === "function") startInlineRename(newNode.id);
+}
+
+// Drop a new note into the slot the placeholder is previewing. Invoked from the
+// shift+click path (cleanupPendingMarquee) when the cursor is over a cell.
+function createNodeAtPlaceholder() {
+  const hov = state.canvasEdit && state.canvasEdit.hoverCell;
+  if (!hov) return false;
+  createNodeInCell(hov.streamId, hov.stageId, hov.insertIndex);
+  return true;
 }
 
 // Build a node id from a label that doesn't collide with any existing one.
@@ -744,11 +746,20 @@ function maybePromoteNodeDrag(event) {
 
 function cleanupPendingNodeDrag() {
   if (!_pendingNodeDrag) return;
+  const nodeId = _pendingNodeDrag.nodeId;
   window.removeEventListener("mousemove", _nodeDragMoveBound);
   window.removeEventListener("mouseup",   _nodeDragUpBound);
   _pendingNodeDrag = null;
   _nodeDragMoveBound = null;
   _nodeDragUpBound   = null;
+  // Mouseup without crossing the drag threshold = a shift+click (the candidate
+  // only arms when Shift is held). Treat it as a multi-select toggle and
+  // swallow the trailing click so the node-group click → selectNode (which
+  // would collapse to a single selection) doesn't clobber it.
+  if (typeof toggleNodeInSelection === "function") {
+    toggleNodeInSelection(nodeId);
+    swallowNextClick();
+  }
 }
 
 function startNodeDrag(nodeId, event) {
@@ -756,13 +767,21 @@ function startNodeDrag(nodeId, event) {
   if (!point) return;
   // Suspend hover-cell tracking so the ghost preview doesn't compete.
   state.canvasEdit.hoverCell = null;
+  // When the grabbed node is part of a multi-selection, drag the whole group;
+  // otherwise it's a plain single-node move (and the multi-selection, if any,
+  // is left untouched).
+  const isGroup = state.selectedNodeIds.size > 1 && state.selectedNodeIds.has(nodeId);
   state.canvasEdit.draggingNode = {
     nodeId: nodeId,
     currentX: point.x,
     currentY: point.y,
     dropCell: dropCellForDrag(point.x, point.y, nodeId),
     active: true,
+    groupIds: isGroup ? [...state.selectedNodeIds] : null,
   };
+  // Drop the hover placeholder so its gap doesn't compound with the drag's own
+  // reserved drop slot (the drag uses dropCell, not hoverCell).
+  state.canvasEdit.hoverCell = null;
   document.body.classList.add("node-dragging");
   _nodeDragMoveBound = (e) => updateNodeDrag(e);
   _nodeDragUpBound   = (e) => endNodeDrag(e);
@@ -810,7 +829,12 @@ function endNodeDrag(event) {
     return;
   }
 
-  if (!moveNodeToCell(node, target.streamId, target.stageId, target.insertIndex)) {
+  if (drag.groupIds && drag.groupIds.length > 1) {
+    if (!moveNodesToCell(drag.groupIds, target.streamId, target.stageId, target.insertIndex)) {
+      layout = computeLayout();
+      render();
+    }
+  } else if (!moveNodeToCell(node, target.streamId, target.stageId, target.insertIndex)) {
     // No-op (same cell, same slot). Still swallow the trailing click so the
     // node doesn't toggle selection just because we dragged it ~1 pixel.
     layout = computeLayout();
@@ -847,6 +871,130 @@ function swallowNextClick() {
     _nodeDragSwallowClickBound = null;
   };
   window.addEventListener("click", _nodeDragSwallowClickBound, { capture: true, once: true });
+}
+
+// ───── Marquee multi-select (shift+drag on empty canvas) ──────────────────
+// Mirrors the node-drag candidate→active pattern: a shift+mousedown on blank
+// grid arms a candidate; crossing MARQUEE_DRAG_THRESHOLD promotes to a live
+// marquee that updates the selection on every move; mouseup commits. A
+// no-threshold mouseup is a shift+click: over a cell it creates a note at the
+// placeholder slot, on bare canvas it's a no-op.
+const MARQUEE_DRAG_THRESHOLD = 4;
+let _pendingMarquee   = null;
+let _marqueeMoveBound = null;
+let _marqueeUpBound   = null;
+
+function beginMarqueeCandidate(clientX, clientY) {
+  _pendingMarquee = { startClientX: clientX, startClientY: clientY };
+  _marqueeMoveBound = (e) => maybePromoteMarquee(e);
+  _marqueeUpBound   = (e) => cleanupPendingMarquee(e);
+  window.addEventListener("mousemove", _marqueeMoveBound);
+  window.addEventListener("mouseup",   _marqueeUpBound);
+}
+
+function maybePromoteMarquee(event) {
+  if (!_pendingMarquee) return;
+  const dx = event.clientX - _pendingMarquee.startClientX;
+  const dy = event.clientY - _pendingMarquee.startClientY;
+  if (Math.abs(dx) < MARQUEE_DRAG_THRESHOLD && Math.abs(dy) < MARQUEE_DRAG_THRESHOLD) return;
+  const start = clientPointToLayout(_pendingMarquee.startClientX, _pendingMarquee.startClientY);
+  window.removeEventListener("mousemove", _marqueeMoveBound);
+  window.removeEventListener("mouseup",   _marqueeUpBound);
+  _pendingMarquee = null;
+  if (start) startMarquee(start, event);
+}
+
+function cleanupPendingMarquee() {
+  if (!_pendingMarquee) return;
+  window.removeEventListener("mousemove", _marqueeMoveBound);
+  window.removeEventListener("mouseup",   _marqueeUpBound);
+  _pendingMarquee = null;
+  _marqueeMoveBound = null;
+  _marqueeUpBound   = null;
+  // A shift+mousedown that never crossed the marquee threshold is a shift+click.
+  // If a placeholder is previewing a cell, that click creates a note there;
+  // swallow the trailing click so the background-deselect doesn't undo the new
+  // note's selection. Clicks on bare canvas (no placeholder) fall through and
+  // deselect as before.
+  if (state.canvasEdit && state.canvasEdit.hoverCell) {
+    if (createNodeAtPlaceholder()) swallowNextClick();
+  }
+}
+
+function startMarquee(startPt, event) {
+  // A marquee is its own gesture — drop any hover ghost so it doesn't render
+  // underneath the selection box.
+  state.canvasEdit.hoverCell = null;
+  const cur = clientPointToLayout(event.clientX, event.clientY) || startPt;
+  state.canvasEdit.marquee = { startX: startPt.x, startY: startPt.y, currentX: cur.x, currentY: cur.y };
+  document.body.classList.add("marquee-selecting");
+  _marqueeMoveBound = (e) => updateMarquee(e);
+  _marqueeUpBound   = (e) => endMarquee(e);
+  window.addEventListener("mousemove", _marqueeMoveBound);
+  window.addEventListener("mouseup",   _marqueeUpBound);
+  updateMarqueeSelection();
+  render();
+}
+
+function updateMarquee(event) {
+  const m = state.canvasEdit && state.canvasEdit.marquee;
+  if (!m) return;
+  const pt = clientPointToLayout(event.clientX, event.clientY);
+  if (!pt) return;
+  m.currentX = pt.x;
+  m.currentY = pt.y;
+  updateMarqueeSelection();
+  render();
+}
+
+// Recompute the selection from the current marquee rect: any VISIBLE node whose
+// position rect intersects the box is selected. Uses setSelection (no render) —
+// the caller renders once.
+function updateMarqueeSelection() {
+  const m = state.canvasEdit && state.canvasEdit.marquee;
+  if (!m) return;
+  const x1 = Math.min(m.startX, m.currentX), x2 = Math.max(m.startX, m.currentX);
+  const y1 = Math.min(m.startY, m.currentY), y2 = Math.max(m.startY, m.currentY);
+  const hits = [];
+  for (const node of NODES) {
+    if (!isNodeVisible(node)) continue;
+    const p = layout.positions[node.id];
+    if (!p) continue;
+    if (p.x < x2 && p.x + p.width > x1 && p.y < y2 && p.y + p.height > y1) hits.push(node.id);
+  }
+  setSelection(hits, hits.length ? hits[hits.length - 1] : null);
+}
+
+function endMarquee() {
+  window.removeEventListener("mousemove", _marqueeMoveBound);
+  window.removeEventListener("mouseup",   _marqueeUpBound);
+  _marqueeMoveBound = null;
+  _marqueeUpBound   = null;
+  document.body.classList.remove("marquee-selecting");
+  state.canvasEdit.marquee = null;
+  render();
+  renderDetailPanel();
+  if (typeof renderMultiSelectBar === "function") renderMultiSelectBar();
+  saveUiStateToStorage();
+  // Swallow the trailing click so it doesn't deselect everything we just boxed.
+  swallowNextClick();
+}
+
+// Esc while a marquee is live: tear it down without disturbing the selection it
+// produced so far. Returns true if it handled an active marquee.
+function cancelMarquee() {
+  if (!state.canvasEdit || !state.canvasEdit.marquee) return false;
+  state.canvasEdit.marquee = null;
+  if (_marqueeMoveBound) {
+    window.removeEventListener("mousemove", _marqueeMoveBound);
+    window.removeEventListener("mouseup",   _marqueeUpBound);
+    _marqueeMoveBound = null;
+    _marqueeUpBound   = null;
+  }
+  document.body.classList.remove("marquee-selecting");
+  render();
+  if (typeof renderMultiSelectBar === "function") renderMultiSelectBar();
+  return true;
 }
 
 // Given a layout point, return the cell the cursor is over PLUS the insertion
@@ -930,6 +1078,36 @@ function moveNodeToCell(node, targetStreamId, targetStageId, cellInsertIdx) {
   node.stream = targetStreamId;
   node.stage  = targetStageId;
   NODES.splice(globalInsertIdx, 0, node);
+
+  applyCanvasMutation();
+  return true;
+}
+
+// Batch move: re-home several nodes into the target cell at once, keeping their
+// relative NODES order and inserting them contiguously. One undo step. Mirrors
+// moveNodeToCell but for the multi-selection group-drag path (endNodeDrag).
+function moveNodesToCell(nodeIds, targetStreamId, targetStageId, cellInsertIdx) {
+  if (!streamById[targetStreamId] || !stageById[targetStageId]) return false;
+  if (typeof commitInlineRename === "function") commitInlineRename();
+  const idSet = new Set(nodeIds);
+  // Preserve the group's relative order as it sits in NODES today.
+  const moving = NODES.filter(n => idSet.has(n.id));
+  if (!moving.length) return false;
+
+  // Pull the whole group out, then translate the cell-relative insert index to
+  // a global index against the post-removal array (count only target-cell
+  // siblings until we've passed cellInsertIdx of them).
+  NODES = NODES.filter(n => !idSet.has(n.id));
+  let count = 0;
+  let globalInsertIdx = NODES.length;
+  for (let i = 0; i < NODES.length; i++) {
+    if (NODES[i].stream === targetStreamId && NODES[i].stage === targetStageId) {
+      if (count === cellInsertIdx) { globalInsertIdx = i; break; }
+      count++;
+    }
+  }
+  moving.forEach(n => { n.stream = targetStreamId; n.stage = targetStageId; });
+  NODES.splice(globalInsertIdx, 0, ...moving);
 
   applyCanvasMutation();
   return true;
@@ -1046,24 +1224,25 @@ function deleteSelection() {
     deleteEdgeById(edgeId);
     return true;
   }
-  if (state.selectedNodeId) {
-    const node = nodeById[state.selectedNodeId];
-    if (!node) return false;
-    const incidentEdges = EDGES.filter(e => e.from === node.id || e.to === node.id).map(cloneEdgeForUndo);
-    const snapshot = {
-      kind: "node",
-      node: cloneNodeForUndo(node),
-      incidentEdges: incidentEdges,
-    };
-    NODES = NODES.filter(n => n.id !== node.id);
-    EDGES = EDGES.filter(e => e.from !== node.id && e.to !== node.id);
+  // Node deletion — covers both single-select and the shift-drag/shift-click
+  // multi-selection. Fall back to the scalar primary if the Set is somehow
+  // empty (defensive). All removed nodes + their incident edges go in one
+  // applyCanvasMutation, so undo (toast or Cmd-Z) reverts the whole batch.
+  const ids = (state.selectedNodeIds && state.selectedNodeIds.size)
+    ? [...state.selectedNodeIds]
+    : (state.selectedNodeId ? [state.selectedNodeId] : []);
+  if (ids.length) {
+    const idSet = new Set(ids.filter(id => nodeById[id]));
+    if (!idSet.size) return false;
+    NODES = NODES.filter(n => !idSet.has(n.id));
+    EDGES = EDGES.filter(e => !idSet.has(e.from) && !idSet.has(e.to));
     state.selectedNodeId = null;
+    state.selectedNodeIds = new Set();
     state.ancestorSet = new Set();
     state.descendantSet = new Set();
     state.highlightedEdgeIds = new Set();
-    pushUndo(snapshot);
-    applyCanvasMutation();
-    showUndoToast("Node deleted", () => restoreFromUndo(snapshot));
+    applyCanvasMutation();   // auto-captures the pre-mutation snapshot → one undo step
+    showUndoToast(idSet.size === 1 ? "Node deleted" : idSet.size + " nodes deleted", () => historyUndo());
     return true;
   }
   return false;

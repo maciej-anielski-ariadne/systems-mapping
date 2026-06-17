@@ -30,10 +30,10 @@ function computeLayout() {
   // below. The slot disappears the moment the hover leaves.
   const hoverCell = (state.canvasEdit && state.canvasEdit.hoverCell) || null;
   // During a node drag, the dropCell behaves like hoverCell: we reserve one
-  // extra slot in the target cell so the insertion drop-line has somewhere to
-  // sit without overlapping nodes below. The dragged node is still in NODES
-  // (rendered ghosted in its source cell), so the source row already has the
-  // right height.
+  // extra slot in the target cell so the parted siblings have somewhere to open
+  // their landing gap without overlapping the row below. The dragged node is
+  // still in NODES (ghosted in its source cell), so the source row already has
+  // the right height.
   const dragDropCell = (state.canvasEdit && state.canvasEdit.draggingNode && state.canvasEdit.draggingNode.dropCell) || null;
   const draggedNodeId = (state.canvasEdit && state.canvasEdit.draggingNode && state.canvasEdit.draggingNode.nodeId) || null;
   const rowHeights = {};
@@ -85,14 +85,56 @@ function computeLayout() {
 
   // ───── Position every individual node ─────────────────────────────────
   const positions = {};
+  // The set of nodes currently being dragged (single or multi-select group).
+  // Inside the drag's target cell these are lifted out of the kept-sibling
+  // stack and dropped into the opening gap; everywhere else they sit normally
+  // (ghosted in their source cell).
+  const draggingNode = (state.canvasEdit && state.canvasEdit.draggingNode) || null;
+  const draggedIdSet = draggingNode
+    ? new Set((draggingNode.groupIds && draggingNode.groupIds.length) ? draggingNode.groupIds : [draggingNode.nodeId])
+    : null;
+  const STEP = NODE_HEIGHT + NODE_GAP_Y;
   for (const stream of STREAMS) {
     for (const stage of STAGES) {
       const cellNodes = cells[stream.id + ":" + stage.id] || [];
       const cellTopY = rowY[stream.id] + ROW_PADDING;
+
+      // During a drag, the target cell parts its kept (non-dragged) siblings to
+      // open a one-slot gap at the insert index, and the dragged node's ghost
+      // drops into that gap (so a same-cell reorder reads as a sortable list:
+      // the stack vacates the source slot and opens where it'll land). The live
+      // preview still follows the cursor; this is the resting/landing state.
+      const isDragTarget = dragDropCell && dragDropCell.streamId === stream.id &&
+                           dragDropCell.stageId === stage.id && dragDropCell.insertIndex != null;
+      if (isDragTarget) {
+        const insertIdx = dragDropCell.insertIndex;
+        let keptIdx  = 0;   // running slot among kept (non-dragged) siblings
+        let gapStack = 0;   // stack offset for ghost(s) landing in the gap
+        for (const n of cellNodes) {
+          let slot;
+          if (draggedIdSet && draggedIdSet.has(n.id)) {
+            slot = insertIdx + gapStack;
+            gapStack++;
+          } else {
+            slot = keptIdx < insertIdx ? keptIdx : keptIdx + 1;
+            keptIdx++;
+          }
+          positions[n.id] = { x: colX[stage.id], y: cellTopY + slot * STEP, width: NODE_WIDTH, height: NODE_HEIGHT };
+        }
+        continue;
+      }
+
+      // While the placeholder hovers this cell, part the stack: every note at
+      // or after the insert slot drops down one slot so the shadow placeholder
+      // has an open gap to sit in (the renderer draws it at the same slot).
+      const gapAt = (hoverCell && hoverCell.streamId === stream.id &&
+                     hoverCell.stageId === stage.id && hoverCell.insertIndex != null)
+                  ? hoverCell.insertIndex : null;
       for (let nodeIdx = 0; nodeIdx < cellNodes.length; nodeIdx++) {
+        const slot = (gapAt !== null && nodeIdx >= gapAt) ? nodeIdx + 1 : nodeIdx;
         positions[cellNodes[nodeIdx].id] = {
           x: colX[stage.id],
-          y: cellTopY + nodeIdx * (NODE_HEIGHT + NODE_GAP_Y),
+          y: cellTopY + slot * STEP,
           width: NODE_WIDTH,
           height: NODE_HEIGHT,
         };

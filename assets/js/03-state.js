@@ -14,6 +14,13 @@
 // ("ancestor") and downstream ("descendant") nodes for the current selection.
 const state = {
   selectedNodeId: null,
+  // Multi-selection. selectedNodeId is the "primary" (last-clicked) member —
+  // it drives the detail panel and ancestor/descendant highlighting; this Set
+  // is the full membership. Invariant: when the Set is non-empty, selectedNodeId
+  // is one of its members; when empty, selectedNodeId is null. A normal
+  // single-select is just a Set of size 1. Built by the shift+drag marquee and
+  // shift+click toggle (16e / 09). Not persisted — transient working mode.
+  selectedNodeIds: new Set(),
   selectedEdgeId: null,     // mutually exclusive with selectedNodeId — set by
                             // selectEdge (09-graph-selection.js); cleared by
                             // selectNode / deselectAll. Drives the Delete-key
@@ -58,12 +65,17 @@ const state = {
                                  // gestures on the canvas (ghost-cell click, edge-handle drag, node
                                  // drag-to-move) are gated on this so the map is read-only by default.
                                  // Maintained by initCanvasEdit's keydown/keyup/blur listeners.
-    hoverCell: null,             // { streamId, stageId } | null — empty cell under cursor
+    hoverCell: null,             // { streamId, stageId, insertIndex } | null — placeholder cell under
+                                 // cursor while Shift is held. insertIndex (0..siblingCount) is the
+                                 // slot the new note would land in; siblings at/after it displace down.
     draggingNode: null,          // { nodeId, startClientX, startClientY, currentX, currentY,
                                  //   dropCell: { streamId, stageId, insertIndex } | null,
                                  //   active: false } — set on .node-group mousedown,
                                  //   promoted to active once cursor moves past NODE_DRAG_THRESHOLD.
     draftEdge: null,             // { fromNodeId, currentX, currentY } during edge drag
+    marquee: null,               // { startX, startY, currentX, currentY } in LAYOUT
+                                 // coords while a shift+drag-on-empty marquee is in
+                                 // progress; null otherwise. See 16e-canvas-edit.js.
     flashedEdgeId: null,         // edge to flash-highlight in the outgoing list (after canvas click)
     addingEdgeFromNodeId: null,  // when truthy, edit panel shows the "Add outgoing edge" form
     editingSidebarItem: null,    // { kind: "stream"|"stage"|"category", id } when a sidebar row is pencil-expanded

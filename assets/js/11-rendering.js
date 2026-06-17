@@ -24,7 +24,7 @@ svg.addEventListener("click", event => {
   if (event.target.closest && event.target.closest(".node-group, .row-label-group, .edge-handle, .ghost-cell, .edge-hit, .edge-path")) {
     return;
   }
-  if (state.selectedNodeId) {
+  if (state.selectedNodeId || (state.selectedNodeIds && state.selectedNodeIds.size)) {
     deselectAll();
   }
 });
@@ -136,29 +136,32 @@ function render() {
   const hoverCell = state.canvasEdit && state.canvasEdit.hoverCell;
   if (hoverCell && layout.rowY[hoverCell.streamId] !== undefined && layout.colX[hoverCell.stageId] !== undefined) {
     const existingInCell = NODES.reduce((acc, n) => (n.stream === hoverCell.streamId && n.stage === hoverCell.stageId) ? acc + 1 : acc, 0);
+    // Sit in the gap computeLayout opened at the cursor's insert slot (siblings
+    // at/after it have displaced down by one). Falls back to the bottom slot
+    // when no insertIndex is set.
+    const insertSlot = hoverCell.insertIndex != null ? hoverCell.insertIndex : existingInCell;
     const ghostX = layout.colX[hoverCell.stageId];
-    const ghostY = layout.rowY[hoverCell.streamId] + ROW_PADDING + existingInCell * (NODE_HEIGHT + NODE_GAP_Y);
+    const ghostY = layout.rowY[hoverCell.streamId] + ROW_PADDING + insertSlot * (NODE_HEIGHT + NODE_GAP_Y);
     const ghostLabel = existingInCell > 0 ? "+ add another" : "+ add node";
-    content += '<g class="ghost-cell" data-stream-id="' + escapeHtml(hoverCell.streamId) + '" data-stage-id="' + escapeHtml(hoverCell.stageId) + '">';
+    content += '<g class="ghost-cell" data-stream-id="' + escapeHtml(hoverCell.streamId) + '" data-stage-id="' + escapeHtml(hoverCell.stageId) + '" data-insert-index="' + insertSlot + '">';
     content +=   '<rect x="' + ghostX + '" y="' + ghostY + '" width="' + NODE_WIDTH + '" height="' + NODE_HEIGHT + '" rx="5"></rect>';
     content +=   '<text x="' + (ghostX + NODE_WIDTH / 2) + '" y="' + (ghostY + NODE_HEIGHT / 2) + '" text-anchor="middle" dominant-baseline="central">' + ghostLabel + '</text>';
     content += '</g>';
   }
 
-  // ───── Drag drop-target highlight (during node drag) ──────────────────
-  // Drawn here so it sits under nodes but over the grid. The insertion line
-  // (drop-line) appears between the siblings at the cursor's insert index.
+  // ───── Drag landing slot (during node drag) ───────────────────────────
+  // Drawn here so it sits under nodes but over the grid. The siblings have
+  // parted to open a gap at the insert index (computeLayout); this dashed rect
+  // marks that gap as the landing slot — same visual language as the new-note
+  // placeholder. For a same-cell reorder the dragged node's faint ghost rests
+  // inside it; for a cross-cell move the gap is open space.
   const drag = state.canvasEdit && state.canvasEdit.draggingNode;
   if (drag && drag.dropCell && layout.rowY[drag.dropCell.streamId] !== undefined && layout.colX[drag.dropCell.stageId] !== undefined) {
     const dc = drag.dropCell;
     const cellLeft = layout.colX[dc.stageId];
     const cellTop  = layout.rowY[dc.streamId] + ROW_PADDING;
-    const cellHeight = layout.rowHeights[dc.streamId] - ROW_PADDING * 2;
-    content += '<rect class="drop-target-cell" x="' + cellLeft + '" y="' + cellTop + '" width="' + NODE_WIDTH + '" height="' + cellHeight + '" rx="5"></rect>';
-    // Insertion line — sits between nodes at the insert index, NODE_GAP_Y / 2 above the slot's top.
     const slotY = cellTop + dc.insertIndex * (NODE_HEIGHT + NODE_GAP_Y);
-    const lineY = dc.insertIndex === 0 ? cellTop - 3 : slotY - NODE_GAP_Y / 2;
-    content += '<line class="drop-line" x1="' + cellLeft + '" y1="' + lineY + '" x2="' + (cellLeft + NODE_WIDTH) + '" y2="' + lineY + '"></line>';
+    content += '<rect class="drop-slot" x="' + cellLeft + '" y="' + slotY + '" width="' + NODE_WIDTH + '" height="' + NODE_HEIGHT + '" rx="5"></rect>';
   }
 
   // ───── Row label strip on the left (per stream) ───────────────────────
@@ -217,7 +220,10 @@ function render() {
     let dimmed        = false;
     const isEdgeFlashed = edge.id === flashedEdgeId;
 
-    if (state.selectedNodeId) {
+    // Only a single-node selection highlights/dims edges — a multi-selection
+    // suppresses neighbour highlighting (highlightedEdgeIds is empty), so leave
+    // every edge at its default styling rather than dimming them all.
+    if (state.selectedNodeId && state.selectedNodeIds.size <= 1) {
       const isHighlighted = state.highlightedEdgeIds.has(edge.id);
       if (isHighlighted) {
         if      (edge.effect === "increases") strokeColor = "var(--edge-increases)";
@@ -283,10 +289,15 @@ function render() {
 
     // Class flags applied to the <g> wrapper — see 05-visualization.css
     // and 12-no-borders.css (state glows) + 13-search.css (search halo).
+    // Every member of the multi-selection gets the "selected" glow. The
+    // ancestor/descendant/dimmed neighbour treatment only applies in
+    // single-select (refreshNeighborHighlight empties those sets when >1 is
+    // selected, so multi-select renders un-selected nodes plainly — no noise).
     let nodeClasses = "node-group";
-    if (state.selectedNodeId) {
-      if      (node.id === state.selectedNodeId)  nodeClasses += " selected";
-      else if (state.ancestorSet.has(node.id))    nodeClasses += " ancestor";
+    if (state.selectedNodeIds.has(node.id)) {
+      nodeClasses += " selected";
+    } else if (state.selectedNodeId && state.selectedNodeIds.size <= 1) {
+      if      (state.ancestorSet.has(node.id))    nodeClasses += " ancestor";
       else if (state.descendantSet.has(node.id))  nodeClasses += " descendant";
       else                                        nodeClasses += " dimmed";
     }
@@ -303,7 +314,7 @@ function render() {
     let strokeWidth = 1;
     const outcomeStatusColor = getOutcomeBorderColor(node.id);
 
-    if (node.id === state.selectedNodeId) {
+    if (state.selectedNodeIds.has(node.id)) {
       strokeColor = "#ffffff";
       strokeWidth = 2.5;
     } else if (state.ancestorSet.has(node.id)) {
@@ -312,7 +323,7 @@ function render() {
     } else if (state.descendantSet.has(node.id)) {
       strokeColor = "var(--edge-descendant)";
       strokeWidth = 2;
-    } else if (outcomeStatusColor && !state.selectedNodeId) {
+    } else if (outcomeStatusColor && !state.selectedNodeId && !state.selectedNodeIds.size) {
       // Show good/bad colour around outcome nodes when nothing is selected.
       strokeColor = outcomeStatusColor;
       strokeWidth = 2;
@@ -418,7 +429,25 @@ function render() {
       content += '<tspan x="' + (px + 14) + '" dy="' + dy + '">' + escapeHtml(previewLines[i]) + '</tspan>';
     }
     content += '</text>';
+    // Group drag: a count badge in the corner so it's clear the whole
+    // selection is moving, not just the previewed primary node.
+    if (drag.groupIds && drag.groupIds.length > 1) {
+      const bx = px + NODE_WIDTH;
+      const by = py;
+      content += '<circle class="drag-count-badge" cx="' + bx + '" cy="' + by + '" r="11" fill="#1e293b" stroke="#ffffff" stroke-width="1.5"></circle>';
+      content += '<text x="' + bx + '" y="' + by + '" text-anchor="middle" dominant-baseline="central" fill="#ffffff" font-size="11" font-weight="600">' + drag.groupIds.length + '</text>';
+    }
     content += '</g>';
+  }
+
+  // ───── Marquee selection box (shift+drag on empty canvas) ─────────────
+  const marquee = state.canvasEdit && state.canvasEdit.marquee;
+  if (marquee) {
+    const mx = Math.min(marquee.startX, marquee.currentX);
+    const my = Math.min(marquee.startY, marquee.currentY);
+    const mw = Math.abs(marquee.currentX - marquee.startX);
+    const mh = Math.abs(marquee.currentY - marquee.startY);
+    content += '<rect class="marquee-box" x="' + mx + '" y="' + my + '" width="' + mw + '" height="' + mh + '" rx="2"></rect>';
   }
 
   // ───── Empty-state hint when no nodes exist ───────────────────────────
