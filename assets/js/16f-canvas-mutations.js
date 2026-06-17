@@ -105,9 +105,9 @@ function addCategory() {
     // Label colour auto-contrasts against the fill — see pickTextColor (04-utils.js).
     textColor: typeof pickTextColor === "function" ? pickTextColor(color) : "#ffffff",
   };
-  state.canvasEdit.editingSidebarItem = { kind: "category", id: id };
   applyCanvasMutation();
-  focusSidebarEditLabel("category", id);
+  // Categories edit fully inline now — drop straight into renaming the new row.
+  if (typeof focusSidebarInlineLabel === "function") focusSidebarInlineLabel("category", id);
 }
 
 // ───── Delete with cascade + undo ─────────────────────────────────────────

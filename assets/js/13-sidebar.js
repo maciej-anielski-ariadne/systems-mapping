@@ -114,13 +114,13 @@ function renderStreamsList() {
       html +=   '</div>';
       html += '</div>';
     } else {
-      const tip = (isHidden ? "Click to show " : "Click to hide ") + stream.label + " — " + count + " node" + (count === 1 ? "" : "s") + " on the map.";
+      const tip = (isHidden ? "Click to show " : "Click to hide ") + stream.label + " — " + count + " node" + (count === 1 ? "" : "s") + " on the map. Double-click the name to rename.";
       html += '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="stream" data-id="' + escapeHtml(stream.id) + '" data-index="' + i + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
       html +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
       html +=   '<input type="color" class="sidebar-edit-color sidebar-edit-swatch" data-field="color" value="' + escapeHtml(stream.color || "#94a3b8") + '" title="Stream colour" aria-label="Stream colour">';
-      html +=   '<div class="filter-label" data-action="toggle-filter">' + escapeHtml(stream.label) + '</div>';
+      html +=   '<div class="filter-label" data-action="toggle-filter" title="Double-click to rename">' + escapeHtml(stream.label) + '</div>';
       html +=   '<div class="filter-count">' + count + '</div>';
-      html +=   '<button class="sidebar-edit-pencil" data-action="expand" title="Edit stream">✎</button>';
+      html +=   '<button class="sidebar-edit-pencil" data-action="expand" title="Edit short label">✎</button>';
       html +=   deleteIconButton("Delete stream");
       html += '</div>';
     }
@@ -135,11 +135,11 @@ function renderStreamsList() {
 }
 
 // ───── Categories ──────────────────────────────────────────────────────
-// Same edit pattern as streams: compact row toggles the filter on click;
-// pencil expands an inline form with label, fill colour, text colour, and a
-// delete button (cascade with confirm + undo). Drag-to-reorder via the same
-// handle. Categories are stored in an insertion-order-preserving object —
-// reorderCategories rebuilds it to commit a new order.
+// Fully inline: each compact row toggles the filter on click, recolours via
+// the swatch (label colour auto-contrasts), renames on double-click of the
+// label, and deletes via the trash icon — so there's no separate edit form.
+// Drag-to-reorder via the handle. Categories are stored in an
+// insertion-order-preserving object — reorderCategories rebuilds it.
 function renderCategoriesList() {
   const container = document.getElementById("category-filters");
   const countEl   = document.getElementById("categories-count");
@@ -157,33 +157,16 @@ function renderCategoriesList() {
     const catId = ids[i];
     const cat = CATEGORIES[catId];
     const isHidden   = state.hiddenCategories.has(catId);
-    const isExpanded = isExpandedSidebarItem("category", catId);
     const count = categoryNodeCount[catId] || 0;
 
-    if (isExpanded) {
-      html += '<div class="sidebar-edit-row expanded" data-kind="category" data-id="' + escapeHtml(catId) + '" data-index="' + i + '" draggable="true">';
-      html +=   '<div class="sidebar-edit-row-top">';
-      html +=     '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
-      html +=     '<input type="color" class="sidebar-edit-color" data-field="color" value="' + escapeHtml(cat.color || "#94a3b8") + '" title="Fill colour (label colour auto-contrasts)">';
-      html +=     '<input type="text" class="sidebar-edit-input" data-field="label" value="' + escapeHtml(cat.label) + '" aria-label="Category label">';
-      html +=     '<button class="sidebar-edit-collapse" data-action="collapse" title="Close edit">×</button>';
-      html +=   '</div>';
-      html +=   '<div class="sidebar-edit-row-bottom">';
-      html +=     '<span class="sidebar-edit-meta">' + count + ' node' + (count === 1 ? '' : 's') + '</span>';
-      html +=     '<button class="sidebar-edit-delete" data-action="delete">Delete category</button>';
-      html +=   '</div>';
-      html += '</div>';
-    } else {
-      const tip = (isHidden ? "Click to show " : "Click to hide ") + cat.label + " — " + count + " node" + (count === 1 ? "" : "s") + " on the map.";
-      html += '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="category" data-id="' + escapeHtml(catId) + '" data-index="' + i + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
-      html +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
-      html +=   '<input type="color" class="sidebar-edit-color sidebar-edit-swatch" data-field="color" value="' + escapeHtml(cat.color || "#94a3b8") + '" title="Fill colour (label colour auto-contrasts)" aria-label="Fill colour">';
-      html +=   '<div class="filter-label" data-action="toggle-filter">' + escapeHtml(cat.label) + '</div>';
-      html +=   '<div class="filter-count">' + count + '</div>';
-      html +=   '<button class="sidebar-edit-pencil" data-action="expand" title="Edit category">✎</button>';
-      html +=   deleteIconButton("Delete category");
-      html += '</div>';
-    }
+    const tip = (isHidden ? "Click to show " : "Click to hide ") + cat.label + " — " + count + " node" + (count === 1 ? "" : "s") + " on the map. Double-click the name to rename.";
+    html += '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="category" data-id="' + escapeHtml(catId) + '" data-index="' + i + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
+    html +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
+    html +=   '<input type="color" class="sidebar-edit-color sidebar-edit-swatch" data-field="color" value="' + escapeHtml(cat.color || "#94a3b8") + '" title="Fill colour (label colour auto-contrasts)" aria-label="Fill colour">';
+    html +=   '<div class="filter-label" data-action="toggle-filter" title="Double-click to rename">' + escapeHtml(cat.label) + '</div>';
+    html +=   '<div class="filter-count">' + count + '</div>';
+    html +=   deleteIconButton("Delete category");
+    html += '</div>';
   }
   html += '<div class="sidebar-drop-end" data-kind="category" data-target-index="' + ids.length + '"></div>';
   container.innerHTML = html;
@@ -199,6 +182,64 @@ function deleteIconButton(title) {
     '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" focusable="false">' +
     '<path fill="currentColor" d="M6.5 1.5h3a1 1 0 0 1 1 1V3h2.5a.5.5 0 0 1 0 1h-.54l-.7 9.06A1.5 1.5 0 0 1 10.27 14.5H5.73a1.5 1.5 0 0 1-1.49-1.44L3.54 4H3a.5.5 0 0 1 0-1h2.5v-.5a1 1 0 0 1 1-1Zm-1.95 2.5.69 8.98a.5.5 0 0 0 .49.52h4.54a.5.5 0 0 0 .49-.52L11.45 4H4.55ZM6.5 3h3v-.5h-3V3Zm.25 2.75a.5.5 0 0 1 .5.5v5a.5.5 0 0 1-1 0v-5a.5.5 0 0 1 .5-.5Zm2.5 0a.5.5 0 0 1 .5.5v5a.5.5 0 0 1-1 0v-5a.5.5 0 0 1 .5-.5Z"/>' +
     '</svg></button>';
+}
+
+// Turn a compact row's label into an inline editor: make it contenteditable,
+// select its text, and commit on Enter / blur (Escape cancels). Renaming a
+// stream / category / stage all funnel through applySidebarFieldEdit's "label"
+// branch. We disable the row's drag while editing so the cursor can be placed
+// with the mouse, then renderSidebar() rebuilds a clean row on commit.
+function beginInlineLabelEdit(labelEl, row, kind, id) {
+  if (!labelEl || labelEl.getAttribute("contenteditable") === "true") return;
+  const original = labelEl.textContent;
+  labelEl.setAttribute("contenteditable", "true");
+  labelEl.classList.add("editing");
+  if (row) row.setAttribute("draggable", "false");
+  labelEl.focus();
+
+  // Select the whole label so typing replaces it.
+  const sel = window.getSelection();
+  if (sel) {
+    const range = document.createRange();
+    range.selectNodeContents(labelEl);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
+  let finished = false;
+  const finish = save => {
+    if (finished) return;
+    finished = true;
+    labelEl.removeAttribute("contenteditable");
+    labelEl.classList.remove("editing");
+    const newText = labelEl.textContent.trim();
+    if (save && newText && newText !== original) {
+      applySidebarFieldEdit(kind, id, "label", { value: newText });
+    }
+    renderSidebar(); // rebuild the row in its clean, non-editing state
+  };
+
+  labelEl.addEventListener("keydown", event => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      finish(true);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      labelEl.textContent = original;
+      finish(false);
+    }
+  });
+  labelEl.addEventListener("blur", () => finish(true));
+}
+
+// Begin inline rename on a freshly-added compact row (e.g. just after
+// "+ Add category"), once renderSidebar has painted it.
+function focusSidebarInlineLabel(kind, id) {
+  setTimeout(() => {
+    const row = document.querySelector(".sidebar-edit-row[data-kind='" + kind + "'][data-id='" + CSS.escape(id) + "']");
+    const labelEl = row && row.querySelector(".filter-label");
+    if (labelEl) beginInlineLabelEdit(labelEl, row, kind, id);
+  }, 0);
 }
 
 // ───── Per-row wiring (expand / collapse / edit / delete / drag) ───────
@@ -250,13 +291,36 @@ function wireRowHandlers(container, kind) {
     // hides or shows that stream / category on the map. Stages don't have
     // a filter behaviour.
     if ((kind === "stream" || kind === "category") && !row.classList.contains("expanded")) {
-      row.addEventListener("click", event => {
-        // Pencil, drag handle, inline colour swatch and delete icon have their
-        // own handlers — clicks on them must not also toggle the filter.
-        if (event.target.closest(".sidebar-edit-pencil, .sidebar-edit-drag, .sidebar-edit-color, .sidebar-row-delete")) return;
+      const toggle = () => {
         if (kind === "stream")   toggleStream(id);
         if (kind === "category") toggleCategory(id);
+      };
+
+      row.addEventListener("click", event => {
+        // Pencil, drag handle, inline colour swatch, delete icon and the label
+        // (which has its own click/dblclick handlers below) must not toggle.
+        if (event.target.closest(".sidebar-edit-pencil, .sidebar-edit-drag, .sidebar-edit-color, .sidebar-row-delete, .filter-label")) return;
+        toggle();
       });
+
+      // The label single-click toggles the filter, double-click renames it
+      // inline. A short timer lets us distinguish the two: the toggle only
+      // fires if no second click (the rename) arrives first.
+      const labelEl = row.querySelector(".filter-label");
+      if (labelEl) {
+        let clickTimer = null;
+        labelEl.addEventListener("click", event => {
+          event.stopPropagation();
+          if (labelEl.getAttribute("contenteditable") === "true") return; // already editing
+          if (clickTimer) return;
+          clickTimer = setTimeout(() => { clickTimer = null; toggle(); }, 220);
+        });
+        labelEl.addEventListener("dblclick", event => {
+          event.stopPropagation();
+          if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
+          beginInlineLabelEdit(labelEl, row, kind, id);
+        });
+      }
     }
   });
 

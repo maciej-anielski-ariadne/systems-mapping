@@ -394,6 +394,22 @@
   white-space: nowrap;
 }
 
+/* Inline rename: the label becomes a contenteditable text box. Show a clear
+ * edit affordance and let the text be selected/wrapped while editing. */
+.filter-label.editing {
+  cursor: text;
+  overflow: visible;
+  white-space: normal;
+  color: var(--text-primary);
+  background: var(--bg-deepest);
+  border-radius: 4px;
+  padding: 2px 6px;
+  margin: -2px 0;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.5);
+  text-decoration: none !important;
+}
+
 .sidebar-edit-row.filter-row .filter-count {
   font-family: var(--font-mono);
   font-size: 10px;
