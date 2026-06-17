@@ -102,7 +102,8 @@ function addCategory() {
   CATEGORIES[id] = {
     label: "Category " + counter,
     color: color,
-    textColor: "#ffffff",
+    // Label colour auto-contrasts against the fill — see pickTextColor (04-utils.js).
+    textColor: typeof pickTextColor === "function" ? pickTextColor(color) : "#ffffff",
   };
   state.canvasEdit.editingSidebarItem = { kind: "category", id: id };
   applyCanvasMutation();

@@ -338,6 +338,43 @@
   color: #fca5a5;
 }
 
+/* Compact inline colour swatch — a native colour input shrunk to swatch size
+ * so streams / categories can be recoloured directly in the filter row without
+ * expanding. Shares the wrapper resets from .sidebar-edit-color above. */
+.sidebar-edit-swatch {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Inline trash-icon delete button for compact filter rows. Hidden until the
+ * row is hovered so the list stays clean; turns red on hover. */
+.sidebar-row-delete {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  color: var(--text-tertiary);
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: background 0.12s, color 0.12s, opacity 0.12s;
+}
+
+.sidebar-edit-row:hover .sidebar-row-delete {
+  opacity: 1;
+}
+
+.sidebar-row-delete:hover {
+  background: rgba(239, 68, 68, 0.18);
+  color: #fca5a5;
+}
+
 /* Filter-row variant: existing .filter-swatch + .filter-label sit between
  * the drag handle and the count. Use the same alignment as the compact
  * sidebar-edit-row layout. */

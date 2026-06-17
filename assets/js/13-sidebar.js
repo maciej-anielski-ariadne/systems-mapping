@@ -117,10 +117,11 @@ function renderStreamsList() {
       const tip = (isHidden ? "Click to show " : "Click to hide ") + stream.label + " — " + count + " node" + (count === 1 ? "" : "s") + " on the map.";
       html += '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="stream" data-id="' + escapeHtml(stream.id) + '" data-index="' + i + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
       html +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
-      html +=   '<div class="filter-swatch" style="background: ' + stream.color + ';" data-action="toggle-filter"></div>';
+      html +=   '<input type="color" class="sidebar-edit-color sidebar-edit-swatch" data-field="color" value="' + escapeHtml(stream.color || "#94a3b8") + '" title="Stream colour" aria-label="Stream colour">';
       html +=   '<div class="filter-label" data-action="toggle-filter">' + escapeHtml(stream.label) + '</div>';
       html +=   '<div class="filter-count">' + count + '</div>';
       html +=   '<button class="sidebar-edit-pencil" data-action="expand" title="Edit stream">✎</button>';
+      html +=   deleteIconButton("Delete stream");
       html += '</div>';
     }
   }
@@ -163,8 +164,7 @@ function renderCategoriesList() {
       html += '<div class="sidebar-edit-row expanded" data-kind="category" data-id="' + escapeHtml(catId) + '" data-index="' + i + '" draggable="true">';
       html +=   '<div class="sidebar-edit-row-top">';
       html +=     '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
-      html +=     '<input type="color" class="sidebar-edit-color" data-field="color" value="' + escapeHtml(cat.color || "#94a3b8") + '" title="Fill colour">';
-      html +=     '<input type="color" class="sidebar-edit-color" data-field="textColor" value="' + escapeHtml(cat.textColor || "#ffffff") + '" title="Label text colour">';
+      html +=     '<input type="color" class="sidebar-edit-color" data-field="color" value="' + escapeHtml(cat.color || "#94a3b8") + '" title="Fill colour (label colour auto-contrasts)">';
       html +=     '<input type="text" class="sidebar-edit-input" data-field="label" value="' + escapeHtml(cat.label) + '" aria-label="Category label">';
       html +=     '<button class="sidebar-edit-collapse" data-action="collapse" title="Close edit">×</button>';
       html +=   '</div>';
@@ -177,10 +177,11 @@ function renderCategoriesList() {
       const tip = (isHidden ? "Click to show " : "Click to hide ") + cat.label + " — " + count + " node" + (count === 1 ? "" : "s") + " on the map.";
       html += '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="category" data-id="' + escapeHtml(catId) + '" data-index="' + i + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
       html +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
-      html +=   '<div class="filter-swatch" style="background: ' + cat.color + ';" data-action="toggle-filter"></div>';
+      html +=   '<input type="color" class="sidebar-edit-color sidebar-edit-swatch" data-field="color" value="' + escapeHtml(cat.color || "#94a3b8") + '" title="Fill colour (label colour auto-contrasts)" aria-label="Fill colour">';
       html +=   '<div class="filter-label" data-action="toggle-filter">' + escapeHtml(cat.label) + '</div>';
       html +=   '<div class="filter-count">' + count + '</div>';
       html +=   '<button class="sidebar-edit-pencil" data-action="expand" title="Edit category">✎</button>';
+      html +=   deleteIconButton("Delete category");
       html += '</div>';
     }
   }
@@ -188,6 +189,16 @@ function renderCategoriesList() {
   container.innerHTML = html;
 
   wireRowHandlers(container, "category");
+}
+
+// Small inline trash-icon button for the compact filter rows, so a stream /
+// category can be deleted without expanding first. data-action="delete" hooks
+// into the existing cascade-delete wiring in wireRowHandlers.
+function deleteIconButton(title) {
+  return '<button class="sidebar-row-delete" data-action="delete" title="' + escapeHtml(title) + '" aria-label="' + escapeHtml(title) + '">' +
+    '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" focusable="false">' +
+    '<path fill="currentColor" d="M6.5 1.5h3a1 1 0 0 1 1 1V3h2.5a.5.5 0 0 1 0 1h-.54l-.7 9.06A1.5 1.5 0 0 1 10.27 14.5H5.73a1.5 1.5 0 0 1-1.49-1.44L3.54 4H3a.5.5 0 0 1 0-1h2.5v-.5a1 1 0 0 1 1-1Zm-1.95 2.5.69 8.98a.5.5 0 0 0 .49.52h4.54a.5.5 0 0 0 .49-.52L11.45 4H4.55ZM6.5 3h3v-.5h-3V3Zm.25 2.75a.5.5 0 0 1 .5.5v5a.5.5 0 0 1-1 0v-5a.5.5 0 0 1 .5-.5Zm2.5 0a.5.5 0 0 1 .5.5v5a.5.5 0 0 1-1 0v-5a.5.5 0 0 1 .5-.5Z"/>' +
+    '</svg></button>';
 }
 
 // ───── Per-row wiring (expand / collapse / edit / delete / drag) ───────
@@ -240,9 +251,9 @@ function wireRowHandlers(container, kind) {
     // a filter behaviour.
     if ((kind === "stream" || kind === "category") && !row.classList.contains("expanded")) {
       row.addEventListener("click", event => {
-        // Pencil and drag handle have their own handlers — let them bubble
-        // out of this block.
-        if (event.target.closest(".sidebar-edit-pencil, .sidebar-edit-drag")) return;
+        // Pencil, drag handle, inline colour swatch and delete icon have their
+        // own handlers — clicks on them must not also toggle the filter.
+        if (event.target.closest(".sidebar-edit-pencil, .sidebar-edit-drag, .sidebar-edit-color, .sidebar-row-delete")) return;
         if (kind === "stream")   toggleStream(id);
         if (kind === "category") toggleCategory(id);
       });
@@ -343,8 +354,9 @@ function applySidebarFieldEdit(kind, id, field, input) {
       cat.label = newLabel;
     } else if (field === "color") {
       cat.color = input.value;
-    } else if (field === "textColor") {
-      cat.textColor = input.value;
+      // Label colour is no longer hand-picked — derive black/white for max
+      // contrast against the new fill so node labels stay readable.
+      if (typeof pickTextColor === "function") cat.textColor = pickTextColor(cat.color);
     }
     // Re-render the detail panel here too — the Category dropdown over there
     // shows the updated label / colour swatch.
