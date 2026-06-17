@@ -149,20 +149,19 @@ function render() {
     content += '</g>';
   }
 
-  // ───── Drag drop-target highlight (during node drag) ──────────────────
-  // Drawn here so it sits under nodes but over the grid. The insertion line
-  // (drop-line) appears between the siblings at the cursor's insert index.
+  // ───── Drag landing slot (during node drag) ───────────────────────────
+  // Drawn here so it sits under nodes but over the grid. The siblings have
+  // parted to open a gap at the insert index (computeLayout); this dashed rect
+  // marks that gap as the landing slot — same visual language as the new-note
+  // placeholder. For a same-cell reorder the dragged node's faint ghost rests
+  // inside it; for a cross-cell move the gap is open space.
   const drag = state.canvasEdit && state.canvasEdit.draggingNode;
   if (drag && drag.dropCell && layout.rowY[drag.dropCell.streamId] !== undefined && layout.colX[drag.dropCell.stageId] !== undefined) {
     const dc = drag.dropCell;
     const cellLeft = layout.colX[dc.stageId];
     const cellTop  = layout.rowY[dc.streamId] + ROW_PADDING;
-    const cellHeight = layout.rowHeights[dc.streamId] - ROW_PADDING * 2;
-    content += '<rect class="drop-target-cell" x="' + cellLeft + '" y="' + cellTop + '" width="' + NODE_WIDTH + '" height="' + cellHeight + '" rx="5"></rect>';
-    // Insertion line — sits between nodes at the insert index, NODE_GAP_Y / 2 above the slot's top.
     const slotY = cellTop + dc.insertIndex * (NODE_HEIGHT + NODE_GAP_Y);
-    const lineY = dc.insertIndex === 0 ? cellTop - 3 : slotY - NODE_GAP_Y / 2;
-    content += '<line class="drop-line" x1="' + cellLeft + '" y1="' + lineY + '" x2="' + (cellLeft + NODE_WIDTH) + '" y2="' + lineY + '"></line>';
+    content += '<rect class="drop-slot" x="' + cellLeft + '" y="' + slotY + '" width="' + NODE_WIDTH + '" height="' + NODE_HEIGHT + '" rx="5"></rect>';
   }
 
   // ───── Row label strip on the left (per stream) ───────────────────────

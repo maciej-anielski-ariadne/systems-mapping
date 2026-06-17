@@ -412,17 +412,13 @@ body.node-dragging * {
 }
 body.marquee-selecting { cursor: crosshair; }
 body.marquee-selecting .viz-svg { cursor: crosshair; }
-.drop-target-cell {
+/* Drag landing slot — the gap the siblings parted to open. Mirrors the
+ * new-note placeholder (.ghost-cell) so create and move read the same. */
+.drop-slot {
   fill: rgba(96, 165, 250, 0.12);
   stroke: var(--accent-blue);
   stroke-width: 1.5;
   stroke-dasharray: 5 4;
-  pointer-events: none;
-}
-.drop-line {
-  stroke: var(--accent-blue);
-  stroke-width: 3;
-  stroke-linecap: round;
   pointer-events: none;
 }
 
