@@ -20,6 +20,10 @@ const ROW_PADDING = 16;
 // enough to fit the short label so the user can click it to expand again.
 const COLLAPSED_ROW_HEIGHT = 28;
 
+// Width of a stage column when its stage is hidden (collapsed). Just wide
+// enough to show a clickable stub the user can click to expand again.
+const COLLAPSED_COL_WIDTH = 28;
+
 // Horizontal gap between the columns of nodes.
 const COL_GAP = 90;
 

@@ -319,6 +319,7 @@ function loadDataFromCsv(csvText) {
   state.hoveredNodeId = null;
   state.hiddenStreams = new Set();
   state.hiddenCategories = new Set();
+  state.hiddenStages = new Set();
   state.ancestorSet = new Set();
   state.descendantSet = new Set();
   state.highlightedEdgeIds = new Set();

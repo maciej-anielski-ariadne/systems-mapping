@@ -139,6 +139,15 @@ body.panning * {
   opacity: 0.05;
 }
 
+/* Synthetic "through" edges — re-routed causal effects that span one or more
+ * collapsed stages. Drawn dashed so they read as derived, not real, edges. */
+.edge-path.synthetic {
+  stroke-dasharray: 6 5;
+}
+.edge-path.synthetic.effect-neutral {
+  color: var(--edge-default);
+}
+
 /* === Row labels on the left (one per stream) === */
 .row-label-bg {
   fill: var(--bg-deep);
@@ -193,6 +202,40 @@ body.panning * {
   text-transform: uppercase;
   fill: var(--text-secondary);
   pointer-events: none;
+}
+
+/* Column headers toggle their stage's visibility on click (mirrors row labels).
+ * A transparent hit rect over the header band captures the click since the
+ * label text itself has pointer-events:none. */
+.col-header-group {
+  cursor: pointer;
+}
+.col-header-hit {
+  fill: transparent;
+  pointer-events: all;
+}
+.col-header-group:hover .col-header-text {
+  fill: var(--text-primary);
+}
+
+/* Collapsed stage — column shrinks to a thin clickable stub. The label runs
+ * vertically down a faint full-height band; a "+" in the header invites a
+ * click to expand. */
+.collapsed-col-band {
+  fill: var(--bg-deepest);
+  opacity: 0.5;
+  pointer-events: all;
+}
+.col-header-group.collapsed .col-header-text {
+  font-size: calc(10px * var(--map-text-scale, 1));
+  opacity: 0.55;
+}
+.col-header-group.collapsed:hover .col-header-text {
+  opacity: 1;
+}
+.col-header-group.collapsed .col-header-plus {
+  font-size: calc(14px * var(--map-text-scale, 1));
+  opacity: 0.7;
 }
 
 /* Dotted vertical divider between columns */

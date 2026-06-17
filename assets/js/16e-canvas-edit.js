@@ -319,6 +319,7 @@ function bootEmptyStateGrid() {
   state.hoveredNodeId = null;
   state.hiddenStreams = new Set();
   state.hiddenCategories = new Set();
+  state.hiddenStages = new Set();
   state.ancestorSet = new Set();
   state.descendantSet = new Set();
   state.highlightedEdgeIds = new Set();
@@ -1014,9 +1015,11 @@ function cellAtLayoutPoint(x, y) {
 
   let foundStage = null;
   for (const stage of STAGES) {
+    if (state.hiddenStages.has(stage.id)) continue;   // collapsed column isn't a target
     const left = layout.colX[stage.id];
     if (left === undefined) continue;
-    if (x >= left && x < left + NODE_WIDTH) { foundStage = stage; break; }
+    const w = (layout.colWidths && layout.colWidths[stage.id]) || NODE_WIDTH;
+    if (x >= left && x < left + w) { foundStage = stage; break; }
   }
   if (!foundStage) return null;
 

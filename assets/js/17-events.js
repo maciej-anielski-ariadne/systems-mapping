@@ -18,10 +18,14 @@ document.getElementById("reset-button").addEventListener("click", () => {
   if (!state.dataLoaded) return;
   state.hiddenStreams.clear();
   state.hiddenCategories.clear();
+  state.hiddenStages.clear();
   state.userOverrides = {};
   if (typeof clearSearch === "function") clearSearch();
   deselectNode();
   recomputeValues();
+  // Un-hiding stages restores full column widths, so recompute layout before
+  // re-rendering.
+  layout = computeLayout();
   renderSidebar();
   render();
   saveUiStateToStorage();

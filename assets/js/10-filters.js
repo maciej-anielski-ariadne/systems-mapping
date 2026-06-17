@@ -1,39 +1,63 @@
 // =============================================================================
-// VISIBILITY FILTERS — hide / show streams and categories
+// VISIBILITY FILTERS — hide / show streams, categories, and stages
 // -----------------------------------------------------------------------------
-// Two Sets in `state` track what the user has hidden:
-//   • state.hiddenStreams    — stream ids the user has toggled off
+// Three Sets in `state` track what the user has hidden:
+//   • state.hiddenStreams    — stream ids the user has toggled off (collapse row)
 //   • state.hiddenCategories — category ids the user has toggled off
+//   • state.hiddenStages     — stage ids the user has toggled off (collapse col)
 //
-// When a node belongs to either a hidden stream OR a hidden category, it is
-// not drawn on the map (and any edges touching it are also skipped).
+// When a node belongs to any hidden stream, category, OR stage it is not drawn
+// (isNodeVisible). Edges touching a hidden node are re-routed as synthetic
+// "through" edges by computeRenderEdges (10a-collapsed-edges.js) rather than
+// simply dropped, so causal effects stay legible across collapsed slices.
 // =============================================================================
 
-function toggleStream(streamId) {
-  if (state.hiddenStreams.has(streamId)) state.hiddenStreams.delete(streamId);
-  else state.hiddenStreams.add(streamId);
+// Hide / show a layout-affecting "dimension" — streams collapse their row,
+// stages collapse their column. Flips the id's membership in `hiddenSet`, clears
+// the selection when the selected node ends up in the now-hidden slice (so the
+// detail panel doesn't point at an invisible node), then recomputes the layout
+// and re-renders. `nodeField` is the node property to match the id against
+// ("stream" or "stage").
+function setDimensionVisibility(hiddenSet, id, nodeField) {
+  if (hiddenSet.has(id)) hiddenSet.delete(id);
+  else hiddenSet.add(id);
 
-  // If the currently-selected node belonged to a stream we just hid, clear
-  // the selection so the detail panel doesn't show an invisible node.
-  if (
-    state.selectedNodeId &&
-    nodeById[state.selectedNodeId].stream === streamId &&
-    state.hiddenStreams.has(streamId)
-  ) {
+  const selected = state.selectedNodeId && nodeById[state.selectedNodeId];
+  if (selected && selected[nodeField] === id && hiddenSet.has(id)) {
     state.selectedNodeId = null;
     state.ancestorSet = new Set();
     state.descendantSet = new Set();
     state.highlightedEdgeIds = new Set();
     renderDetailPanel();
   }
-  // Layout depends on stream visibility (hidden streams collapse to a
-  // compact row), so recompute before re-rendering.
+  // Hidden rows/columns change the layout, so recompute before re-rendering.
   layout = computeLayout();
   render();
   renderSidebar();
   saveUiStateToStorage();
 }
 
+function toggleStream(streamId) {
+  setDimensionVisibility(state.hiddenStreams, streamId, "stream");
+}
+
+// Collapse / expand a whole stage (column). Hiding one shrinks its column to a
+// thin clickable stub and drops its nodes from the map; causal effects that ran
+// THROUGH the hidden nodes are still shown as synthetic "through" edges between
+// the visible stages either side — see computeRenderEdges in 10a-collapsed-edges.js.
+function toggleStage(stageId) {
+  // Don't leave the keyboard "type to create" cursor parked in a column that's
+  // about to collapse (it's still visible now, so this toggle will hide it).
+  if (state.canvasEdit && state.canvasEdit.cursorCell &&
+      state.canvasEdit.cursorCell.stageId === stageId &&
+      !state.hiddenStages.has(stageId)) {
+    state.canvasEdit.cursorCell = null;
+  }
+  setDimensionVisibility(state.hiddenStages, stageId, "stage");
+}
+
+// Categories don't affect layout and don't clear the selection, so they keep
+// their own minimal toggle.
 function toggleCategory(categoryId) {
   if (state.hiddenCategories.has(categoryId)) state.hiddenCategories.delete(categoryId);
   else state.hiddenCategories.add(categoryId);
@@ -42,9 +66,11 @@ function toggleCategory(categoryId) {
   saveUiStateToStorage();
 }
 
-// A node is visible only if both its stream and its category are visible.
+// A node is visible only if its stream, its category, AND its stage are all
+// visible.
 function isNodeVisible(node) {
   if (state.hiddenStreams.has(node.stream)) return false;
   if (state.hiddenCategories.has(node.category)) return false;
+  if (state.hiddenStages.has(node.stage)) return false;
   return true;
 }

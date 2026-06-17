@@ -28,6 +28,7 @@ const state = {
   hoveredNodeId: null,
   hiddenStreams: new Set(),
   hiddenCategories: new Set(),
+  hiddenStages: new Set(),
   ancestorSet: new Set(),
   descendantSet: new Set(),
   highlightedEdgeIds: new Set(),
@@ -177,6 +178,7 @@ let layout = {
   rowY: {},
   rowHeights: {},
   colX: {},
+  colWidths: {},
   totalWidth: 0,
   totalHeight: 0,
 };
