@@ -197,26 +197,16 @@ function render() {
     const endX   = toPos.x;
     const endY   = toPos.y + toPos.height / 2;
 
-    // A feedback edge closes a loop — it runs from a downstream node back to an
-    // upstream one, against the normal flow. cycleInfo (rebuilt before every
-    // render) flags exactly one loop-closing edge per cycle.
-    const isFeedbackEdge = cycleInfo.backEdgeIds.has(edge.id);
-
+    // Cubic Bezier with horizontal tangents at both ends — a smooth
+    // left-to-right curve regardless of vertical offset.
     const deltaX = endX - startX;
     const ctrlOffset = Math.max(40, Math.abs(deltaX) * 0.5);
     const ctrl1X = startX + ctrlOffset;
     const ctrl2X = endX - ctrlOffset;
-    // Normal edges keep horizontal tangents (control Y = endpoint Y) for a
-    // smooth left-to-right curve. A feedback edge runs downstream→upstream
-    // against the flow, so we bow its controls up and out of the node band to
-    // keep the loop legible instead of cutting straight back through nodes.
-    const bow = isFeedbackEdge ? BACKEDGE_BOW : 0;
-    const ctrl1Y = startY - bow;
-    const ctrl2Y = endY - bow;
     const pathD =
       "M " + startX + "," + startY +
-      " C " + ctrl1X + "," + ctrl1Y +
-      " " + ctrl2X + "," + ctrl2Y +
+      " C " + ctrl1X + "," + startY +
+      " " + ctrl2X + "," + endY +
       " " + endX + "," + endY;
 
     // Default styling — overridden if the edge is highlighted by a selection.
@@ -272,8 +262,7 @@ function render() {
     // Effect class lets CSS bind colour-based styles (selected-edge halo, etc)
     // without having to parse the inline stroke value.
     const effectClass = edge.effect ? ' effect-' + edge.effect : '';
-    const feedbackClass = isFeedbackEdge ? ' feedback' : '';
-    const classAttr = ' class="edge-path' + effectClass + feedbackClass + (dimmed ? ' dimmed' : '') + (isEdgeFlashed ? ' flashed' : '') + (isEdgeSelected ? ' selected' : '') + '"';
+    const classAttr = ' class="edge-path' + effectClass + (dimmed ? ' dimmed' : '') + (isEdgeFlashed ? ' flashed' : '') + (isEdgeSelected ? ' selected' : '') + '"';
     content += '<path' + classAttr + ' data-edge-id="' + edge.id + '" d="' + pathD + '" stroke="' + strokeColor + '" stroke-width="' + strokeWidth + '" stroke-opacity="' + strokeOpacity + '"' + markerEnd + '></path>';
   }
 

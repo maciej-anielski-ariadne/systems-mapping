@@ -1,12 +1,16 @@
 // =============================================================================
 // GRAPH TRAVERSAL + SELECTION
 // -----------------------------------------------------------------------------
-// When the user clicks a node we need to know:
-//   • Every node UPSTREAM   (an "ancestor"   — feeds into the selected node)
-//   • Every node DOWNSTREAM (a "descendant" — is affected by the selected node)
-//   • Every edge that connects nodes within the ancestor or descendant set
+// When the user clicks a node we highlight only its DIRECT connections:
+//   • Its direct inputs  (nodes with an edge pointing straight into it)
+//   • Its direct outputs (nodes it has an edge pointing straight to)
+//   • The edges between the selected node and those direct neighbours
 //
-// This file contains the BFS traversal helpers plus the small selectNode /
+// (We deliberately stop at one hop rather than walking the whole upstream /
+// downstream tree — the immediate connections are what the user is usually
+// reasoning about, and lighting up the full transitive closure swamps that.)
+//
+// This file contains the neighbour helpers plus the small selectNode /
 // deselectNode functions that update state and trigger a re-render.
 // =============================================================================
 
@@ -14,56 +18,26 @@
 // initialized to [] for every node by rebuildIndexes (06-data-loader.js),
 // so we don't need defensive `|| []` fallbacks when reading them.
 
-// Breadth-first walk backwards along incoming edges, collecting every
-// reachable node into a Set.
+// Direct upstream neighbours: nodes with an edge pointing straight into nodeId.
 function getAncestors(nodeId) {
-  const visited = new Set();
-  const queue = [nodeId];
-  while (queue.length > 0) {
-    const current = queue.shift();
-    for (const edge of incomingEdges[current]) {
-      if (!visited.has(edge.from)) {
-        visited.add(edge.from);
-        queue.push(edge.from);
-      }
-    }
-  }
-  return visited;
+  const direct = new Set();
+  for (const edge of incomingEdges[nodeId]) direct.add(edge.from);
+  return direct;
 }
 
-// Breadth-first walk forwards along outgoing edges.
+// Direct downstream neighbours: nodes nodeId has an edge pointing straight to.
 function getDescendants(nodeId) {
-  const visited = new Set();
-  const queue = [nodeId];
-  while (queue.length > 0) {
-    const current = queue.shift();
-    for (const edge of outgoingEdges[current]) {
-      if (!visited.has(edge.to)) {
-        visited.add(edge.to);
-        queue.push(edge.to);
-      }
-    }
-  }
-  return visited;
+  const direct = new Set();
+  for (const edge of outgoingEdges[nodeId]) direct.add(edge.to);
+  return direct;
 }
 
-// Decide which edges should be highlighted given a selected node. An edge is
-// highlighted if BOTH its endpoints are in the upstream chain OR both are in
-// the downstream chain (including the selected node itself).
+// Edges directly connecting the selected node to its neighbours — that is, its
+// own incoming and outgoing edges.
 function computeHighlightedEdges(nodeId) {
   const edges = new Set();
-  const ancestors   = state.ancestorSet;
-  const descendants = state.descendantSet;
-
-  for (const edge of EDGES) {
-    const fromInAncestors = ancestors.has(edge.from) || edge.from === nodeId;
-    const toInAncestors   = ancestors.has(edge.to)   || edge.to   === nodeId;
-    if (fromInAncestors && toInAncestors) edges.add(edge.id);
-
-    const fromInDescendants = descendants.has(edge.from) || edge.from === nodeId;
-    const toInDescendants   = descendants.has(edge.to)   || edge.to   === nodeId;
-    if (fromInDescendants && toInDescendants) edges.add(edge.id);
-  }
+  for (const edge of incomingEdges[nodeId]) edges.add(edge.id);
+  for (const edge of outgoingEdges[nodeId]) edges.add(edge.id);
   return edges;
 }
 

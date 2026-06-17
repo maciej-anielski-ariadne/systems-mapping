@@ -139,13 +139,6 @@ body.panning * {
   opacity: 0.05;
 }
 
-/* Feedback edges close a loop (output feeding back to an upstream input).
- * Dashed so they read as "this runs against the normal left-to-right flow".
- * The path itself is also bowed away from the node band (see 11-rendering.js). */
-.edge-path.feedback {
-  stroke-dasharray: 6 4;
-}
-
 /* === Row labels on the left (one per stream) === */
 .row-label-bg {
   fill: var(--bg-deep);
