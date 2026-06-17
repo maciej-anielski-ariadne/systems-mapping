@@ -390,6 +390,7 @@ if (_vizSvgEl && vizScrollEl) {
 
   _vizSvgEl.addEventListener("mousedown", event => {
     if (event.button !== 0) return;                            // left button only
+    if (event.shiftKey) return;                                // shift+drag = marquee select (16e), not pan
     if (event.target.closest && event.target.closest(".node-group, .row-label-group, .ghost-cell, .edge-handle, .edge-hit, .edge-path")) return;
     panStart = {
       clientX:    event.clientX,

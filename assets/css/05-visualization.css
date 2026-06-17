@@ -400,6 +400,19 @@ body.node-dragging * {
   pointer-events: none;
   filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.45));
 }
+.node-drag-preview .drag-count-badge {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+}
+/* Marquee selection box (shift+drag on empty canvas). See 16e-canvas-edit.js. */
+.marquee-box {
+  fill: rgba(96, 165, 250, 0.12);
+  stroke: var(--accent-blue, #60a5fa);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
+}
+body.marquee-selecting { cursor: crosshair; }
+body.marquee-selecting .viz-svg { cursor: crosshair; }
 .drop-target-cell {
   fill: rgba(96, 165, 250, 0.12);
   stroke: var(--accent-blue);

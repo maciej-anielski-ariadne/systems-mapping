@@ -43,7 +43,24 @@ function computeHighlightedEdges(nodeId) {
 
 // ───── Select / deselect ──────────────────────────────────────────────────
 
-// Toggle behaviour: clicking the already-selected node deselects it.
+// Recompute the ancestor / descendant / highlighted-edge sets for the current
+// selection. Neighbour highlighting only makes sense for a single selected node
+// — when more than one node is selected we clear it so the canvas isn't a wall
+// of blue/amber borders. Called by selectNode / toggle / marquee / setSelection.
+function refreshNeighborHighlight() {
+  if (state.selectedNodeIds.size === 1 && state.selectedNodeId) {
+    state.ancestorSet        = getAncestors(state.selectedNodeId);
+    state.descendantSet      = getDescendants(state.selectedNodeId);
+    state.highlightedEdgeIds = computeHighlightedEdges(state.selectedNodeId);
+  } else {
+    state.ancestorSet        = new Set();
+    state.descendantSet      = new Set();
+    state.highlightedEdgeIds = new Set();
+  }
+}
+
+// Toggle behaviour: clicking the already-selected node deselects it. A plain
+// click always collapses to a single-node selection (clearing any multi-set).
 function selectNode(nodeId) {
   // Any selection change ends an in-flight inline rename — fold the typed
   // characters into a single history snapshot before moving on. Safe to call
@@ -57,30 +74,76 @@ function selectNode(nodeId) {
   // Empty-cell keyboard cursor (16i) is mutually exclusive with a selected
   // node — picking a node retires the placeholder.
   if (state.canvasEdit) state.canvasEdit.cursorCell = null;
-  if (state.selectedNodeId === nodeId) {
+  // Toggle off only when this is the lone current selection — clicking one of
+  // several multi-selected nodes collapses to just that node instead.
+  if (state.selectedNodeId === nodeId && state.selectedNodeIds.size <= 1) {
     deselectNode();
     return;
   }
   state.selectedNodeId = nodeId;
+  state.selectedNodeIds = new Set([nodeId]);
   state.selectedEdgeId = null;   // node and edge selection are mutually exclusive
-  state.ancestorSet = getAncestors(nodeId);
-  state.descendantSet = getDescendants(nodeId);
-  state.highlightedEdgeIds = computeHighlightedEdges(nodeId);
+  refreshNeighborHighlight();
   render();
   renderDetailPanel();
+  if (typeof renderMultiSelectBar === "function") renderMultiSelectBar();
   saveUiStateToStorage();
+}
+
+// Shift+click a node: add it to / remove it from the multi-selection without
+// disturbing the rest. The newest-added node becomes the primary; removing the
+// primary re-picks another member (or clears selection entirely).
+function toggleNodeInSelection(nodeId) {
+  if (typeof commitInlineRename === "function") commitInlineRename();
+  if (typeof endEdgeCycleSession === "function") endEdgeCycleSession();
+  if (state.canvasEdit) state.canvasEdit.cursorCell = null;
+  state.selectedEdgeId = null;
+  if (state.selectedNodeIds.has(nodeId)) {
+    state.selectedNodeIds.delete(nodeId);
+    if (state.selectedNodeId === nodeId) {
+      const remaining = [...state.selectedNodeIds];
+      state.selectedNodeId = remaining.length ? remaining[remaining.length - 1] : null;
+    }
+  } else {
+    state.selectedNodeIds.add(nodeId);
+    state.selectedNodeId = nodeId;   // newest becomes primary
+  }
+  refreshNeighborHighlight();
+  render();
+  renderDetailPanel();
+  if (typeof renderMultiSelectBar === "function") renderMultiSelectBar();
+  saveUiStateToStorage();
+}
+
+// Replace the whole selection with the given ids, picking primaryId as primary
+// when it's a member (else the first id). Deliberately does NOT render — the
+// caller (e.g. the marquee move loop) renders once after calling this.
+function setSelection(ids, primaryId) {
+  if (typeof endEdgeCycleSession === "function") endEdgeCycleSession();
+  state.selectedNodeIds = new Set(ids);
+  state.selectedEdgeId = null;
+  if (state.selectedNodeIds.size) {
+    state.selectedNodeId = (primaryId && state.selectedNodeIds.has(primaryId))
+      ? primaryId
+      : [...state.selectedNodeIds][0];
+  } else {
+    state.selectedNodeId = null;
+  }
+  refreshNeighborHighlight();
 }
 
 function deselectNode() {
   if (typeof commitInlineRename === "function") commitInlineRename();
   if (typeof endEdgeCycleSession === "function") endEdgeCycleSession();
   state.selectedNodeId = null;
+  state.selectedNodeIds = new Set();
   state.selectedEdgeId = null;
   state.ancestorSet = new Set();
   state.descendantSet = new Set();
   state.highlightedEdgeIds = new Set();
   render();
   renderDetailPanel();
+  if (typeof renderMultiSelectBar === "function") renderMultiSelectBar();
   saveUiStateToStorage();
 }
 
@@ -105,6 +168,10 @@ function selectEdge(edgeId) {
   // Promote to a real selection so Delete-key dispatch (16e:deleteSelection)
   // and the .edge-path.selected CSS (05-visualization.css:260) both fire.
   state.selectedEdgeId = edgeId;
+  // Edge selection is its own mode — drop any multi-node selection so the
+  // batch action bar hides and Delete targets the edge.
+  state.selectedNodeIds = new Set();
+  if (typeof renderMultiSelectBar === "function") renderMultiSelectBar();
 
   if (state.selectedNodeId === edge.from) {
     render();
@@ -143,6 +210,7 @@ function deselectAll() {
   if (typeof commitInlineRename === "function") commitInlineRename();
   if (state.canvasEdit) state.canvasEdit.cursorCell = null;
   state.selectedNodeId = null;
+  state.selectedNodeIds = new Set();
   state.selectedEdgeId = null;
   state.ancestorSet = new Set();
   state.descendantSet = new Set();
@@ -150,6 +218,7 @@ function deselectAll() {
   if (state.canvasEdit) state.canvasEdit.flashedEdgeId = null;
   render();
   renderDetailPanel();
+  if (typeof renderMultiSelectBar === "function") renderMultiSelectBar();
   saveUiStateToStorage();
 }
 

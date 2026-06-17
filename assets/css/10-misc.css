@@ -71,6 +71,65 @@
   color: var(--text-primary);
 }
 
+/* === Multi-select action bar (bottom-centre, above the undo toast) ===
+ * Appears when 2+ nodes are selected (shift+drag marquee / shift+click). Batch
+ * edit (category/stream/stage) + delete for the whole selection. See
+ * 16j-multi-select-bar.js. Offset above the undo toast so a batch-delete toast
+ * doesn't overlap it. */
+.multi-select-bar {
+  position: fixed;
+  bottom: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-light);
+  color: var(--text-primary);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--border-strong);
+  z-index: 221;
+  animation: undo-toast-slide-in 0.22s ease;
+}
+
+.multi-select-bar .msb-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.multi-select-bar .msb-select {
+  background: var(--bg-dark, #0f172a);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  font-size: 12px;
+  padding: 5px 6px;
+  cursor: pointer;
+}
+
+.multi-select-bar .msb-delete {
+  background: none;
+  color: var(--accent-red, #f87171);
+  border: 1px solid var(--border-strong);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  padding: 5px 10px;
+  border-radius: 5px;
+  transition: background 0.12s, color 0.12s;
+}
+.multi-select-bar .msb-delete:hover {
+  background: rgba(248, 113, 113, 0.15);
+}
+
 /* === When no data is loaded, the side panels are dimmed and inert === */
 body.no-data .sidebar,
 body.no-data .detail-panel {

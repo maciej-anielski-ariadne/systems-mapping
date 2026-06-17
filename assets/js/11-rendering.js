@@ -24,7 +24,7 @@ svg.addEventListener("click", event => {
   if (event.target.closest && event.target.closest(".node-group, .row-label-group, .edge-handle, .ghost-cell, .edge-hit, .edge-path")) {
     return;
   }
-  if (state.selectedNodeId) {
+  if (state.selectedNodeId || (state.selectedNodeIds && state.selectedNodeIds.size)) {
     deselectAll();
   }
 });
@@ -217,7 +217,10 @@ function render() {
     let dimmed        = false;
     const isEdgeFlashed = edge.id === flashedEdgeId;
 
-    if (state.selectedNodeId) {
+    // Only a single-node selection highlights/dims edges — a multi-selection
+    // suppresses neighbour highlighting (highlightedEdgeIds is empty), so leave
+    // every edge at its default styling rather than dimming them all.
+    if (state.selectedNodeId && state.selectedNodeIds.size <= 1) {
       const isHighlighted = state.highlightedEdgeIds.has(edge.id);
       if (isHighlighted) {
         if      (edge.effect === "increases") strokeColor = "var(--edge-increases)";
@@ -283,10 +286,15 @@ function render() {
 
     // Class flags applied to the <g> wrapper — see 05-visualization.css
     // and 12-no-borders.css (state glows) + 13-search.css (search halo).
+    // Every member of the multi-selection gets the "selected" glow. The
+    // ancestor/descendant/dimmed neighbour treatment only applies in
+    // single-select (refreshNeighborHighlight empties those sets when >1 is
+    // selected, so multi-select renders un-selected nodes plainly — no noise).
     let nodeClasses = "node-group";
-    if (state.selectedNodeId) {
-      if      (node.id === state.selectedNodeId)  nodeClasses += " selected";
-      else if (state.ancestorSet.has(node.id))    nodeClasses += " ancestor";
+    if (state.selectedNodeIds.has(node.id)) {
+      nodeClasses += " selected";
+    } else if (state.selectedNodeId && state.selectedNodeIds.size <= 1) {
+      if      (state.ancestorSet.has(node.id))    nodeClasses += " ancestor";
       else if (state.descendantSet.has(node.id))  nodeClasses += " descendant";
       else                                        nodeClasses += " dimmed";
     }
@@ -303,7 +311,7 @@ function render() {
     let strokeWidth = 1;
     const outcomeStatusColor = getOutcomeBorderColor(node.id);
 
-    if (node.id === state.selectedNodeId) {
+    if (state.selectedNodeIds.has(node.id)) {
       strokeColor = "#ffffff";
       strokeWidth = 2.5;
     } else if (state.ancestorSet.has(node.id)) {
@@ -312,7 +320,7 @@ function render() {
     } else if (state.descendantSet.has(node.id)) {
       strokeColor = "var(--edge-descendant)";
       strokeWidth = 2;
-    } else if (outcomeStatusColor && !state.selectedNodeId) {
+    } else if (outcomeStatusColor && !state.selectedNodeId && !state.selectedNodeIds.size) {
       // Show good/bad colour around outcome nodes when nothing is selected.
       strokeColor = outcomeStatusColor;
       strokeWidth = 2;
@@ -418,7 +426,25 @@ function render() {
       content += '<tspan x="' + (px + 14) + '" dy="' + dy + '">' + escapeHtml(previewLines[i]) + '</tspan>';
     }
     content += '</text>';
+    // Group drag: a count badge in the corner so it's clear the whole
+    // selection is moving, not just the previewed primary node.
+    if (drag.groupIds && drag.groupIds.length > 1) {
+      const bx = px + NODE_WIDTH;
+      const by = py;
+      content += '<circle class="drag-count-badge" cx="' + bx + '" cy="' + by + '" r="11" fill="#1e293b" stroke="#ffffff" stroke-width="1.5"></circle>';
+      content += '<text x="' + bx + '" y="' + by + '" text-anchor="middle" dominant-baseline="central" fill="#ffffff" font-size="11" font-weight="600">' + drag.groupIds.length + '</text>';
+    }
     content += '</g>';
+  }
+
+  // ───── Marquee selection box (shift+drag on empty canvas) ─────────────
+  const marquee = state.canvasEdit && state.canvasEdit.marquee;
+  if (marquee) {
+    const mx = Math.min(marquee.startX, marquee.currentX);
+    const my = Math.min(marquee.startY, marquee.currentY);
+    const mw = Math.abs(marquee.currentX - marquee.startX);
+    const mh = Math.abs(marquee.currentY - marquee.startY);
+    content += '<rect class="marquee-box" x="' + mx + '" y="' + my + '" width="' + mw + '" height="' + mh + '" rx="2"></rect>';
   }
 
   // ───── Empty-state hint when no nodes exist ───────────────────────────
