@@ -78,34 +78,33 @@ function computeHighlightedEdges(nodeId, depth = state.highlightDepth) {
 }
 
 // The deepest highlight that still reveals new nodes: the longest shortest-path
-// distance (in hops) from any node, walking either upstream (incoming edges) or
-// downstream (outgoing). Past this, raising the highlight depth lights up
-// nothing further, so the depth control (17-events.js) uses it as a dynamic cap
-// instead of a fixed ceiling. Cached into the global `maxHighlightDepth` by
-// rebuildIndexes. Falls back to 1 for an empty or edge-less map.
+// distance (in hops) between any two connected nodes. Walking downstream from
+// every node is enough to find it — the longest shortest path, measured
+// downstream from its start, is the same path measured upstream from its end,
+// so we don't need a second upstream sweep. Past this depth, raising the
+// highlight lights up nothing further, so the depth control (17-events.js) uses
+// it as a dynamic cap instead of a fixed ceiling. Cached into the global
+// `maxHighlightDepth` by rebuildIndexes. Falls back to 1 for an edge-less map.
 function computeMaxHighlightDepth() {
   let max = 1;
   for (const node of NODES) {
-    for (const [adjacency, endpoint] of [[incomingEdges, "from"], [outgoingEdges, "to"]]) {
-      const visited = new Set([node.id]);
-      let frontier = [node.id];
-      let level = 0;
-      while (frontier.length) {
-        const next = [];
-        for (const id of frontier) {
-          for (const edge of adjacency[id]) {
-            const neighbour = edge[endpoint];
-            if (!visited.has(neighbour)) {
-              visited.add(neighbour);
-              next.push(neighbour);
-            }
+    const visited = new Set([node.id]);
+    let frontier = [node.id];
+    let level = 0;
+    while (frontier.length) {
+      const next = [];
+      for (const id of frontier) {
+        for (const edge of outgoingEdges[id]) {
+          if (!visited.has(edge.to)) {
+            visited.add(edge.to);
+            next.push(edge.to);
           }
         }
-        if (next.length) level++;
-        frontier = next;
       }
-      if (level > max) max = level;
+      if (next.length) level++;
+      frontier = next;
     }
+    if (level > max) max = level;
   }
   return max;
 }
