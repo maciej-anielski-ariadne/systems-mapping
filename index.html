@@ -206,22 +206,35 @@
       <svg id="viz-svg" class="viz-svg"></svg>
     </div>
 
-    <!-- Highlight-depth control (bottom-right, above the zoom controls).
-         Sets how many connected levels light up when a node is selected.
-         JS in 17-events.js wires the −/+ buttons. -->
-    <div class="viz-depth-controls" id="viz-depth-controls"
-         title="How many connected levels to highlight when a node is selected">
-      <span class="viz-depth-label">Depth</span>
-      <button class="viz-depth-button" id="viz-depth-down" aria-label="Decrease highlight depth">−</button>
-      <span class="viz-depth-readout" id="viz-depth-readout">1</span>
-      <button class="viz-depth-button" id="viz-depth-up" aria-label="Increase highlight depth">+</button>
-    </div>
+    <!-- Map controls cluster (bottom-right): highlight-depth + zoom. Stacked
+         on narrow viewports, laid out side by side on widescreen. Each control
+         carries a title so the two are easy to tell apart. JS in 17-events.js
+         wires the −/+ buttons. -->
+    <div class="viz-controls-cluster" id="viz-controls-cluster">
 
-    <!-- Zoom controls (bottom-right). JS in 17-events.js wires them. -->
-    <div class="viz-zoom-controls" id="viz-zoom-controls">
-      <button class="viz-zoom-button" id="viz-zoom-out"  title="Zoom out (Ctrl+−)" aria-label="Zoom out">−</button>
-      <button class="viz-zoom-readout" id="viz-zoom-readout" title="Reset zoom (click)">100%</button>
-      <button class="viz-zoom-button" id="viz-zoom-in"   title="Zoom in (Ctrl+=)"  aria-label="Zoom in">+</button>
+      <!-- Highlight-depth: how many connected levels light up when a node is
+           selected. -->
+      <div class="viz-depth-controls" id="viz-depth-controls"
+           title="How many connected levels to highlight when a node is selected">
+        <span class="viz-control-title">Highlight Depth</span>
+        <div class="viz-control-row">
+          <button class="viz-depth-button" id="viz-depth-down" aria-label="Decrease highlight depth">−</button>
+          <span class="viz-depth-readout" id="viz-depth-readout">1</span>
+          <button class="viz-depth-button" id="viz-depth-up" aria-label="Increase highlight depth">+</button>
+        </div>
+      </div>
+
+      <!-- Zoom. -->
+      <div class="viz-zoom-controls" id="viz-zoom-controls"
+           title="Zoom the map in and out">
+        <span class="viz-control-title">Zoom</span>
+        <div class="viz-control-row">
+          <button class="viz-zoom-button" id="viz-zoom-out"  title="Zoom out (Ctrl+−)" aria-label="Zoom out">−</button>
+          <button class="viz-zoom-readout" id="viz-zoom-readout" title="Reset zoom (click)">100%</button>
+          <button class="viz-zoom-button" id="viz-zoom-in"   title="Zoom in (Ctrl+=)"  aria-label="Zoom in">+</button>
+        </div>
+      </div>
+
     </div>
 
     <!-- Optional CSV-import overlay. No longer shown at startup — the

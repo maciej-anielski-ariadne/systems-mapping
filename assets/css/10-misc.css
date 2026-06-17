@@ -137,109 +137,118 @@ body.no-data .detail-panel {
   pointer-events: none;
 }
 
-/* === Highlight-depth control (bottom-right, sits above the zoom controls) ===
- * Same glass look + z-index as the zoom controls; positioned one row up. */
-.viz-depth-controls {
-  position: absolute;
-  bottom: 50px;
-  right: 12px;
-  z-index: 50;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  background: rgba(17, 24, 39, 0.85);
-  backdrop-filter: blur(8px);
-  padding: 3px;
-  border-radius: 6px;
-  font-family: var(--font-mono);
-}
-
-.viz-depth-label {
-  color: var(--text-tertiary);
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  padding: 0 6px;
-}
-
-.viz-depth-button,
-.viz-depth-readout {
-  background: transparent;
-  color: var(--text-secondary);
-  border-radius: 4px;
-  height: 26px;
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-}
-
-.viz-depth-button {
-  width: 26px;
-  font-size: 16px;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-
-.viz-depth-readout {
-  min-width: 22px;
-  font-size: 12px;
-}
-
-.viz-depth-button:hover {
-  color: var(--text-primary);
-  background: var(--bg-light);
-}
-
-/* === Zoom controls (bottom-right of the viz area) ===
+/* === Map controls cluster (bottom-right): highlight-depth + zoom ===
  * z-index 50 so the controls stay visible (and clickable) even when an
- * unpinned sidebar/detail panel is hovered and expands as an overlay
- * over the viz — those panels live at z-index 30. */
-.viz-zoom-controls {
+ * unpinned sidebar/detail panel is hovered and expands as an overlay over
+ * the viz — those panels live at z-index 30.
+ *
+ * Stacked vertically by default (narrow viewports); on widescreen the two
+ * titled cards sit side by side instead of on top of each other. */
+.viz-controls-cluster {
   position: absolute;
   bottom: 12px;
   right: 12px;
   z-index: 50;
   display: flex;
-  align-items: center;
-  gap: 2px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+@media (min-width: 1024px) {
+  .viz-controls-cluster {
+    flex-direction: row;
+    align-items: flex-end;
+  }
+}
+
+/* Shared shell for both controls: a titled glass card with a button row.
+ * Both share one fixed width so the cards line up exactly. */
+.viz-depth-controls,
+.viz-zoom-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 120px;
   background: rgba(17, 24, 39, 0.85);
   backdrop-filter: blur(8px);
-  padding: 3px;
+  padding: 5px 6px;
   border-radius: 6px;
   font-family: var(--font-mono);
 }
 
+/* Card title so the user can tell the two controls apart. */
+.viz-control-title {
+  color: var(--text-tertiary);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* The −/readout/+ row inside each card. */
+.viz-control-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px;
+}
+
+.viz-depth-button,
+.viz-depth-readout,
 .viz-zoom-button,
 .viz-zoom-readout {
   background: transparent;
   color: var(--text-secondary);
-  cursor: pointer;
   border-radius: 4px;
   height: 26px;
   line-height: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s, color 0.15s;
   padding: 0;
 }
 
+.viz-depth-button,
 .viz-zoom-button {
   width: 26px;
   font-size: 16px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+/* Readouts stretch to fill the space between the −/+ buttons. */
+.viz-depth-readout {
+  flex: 1;
+  font-size: 12px;
 }
 
 .viz-zoom-readout {
-  min-width: 44px;
+  flex: 1;
   font-size: 11px;
   letter-spacing: 0.04em;
-  padding: 0 4px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
 }
 
+.viz-depth-button:hover,
 .viz-zoom-button:hover,
 .viz-zoom-readout:hover {
   color: var(--text-primary);
   background: var(--bg-light);
+}
+
+/* A button parked at the end of its range (e.g. depth already at the map's
+ * maximum) reads as inert. */
+.viz-depth-button:disabled,
+.viz-zoom-button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.viz-depth-button:disabled:hover,
+.viz-zoom-button:disabled:hover {
+  color: var(--text-secondary);
+  background: transparent;
 }
