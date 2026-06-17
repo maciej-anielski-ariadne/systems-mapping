@@ -54,6 +54,7 @@ function openBuilder(options) {
 
 function closeBuilder() {
   state.builder.open = false;
+  state.builder.selected = new Set();
   hideCellEditor();
   clearBuilderFromStorage();
   const overlay = document.getElementById("builder-overlay");
@@ -71,6 +72,7 @@ function seedBuilderEmpty() {
   state.builder.defaults   = { enables: 0.30, increases: 0.25, decreases: -0.25 };
   state.builder.nodes      = [];
   state.builder.edges      = [];
+  state.builder.selected   = new Set();
   state.builder.focusAfterRender = null;
 }
 
@@ -106,6 +108,7 @@ function seedBuilderFromLiveData() {
     elasticity: e.elasticity !== undefined ? e.elasticity : "",
     description: e.description || "",
   }));
+  state.builder.selected = new Set();
   state.builder.focusAfterRender = null;
 }
 
@@ -118,6 +121,7 @@ function seedBuilderFromSample() {
     return;
   }
   const sections = parseCsvDocument(SAMPLE_CSV);
+  state.builder.selected = new Set();
 
   state.builder.streams = (sections.streams || []).map(row => ({
     id: row.id || "", label: row.label || "", short: row.short || "", color: row.color || "#94a3b8",
@@ -311,4 +315,41 @@ function duplicateBuilderRow(section, index) {
   if (copy.id !== undefined) copy.id = "";
   state.builder[section].splice(index + 1, 0, copy);
   return index + 1;
+}
+
+// ───── Bulk row mutations (wizard multi-select) ───────────────────────────
+// Delete every row whose index is in `state.builder.selected`. Splice from the
+// highest index down so earlier indices stay valid as we remove. Clears the
+// selection (the indices it held no longer mean anything). Returns the count
+// removed.
+function deleteBuilderSelectedRows(section) {
+  const arr = state.builder[section];
+  if (!arr) return 0;
+  const indices = [...state.builder.selected].filter(i => i >= 0 && i < arr.length);
+  indices.sort((a, b) => b - a);
+  for (const i of indices) arr.splice(i, 1);
+  state.builder.selected = new Set();
+  return indices.length;
+}
+
+// Set one field on every selected row in `section`. Coercion mirrors
+// handleBuilderInput: number for numeric fields, boolean for controllable.
+// Selection indices are left intact (a field write doesn't shift rows), so the
+// same rows stay selected after the re-render. Returns the count changed.
+function applyBuilderBulkField(section, field, value) {
+  const arr = state.builder[section];
+  if (!arr) return 0;
+  let changed = 0;
+  for (const i of state.builder.selected) {
+    const row = arr[i];
+    if (!row) continue;
+    let v = value;
+    if (field === "controllable")   v = (value === "true" || value === true);
+    else if (field === "elasticity") v = (value === "" ? "" : parseFloat(value));
+    if (typeof v === "number" && isNaN(v)) continue;
+    if (row[field] === v) continue;
+    row[field] = v;
+    changed++;
+  }
+  return changed;
 }
