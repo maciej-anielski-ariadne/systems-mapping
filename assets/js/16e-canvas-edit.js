@@ -438,12 +438,12 @@ function handleSvgMouseMove(event) {
   }
   const layoutPoint = clientPointToLayout(event.clientX, event.clientY);
   if (!layoutPoint) return;
-  // The placeholder tracks the cursor EVERYWHERE inside a cell — including over
-  // existing notes — and reports the slot the new note would land in. Reuse the
-  // drag's hit-test with no excluded node so it counts every sibling. Notes
-  // render above the (pointer-transparent) placeholder, so a click still lands
-  // on a note when the cursor is over one; the gap just previews insertion.
-  const cell = dropCellForDrag(layoutPoint.x, layoutPoint.y);
+  // The placeholder only previews insertion when the cursor is in a GAP — the
+  // space between two notes, above the first note, or below the last (an empty
+  // cell is one big gap). Hovering directly over a note returns null, so the
+  // ghost no longer pops up while the user is drawing an edge from a note or
+  // shift-clicking notes to multi-select. See insertionGapCell.
+  const cell = insertionGapCell(layoutPoint.x, layoutPoint.y);
   const prev = state.canvasEdit && state.canvasEdit.hoverCell;
   const same = (prev && cell && prev.streamId === cell.streamId &&
                 prev.stageId === cell.stageId && prev.insertIndex === cell.insertIndex) ||
@@ -1035,6 +1035,53 @@ function dropCellForDrag(x, y, draggedNodeId) {
   for (let i = 0; i < siblings.length; i++) {
     const slotMidY = cellTopY + i * (NODE_HEIGHT + NODE_GAP_Y) + NODE_HEIGHT / 2;
     if (y < slotMidY) { insertIndex = i; break; }
+  }
+  return { streamId: foundStream.id, stageId: foundStage.id, insertIndex: insertIndex };
+}
+
+// Like dropCellForDrag, but for the shift-hover creation placeholder: it only
+// returns a cell when the cursor sits in a GAP — between two notes, above the
+// first note, or below the last (an empty cell is one big gap). Hovering over a
+// note body returns null so the ghost doesn't appear while drawing an edge or
+// shift-clicking notes to multi-select. The insert slot is the number of notes
+// sitting entirely above the cursor. Uses the live layout positions, so it
+// stays consistent whether or not the stack is already parted for a placeholder.
+function insertionGapCell(x, y) {
+  if (x < ROW_HEADER_WIDTH) return null;
+  if (y < SVG_PADDING_TOP + COL_HEADER_HEIGHT) return null;
+
+  let foundStream = null;
+  for (const stream of STREAMS) {
+    if (state.hiddenStreams.has(stream.id)) continue;
+    const top = layout.rowY[stream.id];
+    const bot = top + layout.rowHeights[stream.id];
+    if (y >= top && y < bot) { foundStream = stream; break; }
+  }
+  if (!foundStream) return null;
+
+  let foundStage = null;
+  for (const stage of STAGES) {
+    const left = layout.colX[stage.id];
+    if (left === undefined) continue;
+    if (x >= left && x < left + NODE_WIDTH) { foundStage = stage; break; }
+  }
+  if (!foundStage) return null;
+
+  const siblings = NODES.filter(n => n.stream === foundStream.id && n.stage === foundStage.id);
+
+  // Empty cell — the whole cell is a gap.
+  if (siblings.length === 0) {
+    return { streamId: foundStream.id, stageId: foundStage.id, insertIndex: 0 };
+  }
+
+  // Over a note body → no placeholder. Otherwise the cursor is in a gap and the
+  // insert slot is the count of notes sitting entirely above it.
+  let insertIndex = 0;
+  for (const n of siblings) {
+    const pos = layout.positions[n.id];
+    if (!pos) continue;
+    if (y >= pos.y && y < pos.y + pos.height) return null; // over a note body
+    if (pos.y + pos.height <= y) insertIndex++;             // note is above the cursor
   }
   return { streamId: foundStream.id, stageId: foundStage.id, insertIndex: insertIndex };
 }
