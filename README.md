@@ -17,7 +17,7 @@ The header has six buttons left-to-right: **Create Map · Edit Data · Import Da
 
 ## What you get
 
-- Layered DAG layout: streams (rows) × stages (columns), nodes placed in grid cells, edges as bezier curves.
+- Layered layout: streams (rows) × stages (columns), nodes placed in grid cells, edges as bezier curves. Feedback edges (loops) are drawn dashed and bowed.
 - Click a node → highlights upstream causes (blue) and downstream impacts (amber), dims everything else.
 - Click a stream label (sidebar or row header) → collapse / expand the whole stream.
 - **Smart search** → fuzzy match on node labels, descriptions, and IDs (handles typos like "brder" → "Border" and word-initials like "bff" → "Border Force FTE"). Top results show as a dropdown below the search box; matching nodes get an amber halo on the map. Press `/` from anywhere on the page to jump to the search box.
@@ -131,16 +131,21 @@ Other niceties:
 
 ## Simulation model
 
-Cobb-Douglas propagation in topological order:
+Cobb-Douglas propagation, solved iteratively:
 
 ```
 value_target = baseline_target × ∏ (current_source / baseline_source) ^ elasticity_edge
 ```
 
 - Controllable nodes (sliders): `value = baseline × user_multiplier`.
-- Every other node: value computed from its incoming edges, in topo order.
+- Every other node: value computed from its incoming edges.
+- The solver sweeps nodes in topological order and iterates to a fixed point. On an acyclic map a single sweep resolves every node, so results are exact. On a map with **feedback loops** it keeps sweeping — each pass feeds the loop's values back into itself — until they converge (or a 100-iteration safety cap is hit).
 - Output is always positive, smooth, handles compounding inputs naturally, degrades gracefully at extremes (a source ratio of 0 collapses targets through any positive elasticity).
 - The `effect` label sets the default elasticity sign; a per-edge `elasticity` override always wins.
+
+### Feedback loops
+
+Edges may form loops — an output feeding back to affect an upstream input. Loop-closing edges are drawn dashed and bowed away from the node band so the loop is legible. Negative-feedback loops settle quickly; a runaway positive loop (gain ≥ 1) can't settle, so its values are clamped to something finite and a warning is shown (at load and on the simulation panel). Lower the elasticities on the loop to bring it back into a stable range.
 
 ### A note on directional semantics
 
@@ -306,7 +311,7 @@ no bundler, no transpiler.
 - **No threshold non-linearities.** Cobb-Douglas is smooth and monotone. Real-world bottlenecks have kinks (queues blow up non-linearly near capacity); not captured.
 - **No confidence intervals.** Point estimates only.
 - **No cost / budget side.** Sliders move physical inputs without cost constraints. Easy to add: an additional `unit_cost` node field summed to a budget readout in the simulation panel.
-- **DAG only.** A cycle in the edges leaves some nodes outside the topological order with a console warning, but no in-app indication.
+- **Feedback loops settle, they don't oscillate dynamically.** The iterative solver finds the steady state of a loop, not its time-path. A runaway positive loop (gain ≥ 1) has no steady state; its values are clamped and flagged rather than simulated over time.
 - **CSV only.** No JSON or API ingestion. Both would be straightforward to add to the loader.
 - **Wizard row reordering** is supported for streams, stages, and categories (grab the `⋮⋮` handle on the left of any row to drag it up or down). Node and edge order doesn't affect rendering, so the wizard doesn't expose handles there.
 - **`localStorage` only.** State persists in the browser, not in the cloud. Different browsers / private windows / incognito tabs all see their own independent state. Use **Download CSV** in the wizard to share a snapshot.

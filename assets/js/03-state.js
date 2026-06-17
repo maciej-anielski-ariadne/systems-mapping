@@ -27,6 +27,10 @@ const state = {
   simulationMode: false,
   userOverrides: {},      // nodeId → multiplier (1.0 = baseline)
   computedValues: {},     // nodeId → current value (recomputed on slider change)
+  // Status of the most recent iterative solver run (07-simulation-engine.js).
+  // converged=false means a positive feedback loop ran away (gain ≥ 1) and its
+  // values were clamped; feedbackLoopCount mirrors cycleInfo.loopCount.
+  solverStatus: { converged: true, iterations: 0, feedbackLoopCount: 0 },
   dataLoaded: false,      // false until a CSV has been loaded
   loadErrors: [],         // validation errors from the most recent load
   sidebarPinned: true,         // when false, left sidebar shows as a narrow strip and expands on hover
@@ -146,6 +150,11 @@ let incomingEdges  = {};   // node id → array of edges entering the node
 let streamById     = {};   // id → stream
 let stageById      = {};   // id → stage (with extra `index` property)
 let topologicalOrder = []; // node ids sorted so causes come before effects
+                           // (feedback-loop nodes appended at the end)
+// Feedback-loop membership, rebuilt by detectCycles() in 06-data-loader.js.
+// backEdgeIds drives distinct edge rendering; inCycleNodeIds marks loop nodes;
+// loopCount feeds state.solverStatus.feedbackLoopCount.
+let cycleInfo = { inCycleNodeIds: new Set(), backEdgeIds: new Set(), loopCount: 0 };
 let streamNodeCount   = {}; // stream id → count of nodes in that stream
 let categoryNodeCount = {}; // category id → count of nodes in that category
 

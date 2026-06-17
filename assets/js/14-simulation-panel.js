@@ -38,6 +38,10 @@ function renderSimulationPanel() {
   html +=   '<button class="sim-reset" id="sim-reset-button">Reset</button>';
   html += '</div>';
   html += '<div class="sim-help">Drag the slider or type a value. Downstream nodes recompute live.</div>';
+  // Placeholder for the feedback-loop non-convergence warning. Kept in the DOM
+  // (toggled via updateSimSolverBadge) so slider drags can update it inline
+  // without re-rendering the whole panel and stealing focus.
+  html += '<div class="sim-solver-badge" id="sim-solver-badge" style="display:none;"></div>';
 
   for (const stream of STREAMS) {
     const streamNodes = nodesByStream[stream.id];
@@ -71,6 +75,7 @@ function renderSimulationPanel() {
   }
 
   simPanel.innerHTML = html;
+  updateSimSolverBadge();
 
   // ───── Wire up the slider + the number input ──────────────────────────
   // Both call applySimMultiplier — only the source field is excluded from
@@ -123,8 +128,24 @@ function applySimMultiplier(nodeId, newMultiplier, originElement) {
   state.userOverrides[nodeId] = clamped;
   recomputeValues();
   syncSimRow(nodeId, originElement);
+  updateSimSolverBadge();
   render();
   saveUiStateToStorage();
+}
+
+// Show or hide the feedback-loop warning in the sim panel. A non-converged
+// solver run means a positive loop ran away (gain ≥ 1); its values are clamped
+// but shouldn't be trusted. Dragging a slider is the most likely way a user
+// pushes a loop into that regime, so we surface it right here, inline.
+function updateSimSolverBadge() {
+  const badge = document.getElementById("sim-solver-badge");
+  if (!badge) return;
+  if (state.solverStatus && !state.solverStatus.converged) {
+    badge.textContent = "⚠ Feedback loop didn't stabilise — values clamped. Lower the loop's elasticities.";
+    badge.style.display = "block";
+  } else {
+    badge.style.display = "none";
+  }
 }
 
 // Update the sim panel's slider + value-input + pct for one row inline,
