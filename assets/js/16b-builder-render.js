@@ -294,13 +294,15 @@ function refreshBuilderBulkBar() {
       existing.remove();
     }
   } else if (html) {
-    // No bar yet (first selection) — append after the action bar.
-    const actionBar = overlay.querySelector(".builder-step-static .builder-action-bar");
-    if (actionBar) {
+    // No bar yet (first selection) — append to the end of the static top
+    // section. (The "+ Add" action bar now lives at the BOTTOM of the table,
+    // so we can no longer anchor to it; the bulk bar stays pinned up top.)
+    const staticEl = overlay.querySelector(".builder-step-static");
+    if (staticEl) {
       const wrapper = document.createElement("div");
       wrapper.innerHTML = html;
       const fresh = wrapper.firstElementChild;
-      actionBar.parentNode.insertBefore(fresh, actionBar.nextSibling);
+      staticEl.appendChild(fresh);
       if (typeof upgradeSelectsIn === "function") upgradeSelectsIn(fresh);
     }
   }
@@ -322,12 +324,6 @@ function renderBuilderStreamsStep() {
           'Drag a row by its <code>⋮⋮</code> handle to reorder.' +
           '</div>';
 
-  html += '<div class="builder-action-bar">';
-  html +=   '<button class="builder-action" data-add="streams">+ Add stream</button>';
-  if (state.builder.streams.length === 0) {
-    html += '<button class="builder-action" id="builder-start-from-sample">Start from sample</button>';
-  }
-  html += '</div>';
   html += renderBuilderBulkBar("streams");
 
   html += BUILDER_SPLIT;
@@ -360,6 +356,12 @@ function renderBuilderStreamsStep() {
   }
 
   html += '</tbody></table>';
+  html += '<div class="builder-action-bar">';
+  html +=   '<button class="builder-action" data-add="streams">+ Add stream</button>';
+  if (state.builder.streams.length === 0) {
+    html += '<button class="builder-action" id="builder-start-from-sample">Start from sample</button>';
+  }
+  html += '</div>';
   return html;
 }
 
@@ -377,7 +379,6 @@ function renderBuilderStagesStep() {
           'Drag a row by its <code>⋮⋮</code> handle to reorder.' +
           '</div>';
 
-  html += '<div class="builder-action-bar"><button class="builder-action" data-add="stages">+ Add stage</button></div>';
   html += renderBuilderBulkBar("stages");
 
   html += BUILDER_SPLIT;
@@ -405,6 +406,7 @@ function renderBuilderStagesStep() {
     });
   }
   html += '</tbody></table>';
+  html += '<div class="builder-action-bar"><button class="builder-action" data-add="stages">+ Add stage</button></div>';
   return html;
 }
 
@@ -423,7 +425,6 @@ function renderBuilderCategoriesStep() {
           'Drag a row by its <code>⋮⋮</code> handle to reorder.' +
           '</div>';
 
-  html += '<div class="builder-action-bar"><button class="builder-action" data-add="categories">+ Add category</button></div>';
   html += renderBuilderBulkBar("categories");
 
   html += BUILDER_SPLIT;
@@ -455,6 +456,7 @@ function renderBuilderCategoriesStep() {
     });
   }
   html += '</tbody></table>';
+  html += '<div class="builder-action-bar"><button class="builder-action" data-add="categories">+ Add category</button></div>';
   return html;
 }
 
@@ -487,31 +489,31 @@ function renderBuilderNodesStep() {
             '</div>';
   }
 
-  html += '<div class="builder-action-bar"><button class="builder-action" data-add="nodes">+ Add node</button></div>';
   html += renderBuilderBulkBar("nodes");
 
   html += BUILDER_SPLIT;
   html += '<table class="builder-table">';
   html +=   '<thead><tr>' +
               selectAllTh("nodes") +
-              '<th style="width:160px">ID</th>' +
-              '<th style="width:180px">Label</th>' +
-              '<th>Description</th>' +
-              '<th style="width:110px">Stream</th>' +
-              '<th style="width:110px">Stage</th>' +
-              '<th style="width:110px">Category</th>' +
-              '<th style="width:90px">Baseline</th>' +
-              '<th style="width:90px">Unit</th>' +
-              '<th style="width:50px" title="Controllable — show as slider in Simulation mode">Slider</th>' +
-              '<th style="width:120px">Direction</th>' +
-              '<th style="width:80px">Slider max</th>' +
+              sortableTh("nodes", "id",           "ID",         ' style="width:160px"') +
+              sortableTh("nodes", "label",        "Label",      ' style="width:180px"') +
+              sortableTh("nodes", "description",  "Description", "") +
+              sortableTh("nodes", "stream",       "Stream",     ' style="width:110px"') +
+              sortableTh("nodes", "stage",        "Stage",      ' style="width:110px"') +
+              sortableTh("nodes", "category",     "Category",   ' style="width:110px"') +
+              sortableTh("nodes", "baseline",     "Baseline",   ' style="width:90px"') +
+              sortableTh("nodes", "unit",         "Unit",       ' style="width:90px"') +
+              sortableTh("nodes", "controllable", "Slider",     ' style="width:50px"') +
+              sortableTh("nodes", "direction",    "Direction",  ' style="width:120px"') +
+              sortableTh("nodes", "sliderMax",    "Slider max", ' style="width:80px"') +
               '<th style="width:90px"></th>' +
             '</tr></thead><tbody>';
 
   if (state.builder.nodes.length === 0) {
     html += tableEmptyRow(13, 'No nodes yet. Click "+ Add node".');
   } else {
-    state.builder.nodes.forEach((n, i) => {
+    sortedBuilderIndices("nodes").forEach((i) => {
+      const n = state.builder.nodes[i];
       const idInvalid       = !n.id || v.dupNodes.has(n.id)   ? ' invalid' : '';
       const streamInvalid   = !v.streamIds.has(n.stream)      ? ' invalid' : '';
       const stageInvalid    = !v.stageIds.has(n.stage)        ? ' invalid' : '';
@@ -539,6 +541,7 @@ function renderBuilderNodesStep() {
     });
   }
   html += '</tbody></table>';
+  html += '<div class="builder-action-bar"><button class="builder-action" data-add="nodes">+ Add node</button></div>';
   return html;
 }
 
@@ -552,17 +555,21 @@ function renderBuilderEdgesStep() {
   html += '<p class="builder-step-blurb">Each edge goes <b>from</b> a cause <b>to</b> an effect. ' +
           'Pick the effect type — <i>enables</i> (prerequisite), <i>increases</i> (push up), or <i>decreases</i> (push down) — ' +
           'and (optionally) override the elasticity for simulation.</p>';
-  html += '<div class="builder-step-help">' +
-          '<b>Defaults below</b> — used when the elasticity column is left blank. ' +
-          'Elasticity = % change in target value per % change in source value. ' +
-          'For <i>decreases</i> effects the default is negative.' +
-          '</div>';
-
-  html += '<div class="builder-defaults">' +
-            '<label>elasticity_enables<input type="number" step="any" data-default="enables"   value="' + state.builder.defaults.enables   + '" /></label>' +
-            '<label>elasticity_increases<input type="number" step="any" data-default="increases" value="' + state.builder.defaults.increases + '" /></label>' +
-            '<label>elasticity_decreases<input type="number" step="any" data-default="decreases" value="' + state.builder.defaults.decreases + '" /></label>' +
-          '</div>';
+  // Help text + the default-elasticity inputs sit side-by-side on a wide card
+  // (and stack on a narrow one) so the table gets more vertical room — see
+  // .builder-edges-config in 11-builder.css.
+  html += '<div class="builder-edges-config">';
+  html +=   '<div class="builder-step-help">' +
+              '<b>Defaults below</b> — used when the elasticity column is left blank. ' +
+              'Elasticity = % change in target value per % change in source value. ' +
+              'For <i>decreases</i> effects the default is negative.' +
+            '</div>';
+  html +=   '<div class="builder-defaults">' +
+              '<label>elasticity_enables<input type="number" step="any" data-default="enables"   value="' + state.builder.defaults.enables   + '" /></label>' +
+              '<label>elasticity_increases<input type="number" step="any" data-default="increases" value="' + state.builder.defaults.increases + '" /></label>' +
+              '<label>elasticity_decreases<input type="number" step="any" data-default="decreases" value="' + state.builder.defaults.decreases + '" /></label>' +
+            '</div>';
+  html += '</div>';
 
   if (state.builder.nodes.length === 0) {
     html += '<div class="builder-validation errors">' +
@@ -571,25 +578,25 @@ function renderBuilderEdgesStep() {
             '</div>';
   }
 
-  html += '<div class="builder-action-bar"><button class="builder-action" data-add="edges">+ Add edge</button></div>';
   html += renderBuilderBulkBar("edges");
 
   html += BUILDER_SPLIT;
   html += '<table class="builder-table">';
   html +=   '<thead><tr>' +
               selectAllTh("edges") +
-              '<th style="width:200px">From</th>' +
-              '<th style="width:200px">To</th>' +
-              '<th style="width:130px">Effect</th>' +
-              '<th style="width:110px">Elasticity</th>' +
-              '<th>Description</th>' +
+              sortableTh("edges", "from",        "From",        ' style="width:200px"') +
+              sortableTh("edges", "to",          "To",          ' style="width:200px"') +
+              sortableTh("edges", "effect",      "Effect",      ' style="width:130px"') +
+              sortableTh("edges", "elasticity",  "Elasticity",  ' style="width:110px"') +
+              sortableTh("edges", "description", "Description", "") +
               '<th style="width:90px"></th>' +
             '</tr></thead><tbody>';
 
   if (state.builder.edges.length === 0) {
     html += tableEmptyRow(7, 'No edges yet. Click "+ Add edge".');
   } else {
-    state.builder.edges.forEach((e, i) => {
+    sortedBuilderIndices("edges").forEach((i) => {
+      const e = state.builder.edges[i];
       const fromInvalid = !v.nodeIds.has(e.from) ? ' invalid' : '';
       const toInvalid   = !v.nodeIds.has(e.to)   ? ' invalid' : '';
 
@@ -609,6 +616,7 @@ function renderBuilderEdgesStep() {
     });
   }
   html += '</tbody></table>';
+  html += '<div class="builder-action-bar"><button class="builder-action" data-add="edges">+ Add edge</button></div>';
   return html;
 }
 

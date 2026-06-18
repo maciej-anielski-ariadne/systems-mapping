@@ -73,6 +73,7 @@ function seedBuilderEmpty() {
   state.builder.nodes      = [];
   state.builder.edges      = [];
   state.builder.focusAfterRender = null;
+  state.builder.sort = {};
   clearBuilderSelection();
 }
 
@@ -109,6 +110,7 @@ function seedBuilderFromLiveData() {
     description: e.description || "",
   }));
   state.builder.focusAfterRender = null;
+  state.builder.sort = {};
   clearBuilderSelection();
 }
 
@@ -121,6 +123,7 @@ function seedBuilderFromSample() {
     return;
   }
   const sections = parseCsvDocument(SAMPLE_CSV);
+  state.builder.sort = {};
   clearBuilderSelection();
 
   state.builder.streams = (sections.streams || []).map(row => ({
@@ -187,6 +190,74 @@ function rowDragHandleHtml() {
 
 function tableEmptyRow(colSpan, message) {
   return '<tr class="builder-empty-row"><td colspan="' + colSpan + '">' + escapeHtml(message) + '</td></tr>';
+}
+
+// ───── View-only column sort (nodes / edges tables) ────────────────────────
+// The big tables let you click a column header to group similar rows together.
+// This only changes the DISPLAY order: rows keep their original array index as
+// their data-index, so every index-based handler (input / delete / duplicate /
+// selection / focus) stays correct, and the saved/exported CSV order is the
+// untouched array order. Sort state lives in state.builder.sort and is reset on
+// every (re)seed — see the seed helpers above.
+
+// Compare two field values. Numbers compare numerically, everything else by
+// locale string order. Blank/undefined handling is done by the caller so blanks
+// can always sort last regardless of direction.
+function builderSortCompare(x, y) {
+  const nx = Number(x), ny = Number(y);
+  if (x !== "" && y !== "" && !isNaN(nx) && !isNaN(ny)) return nx - ny;
+  return String(x).localeCompare(String(y));
+}
+
+// Returns an array of ORIGINAL row indices in the order they should be shown.
+// Identity order when no sort is active for the section. Blank/undefined values
+// always sort to the bottom (applied before the direction multiply so they
+// don't flip to the top under descending sort).
+function sortedBuilderIndices(section) {
+  const arr = state.builder[section] || [];
+  const order = arr.map((_, i) => i);
+  const s = state.builder.sort && state.builder.sort[section];
+  if (!s || !s.key || !s.dir) return order;
+  const dir = s.dir === "desc" ? -1 : 1;
+  const isBlank = v => v === undefined || v === null || v === "";
+  order.sort((a, b) => {
+    const va = arr[a][s.key], vb = arr[b][s.key];
+    const ba = isBlank(va), bb = isBlank(vb);
+    if (ba && bb) return 0;
+    if (ba) return 1;    // blanks last, not multiplied by dir
+    if (bb) return -1;
+    return dir * builderSortCompare(va, vb);
+  });
+  return order;
+}
+
+// The array index of the row shown directly below `index` in the current
+// (possibly sorted) display order, or -1 if `index` is the last visible row.
+// Lets Enter "move down a column" follow the on-screen order rather than the
+// raw array order. With no sort active this is just index + 1.
+function nextBuilderDisplayIndex(section, index) {
+  const order = sortedBuilderIndices(section);
+  const pos = order.indexOf(index);
+  if (pos === -1 || pos + 1 >= order.length) return -1;
+  return order[pos + 1];
+}
+
+// The ▲ / ▼ glyph (or empty string) for a column header, reflecting the active
+// sort on that section/key.
+function builderSortIndicator(section, key) {
+  const s = state.builder.sort && state.builder.sort[section];
+  if (!s || s.key !== key || !s.dir) return "";
+  return s.dir === "desc" ? " ▼" : " ▲";
+}
+
+// A clickable, sortable column header. `widthStyle` is the optional inline
+// style string (e.g. ' style="width:200px"') copied from the existing headers.
+function sortableTh(section, key, label, widthStyle) {
+  return '<th class="builder-th-sort"' + (widthStyle || "") +
+         ' data-sort="' + section + '" data-sortkey="' + key + '">' +
+         escapeHtml(label) +
+         '<span class="builder-sort-ind">' + builderSortIndicator(section, key) + '</span>' +
+         '</th>';
 }
 
 // Reset the wizard's bulk row-selection. The selection is a Set of row

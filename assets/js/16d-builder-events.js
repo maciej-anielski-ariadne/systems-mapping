@@ -47,9 +47,24 @@ function handleBuilderClick(event) {
   const overlay = document.getElementById("builder-overlay");
   const target = event.target.closest(
     "[data-step], [data-add], [data-duplicate], [data-delete], " +
-    "[data-bulkdelete], [data-bulkclear], [data-bulkapply]"
+    "[data-bulkdelete], [data-bulkclear], [data-bulkapply], [data-sort]"
   );
   if (!target || !overlay || !overlay.contains(target)) return;
+
+  if (target.hasAttribute("data-sort")) {
+    // Clickable column header on the nodes/edges tables. Cycle the sort on that
+    // column: ascending → descending → none. View-only (see sortedBuilderIndices
+    // in 16a) so it never touches the row order in state or the exported CSV.
+    const section = target.getAttribute("data-sort");
+    const key     = target.getAttribute("data-sortkey");
+    const cur     = state.builder.sort[section];
+    const dir = (!cur || cur.key !== key) ? "asc"
+              : (cur.dir === "asc")       ? "desc"
+              :                             null;
+    state.builder.sort[section] = dir ? { key, dir } : null;
+    renderBuilder();
+    return;
+  }
 
   if (target.hasAttribute("data-step")) {
     const step = parseInt(target.getAttribute("data-step"), 10);
@@ -300,10 +315,15 @@ function handleBuilderKeydown(event) {
 
     event.preventDefault();
     const overlay = document.getElementById("builder-overlay");
-    const sameColNext = overlay && overlay.querySelector(
+    // Follow the on-screen (possibly sorted) order, not the raw array order —
+    // nextBuilderDisplayIndex returns index+1 when no sort is active.
+    const nextIndex = (typeof nextBuilderDisplayIndex === "function")
+      ? nextBuilderDisplayIndex(section, index)
+      : index + 1;
+    const sameColNext = nextIndex >= 0 && overlay && overlay.querySelector(
       '[data-section="' + section + '"]' +
       '[data-field="'   + field   + '"]' +
-      '[data-index="'   + (index + 1) + '"]'
+      '[data-index="'   + nextIndex + '"]'
     );
     if (sameColNext) {
       sameColNext.focus();

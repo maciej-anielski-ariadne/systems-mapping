@@ -146,6 +146,10 @@ const state = {
     // { section, index, field } — field=null means "first editable input in
     // that row". Consumed (and cleared) by renderBuilder().
     focusAfterRender: null,
+    // View-only column sort for the big tables — { nodes:{key,dir}, edges:{key,dir} }.
+    // Reorders the DISPLAY only (rows keep their original array data-index), so it
+    // never mutates the row arrays or the saved/exported CSV order. Not persisted.
+    sort: {},
   },
 };
 
