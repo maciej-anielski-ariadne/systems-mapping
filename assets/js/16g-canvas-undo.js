@@ -112,13 +112,14 @@ function _computeUndoFocus(before, after) {
   }
 
   // Surviving neighbours of removed nodes, found via the before-state edges.
-  for (const removedId of removedNodeIds) {
+  if (removedNodeIds.length) {
+    const removed = new Set(removedNodeIds);
     for (const eid of Object.keys(before.edgeEndpoints)) {
       const ends = before.edgeEndpoints[eid];
-      const other = ends.from === removedId ? ends.to
-                  : ends.to   === removedId ? ends.from
-                  : null;
-      if (other && after.nodes[other] !== undefined) flashNodeIds.add(other);
+      const fromRemoved = removed.has(ends.from);
+      if (fromRemoved === removed.has(ends.to)) continue; // both or neither removed
+      const other = fromRemoved ? ends.to : ends.from;
+      if (after.nodes[other] !== undefined) flashNodeIds.add(other);
     }
   }
 
