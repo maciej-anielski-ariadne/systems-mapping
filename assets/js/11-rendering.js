@@ -254,15 +254,25 @@ function render() {
       let strokeWidth   = 1.5;
       let strokeOpacity = 0.6;
       let dimmed        = false;
+      // Stay gray by default — only show the effect colour when incident to the
+      // selected node (synthetic edges aren't directly selectable, so node
+      // selection is their only "selected" state). Mirrors real-edge behaviour.
+      let strokeColor   = "var(--edge-default)";
+      let markerName    = "default";
       if (state.selectedNodeId && state.selectedNodeIds.size <= 1) {
-        if (incident) { strokeWidth = 2; strokeOpacity = 0.95; }
-        else          { dimmed = true; }
+        if (incident) {
+          strokeWidth = 2; strokeOpacity = 0.95;
+          strokeColor = effectStroke(re.effect);
+          markerName  = effectMarker(re.effect);
+        } else {
+          dimmed = true;
+        }
       }
       const effectClass = ' effect-' + re.effect;   // increases / decreases / neutral
       content += '<path class="edge-path synthetic' + effectClass + (dimmed ? ' dimmed' : '') +
-        '" d="' + pathD + '" stroke="' + effectStroke(re.effect) +
+        '" d="' + pathD + '" stroke="' + strokeColor +
         '" stroke-width="' + strokeWidth + '" stroke-opacity="' + strokeOpacity +
-        '" marker-end="url(#arrow_' + effectMarker(re.effect) + ')"></path>';
+        '" marker-end="url(#arrow_' + markerName + ')"></path>';
       continue;
     }
 
