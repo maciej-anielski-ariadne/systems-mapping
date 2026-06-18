@@ -616,6 +616,78 @@ function handleEdgeHandleClickOrCancel() {
   if (typeof openCanvasEdgePicker === "function") openCanvasEdgePicker(fromNodeId);
 }
 
+// ───── Edge-of-screen auto-pan ──────────────────────────────────────────────
+// While dragging a node or drawing an edge, scroll the #viz-scroll viewport when
+// the cursor nears a screen edge so the user can reach nodes/cells that are
+// currently off-screen. mousemove alone can't do this (it stops firing once the
+// cursor is parked against the edge), so we run a RAF loop for the duration of
+// the drag: each frame nudges the scroll position and replays the drag update at
+// the cursor's last known client position so the dragged note / draft edge keep
+// tracking the pointer as the canvas slides underneath it.
+const AUTO_PAN_MARGIN = 56;      // px from a viewport edge where auto-pan kicks in
+const AUTO_PAN_MAX_SPEED = 22;   // px/frame at the very edge (ramps up from 0)
+let _autoPanRAF        = null;
+let _autoPanLastClient = null;   // { x, y } latest cursor position in client coords
+let _autoPanUpdate     = null;   // the drag's update fn (updateNodeDrag / updateEdgeDrag)
+
+// Ramp the pan speed from 0 at the margin's inner edge to AUTO_PAN_MAX_SPEED at
+// (or past) the viewport edge. Returns a signed delta: negative = scroll toward
+// the start of the axis, positive = toward the end.
+function autoPanAxisDelta(pos, min, max) {
+  if (pos < min + AUTO_PAN_MARGIN) {
+    const depth = Math.min(AUTO_PAN_MARGIN, (min + AUTO_PAN_MARGIN) - pos);
+    return -AUTO_PAN_MAX_SPEED * (depth / AUTO_PAN_MARGIN);
+  }
+  if (pos > max - AUTO_PAN_MARGIN) {
+    const depth = Math.min(AUTO_PAN_MARGIN, pos - (max - AUTO_PAN_MARGIN));
+    return AUTO_PAN_MAX_SPEED * (depth / AUTO_PAN_MARGIN);
+  }
+  return 0;
+}
+
+function startAutoPan(updateFn) {
+  _autoPanUpdate = updateFn;
+  if (_autoPanRAF == null) _autoPanRAF = requestAnimationFrame(autoPanTick);
+}
+
+function stopAutoPan() {
+  if (_autoPanRAF != null) cancelAnimationFrame(_autoPanRAF);
+  _autoPanRAF = null;
+  _autoPanUpdate = null;
+  _autoPanLastClient = null;
+}
+
+function autoPanTick() {
+  _autoPanRAF = null;
+  // Bail if the drag ended (state cleared) between frames.
+  const dragging = state.canvasEdit &&
+    (state.canvasEdit.draggingNode || state.canvasEdit.draftEdge);
+  if (!dragging || !_autoPanUpdate || !_autoPanLastClient) return;
+
+  const vizScrollEl = document.getElementById("viz-scroll");
+  if (!vizScrollEl) return;
+  const rect = vizScrollEl.getBoundingClientRect();
+
+  let dx = autoPanAxisDelta(_autoPanLastClient.x, rect.left, rect.right);
+  let dy = autoPanAxisDelta(_autoPanLastClient.y, rect.top,  rect.bottom);
+
+  if (dx || dy) {
+    const maxLeft = vizScrollEl.scrollWidth  - vizScrollEl.clientWidth;
+    const maxTop  = vizScrollEl.scrollHeight - vizScrollEl.clientHeight;
+    const newLeft = Math.max(0, Math.min(maxLeft, vizScrollEl.scrollLeft + dx));
+    const newTop  = Math.max(0, Math.min(maxTop,  vizScrollEl.scrollTop  + dy));
+    if (newLeft !== vizScrollEl.scrollLeft || newTop !== vizScrollEl.scrollTop) {
+      vizScrollEl.scrollLeft = newLeft;
+      vizScrollEl.scrollTop  = newTop;
+      // Replay the drag at the parked cursor: the layout point now maps to a
+      // different spot because the canvas scrolled, so the dragged note / draft
+      // edge follows along and drop targets recompute.
+      _autoPanUpdate({ clientX: _autoPanLastClient.x, clientY: _autoPanLastClient.y });
+    }
+  }
+  _autoPanRAF = requestAnimationFrame(autoPanTick);
+}
+
 // ───── Edge drag ──────────────────────────────────────────────────────────
 let _draftEdgeMoveBound = null;
 let _draftEdgeUpBound   = null;
@@ -633,6 +705,8 @@ function beginEdgeDrag(fromNodeId, clientX, clientY) {
   state.canvasEdit.hoverCell = null;
   render();
 
+  _autoPanLastClient = { x: clientX, y: clientY };
+  startAutoPan(updateEdgeDrag);
   _draftEdgeMoveBound = (event) => updateEdgeDrag(event);
   _draftEdgeUpBound   = (event) => endEdgeDrag(event);
   window.addEventListener("mousemove", _draftEdgeMoveBound);
@@ -642,6 +716,7 @@ function beginEdgeDrag(fromNodeId, clientX, clientY) {
 function updateEdgeDrag(event) {
   const draft = state.canvasEdit && state.canvasEdit.draftEdge;
   if (!draft) return;
+  _autoPanLastClient = { x: event.clientX, y: event.clientY };
   const point = clientPointToLayout(event.clientX, event.clientY);
   if (!point) return;
   draft.currentX = point.x;
@@ -657,6 +732,7 @@ function endEdgeDrag(event) {
   window.removeEventListener("mouseup",   _draftEdgeUpBound);
   _draftEdgeMoveBound = null;
   _draftEdgeUpBound = null;
+  stopAutoPan();
   if (!draft) return;
 
   const point = clientPointToLayout(event.clientX, event.clientY);
@@ -683,6 +759,7 @@ function endEdgeDrag(event) {
 function cancelDraftEdge() {
   if (!state.canvasEdit || !state.canvasEdit.draftEdge) return false;
   state.canvasEdit.draftEdge = null;
+  stopAutoPan();
   if (_draftEdgeMoveBound) {
     window.removeEventListener("mousemove", _draftEdgeMoveBound);
     window.removeEventListener("mouseup",   _draftEdgeUpBound);
@@ -783,6 +860,8 @@ function startNodeDrag(nodeId, event) {
   // reserved drop slot (the drag uses dropCell, not hoverCell).
   state.canvasEdit.hoverCell = null;
   document.body.classList.add("node-dragging");
+  _autoPanLastClient = { x: event.clientX, y: event.clientY };
+  startAutoPan(updateNodeDrag);
   _nodeDragMoveBound = (e) => updateNodeDrag(e);
   _nodeDragUpBound   = (e) => endNodeDrag(e);
   window.addEventListener("mousemove", _nodeDragMoveBound);
@@ -794,6 +873,7 @@ function startNodeDrag(nodeId, event) {
 function updateNodeDrag(event) {
   const drag = state.canvasEdit && state.canvasEdit.draggingNode;
   if (!drag) return;
+  _autoPanLastClient = { x: event.clientX, y: event.clientY };
   const point = clientPointToLayout(event.clientX, event.clientY);
   if (!point) return;
   drag.currentX = point.x;
@@ -814,6 +894,7 @@ function endNodeDrag(event) {
   window.removeEventListener("mouseup",   _nodeDragUpBound);
   _nodeDragMoveBound = null;
   _nodeDragUpBound   = null;
+  stopAutoPan();
   document.body.classList.remove("node-dragging");
   if (!drag) return;
 
@@ -846,6 +927,7 @@ function endNodeDrag(event) {
 function cancelDraftNodeDrag() {
   if (!state.canvasEdit || !state.canvasEdit.draggingNode) return false;
   state.canvasEdit.draggingNode = null;
+  stopAutoPan();
   if (_nodeDragMoveBound) {
     window.removeEventListener("mousemove", _nodeDragMoveBound);
     window.removeEventListener("mouseup",   _nodeDragUpBound);
