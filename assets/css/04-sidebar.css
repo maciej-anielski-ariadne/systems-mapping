@@ -12,6 +12,21 @@
  * ========================================================================== */
 
 .sidebar {
+  /* Shared layout tokens so the filter rows and their section headings stay
+   * aligned: the heading indents below are derived from these same widths, so
+   * tweaking a handle/swatch/delete size keeps title and rows in lockstep. */
+  --row-pad-l: 4px;     /* row padding-left (matches .sidebar-edit-row) */
+  --row-pad-r: 6px;     /* row padding-right */
+  --row-gap: 6px;       /* flex gap between row children */
+  --drag-w: 16px;       /* fixed drag-handle width */
+  --swatch-w: 16px;     /* colour swatch */
+  --delete-w: 22px;     /* hover-reveal delete button */
+  /* Heading-text indent = everything left of the item name */
+  --title-indent-l:        calc(var(--row-pad-l) + var(--drag-w) + var(--row-gap));          /* 26px — stages (no swatch) */
+  --title-indent-l-swatch: calc(var(--title-indent-l) + var(--swatch-w) + var(--row-gap));   /* 48px — streams/categories */
+  /* Heading-counter indent = everything right of the item count */
+  --title-indent-r:        calc(var(--row-pad-r) + var(--delete-w) + var(--row-gap));         /* 34px */
+
   background: var(--bg-deep);
   border-right: 1px solid var(--border-subtle);
   overflow-y: auto;
@@ -99,6 +114,19 @@
   font-size: 9px;
 }
 
+/* Line each list's heading text up with its item names, and the heading
+ * counter up with the item counters. Stages render without a colour swatch,
+ * so they get a smaller left indent than streams/categories. */
+#stages-section .sidebar-section-title {
+  padding-left: var(--title-indent-l);
+  padding-right: var(--title-indent-r);
+}
+#stream-filters-section .sidebar-section-title,
+#category-filters-section .sidebar-section-title {
+  padding-left: var(--title-indent-l-swatch);
+  padding-right: var(--title-indent-r);
+}
+
 /* === Filter rows (one per stream / category) === */
 .filter-row {
   display: flex;
@@ -143,8 +171,8 @@
 .sidebar-edit-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 6px 5px 4px;
+  gap: var(--row-gap);
+  padding: 5px var(--row-pad-r) 5px var(--row-pad-l);
   border-radius: 5px;
   transition: background 0.12s;
   user-select: none;
@@ -170,12 +198,14 @@
 
 .sidebar-edit-drag {
   flex: 0 0 auto;
+  width: var(--drag-w);
+  text-align: center;
   color: var(--text-tertiary);
   font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1;
   cursor: grab;
-  padding: 0 1px;
+  padding: 0;
   user-select: none;
 }
 
@@ -223,8 +253,8 @@
  * so streams / categories can be recoloured directly in the filter row without
  * expanding. Shares the wrapper resets from .sidebar-edit-color above. */
 .sidebar-edit-swatch {
-  flex: 0 0 16px;
-  width: 16px;
+  flex: 0 0 var(--swatch-w);
+  width: var(--swatch-w);
   height: 16px;
   border-radius: 3px;
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -237,7 +267,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
+  width: var(--delete-w);
   height: 22px;
   background: transparent;
   color: var(--text-tertiary);
