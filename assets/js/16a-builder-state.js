@@ -231,6 +231,17 @@ function sortedBuilderIndices(section) {
   return order;
 }
 
+// The array index of the row shown directly below `index` in the current
+// (possibly sorted) display order, or -1 if `index` is the last visible row.
+// Lets Enter "move down a column" follow the on-screen order rather than the
+// raw array order. With no sort active this is just index + 1.
+function nextBuilderDisplayIndex(section, index) {
+  const order = sortedBuilderIndices(section);
+  const pos = order.indexOf(index);
+  if (pos === -1 || pos + 1 >= order.length) return -1;
+  return order[pos + 1];
+}
+
 // The ▲ / ▼ glyph (or empty string) for a column header, reflecting the active
 // sort on that section/key.
 function builderSortIndicator(section, key) {

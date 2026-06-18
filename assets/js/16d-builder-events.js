@@ -315,10 +315,15 @@ function handleBuilderKeydown(event) {
 
     event.preventDefault();
     const overlay = document.getElementById("builder-overlay");
-    const sameColNext = overlay && overlay.querySelector(
+    // Follow the on-screen (possibly sorted) order, not the raw array order —
+    // nextBuilderDisplayIndex returns index+1 when no sort is active.
+    const nextIndex = (typeof nextBuilderDisplayIndex === "function")
+      ? nextBuilderDisplayIndex(section, index)
+      : index + 1;
+    const sameColNext = nextIndex >= 0 && overlay && overlay.querySelector(
       '[data-section="' + section + '"]' +
       '[data-field="'   + field   + '"]' +
-      '[data-index="'   + (index + 1) + '"]'
+      '[data-index="'   + nextIndex + '"]'
     );
     if (sameColNext) {
       sameColNext.focus();
