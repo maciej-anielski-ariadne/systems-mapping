@@ -213,6 +213,9 @@ function render() {
   // stages/streams/categories. Both endpoints of every returned edge are
   // guaranteed visible, so their layout positions always exist.
   const flashedEdgeId = state.canvasEdit && state.canvasEdit.flashedEdgeId;
+  // Edges changed by the most recent undo/redo — pulsed briefly so the user
+  // sees what the operation touched. Cleared on a timer (16g-canvas-undo.js).
+  const undoFlashEdgeIds = state.canvasEdit && state.canvasEdit.flashedEdgeIds;
   // Helper: effect → stroke colour + arrow marker name.
   const effectStroke = effect =>
     effect === "increases" ? "var(--edge-increases)" :
@@ -317,7 +320,8 @@ function render() {
     // Effect class lets CSS bind colour-based styles (selected-edge halo, etc)
     // without having to parse the inline stroke value.
     const effectClass = edge.effect ? ' effect-' + edge.effect : '';
-    const classAttr = ' class="edge-path' + effectClass + (dimmed ? ' dimmed' : '') + (isEdgeFlashed ? ' flashed' : '') + (isEdgeSelected ? ' selected' : '') + '"';
+    const isEdgeUndoFlashed = undoFlashEdgeIds && undoFlashEdgeIds.has(edge.id);
+    const classAttr = ' class="edge-path' + effectClass + (dimmed ? ' dimmed' : '') + (isEdgeFlashed ? ' flashed' : '') + (isEdgeUndoFlashed ? ' undo-flash' : '') + (isEdgeSelected ? ' selected' : '') + '"';
     content += '<path' + classAttr + ' data-edge-id="' + edge.id + '" d="' + pathD + '" stroke="' + strokeColor + '" stroke-width="' + strokeWidth + '" stroke-opacity="' + strokeOpacity + '"' + markerEnd + '></path>';
   }
 
@@ -327,6 +331,10 @@ function render() {
   const searchMatchIds = (state.searchMatches && state.searchMatches.length > 0)
     ? new Set(state.searchMatches.map(m => m.node.id))
     : null;
+
+  // Nodes changed by the most recent undo/redo — pulsed briefly (and forced
+  // un-dimmed by CSS) so the user sees what the operation touched.
+  const undoFlashNodeIds = state.canvasEdit && state.canvasEdit.flashedNodeIds;
 
   // ───── Nodes ──────────────────────────────────────────────────────────
   for (const node of NODES) {
@@ -352,6 +360,7 @@ function render() {
     }
     if (state.hoveredNodeId === node.id) nodeClasses += " hovered";
     if (searchMatchIds && searchMatchIds.has(node.id)) nodeClasses += " search-match";
+    if (undoFlashNodeIds && undoFlashNodeIds.has(node.id)) nodeClasses += " undo-flash";
     // Ghost the source node while it's being dragged — the live preview
     // (rendered below the node loop) follows the cursor.
     if (drag && drag.nodeId === node.id) nodeClasses += " dragging-source";

@@ -26,6 +26,9 @@
 
 const UNDO_TOAST_DURATION_MS = 6000;
 const HISTORY_CAP = 50;
+// How long the pulse on undone/redone elements stays up before auto-clearing.
+// Matches the edge-click flash (06-detail-panel.css) so the two feel of a piece.
+const UNDO_FLASH_DURATION_MS = 1400;
 
 // Flag set while restoring so the auto-capture in applyCanvasMutation doesn't
 // fire and double-snapshot the round-trip.
@@ -56,10 +59,118 @@ function historyRedo() {
   return _restoreSnapshot(afterCsv);
 }
 
+// ───── "What changed?" highlight on undo/redo ─────────────────────────────
+// History entries are full-state snapshots with no per-element command data, so
+// we figure out which elements an undo/redo touched by diffing the live state
+// captured just before the restore against the restored state. The diff drives
+// a brief pulse on the affected nodes/edges and a recenter when they're off
+// screen, so the user can see exactly what the operation changed.
+
+// Per-element content signatures of the LIVE state, keyed by id. Reuses the
+// existing clone helpers (04-utils.js) so the signature tracks the same fields
+// the undo machinery already considers meaningful. edgeEndpoints lets us find a
+// (possibly deleted) node's neighbours without re-parsing the JSON.
+function _snapshotSignatures() {
+  const nodes = {};
+  for (const n of NODES) nodes[n.id] = JSON.stringify(cloneNodeForUndo(n));
+  const edges = {};
+  const edgeEndpoints = {};
+  for (const e of EDGES) {
+    edges[e.id] = JSON.stringify(cloneEdgeForUndo(e));
+    edgeEndpoints[e.id] = { from: e.from, to: e.to };
+  }
+  return { nodes, edges, edgeEndpoints };
+}
+
+// Diff before/after signatures into the sets we flash and the ordered list of
+// candidate nodes to recenter on. Only elements that still exist after the
+// restore can be flashed; a removed node instead lights up its surviving
+// neighbours so the user sees the region it used to occupy.
+function _computeUndoFocus(before, after) {
+  const flashNodeIds = new Set();
+  const flashEdgeIds = new Set();
+  const removedNodeIds = [];
+
+  // Changed nodes — added / modified flash directly; removed defer to neighbours.
+  for (const id of new Set([...Object.keys(before.nodes), ...Object.keys(after.nodes)])) {
+    if (before.nodes[id] === after.nodes[id]) continue;
+    if (after.nodes[id] !== undefined) flashNodeIds.add(id);
+    else removedNodeIds.push(id);
+  }
+
+  // Changed edges — flash the edge when it survives, and pull in its present
+  // endpoints so the nodes either side of the change light up too.
+  for (const id of new Set([...Object.keys(before.edges), ...Object.keys(after.edges)])) {
+    if (before.edges[id] === after.edges[id]) continue;
+    const present = after.edges[id] !== undefined;
+    if (present) flashEdgeIds.add(id);
+    const ends = present ? after.edgeEndpoints[id] : before.edgeEndpoints[id];
+    if (ends) {
+      if (after.nodes[ends.from] !== undefined) flashNodeIds.add(ends.from);
+      if (after.nodes[ends.to]   !== undefined) flashNodeIds.add(ends.to);
+    }
+  }
+
+  // Surviving neighbours of removed nodes, found via the before-state edges.
+  for (const removedId of removedNodeIds) {
+    for (const eid of Object.keys(before.edgeEndpoints)) {
+      const ends = before.edgeEndpoints[eid];
+      const other = ends.from === removedId ? ends.to
+                  : ends.to   === removedId ? ends.from
+                  : null;
+      if (other && after.nodes[other] !== undefined) flashNodeIds.add(other);
+    }
+  }
+
+  return { flashNodeIds, flashEdgeIds, focusNodeIds: [...flashNodeIds] };
+}
+
+// Is the node's box currently within the visible area of the scroll container?
+// Rendered pixels = layout coords × zoom (applyZoom keeps the viewBox unscaled
+// and scales the SVG's width/height), and scroll offsets are in rendered px.
+function _isNodeInViewport(nodeId) {
+  const pos = layout.positions[nodeId];
+  if (!pos) return false;
+  const container = document.getElementById("viz-scroll");
+  if (!container) return false;
+  const zoom = state.zoomLevel || 1;
+  const left = pos.x * zoom, top = pos.y * zoom;
+  const right = (pos.x + pos.width) * zoom, bottom = (pos.y + pos.height) * zoom;
+  const viewLeft = container.scrollLeft, viewTop = container.scrollTop;
+  const viewRight = viewLeft + container.clientWidth;
+  const viewBottom = viewTop + container.clientHeight;
+  return right > viewLeft && left < viewRight && bottom > viewTop && top < viewBottom;
+}
+
+// Pulse the given elements, then auto-clear after the animation. A fresh undo
+// resets the timer so rapid Ctrl+Z presses each get the full pulse.
+let _undoFlashTimer = null;
+function _flashUndoChange(nodeIds, edgeIds) {
+  if (!state.canvasEdit) return;
+  const hasNodes = nodeIds && nodeIds.size;
+  const hasEdges = edgeIds && edgeIds.size;
+  if (!hasNodes && !hasEdges) return;
+  state.canvasEdit.flashedNodeIds = hasNodes ? nodeIds : null;
+  state.canvasEdit.flashedEdgeIds = hasEdges ? edgeIds : null;
+  if (typeof render === "function") render();
+  if (_undoFlashTimer) clearTimeout(_undoFlashTimer);
+  _undoFlashTimer = setTimeout(() => {
+    _undoFlashTimer = null;
+    if (state.canvasEdit) {
+      state.canvasEdit.flashedNodeIds = null;
+      state.canvasEdit.flashedEdgeIds = null;
+    }
+    if (typeof render === "function") render();
+  }, UNDO_FLASH_DURATION_MS);
+}
+
 // Reload a snapshot via the trusted data-loader path. Preserves selection,
 // edit mode, zoom, and scroll position across the round-trip so undo doesn't
 // jump the user away from what they were doing.
 function _restoreSnapshot(csv) {
+  // Signatures of the state we're leaving — diffed against the restored state
+  // below to discover which elements the undo/redo actually changed.
+  const before = _snapshotSignatures();
   const saved = {
     selectedNodeId: state.selectedNodeId,
     selectedEdgeId: state.selectedEdgeId || null,
@@ -105,6 +216,17 @@ function _restoreSnapshot(csv) {
     vizScrollEl.scrollTop  = saved.scrollTop;
     vizScrollEl.scrollLeft = saved.scrollLeft;
   }
+
+  // Highlight what this undo/redo changed: diff against the pre-restore state,
+  // pulse the affected elements, and recenter only if none are already on
+  // screen (scroll position was just restored above, so the check is accurate).
+  const focus = _computeUndoFocus(before, _snapshotSignatures());
+  if (focus.focusNodeIds.length &&
+      !focus.focusNodeIds.some(_isNodeInViewport) &&
+      typeof scrollNodeIntoView === "function") {
+    scrollNodeIntoView(focus.focusNodeIds[0]);
+  }
+  _flashUndoChange(focus.flashNodeIds, focus.flashEdgeIds);
   return true;
 }
 

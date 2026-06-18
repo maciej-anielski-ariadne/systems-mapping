@@ -79,6 +79,8 @@ const state = {
                                  // coords while a shift+drag-on-empty marquee is in
                                  // progress; null otherwise. See 16e-canvas-edit.js.
     flashedEdgeId: null,         // edge to flash-highlight in the outgoing list (after canvas click)
+    flashedNodeIds: null,        // Set<nodeId> to pulse after an undo/redo (transient; null when idle)
+    flashedEdgeIds: null,        // Set<edgeId> to pulse after an undo/redo (transient; null when idle)
     addingEdgeFromNodeId: null,  // when truthy, edit panel shows the "Add outgoing edge" form
     toast: null,                 // { message, undoFn, timerId } | null
     // While the user is type-renaming the selected node directly on the
