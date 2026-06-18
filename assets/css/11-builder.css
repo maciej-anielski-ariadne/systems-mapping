@@ -203,6 +203,12 @@
   z-index: 1;
 }
 
+/* Clickable column headers on the nodes/edges tables — click to sort rows so
+ * similar rows group together (view-only; see 16a sortedBuilderIndices). */
+.builder-table th.builder-th-sort { cursor: pointer; user-select: none; }
+.builder-table th.builder-th-sort:hover { color: var(--text-secondary); }
+.builder-sort-ind { color: var(--accent-blue); font-size: 9px; margin-left: 3px; }
+
 .builder-table td {
   padding: 6px 6px;
   border-bottom: 1px solid var(--border-subtle);
@@ -324,6 +330,11 @@
   margin-bottom: 12px;
   flex-wrap: wrap;
 }
+
+/* The "+ Add row" bar now lives at the BOTTOM of the table (inside the scroll
+ * area) to maximise vertical editing space — give it top spacing instead of the
+ * bottom margin it carries when it sits above a table. */
+.builder-step-scroll .builder-action-bar { margin-top: 12px; margin-bottom: 0; }
 
 .builder-action {
   background: var(--bg-mid);
@@ -460,6 +471,20 @@
   background: var(--accent-red);
   color: var(--bg-deepest);
 }
+
+/* ───── Edges config row (step 5) — help text + defaults side by side ──────
+ * On a wide card the "Defaults below" help and the three elasticity inputs sit
+ * next to each other so the table gets more vertical room; on a narrow card
+ * they wrap to stacked. No media query — the flex bases do the work. */
+.builder-edges-config {
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.builder-edges-config .builder-step-help { flex: 1 1 360px; max-width: none; margin-bottom: 0; }
+.builder-edges-config .builder-defaults  { flex: 1 1 320px; margin-bottom: 0; }
 
 /* ───── Defaults panel (just 3 elasticity inputs on step 5) ──────────── */
 .builder-defaults {
