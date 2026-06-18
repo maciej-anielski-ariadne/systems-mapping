@@ -7,7 +7,7 @@
  *   │  HEADER (title, search, buttons)                  height: 64px  │
  *   ├──────────────┬──────────────────────────────────┬───────────────┤
  *   │  SIDEBAR     │  VISUALIZATION                   │  DETAIL PANEL │
- *   │  280 px      │  flexible (1fr = takes the rest) │  340 px       │
+ *   │  240 px      │  flexible (1fr = takes the rest) │  340 px       │
  *   │              │                                  │               │
  *   └──────────────┴──────────────────────────────────┴───────────────┘
  *
@@ -20,7 +20,7 @@
  * track narrow (a strip) so the central viz reclaims the space; the panel
  * itself absolute-positions over the viz on hover to show its contents. */
 .app {
-  --sidebar-w-full: 280px;
+  --sidebar-w-full: 240px;
   --detail-w-full:  340px;
   --panel-strip-w:  44px;
   --sidebar-w: var(--sidebar-w-full);
