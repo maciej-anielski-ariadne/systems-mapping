@@ -96,6 +96,29 @@ body.panning * {
   stroke-width: 2;
 }
 
+/* === Undo / redo "what changed" pulse ===
+   On undo/redo, 16g-canvas-undo.js diffs the before/after snapshots and tags
+   the affected nodes (and edges, below) with .undo-flash so the user can see
+   what the operation touched. A short green pulse — deliberately distinct from
+   the blue/amber selection treatment and the amber search halo. The node
+   variant also forces full opacity so a flashed node is never washed out by an
+   unrelated selection's dimming. Auto-cleared after the animation by JS. */
+@keyframes undo-flash-pulse {
+  0%   { filter: drop-shadow(0 0 0   rgba(74, 222, 128, 0)); }
+  20%  { filter: drop-shadow(0 0 9px rgba(74, 222, 128, 0.95)); }
+  50%  { filter: drop-shadow(0 0 2px rgba(74, 222, 128, 0.35)); }
+  70%  { filter: drop-shadow(0 0 9px rgba(74, 222, 128, 0.9)); }
+  100% { filter: drop-shadow(0 0 0   rgba(74, 222, 128, 0)); }
+}
+.node-group.undo-flash {
+  opacity: 1 !important;
+}
+.node-group.undo-flash .node-rect {
+  stroke: rgba(74, 222, 128, 0.95);
+  stroke-width: 2.5;
+  animation: undo-flash-pulse 1.4s ease;
+}
+
 /* Text rendered inside each node.
  *
  * --map-text-scale is set on #viz-svg by render() / applyZoom() — it grows
@@ -393,6 +416,17 @@ body.canvas-shift-edit .node-group:active {
 .edge-path.effect-decreases { color: var(--edge-decreases); }
 .edge-path.selected {
   filter: drop-shadow(0 0 8px currentColor);
+}
+
+/* Edge changed by the most recent undo/redo — same green pulse as nodes, and
+   forced fully opaque/coloured so it stands out even if it would otherwise be
+   dimmed by a selection. See the node .undo-flash block above. */
+.edge-path.undo-flash {
+  stroke: rgba(74, 222, 128, 0.95) !important;
+  stroke-opacity: 1 !important;
+  opacity: 1 !important;
+  stroke-width: 3;
+  animation: undo-flash-pulse 1.4s ease;
 }
 
 /* Draft edge preview (during drag) — neutral gray so it reads as "uncommitted,
