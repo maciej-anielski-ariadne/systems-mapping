@@ -67,6 +67,17 @@
   text-overflow: ellipsis;
 }
 
+/* Snippet of the description, shown only when the match was on description. */
+.search-result-desc {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Three-part stream · stage · category tag on the right. */
 .search-result-meta {
   font-family: var(--font-mono);

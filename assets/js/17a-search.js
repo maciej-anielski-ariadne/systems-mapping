@@ -7,8 +7,12 @@
 //   • Fuzzy scoring (exact > prefix > substring > subsequence) so "bff"
 //     finds "Border Force FTE" and "brder" still matches "Border" despite
 //     the typo.
+//   • Searches every text field on a node — name, description, stream,
+//     stage, category, id, unit — weighted in that priority order (see
+//     SEARCH_FIELD_WEIGHTS), not just the name.
 //   • Top-8 ranked dropdown under the search input. Matched chars are
-//     highlighted in the result label.
+//     highlighted wherever they matched (name, id, the stream·stage·category
+//     tag, or a description snippet).
 //   • Auto-select while typing — the focused result becomes the live
 //     selection (preserving the ancestor/descendant trace UX).
 //   • Every match gets a `.search-match` class on its node-group, picked
@@ -20,7 +24,22 @@
 // =============================================================================
 
 const SEARCH_MAX_RESULTS = 8;
-const SEARCH_FIELD_WEIGHTS = { label: 1.0, id: 0.7, description: 0.3 };
+// Every text-bearing field on a node is searchable. Weights set the priority
+// when a node matches in more than one field (and, via the weighted score,
+// the cross-node ranking): a node's score is the best (matchQuality × weight)
+// across its fields. Priority order, high → low:
+//   name (label) › description › stream › stage › category › id › unit
+// stream/stage/category are stored as ids but matched on their display labels
+// (e.g. "Border Force", "Resource") — see nodeSearchFields().
+const SEARCH_FIELD_WEIGHTS = {
+  label:       1.0,
+  description: 0.6,
+  stream:      0.4,
+  stage:       0.3,
+  category:    0.25,
+  id:          0.2,
+  unit:        0.15,
+};
 
 // ───── Scorer ─────────────────────────────────────────────────────────────
 // Returns { score, positions } where positions are the indices in `target`
@@ -78,32 +97,74 @@ function range(n, offset = 0) {
   return out;
 }
 
+// ───── Searchable text per node ────────────────────────────────────────────
+// Returns the list of { field, text } pairs a query is scored against. stream /
+// stage / category are resolved from their ids to the human-readable display
+// labels the user sees on the map (the raw ids are not searched). Returned in
+// SEARCH_FIELD_WEIGHTS priority order; renderSearchDropdown relies on these
+// same resolved labels so matched-character highlights line up.
+function nodeSearchFields(node) {
+  const streamLabel   = streamById[node.stream] ? streamById[node.stream].label : "";
+  const stageLabel    = stageById[node.stage]   ? stageById[node.stage].label   : "";
+  const categoryLabel = (typeof CATEGORIES !== "undefined" && CATEGORIES[node.category])
+    ? CATEGORIES[node.category].label : "";
+  return [
+    { field: "label",       text: node.label       || "" },
+    { field: "description", text: node.description || "" },
+    { field: "stream",      text: streamLabel },
+    { field: "stage",       text: stageLabel },
+    { field: "category",    text: categoryLabel },
+    { field: "id",          text: node.id          || "" },
+    { field: "unit",        text: node.unit        || "" },
+  ];
+}
+
 // ───── Find matches ───────────────────────────────────────────────────────
-// Scores every node against `query` on label / id / description, keeps the
-// best field per node, and returns the top SEARCH_MAX_RESULTS by score desc.
+// Scores every node against `query` across all searchable fields, keeps the
+// best-weighted field per node, and returns the top SEARCH_MAX_RESULTS by
+// score desc.
 function findMatches(query) {
   if (!query) return [];
   const results = [];
   for (const node of NODES) {
-    const sLabel = scoreMatch(query, node.label || "");
-    const sId    = scoreMatch(query, node.id    || "");
-    const sDesc  = scoreMatch(query, node.description || "");
-
-    const wLabel = sLabel.score * SEARCH_FIELD_WEIGHTS.label;
-    const wId    = sId.score    * SEARCH_FIELD_WEIGHTS.id;
-    const wDesc  = sDesc.score  * SEARCH_FIELD_WEIGHTS.description;
-
-    let best = wLabel;
-    let bestField = "label";
-    let bestPositions = sLabel.positions;
-    if (wId > best)   { best = wId;   bestField = "id";          bestPositions = sId.positions; }
-    if (wDesc > best) { best = wDesc; bestField = "description"; bestPositions = sDesc.positions; }
+    let best = 0;
+    let bestField = null;
+    let bestPositions = [];
+    for (const f of nodeSearchFields(node)) {
+      if (!f.text) continue;
+      const s = scoreMatch(query, f.text);
+      const weighted = s.score * (SEARCH_FIELD_WEIGHTS[f.field] || 0);
+      if (weighted > best) {
+        best = weighted;
+        bestField = f.field;
+        bestPositions = s.positions;
+      }
+    }
     if (best <= 0) continue;
-
     results.push({ node, score: best, bestField, bestPositions });
   }
   results.sort((a, b) => b.score - a.score);
   return results.slice(0, SEARCH_MAX_RESULTS);
+}
+
+// ───── Snippet window around a match ────────────────────────────────────────
+// For long fields (descriptions) we show a short window centred on the first
+// matched character rather than the whole text, with "…" markers and the match
+// positions re-based onto the windowed string.
+function searchSnippet(text, positions, maxLen) {
+  if (!text) return { text: "", positions: [] };
+  if (text.length <= maxLen) return { text: text, positions: positions || [] };
+  const first = (positions && positions.length) ? positions[0] : 0;
+  let start = Math.max(0, first - Math.floor(maxLen / 3));
+  start = Math.min(start, text.length - maxLen);
+  const end = start + maxLen;
+  const prefix = start > 0 ? "…" : "";
+  const suffix = end < text.length ? "…" : "";
+  const shift = (prefix ? 1 : 0) - start;
+  const shifted = (positions || [])
+    .filter(p => p >= start && p < end)
+    .map(p => p + shift);
+  return { text: prefix + text.slice(start, end) + suffix, positions: shifted };
 }
 
 // ───── Highlight matched characters in a label ────────────────────────────
@@ -142,23 +203,37 @@ function renderSearchDropdown() {
 
   let html = "";
   state.searchMatches.forEach((match, idx) => {
+    const node = match.node;
     const focused = idx === state.searchFocusIndex ? " focused" : "";
-    const labelHtml = match.bestField === "label"
-      ? highlightMatched(match.node.label || "", match.bestPositions)
-      : escapeHtml(match.node.label || match.node.id || "");
-    const idHtml = match.bestField === "id"
-      ? highlightMatched(match.node.id || "", match.bestPositions)
-      : escapeHtml(match.node.id || "");
-    const stream   = streamById[match.node.stream] ? streamById[match.node.stream].short : (match.node.stream || "");
-    const stage    = match.node.stage || "";
-    const category = match.node.category || "";
 
-    html += '<div class="search-result' + focused + '" data-index="' + idx + '" data-node-id="' + escapeHtml(match.node.id) + '">';
+    // Resolve the display labels (same values nodeSearchFields() matched on),
+    // so the matched-character highlight lines up with what's shown.
+    const streamLabel   = streamById[node.stream] ? streamById[node.stream].label : (node.stream || "");
+    const stageLabel    = stageById[node.stage]   ? stageById[node.stage].label   : (node.stage || "");
+    const categoryLabel = (typeof CATEGORIES !== "undefined" && CATEGORIES[node.category])
+      ? CATEGORIES[node.category].label : (node.category || "");
+
+    // Highlight a field only when it's the one that matched.
+    const seg = (field, text) => match.bestField === field
+      ? highlightMatched(text || "", match.bestPositions)
+      : escapeHtml(text || "");
+
+    // When the match is on the description, show a short windowed snippet so
+    // it's clear *why* this node surfaced (its name/id/tags won't contain the
+    // query).
+    let descHtml = "";
+    if (match.bestField === "description") {
+      const snip = searchSnippet(node.description || "", match.bestPositions, 90);
+      descHtml = '<div class="search-result-desc">' + highlightMatched(snip.text, snip.positions) + '</div>';
+    }
+
+    html += '<div class="search-result' + focused + '" data-index="' + idx + '" data-node-id="' + escapeHtml(node.id) + '">';
     html +=   '<div class="search-result-main">';
-    html +=     '<div class="search-result-label">' + labelHtml + '</div>';
-    html +=     '<div class="search-result-id">' + idHtml + '</div>';
+    html +=     '<div class="search-result-label">' + seg("label", node.label || node.id) + '</div>';
+    html +=     '<div class="search-result-id">' + seg("id", node.id) + '</div>';
+    html +=     descHtml;
     html +=   '</div>';
-    html +=   '<div class="search-result-meta">' + escapeHtml(stream) + ' · ' + escapeHtml(stage) + ' · ' + escapeHtml(category) + '</div>';
+    html +=   '<div class="search-result-meta">' + seg("stream", streamLabel) + ' · ' + seg("stage", stageLabel) + ' · ' + seg("category", categoryLabel) + '</div>';
     html += '</div>';
   });
   dropdown.innerHTML = html;
@@ -186,7 +261,7 @@ function hideSearchDropdown() {
   if (dropdown) dropdown.hidden = true;
 }
 
-// Public — called by 17-events.js's Reset View button.
+// Public helper — clears the query, dropdown, and map highlights.
 function clearSearch() {
   state.searchQuery = "";
   state.searchMatches = [];

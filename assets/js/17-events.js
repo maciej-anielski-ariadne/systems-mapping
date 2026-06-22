@@ -9,27 +9,8 @@
 // ───── Search box ────────────────────────────────────────────────────────
 // The search input is wired up in 17a-search.js (fuzzy + dropdown + map
 // highlights). We only keep a reference here for the other handlers in
-// this file that need to reset the box (e.g. the Reset View button below).
+// this file that check focus / event targets against it.
 const searchInput = document.getElementById("search-input");
-
-// ───── "Reset" button in the header ──────────────────────────────────────
-// Clears filters, simulation overrides, selection, and any search state.
-document.getElementById("reset-button").addEventListener("click", () => {
-  if (!state.dataLoaded) return;
-  state.hiddenStreams.clear();
-  state.hiddenCategories.clear();
-  state.hiddenStages.clear();
-  state.userOverrides = {};
-  if (typeof clearSearch === "function") clearSearch();
-  deselectNode();
-  recomputeValues();
-  // Un-hiding stages restores full column widths, so recompute layout before
-  // re-rendering.
-  layout = computeLayout();
-  renderSidebar();
-  render();
-  saveUiStateToStorage();
-});
 
 // ───── "Simulation" toggle button ────────────────────────────────────────
 const simToggleButton = document.getElementById("sim-toggle-button");

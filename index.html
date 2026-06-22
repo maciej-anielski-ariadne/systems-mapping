@@ -85,12 +85,11 @@
 
     <!-- Header action buttons. Classes are picked up by JS in 17-events.js
          and wired to their handlers — see that file. -->
-    <button class="header-button create-map-trigger"   data-tooltip="Clear the canvas and start a fresh map from an empty 3×3 starter grid. Asks for confirmation if a map is loaded.">Create Map</button>
-    <button class="header-button edit-data-trigger"    data-tooltip="Open the form-based wizard pre-populated with the current map. Useful for bulk edits.">Edit Data</button>
-    <button class="header-button import-data-trigger"  data-tooltip="Import a CSV map file from your computer. Same as drag-dropping a .csv onto the window.">Import Data</button>
-    <button class="header-button export-data-trigger"  data-tooltip="Download the current map as a CSV (openable in Excel / Sheets, or re-importable here).">Export Data</button>
+    <button class="header-button create-map-trigger"   data-tooltip="Clear the canvas and start a fresh map from an empty 3×3 starter grid. Asks for confirmation if a map is loaded.">Create</button>
+    <button class="header-button edit-data-trigger"    data-tooltip="Open the form-based wizard pre-populated with the current map. Useful for bulk edits.">Edit</button>
+    <button class="header-button import-data-trigger"  data-tooltip="Import a CSV map file from your computer. Same as drag-dropping a .csv onto the window.">Import</button>
+    <button class="header-button export-data-trigger"  data-tooltip="Download the current map as a CSV (openable in Excel / Sheets, or re-importable here).">Export</button>
     <button id="sim-toggle-button" class="header-button" data-tooltip="Toggle simulation mode — sliders on every controllable input, downstream values recompute live.">Simulate</button>
-    <button id="reset-button"      class="header-button" data-tooltip="Clear hidden streams / categories, simulation overrides, selection, and the search box.">Reset view</button>
   </header>
 
   <!-- Hidden file picker. Clicking any .import-data-trigger button triggers it. -->
