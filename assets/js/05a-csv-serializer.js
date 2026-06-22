@@ -62,6 +62,7 @@ function serializeLiveStateToCsv() {
       label: CATEGORIES[id].label,
       color: CATEGORIES[id].color,
       textColor: CATEGORIES[id].textColor,
+      class: CATEGORIES[id].class || "primary",
     })),
     defaults: {
       enables:   DEFAULT_ELASTICITY_BY_EFFECT.enables,
@@ -115,9 +116,11 @@ function _serializeShape(data) {
   lines.push("# label      - display name shown in the sidebar legend");
   lines.push("# color      - fill colour for nodes of this category (hex)");
   lines.push("# text_color - label text colour (hex). Pick a high-contrast value.");
-  lines.push("id,label,color,text_color");
+  lines.push("# class      - 'primary' (fill; several blend into a gradient) or");
+  lines.push("#             'secondary' (a small chip in the node's bottom-right). Default primary.");
+  lines.push("id,label,color,text_color,class");
   for (const category of builder.categories || []) {
-    lines.push(csvRow([category.id, category.label, category.color, category.textColor]));
+    lines.push(csvRow([category.id, category.label, category.color, category.textColor, category.class || "primary"]));
   }
   lines.push("");
 
@@ -135,6 +138,8 @@ function _serializeShape(data) {
   // ───── nodes ────────────────────────────────────────────────────────────
   lines.push("# SECTION: nodes");
   lines.push("# Required: id, label, stream, stage, category.");
+  lines.push("# category: one or more category ids, pipe-separated (e.g. resource|risk). Each id's");
+  lines.push("#           class decides whether it's a fill (primary) or a corner chip (secondary).");
   lines.push("# Optional (enables simulation): baseline, unit, controllable, direction, slider_max.");
   lines.push("# controllable: 'true' to expose as a slider. direction: higher_better / lower_better / neutral.");
   lines.push("id,label,description,stream,stage,category,baseline,unit,controllable,direction,slider_max");
@@ -145,7 +150,7 @@ function _serializeShape(data) {
       node.description || "",
       node.stream,
       node.stage,
-      node.category,
+      (node.categoryIds && node.categoryIds.length) ? node.categoryIds.join("|") : node.category,
       node.baseline === undefined || node.baseline === null || node.baseline === "" ? "" : node.baseline,
       node.unit || "",
       node.controllable ? "true" : "",
@@ -160,14 +165,16 @@ function _serializeShape(data) {
   lines.push("# from / to    - source and target node ids");
   lines.push("# effect       - enables / increases / decreases");
   lines.push("# elasticity   - OPTIONAL per-edge override. Blank = use default for the effect.");
+  lines.push("# style        - OPTIONAL line style: 'dashed', or blank for solid (default).");
   lines.push("# description  - explanation shown in the detail panel");
-  lines.push("from,to,effect,elasticity,description");
+  lines.push("from,to,effect,elasticity,style,description");
   for (const edge of builder.edges || []) {
     lines.push(csvRow([
       edge.from,
       edge.to,
       edge.effect,
       edge.elasticity === undefined || edge.elasticity === null || edge.elasticity === "" ? "" : edge.elasticity,
+      edge.style === "dashed" ? "dashed" : "",
       edge.description || "",
     ]));
   }

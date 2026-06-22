@@ -104,6 +104,9 @@ function moveCursorToSlot(streamId, stageId, slotIndex) {
     // position within the cell.
     if (state.selectedNodeId) deselectAll();
     state.canvasEdit.cursorCell = { streamId: streamId, stageId: stageId, slotIndex: slot };
+    // Recompute so the row reserves height for the cursor placeholder (grow-to-
+    // fit) before we render and scroll to it.
+    if (typeof computeLayout === "function") layout = computeLayout();
     render();
     scrollCellIntoView(streamId, stageId, slot);
   }
@@ -126,8 +129,16 @@ function scrollCellIntoView(streamId, stageId, slotIndex) {
   if (x === undefined || y === undefined) return;
   const slot = slotIndex || 0;
   const zoom = (state.zoomLevel && !isNaN(state.zoomLevel)) ? state.zoomLevel : 1.0;
-  const slotTop    = (y + ROW_PADDING + slot * (NODE_HEIGHT + NODE_GAP_Y)) * zoom;
-  const slotBottom = slotTop + NODE_HEIGHT * zoom;
+  // Cumulative slot top (heights vary), and the height of whatever sits at the
+  // slot (a real node's height, else a default new-node slot).
+  const topLayout = (typeof slotTopY === "function")
+    ? slotTopY(streamId, stageId, slot)
+    : (y + ROW_PADDING + slot * (NODE_HEIGHT + NODE_GAP_Y));
+  const cellNodes = (layout.cells && layout.cells[streamId + ":" + stageId]) || [];
+  const atSlot = cellNodes[slot];
+  const slotH = (atSlot && layout.positions[atSlot.id]) ? layout.positions[atSlot.id].height : NODE_HEIGHT;
+  const slotTop    = topLayout * zoom;
+  const slotBottom = slotTop + slotH * zoom;
   const cellLeft   = x * zoom;
   const cellRight  = cellLeft + NODE_WIDTH  * zoom;
   const viewLeft   = scrollEl.scrollLeft;

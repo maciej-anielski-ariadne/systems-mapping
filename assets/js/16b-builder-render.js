@@ -436,11 +436,12 @@ function renderBuilderCategoriesStep() {
               '<th>Label</th>' +
               '<th style="width:80px">Fill</th>' +
               '<th style="width:80px">Text</th>' +
+              '<th style="width:130px">Class</th>' +
               '<th style="width:90px"></th>' +
             '</tr></thead><tbody>';
 
   if (state.builder.categories.length === 0) {
-    html += tableEmptyRow(7, 'No categories yet. Click "+ Add category".');
+    html += tableEmptyRow(8, 'No categories yet. Click "+ Add category".');
   } else {
     state.builder.categories.forEach((c, i) => {
       const invalidId = v.dupCategories.has(c.id) || !c.id ? ' invalid' : '';
@@ -451,6 +452,10 @@ function renderBuilderCategoriesStep() {
       html +=   '<td><input type="text" data-section="categories" data-field="label" data-index="' + i + '" value="' + escapeHtml(c.label) + '" placeholder="Resource" /></td>';
       html +=   '<td><input type="color" data-section="categories" data-field="color" data-index="' + i + '" value="' + escapeHtml(c.color || "#a3a3a3") + '" /></td>';
       html +=   '<td><input type="color" data-section="categories" data-field="textColor" data-index="' + i + '" value="' + escapeHtml(c.textColor || "#1c1917") + '" /></td>';
+      html +=   '<td><select data-section="categories" data-field="class" data-index="' + i + '">' +
+                  '<option value="primary"'   + ((c.class || "primary") !== "secondary" ? " selected" : "") + '>Primary · fill</option>' +
+                  '<option value="secondary"' + ((c.class || "primary") === "secondary" ? " selected" : "") + '>Secondary · chip</option>' +
+                '</select></td>';
       html +=   rowActionsHtml("categories", i);
       html += '</tr>';
     });
@@ -588,12 +593,13 @@ function renderBuilderEdgesStep() {
               sortableTh("edges", "to",          "To",          ' style="width:200px"') +
               sortableTh("edges", "effect",      "Effect",      ' style="width:130px"') +
               sortableTh("edges", "elasticity",  "Elasticity",  ' style="width:110px"') +
+              '<th style="width:96px">Style</th>' +
               sortableTh("edges", "description", "Description", "") +
               '<th style="width:90px"></th>' +
             '</tr></thead><tbody>';
 
   if (state.builder.edges.length === 0) {
-    html += tableEmptyRow(7, 'No edges yet. Click "+ Add edge".');
+    html += tableEmptyRow(8, 'No edges yet. Click "+ Add edge".');
   } else {
     sortedBuilderIndices("edges").forEach((i) => {
       const e = state.builder.edges[i];
@@ -610,6 +616,10 @@ function renderBuilderEdgesStep() {
                   ).join("") +
                 '</select></td>';
       html +=   '<td><input type="number" step="any" data-section="edges" data-field="elasticity" data-index="' + i + '" value="' + escapeHtml(e.elasticity === undefined ? "" : e.elasticity) + '" placeholder="(default)" /></td>';
+      html +=   '<td><select data-section="edges" data-field="style" data-index="' + i + '">' +
+                  '<option value="solid"'  + (e.style === "dashed" ? "" : " selected") + '>Solid</option>' +
+                  '<option value="dashed"' + (e.style === "dashed" ? " selected" : "") + '>Dashed</option>' +
+                '</select></td>';
       html +=   '<td><input type="text" data-section="edges" data-field="description" data-index="' + i + '" value="' + escapeHtml(e.description) + '" placeholder="Why this link exists" /></td>';
       html +=   rowActionsHtml("edges", i);
       html += '</tr>';

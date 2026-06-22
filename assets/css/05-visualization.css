@@ -163,10 +163,9 @@ body.panning * {
 }
 
 /* Synthetic "through" edges — re-routed causal effects that span one or more
- * collapsed stages. Drawn dashed so they read as derived, not real, edges. */
-.edge-path.synthetic {
-  stroke-dasharray: 6 5;
-}
+ * collapsed stages. Drawn thinner than real edges (in 11-rendering.js) so they
+ * read as derived; the dash is applied inline only when the re-routed chain
+ * contains a dashed link, so a synthetic edge inherits its links' style. */
 .edge-path.synthetic.effect-neutral {
   color: var(--edge-default);
 }

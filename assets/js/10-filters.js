@@ -56,21 +56,41 @@ function toggleStage(stageId) {
   setDimensionVisibility(state.hiddenStages, stageId, "stage");
 }
 
-// Categories don't affect layout and don't clear the selection, so they keep
-// their own minimal toggle.
-function toggleCategory(categoryId) {
-  if (state.hiddenCategories.has(categoryId)) state.hiddenCategories.delete(categoryId);
-  else state.hiddenCategories.add(categoryId);
+// Flip an id in a non-layout "hidden" filter set, then re-render + persist.
+// Categories, edge effects, line styles, and trace directions all toggle this
+// way (they don't change layout or the selection, unlike the stream/stage
+// dimensions, which go through setDimensionVisibility). `beforeRender` runs
+// after the flip but before re-rendering — the trace filter uses it to
+// recompute the current selection's highlight.
+function toggleHiddenFilter(hiddenSet, id, beforeRender) {
+  if (hiddenSet.has(id)) hiddenSet.delete(id);
+  else hiddenSet.add(id);
+  if (beforeRender) beforeRender();
   render();
   renderSidebar();
   saveUiStateToStorage();
 }
 
+function toggleCategory(categoryId) { toggleHiddenFilter(state.hiddenCategories, categoryId); }
+function toggleEffect(effect)       { toggleHiddenFilter(state.hiddenEffects, effect); }
+function toggleStyle(style)         { toggleHiddenFilter(state.hiddenStyles, style); }
+function toggleTrace(dir)           { toggleHiddenFilter(state.hiddenTrace, dir, refreshTraceForSelection); }
+
 // A node is visible only if its stream, its category, AND its stage are all
 // visible.
 function isNodeVisible(node) {
   if (state.hiddenStreams.has(node.stream)) return false;
-  if (state.hiddenCategories.has(node.category)) return false;
   if (state.hiddenStages.has(node.stage)) return false;
+  // Hidden if ANY category the node carries (primary or secondary) is hidden.
+  for (const c of nodeCategoryIds(node)) if (state.hiddenCategories.has(c)) return false;
+  return true;
+}
+
+// A (real) edge is drawn only if neither its effect nor its line style is
+// hidden via the sidebar "Edge types" / "Line style" filters. Purely visual —
+// the simulation still runs over every edge. Shared by the renderer + export.
+function isEdgeVisible(edge) {
+  if (state.hiddenEffects.has(edge.effect)) return false;
+  if (state.hiddenStyles.has(edge.style || "solid")) return false;
   return true;
 }

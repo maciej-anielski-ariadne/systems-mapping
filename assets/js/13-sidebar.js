@@ -23,14 +23,15 @@ function renderSidebar() {
   renderStagesList();
   renderStreamsList();
   renderCategoriesList();
+  renderLegendFilters();
 
   // Newly-rendered rows have data-tooltip; wire them up to the tooltip system.
   if (typeof wireDataTooltips === "function") wireDataTooltips(sidebarEl);
 
-  // NOTE: the "+ Add stream / + Add stage / + Add category" buttons live in
-  // index.html (they persist across renders), so they're wired ONCE from
-  // 17-events.js at startup. Wiring them here would stack a fresh click
-  // listener every render — one click would then add many rows.
+  // NOTE: the "+ Add stream / + Add stage" buttons live in index.html (they
+  // persist across renders), so they're wired ONCE from 17-events.js at
+  // startup. The two category add buttons are rendered per-call inside
+  // renderCategoriesList and wired there on the fresh DOM (one listener each).
 }
 
 // ───── Stages ──────────────────────────────────────────────────────────
@@ -103,40 +104,162 @@ function renderStreamsList() {
 }
 
 // ───── Categories ──────────────────────────────────────────────────────
-// Categories are stored in an insertion-order-preserving object —
-// reorderCategories rebuilds it to commit a new order.
+// Rendered as two class-grouped sections — Primary (fill) and Secondary
+// (chips) — each with its own heading, count and "+ Add" button. Categories
+// are stored in an insertion-order-preserving object; reorderCategories
+// rebuilds it to commit a new order, so each row's data-index stays its
+// position in that global order (drag-reorder operates on it regardless of
+// which group the row is shown in).
 function renderCategoriesList() {
   const container = document.getElementById("category-filters");
-  const countEl   = document.getElementById("categories-count");
   if (!container) return;
-  const ids = Object.keys(CATEGORIES);
-  if (countEl) countEl.textContent = ids.length;
+  const allIds = Object.keys(CATEGORIES);
 
-  if (ids.length === 0) {
-    container.innerHTML = '<div class="sidebar-empty">No categories yet. Click "+ Add category" to create one.</div>';
-    return;
-  }
+  // Per-id global index (the order reorderCategories works against).
+  const indexOf = {};
+  allIds.forEach((id, i) => { indexOf[id] = i; });
 
-  let html = "";
-  for (let i = 0; i < ids.length; i++) {
-    const catId = ids[i];
+  const catRow = catId => {
     const cat = CATEGORIES[catId];
     const isHidden = state.hiddenCategories.has(catId);
     const count = categoryNodeCount[catId] || 0;
-
+    const isSecondary = (cat.class || "primary") === "secondary";
+    const reclassLabel = isSecondary ? "→ fill" : "→ chip";
+    const reclassTitle = isSecondary
+      ? "Make this a Primary category (fill; several blend into a gradient)"
+      : "Make this a Secondary category (a corner chip)";
     const tip = (isHidden ? "Click to show " : "Click to hide ") + cat.label + " — " + count + " node" + (count === 1 ? "" : "s") + " on the map. Double-click the name to rename.";
-    html += '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="category" data-id="' + escapeHtml(catId) + '" data-index="' + i + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
-    html +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
-    html +=   '<input type="color" class="sidebar-edit-color sidebar-edit-swatch" data-field="color" value="' + escapeHtml(cat.color || "#94a3b8") + '" title="Fill colour (label colour auto-contrasts)" aria-label="Fill colour">';
-    html +=   '<div class="filter-label sidebar-inline-edit" data-field="label" title="Double-click to rename">' + escapeHtml(cat.label) + '</div>';
-    html +=   '<div class="filter-count">' + count + '</div>';
-    html +=   deleteIconButton("Delete category");
-    html += '</div>';
-  }
-  html += '<div class="sidebar-drop-end" data-kind="category" data-target-index="' + ids.length + '"></div>';
+    let h = '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="category" data-id="' + escapeHtml(catId) + '" data-index="' + indexOf[catId] + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
+    h +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
+    h +=   '<input type="color" class="sidebar-edit-color sidebar-edit-swatch" data-field="color" value="' + escapeHtml(cat.color || "#94a3b8") + '" title="Fill colour (label colour auto-contrasts)" aria-label="Fill colour">';
+    h +=   '<div class="filter-label sidebar-inline-edit" data-field="label" title="Double-click to rename">' + escapeHtml(cat.label) + '</div>';
+    h +=   '<button class="sidebar-cat-reclass" data-action="reclass" title="' + escapeHtml(reclassTitle) + '">' + reclassLabel + '</button>';
+    h +=   '<div class="filter-count">' + count + '</div>';
+    h +=   deleteIconButton("Delete category");
+    h += '</div>';
+    return h;
+  };
+
+  const group = (title, classKey, ids, addLabel) => {
+    let h = '<div class="sidebar-section-title"><span>' + title + '</span><span class="count">' + ids.length + '</span></div>';
+    h += ids.length ? ids.map(catRow).join("") : '<div class="sidebar-empty">None yet.</div>';
+    h += '<button class="sidebar-add-btn sidebar-cat-add" data-cat-class="' + classKey + '">' + addLabel + '</button>';
+    return h;
+  };
+
+  const split = splitCategoriesByClass(allIds);
+  let html = "";
+  html += group("Primary categories · fill",      "primary",   split.primary,   "+ Add primary");
+  html += '<div class="sidebar-cat-group-gap"></div>';
+  html += group("Secondary categories · chips",   "secondary", split.secondary, "+ Add secondary");
+  html += '<div class="sidebar-drop-end" data-kind="category" data-target-index="' + allIds.length + '"></div>';
   container.innerHTML = html;
 
   wireRowHandlers(container, "category");
+  // The "+ Add" buttons are re-rendered each call, so wiring them here (on the
+  // fresh DOM) attaches exactly one listener — no stacking. (The static stream/
+  // stage add buttons are still wired once in 17-events.js.)
+  container.querySelectorAll("[data-cat-class]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (typeof addCategory === "function") addCategory(btn.getAttribute("data-cat-class"));
+    });
+  });
+}
+
+// ───── Edge-type / line-style / trace filters ───────────────────────────
+// Three click-to-toggle filter groups using the same toggle+dim model as the
+// Stream / Category filters: click a row to hide that edge effect or line
+// style on the map (or to suppress a direction of the causal trace), click
+// again to restore it. Each renders into its own container in index.html.
+const EDGE_TYPE_FILTERS = [
+  { id: "enables",   label: "Enables / supports" },
+  { id: "increases", label: "Increases" },
+  { id: "decreases", label: "Decreases" },
+];
+const TRACE_FILTERS = [
+  { id: "ancestors",   label: "Upstream sources",   varName: "--edge-ancestor"   },
+  { id: "descendants", label: "Downstream impacts", varName: "--edge-descendant" },
+];
+const LINE_STYLE_FILTERS = [
+  { id: "solid",  label: "Solid",  swatchClass: "legend-line-solid"  },
+  { id: "dashed", label: "Dashed", swatchClass: "legend-line-dashed" },
+];
+
+// One descriptor per filter group: where it renders, its items, the hidden-set
+// it reads, how to draw each item's swatch, and how to count its edges (null =
+// no count, for the trace group). renderLegendFilters loops over these so the
+// three groups share one render path.
+const LEGEND_FILTER_GROUPS = [
+  { kind: "effect", containerId: "edge-type-filters",  title: "Edge types", ctx: "edges on the map",
+    items: EDGE_TYPE_FILTERS,  hiddenSet: () => state.hiddenEffects,
+    swatch: f => '<div class="legend-line" style="background: var(--edge-' + f.id + ');"></div>',
+    count:  (f, counts) => counts.effects[f.id] || 0 },
+  { kind: "style", containerId: "edge-style-filters", title: "Line style", ctx: "edges on the map",
+    items: LINE_STYLE_FILTERS, hiddenSet: () => state.hiddenStyles,
+    swatch: f => '<div class="legend-line ' + f.swatchClass + '"></div>',
+    count:  (f, counts) => counts.styles[f.id] || 0 },
+  { kind: "trace", containerId: "trace-filters", title: "Trace", ctx: "when a node is selected",
+    items: TRACE_FILTERS, hiddenSet: () => state.hiddenTrace,
+    swatch: f => '<div class="legend-swatch" style="box-shadow: inset 0 0 0 2px var(' + f.varName + '), 0 0 4px var(' + f.varName + ');"></div>',
+    count:  () => null },
+];
+
+// Every edge count the filters need, in one pass over EDGES (instead of a
+// separate scan per row).
+function edgeFilterCounts() {
+  const effects = {}, styles = { solid: 0, dashed: 0 };
+  for (const e of EDGES) {
+    effects[e.effect] = (effects[e.effect] || 0) + 1;
+    styles[(e.style || "solid") === "dashed" ? "dashed" : "solid"]++;
+  }
+  return { effects, styles };
+}
+
+// One filter row. `count` is omitted (null) for trace rows, which aren't counts.
+function legendFilterRow(kind, id, swatch, label, count, isOff, tip) {
+  return '<div class="legend-filter-row filter-row ' + (isOff ? "disabled" : "") + '" data-legend-kind="' + kind + '" data-legend-id="' + escapeHtml(id) + '" data-tooltip="' + escapeHtml(tip) + '">' +
+    swatch +
+    '<div class="filter-label">' + escapeHtml(label) + '</div>' +
+    (count != null ? '<div class="filter-count">' + count + '</div>' : '') +
+    '</div>';
+}
+
+function sectionTitleHtml(label, shown, total) {
+  return '<div class="sidebar-section-title"><span>' + label + '</span><span class="count">' + shown + ' / ' + total + '</span></div>';
+}
+
+// Render all three filter groups (edge types / line style / trace) from
+// LEGEND_FILTER_GROUPS — one render path, counts computed once.
+function renderLegendFilters() {
+  const counts = edgeFilterCounts();
+  for (const g of LEGEND_FILTER_GROUPS) {
+    const c = document.getElementById(g.containerId);
+    if (!c) continue;
+    const hidden = g.hiddenSet();
+    const shown = g.items.filter(f => !hidden.has(f.id)).length;
+    let html = sectionTitleHtml(g.title, shown, g.items.length);
+    for (const f of g.items) {
+      const isOff = hidden.has(f.id);
+      html += legendFilterRow(g.kind, f.id, g.swatch(f), f.label, g.count(f, counts), isOff,
+        "Click to " + (isOff ? "show " : "hide ") + f.label.toLowerCase() + " " + g.ctx + ".");
+    }
+    c.innerHTML = html;
+    wireLegendFilters(c);
+  }
+}
+
+// Wire each filter row to its toggle. Re-rendered each call on fresh DOM, so
+// exactly one listener per row (no stacking).
+function wireLegendFilters(container) {
+  container.querySelectorAll(".legend-filter-row").forEach(row => {
+    row.addEventListener("click", () => {
+      const kind = row.getAttribute("data-legend-kind");
+      const id   = row.getAttribute("data-legend-id");
+      if      (kind === "effect" && typeof toggleEffect === "function") toggleEffect(id);
+      else if (kind === "style"  && typeof toggleStyle  === "function") toggleStyle(id);
+      else if (kind === "trace"  && typeof toggleTrace  === "function") toggleTrace(id);
+    });
+  });
 }
 
 // Small inline trash-icon delete button shared by every sidebar row.
@@ -237,12 +360,23 @@ function wireRowHandlers(container, kind) {
       });
     }
 
+    // Reclassify (categories only): flip Primary ↔ Secondary, then re-render
+    // the sidebar so the row jumps to the other group. Re-splitting every
+    // node's categories happens inside applySidebarFieldEdit.
+    const reclassBtn = row.querySelector("[data-action='reclass']");
+    if (reclassBtn && kind === "category") {
+      reclassBtn.addEventListener("click", event => {
+        event.stopPropagation();
+        reclassifyCategory(id);
+      });
+    }
+
     // Filter toggle — clicking the row body (anything that isn't an interactive
     // control) hides/shows that stream / category on the map. Stages don't
     // filter.
     if (isFilter) {
       row.addEventListener("click", event => {
-        if (event.target.closest(".sidebar-edit-drag, .sidebar-edit-color, .sidebar-row-delete, .sidebar-inline-edit")) return;
+        if (event.target.closest(".sidebar-edit-drag, .sidebar-edit-color, .sidebar-row-delete, .sidebar-cat-reclass, .sidebar-inline-edit")) return;
         toggle();
       });
     }
@@ -367,4 +501,24 @@ function applySidebarFieldEdit(kind, id, field, input) {
   // in-progress edit isn't torn down (callers that need a rebuild — e.g. the
   // inline-edit commit — call renderSidebar themselves afterwards).
   if (typeof applyCanvasMutation === "function") applyCanvasMutation({ skipDetailRender: true, skipSidebarRender: true });
+}
+
+// Flip a category between Primary (fill) and Secondary (chip), then re-split
+// every node's category membership by the new classes. A structural mutation
+// (not a field edit), invoked by the sidebar reclassify button — re-renders the
+// sidebar so the row jumps to the other group.
+function reclassifyCategory(catId) {
+  const cat = CATEGORIES[catId];
+  if (!cat) return;
+  cat.class = (cat.class || "primary") === "secondary" ? "primary" : "secondary";
+  for (const n of NODES) {
+    const ids = nodeCategoryIds(n).filter(cid => CATEGORIES[cid]);
+    const split = splitCategoriesByClass(ids);
+    n.categoryIds = ids;
+    n.primaryCategories = split.primary;
+    n.secondaryCategories = split.secondary;
+    n.category = n.primaryCategories[0] || ids[0] || n.category;
+  }
+  if (typeof applyCanvasMutation === "function") applyCanvasMutation({ skipDetailRender: true, skipSidebarRender: true });
+  renderSidebar();
 }

@@ -28,7 +28,8 @@ function rebuildIndexes() {
     // and any other code that wants "how many nodes in this stream" is an
     // O(1) lookup. Matters once the map grows past a few hundred nodes.
     streamNodeCount[node.stream]     = (streamNodeCount[node.stream]     || 0) + 1;
-    categoryNodeCount[node.category] = (categoryNodeCount[node.category] || 0) + 1;
+    // Count every category a node carries (a node can now hold several).
+    for (const cid of nodeCategoryIds(node)) categoryNodeCount[cid] = (categoryNodeCount[cid] || 0) + 1;
   }
 
   outgoingEdges = {};
@@ -206,6 +207,9 @@ function loadDataFromCsv(csvText) {
       label: row.label || row.id,
       color: row.color || "#a3a3a3",
       textColor: row.text_color || "#1c1917",
+      // "primary" = fill (default; several primaries blend into a gradient);
+      // "secondary" = a small chip in the node's bottom-right corner.
+      class: (row.class || "").trim().toLowerCase() === "secondary" ? "secondary" : "primary",
     };
   }
 
@@ -243,8 +247,19 @@ function loadDataFromCsv(csvText) {
     let hasInvalidRefs = false;
     if (!streamIdSet.has(row.stream))     { errors.push("Node `" + row.id + "` references unknown stream `"   + row.stream   + "`. Skipped."); hasInvalidRefs = true; }
     if (!stageIdSet.has(row.stage))       { errors.push("Node `" + row.id + "` references unknown stage `"    + row.stage    + "`. Skipped."); hasInvalidRefs = true; }
-    if (!categoryIdSet.has(row.category)) { errors.push("Node `" + row.id + "` references unknown category `" + row.category + "`. Skipped."); hasInvalidRefs = true; }
+
+    // `category` is a pipe-separated list of category ids. Each id's class
+    // (primary/secondary) decides how it renders. Unknown ids are dropped with
+    // a warning; a node with no valid category at all is skipped.
+    const rawCatIds = String(row.category == null ? "" : row.category).split("|").map(s => s.trim()).filter(Boolean);
+    const seenCat = new Set();
+    const validCatIds = rawCatIds.filter(id => categoryIdSet.has(id) && !seenCat.has(id) && seenCat.add(id));
+    for (const u of new Set(rawCatIds.filter(id => !categoryIdSet.has(id)))) errors.push("Node `" + row.id + "` references unknown category `" + u + "` (ignored).");
+    if (validCatIds.length === 0) { errors.push("Node `" + row.id + "` has no valid category. Skipped."); hasInvalidRefs = true; }
     if (hasInvalidRefs) continue;
+
+    const catSplit = splitCategoriesByClass(validCatIds, parsedCategories);
+    const primaryCategories = catSplit.primary, secondaryCategories = catSplit.secondary;
 
     const node = {
       id: row.id,
@@ -252,7 +267,15 @@ function loadDataFromCsv(csvText) {
       description: row.description || "",
       stream: row.stream,
       stage: row.stage,
-      category: row.category,
+      // `category` stays a single id (the primary anchor) for the many features
+      // that key off one category (filters, search, detail edit, mutations);
+      // the full multi-select lives in the arrays below.
+      category: primaryCategories[0] || validCatIds[0],
+      // Stored primaries-then-secondaries to match the editors, so a
+      // serialize → reload round-trip is order-stable.
+      categoryIds: primaryCategories.concat(secondaryCategories),
+      primaryCategories: primaryCategories,
+      secondaryCategories: secondaryCategories,
     };
 
     // Optional quantification fields.
@@ -300,6 +323,9 @@ function loadDataFromCsv(csvText) {
       };
       const elasticityValue = parseNumericCell(row.elasticity);
       if (elasticityValue !== undefined) edge.elasticity = elasticityValue;
+      // Line style: "dashed" or (default) solid. Only stored when dashed, so an
+      // old CSV with no `style` column loads as solid.
+      if ((row.style || "").trim().toLowerCase() === "dashed") edge.style = "dashed";
 
       parsedEdges.push(edge);
     }

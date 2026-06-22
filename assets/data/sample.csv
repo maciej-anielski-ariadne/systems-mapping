@@ -30,12 +30,15 @@ outputs,Outputs
 outcomes,Outcomes
 
 # SECTION: categories
-# Node types. Each gets its own fill / text colour pair.
-id,label,color,text_color
-resource,Resource,#d4a373,#1c1917
-activity,Activity,#7dd3fc,#082f49
-metric,Metric,#5eead4,#042f2e
-outcome,Outcome,#86efac,#052e16
+# Node types. class = primary (fill; several blend into a gradient) or
+# secondary (a small chip in the node's bottom-right). A node's category cell
+# can list several ids, pipe-separated (e.g. outcome|metric).
+id,label,color,text_color,class
+resource,Resource,#d4a373,#1c1917,primary
+activity,Activity,#7dd3fc,#082f49,primary
+metric,Metric,#5eead4,#042f2e,primary
+outcome,Outcome,#86efac,#052e16,primary
+risk,Risk,#fca5a5,#450a0a,secondary
 
 # SECTION: defaults
 # Used when an edge's `elasticity` cell is blank.
@@ -50,16 +53,16 @@ elasticity_decreases,-0.25
 # green/red when the value moves materially from baseline.
 id,label,description,stream,stage,category,baseline,unit,controllable,direction,slider_max
 team_size,Team size,People working in the Operations stream.,ops,resources,resource,10,people,true,,3
-marketing_spend,Marketing budget,Monthly spend on paid acquisition campaigns.,sales,resources,resource,5000,£/mo,true,,3
+marketing_spend,Marketing budget,Monthly spend on paid acquisition campaigns.,sales,resources,resource|risk,5000,£/mo,true,,3
 support_staff,Support staff,Customer support headcount.,support,resources,resource,4,people,true,,3
 content_production,Content production,Day-to-day writing and publishing of articles.,ops,activities,activity,,,,,
 campaign_execution,Campaign execution,Running the paid campaigns funded by the marketing budget.,sales,activities,activity,,,,,
 ticket_handling,Ticket handling,Triaging and resolving inbound support tickets.,support,activities,activity,,,,,
 content_published,Content published,Number of articles or assets shipped each month.,ops,outputs,metric,20,pieces/mo,,higher_better,
 leads_generated,Leads generated,New marketing-qualified leads per month.,sales,outputs,metric,100,leads/mo,,higher_better,
-avg_resolution_time,Avg resolution time,Mean hours between ticket open and close.,support,outputs,metric,24,hours,,lower_better,
+avg_resolution_time,Avg resolution time,Mean hours between ticket open and close.,support,outputs,metric|risk,24,hours,,lower_better,
 brand_awareness,Brand awareness,Index score from a monthly survey panel.,ops,outcomes,outcome,50,index,,higher_better,
-monthly_revenue,Monthly revenue,Total billable revenue for the month.,sales,outcomes,outcome,50000,£/mo,,higher_better,
+monthly_revenue,Monthly revenue,Total billable revenue for the month.,sales,outcomes,outcome|metric,50000,£/mo,,higher_better,
 customer_satisfaction,Customer satisfaction,CSAT score (0-100) from post-resolution surveys.,support,outcomes,outcome,85,% CSAT,,higher_better,
 
 # SECTION: edges

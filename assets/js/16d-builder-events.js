@@ -497,6 +497,10 @@ function handleBuilderInput(event) {
 
   row[field] = newValue;
 
+  // The node table edits the single primary anchor; keep the node's full
+  // category list in sync (full multi-primary editing lives in the detail panel).
+  if (section === "nodes" && field === "category") reconcileBuilderNodeCategories(row, newValue);
+
   // Auto-fill id from the label, and short label for streams — but only the
   // first time, so the user can override either freely afterwards.
   if (field === "label" && !row.id) {

@@ -85,12 +85,13 @@
 
     <!-- Header action buttons. Classes are picked up by JS in 17-events.js
          and wired to their handlers — see that file. -->
-    <button class="header-button create-map-trigger"   data-tooltip="Clear the canvas and start a fresh map from an empty 3×3 starter grid. Asks for confirmation if a map is loaded.">Create Map</button>
-    <button class="header-button edit-data-trigger"    data-tooltip="Open the form-based wizard pre-populated with the current map. Useful for bulk edits.">Edit Data</button>
-    <button class="header-button import-data-trigger"  data-tooltip="Import a CSV map file from your computer. Same as drag-dropping a .csv onto the window.">Import Data</button>
-    <button class="header-button export-data-trigger"  data-tooltip="Download the current map as a CSV (openable in Excel / Sheets, or re-importable here).">Export Data</button>
+    <button class="header-button create-map-trigger"   data-tooltip="Clear the canvas and start a fresh map from an empty 3×3 starter grid. Asks for confirmation if a map is loaded.">Create</button>
+    <button class="header-button edit-data-trigger"    data-tooltip="Open the form-based wizard pre-populated with the current map. Useful for bulk edits.">Edit</button>
+    <button class="header-button save-data-trigger"    data-tooltip="Save the current map as a CSV (openable in Excel / Sheets, or re-importable here).">Save</button>
+    <button class="header-button import-data-trigger"  data-tooltip="Import a CSV map file from your computer. Same as drag-dropping a .csv onto the window.">Import</button>
+    <button class="header-button export-image-trigger" data-tooltip="Copy the canvas to the clipboard as a PNG image. Captures what's on screen — zoom/pan to frame the part you want. If a node is selected, only its highlighted nodes and edges are copied. Connected nodes are packed closer together.">Export</button>
+    <button class="header-button publish-html-trigger" data-tooltip="Publish a self-contained, view-only HTML page of the canvas (pan / zoom / hover). Same framing logic as Export.">Publish</button>
     <button id="sim-toggle-button" class="header-button" data-tooltip="Toggle simulation mode — sliders on every controllable input, downstream values recompute live.">Simulate</button>
-    <button id="reset-button"      class="header-button" data-tooltip="Clear hidden streams / categories, simulation overrides, selection, and the search box.">Reset view</button>
   </header>
 
   <!-- Hidden file picker. Clicking any .import-data-trigger button triggers it. -->
@@ -141,51 +142,23 @@
     </div>
 
     <!-- Category filters + editing — JS fills the list in 13-sidebar.js.
-         Categories follow the same edit pattern as streams: per-row pencil
-         expands to an inline form (label / fill colour / text colour /
-         delete). Click the compact row to toggle visibility. -->
+         Rendered as two groups (Primary · fill / Secondary · chips), each with
+         its own heading, count and "+ Add" button. Per-row edit matches streams:
+         click the swatch to recolour, double-click the name to rename, the
+         "→ chip / → fill" button reclassifies, trash deletes; click the row body
+         to toggle visibility. The headings + add buttons are rendered (not
+         static), so they're wired per-render in 13-sidebar.js. -->
     <div class="sidebar-section" id="category-filters-section">
-      <div class="sidebar-section-title">
-        <span>Categories</span>
-        <span class="count" id="categories-count"></span>
-      </div>
       <div id="category-filters"></div>
-      <button class="sidebar-add-btn" data-add="category">+ Add category</button>
     </div>
 
-    <!-- Edge legend (static) -->
-    <div class="sidebar-section">
-      <div class="sidebar-section-title">
-        <span>Edge Legend</span>
-      </div>
-      <div class="legend-row">
-        <div class="legend-line" style="background: var(--edge-enables);"></div>
-        <div class="legend-label">Enables / supports</div>
-      </div>
-      <div class="legend-row">
-        <div class="legend-line" style="background: var(--edge-increases);"></div>
-        <div class="legend-label">Increases</div>
-      </div>
-      <div class="legend-row">
-        <div class="legend-line" style="background: var(--edge-decreases);"></div>
-        <div class="legend-label">Decreases</div>
-      </div>
-    </div>
-
-    <!-- Trace legend (static) -->
-    <div class="sidebar-section">
-      <div class="sidebar-section-title">
-        <span>Trace Legend</span>
-      </div>
-      <div class="legend-row">
-        <div class="legend-swatch" style="box-shadow: inset 0 0 0 2px var(--edge-ancestor), 0 0 4px var(--edge-ancestor);"></div>
-        <div class="legend-label">Upstream sources</div>
-      </div>
-      <div class="legend-row">
-        <div class="legend-swatch" style="box-shadow: inset 0 0 0 2px var(--edge-descendant), 0 0 4px var(--edge-descendant);"></div>
-        <div class="legend-label">Downstream impacts</div>
-      </div>
-    </div>
+    <!-- Edge / trace filters — JS fills these (renderEdgeTypeFilters /
+         renderEdgeStyleFilters / renderTraceFilters in 13-sidebar.js). Each row
+         toggles like Streams: click to hide that edge effect / line style on the
+         map (or suppress a trace direction); click again to show it. -->
+    <div class="sidebar-section"><div id="edge-type-filters"></div></div>
+    <div class="sidebar-section"><div id="edge-style-filters"></div></div>
+    <div class="sidebar-section"><div id="trace-filters"></div></div>
   </aside>
 
   <!-- ============== PANEL RESIZE HANDLES ==============
@@ -342,6 +315,7 @@
 
 <script src="assets/js/17-events.js"></script>             <!-- wire up controls         -->
 <script src="assets/js/17a-search.js"></script>            <!-- fuzzy search + dropdown  -->
+<script src="assets/js/19-export.js"></script>             <!-- clipboard PNG copy + HTML publish -->
 <script src="assets/js/18-main.js"></script>               <!-- startup                  -->
 
 </body>

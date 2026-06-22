@@ -9,18 +9,25 @@ Domain-agnostic — any system you can express as nodes-with-streams-and-stages 
 1. Open `index.html` in any modern browser. (Works fully offline — fonts and code are bundled locally.)
 2. The app boots into an **empty 3×3 starter grid** — three streams (rows), three stages (columns), no nodes yet. From here you have three paths:
    - **Build directly on the canvas** (recommended for non-technical users). Click any empty cell to add a node, then rename it in the right panel. Drag from the right edge of a node to another node to draw an edge. Edit streams / stages / categories from the left sidebar (pencil icon to rename / delete, drag handle to reorder, **+ Add** buttons at the bottom of each section).
-   - **Import an existing CSV** — click **Import Data** in the header, or drag-drop a `.csv` onto the window.
-   - **Bulk edit via the wizard** — click **Edit Data** in the header to open a six-step form (streams → stages → categories → nodes → edges → review). Useful for big edits where the canvas is too fiddly. Hit **Apply to map** to re-render, or **Download CSV** to save a snapshot.
-3. Iterate freely. Every canvas edit auto-saves to your browser, so a page refresh restores everything. Click **Export Data** in the header to download the current map as a CSV.
+   - **Import an existing CSV** — click **Import** in the header, or drag-drop a `.csv` onto the window.
+   - **Bulk edit via the wizard** — click **Edit** in the header to open a six-step form (streams → stages → categories → nodes → edges → review). Useful for big edits where the canvas is too fiddly. Hit **Apply to map** to re-render, or **Download CSV** to save a snapshot.
+3. Iterate freely. Every canvas edit auto-saves to your browser, so a page refresh restores everything. Click **Save** in the header to download the current map as a CSV.
 
-The header has six buttons left-to-right: **Create Map · Edit Data · Import Data · Export Data · Simulate · Reset view**. (**Create Map** clears the canvas and starts a fresh empty grid, asking for confirmation if a map is loaded. **Edit Data** is dimmed until a map exists.)
+The header has seven buttons left-to-right: **Create · Edit · Save · Import · Export · Publish · Simulate**.
+- **Create** clears the canvas and starts a fresh empty grid, asking for confirmation if a map is loaded.
+- **Edit** opens the bulk-edit wizard (dimmed until a map exists).
+- **Save** downloads the current map as a CSV (re-importable).
+- **Import** loads a CSV from disk.
+- **Export** copies the canvas to your clipboard as a high-resolution PNG (rendered vector-sharp at up to 3× pixel density, automatically scaled down to stay within the browser's canvas limits for very large maps) and shows a "copied" toast — paste it straight into a doc, slide, or chat. It captures what's on screen, so zoom / pan to frame the part you want. If a node is selected, only its highlighted nodes and edges (out to the current **highlight depth**) are copied — rendered in the map's normal, un-highlighted style (the highlight only selects what to include). Either way the export is reflowed: empty stage columns and stream rows are dropped and the surviving streams reordered so connected nodes sit closer together. (Clipboard image copy needs a secure context — works over http/localhost or https.)
+- **Publish** downloads `systems-map.html` — a self-contained, view-only page of the same framed canvas with pan / zoom / hover-for-details (no editing, importing, or simulating).
+- **Simulate** toggles simulation mode (sliders on controllable inputs).
 
 ## What you get
 
 - Layered layout: streams (rows) × stages (columns), nodes placed in grid cells, edges as bezier curves.
 - Click a node → highlights its direct inputs (blue) and direct impacts (amber), dims everything else.
 - Click a stream label (sidebar or row header) → collapse / expand the whole stream.
-- **Smart search** → fuzzy match on node labels, descriptions, and IDs (handles typos like "brder" → "Border" and word-initials like "bff" → "Border Force FTE"). Top results show as a dropdown below the search box; matching nodes get an amber halo on the map. Press `/` from anywhere on the page to jump to the search box.
+- **Smart search** → fuzzy match across every node field — name, description, stream, stage, category, ID, and unit — ranked in that priority order (handles typos like "brder" → "Border" and word-initials like "bff" → "Border Force FTE"). So searching a stream/stage/category name surfaces every node in it. Top results show as a dropdown below the search box, with the matched text highlighted; matching nodes get an amber halo on the map. Press `/` from anywhere on the page to jump to the search box.
 - Detail panel → category, stream, stage, baseline + current values, all direct inputs/impacts with per-edge elasticities, click-through navigation. **Edit Node** toggle turns the panel into an edit form (every field as an input, per-row outgoing-edge editor, delete button).
 - **Canvas direct edit** → click an empty grid cell to add a node, drag from a node's right edge to another node to draw an edge, press Delete on a selected node to remove it (with a 6-second undo toast). Streams / stages / categories are edited from the left sidebar (pencil to rename / re-colour, drag handle to reorder, **+ Add** at the bottom of each section).
 - **Build / Edit wizard** → optional six-step in-app form (streams → stages → categories → nodes → edges → review) with dropdowns for every cross-reference, live validation, and round-trip with the current map. Click **Edit Data** in the header. Useful for bulk edits where the canvas is too fiddly.
@@ -220,6 +227,7 @@ systems_mapping/
     │   ├── 16g-canvas-undo.js       Undo snapshots + the bottom-of-screen toast
     │   ├── 17-events.js             Wires up search box, buttons, drag-drop, zoom, pan, pins
     │   ├── 17a-search.js            Fuzzy search: scoring, dropdown, map highlights
+    │   ├── 19-export.js             Export canvas → image (PNG + SVG) + view-only HTML
     │   └── 18-main.js               Startup — restores persisted state
     └── data/
         ├── sample.csv               Small neutral example (3 streams, 12 nodes, 12 edges).

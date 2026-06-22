@@ -9,27 +9,8 @@
 // ───── Search box ────────────────────────────────────────────────────────
 // The search input is wired up in 17a-search.js (fuzzy + dropdown + map
 // highlights). We only keep a reference here for the other handlers in
-// this file that need to reset the box (e.g. the Reset View button below).
+// this file that check focus / event targets against it.
 const searchInput = document.getElementById("search-input");
-
-// ───── "Reset" button in the header ──────────────────────────────────────
-// Clears filters, simulation overrides, selection, and any search state.
-document.getElementById("reset-button").addEventListener("click", () => {
-  if (!state.dataLoaded) return;
-  state.hiddenStreams.clear();
-  state.hiddenCategories.clear();
-  state.hiddenStages.clear();
-  state.userOverrides = {};
-  if (typeof clearSearch === "function") clearSearch();
-  deselectNode();
-  recomputeValues();
-  // Un-hiding stages restores full column widths, so recompute layout before
-  // re-rendering.
-  layout = computeLayout();
-  renderSidebar();
-  render();
-  saveUiStateToStorage();
-});
 
 // ───── "Simulation" toggle button ────────────────────────────────────────
 const simToggleButton = document.getElementById("sim-toggle-button");
@@ -57,12 +38,31 @@ document.querySelectorAll(".import-data-trigger").forEach(button => {
   });
 });
 
-// "Export Data" — downloads the current live state as a CSV.
-document.querySelectorAll(".export-data-trigger").forEach(button => {
+// "Save" — downloads the current live state as a CSV.
+document.querySelectorAll(".save-data-trigger").forEach(button => {
   button.addEventListener("click", () => {
     if (!state.dataLoaded) return;
     if (typeof serializeLiveStateToCsv !== "function" || typeof downloadCsvBlob !== "function") return;
     downloadCsvBlob(serializeLiveStateToCsv(), "systems_map.csv");
+  });
+});
+
+// "Export" — downloads the framed canvas as an image (PNG + SVG). See
+// 19-export.js for what gets framed (visible viewport, or the highlighted
+// subset when a node is selected) and the compaction.
+document.querySelectorAll(".export-image-trigger").forEach(button => {
+  button.addEventListener("click", () => {
+    if (!state.dataLoaded) return;
+    if (typeof exportCanvasImage === "function") exportCanvasImage();
+  });
+});
+
+// "Publish" — downloads a self-contained, view-only HTML page of the same
+// framed canvas (pan / zoom / hover, no editing).
+document.querySelectorAll(".publish-html-trigger").forEach(button => {
+  button.addEventListener("click", () => {
+    if (!state.dataLoaded) return;
+    if (typeof publishCanvasHtml === "function") publishCanvasHtml();
   });
 });
 

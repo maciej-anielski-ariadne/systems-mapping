@@ -29,7 +29,67 @@ svg.addEventListener("click", event => {
   }
 });
 
+// ───── Category rendering helpers (shared with the export in 19-export.js) ──
+// How many secondary chips to draw before collapsing the rest into a "+N" pill.
+const SECONDARY_CHIP_MAX = 4;
+
+// Monotonic counter for unique gradient ids. Using the node id risked
+// collisions (two ids differing only in punctuation sanitize to the same
+// string); a counter is collision-proof and the SVG is rebuilt every render.
+let _nodeGradSeq = 0;
+
+// Primary fill for a node. One primary → solid; several → a smooth diagonal
+// gradient (↘) blending their colours. Returns { defs, fill, textColor }: defs
+// is an SVG <defs> string (empty unless a gradient is needed) and must be
+// emitted inside the SVG; fill is a colour or url(#gradId). gradId must be
+// unique per node. Colours come straight from CATEGORIES (literal hex), so this
+// is identical between the live map and the self-contained export.
+function nodePrimaryFill(node, gradId) {
+  const ids = (node.primaryCategories && node.primaryCategories.length)
+    ? node.primaryCategories
+    : (node.category ? [node.category] : []);
+  // Only PRIMARY-class categories fill the body. (node.category can be a
+  // secondary anchor when a node has no primary — such nodes get the gray
+  // fallback fill, never a secondary colour painted as both body and chip.)
+  const prim = ids.map(id => CATEGORIES[id]).filter(c => c && (c.class || "primary") !== "secondary");
+  if (prim.length === 0) return { defs: "", fill: "#a3a3a3", textColor: "#1c1917" };
+  if (prim.length === 1) return { defs: "", fill: prim[0].color, textColor: prim[0].textColor };
+  const stops = prim.map((c, i) =>
+    '<stop offset="' + Math.round(i / (prim.length - 1) * 100) + '%" stop-color="' + c.color + '"></stop>'
+  ).join("");
+  const defs = '<defs><linearGradient id="' + gradId + '" x1="0" y1="0" x2="1" y2="1">' + stops + '</linearGradient></defs>';
+  return { defs: defs, fill: "url(#" + gradId + ")", textColor: prim[0].textColor };
+}
+
+// Secondary category chips: small squares in the node's bottom-right, growing
+// leftward, capped at SECONDARY_CHIP_MAX with a "+N" pill. Returns { svg,
+// leftEdge } — leftEdge is the x of the left-most chip/pill so the value-delta
+// can be right-aligned just to its left and never overlap.
+function nodeSecondaryChips(node, pos) {
+  const sec = (node.secondaryCategories || []).map(id => CATEGORIES[id]).filter(Boolean);
+  const rightEdge = pos.x + pos.width;
+  if (sec.length === 0) return { svg: "", leftEdge: rightEdge };
+  const bs = 12, gap = 3, inset = 8;
+  const shown = sec.slice(0, SECONDARY_CHIP_MAX);
+  const overflow = sec.length - shown.length;
+  const y = pos.y + pos.height - inset - bs;
+  let svg = "", minX = rightEdge;
+  shown.forEach((c, i) => {
+    const x = rightEdge - inset - bs - i * (bs + gap);
+    minX = Math.min(minX, x);
+    svg += '<rect x="' + x + '" y="' + y + '" width="' + bs + '" height="' + bs + '" rx="2" fill="' + c.color + '" stroke="rgba(0,0,0,0.4)" stroke-width="1"></rect>';
+  });
+  if (overflow > 0) {
+    const pillW = 22, pillX = minX - gap - pillW;
+    minX = pillX;
+    svg += '<rect x="' + pillX + '" y="' + y + '" width="' + pillW + '" height="' + bs + '" rx="3" fill="rgba(0,0,0,0.3)" stroke="rgba(0,0,0,0.4)" stroke-width="1"></rect>';
+    svg += '<text x="' + (pillX + pillW / 2) + '" y="' + (y + bs / 2) + '" text-anchor="middle" dominant-baseline="central" font-family="Arial,Helvetica,sans-serif" font-size="9" font-weight="700" fill="#ffffff">+' + overflow + '</text>';
+  }
+  return { svg: svg, leftEdge: minX };
+}
+
 function render() {
+  _nodeGradSeq = 0;   // restart per render — the SVG is rebuilt wholesale
   // When no CSV is loaded at all, blank the SVG. The empty-state grid path
   // boots via bootEmptyStateGrid() which sets state.dataLoaded = true and
   // seeds 3 streams x 3 stages with no nodes — so an empty NODES array is
@@ -134,15 +194,13 @@ function render() {
     const hov = state.canvasEdit && state.canvasEdit.hoverCell;
     const sameAsHover = hov && hov.streamId === cursorCell.streamId && hov.stageId === cursorCell.stageId;
     if (!sameAsHover) {
-      // Defensive clamp — a delete elsewhere can shrink streamRowCount while
-      // the cursor still references the now-out-of-range slot. Use the
-      // row's height-in-slots from the layout to bound the placeholder
-      // rather than rendering below the row.
-      const rowH = layout.rowHeights[cursorCell.streamId] || NODE_HEIGHT + ROW_PADDING * 2;
-      const slotCapacity = Math.max(1, Math.floor((rowH - ROW_PADDING * 2 + NODE_GAP_Y) / (NODE_HEIGHT + NODE_GAP_Y)));
-      const slot = Math.max(0, Math.min(slotCapacity - 1, cursorCell.slotIndex || 0));
+      // Land the placeholder at the cumulative top of its slot (heights vary).
+      // Clamp to the cell's "next empty" slot so a stale slotIndex (e.g. after a
+      // delete) can't render the box below the row.
+      const cursorCellNodes = (layout.cells && layout.cells[cursorCell.streamId + ":" + cursorCell.stageId]) || [];
+      const slot = Math.max(0, Math.min(cursorCellNodes.length, cursorCell.slotIndex || 0));
       const x = layout.colX[cursorCell.stageId];
-      const y = layout.rowY[cursorCell.streamId] + ROW_PADDING + slot * (NODE_HEIGHT + NODE_GAP_Y);
+      const y = slotTopY(cursorCell.streamId, cursorCell.stageId, slot);
       content += '<g class="cursor-cell">';
       content +=   '<rect x="' + x + '" y="' + y + '" width="' + NODE_WIDTH + '" height="' + NODE_HEIGHT + '" rx="5"></rect>';
       content +=   '<text x="' + (x + NODE_WIDTH / 2) + '" y="' + (y + NODE_HEIGHT / 2) + '" text-anchor="middle" dominant-baseline="central">Type to create a node</text>';
@@ -165,8 +223,9 @@ function render() {
     // when no insertIndex is set.
     const insertSlot = hoverCell.insertIndex != null ? hoverCell.insertIndex : existingInCell;
     const ghostX = layout.colX[hoverCell.stageId];
-    const ghostY = layout.rowY[hoverCell.streamId] + ROW_PADDING + insertSlot * (NODE_HEIGHT + NODE_GAP_Y);
-    const ghostLabel = existingInCell > 0 ? "+ add another" : "+ add node";
+    // Cumulative top of the gap computeLayout opened for this insert slot.
+    const ghostY = slotTopY(hoverCell.streamId, hoverCell.stageId, insertSlot);
+    const ghostLabel = "+ add node";
     content += '<g class="ghost-cell" data-stream-id="' + escapeHtml(hoverCell.streamId) + '" data-stage-id="' + escapeHtml(hoverCell.stageId) + '" data-insert-index="' + insertSlot + '">';
     content +=   '<rect x="' + ghostX + '" y="' + ghostY + '" width="' + NODE_WIDTH + '" height="' + NODE_HEIGHT + '" rx="5"></rect>';
     content +=   '<text x="' + (ghostX + NODE_WIDTH / 2) + '" y="' + (ghostY + NODE_HEIGHT / 2) + '" text-anchor="middle" dominant-baseline="central">' + ghostLabel + '</text>';
@@ -180,12 +239,21 @@ function render() {
   // placeholder. For a same-cell reorder the dragged node's faint ghost rests
   // inside it; for a cross-cell move the gap is open space.
   const drag = state.canvasEdit && state.canvasEdit.draggingNode;
-  if (drag && drag.dropCell && layout.rowY[drag.dropCell.streamId] !== undefined && layout.colX[drag.dropCell.stageId] !== undefined) {
+  if (drag && drag.dropCell && drag.dropCell.insertIndex != null && layout.rowY[drag.dropCell.streamId] !== undefined && layout.colX[drag.dropCell.stageId] !== undefined) {
     const dc = drag.dropCell;
     const cellLeft = layout.colX[dc.stageId];
-    const cellTop  = layout.rowY[dc.streamId] + ROW_PADDING;
-    const slotY = cellTop + dc.insertIndex * (NODE_HEIGHT + NODE_GAP_Y);
-    content += '<rect class="drop-slot" x="' + cellLeft + '" y="' + slotY + '" width="' + NODE_WIDTH + '" height="' + NODE_HEIGHT + '" rx="5"></rect>';
+    // Top of the gap = cumulative height of the kept siblings above the insert
+    // slot (the dragged group is excluded — it's the one landing here).
+    const groupSet = new Set((drag.groupIds && drag.groupIds.length) ? drag.groupIds : [drag.nodeId]);
+    const kept = (layout.cells[dc.streamId + ":" + dc.stageId] || []).filter(n => !groupSet.has(n.id));
+    let slotY = layout.rowY[dc.streamId] + ROW_PADDING;
+    for (let i = 0; i < dc.insertIndex && i < kept.length; i++) {
+      const kp = layout.positions[kept[i].id];
+      slotY += ((kp && kp.height) || NODE_HEIGHT) + NODE_GAP_Y;
+    }
+    const dpos = layout.positions[drag.nodeId];
+    const dropH = (dpos && dpos.height) || NODE_HEIGHT;
+    content += '<rect class="drop-slot" x="' + cellLeft + '" y="' + slotY + '" width="' + NODE_WIDTH + '" height="' + dropH + '" rx="5"></rect>';
   }
 
   // ───── Row label strip on the left (per stream) ───────────────────────
@@ -230,56 +298,47 @@ function render() {
     const toPos   = layout.positions[re.to];
     if (!fromPos || !toPos) continue;   // defensive — endpoints should be visible
 
-    // Edge starts at the right side of the source, ends at the left side of the target.
-    const startX = fromPos.x + fromPos.width;
-    const startY = fromPos.y + fromPos.height / 2;
-    const endX   = toPos.x;
-    const endY   = toPos.y + toPos.height / 2;
-
-    // Cubic Bezier with horizontal tangents at both ends — a smooth
-    // left-to-right curve regardless of vertical offset.
-    const deltaX = endX - startX;
-    const ctrlOffset = Math.max(40, Math.abs(deltaX) * 0.5);
-    const ctrl1X = startX + ctrlOffset;
-    const ctrl2X = endX - ctrlOffset;
-    const pathD =
-      "M " + startX + "," + startY +
-      " C " + ctrl1X + "," + startY +
-      " " + ctrl2X + "," + endY +
-      " " + endX + "," + endY;
+    // Smooth left-to-right cubic bezier from source's right side to target's
+    // left side (shared with the export — see edgeBezierPath in 04-utils.js).
+    const pathD = edgeBezierPath(fromPos, toPos);
 
     if (re.synthetic) {
-      // Synthetic "through" edge — presentation only: dashed, no hit-path, not
-      // selectable/editable. Bold + coloured when incident to the selected node
-      // (highlightedEdgeIds only holds real edge ids, so we check incidence
-      // directly); dimmed when some OTHER node is the sole selection.
+      // Honour the sidebar edge filters (re.dashed marks a re-routed chain that
+      // contains a dashed link).
+      if (state.hiddenEffects.has(re.effect)) continue;
+      if (state.hiddenStyles.has(re.dashed ? "dashed" : "solid")) continue;
+      // Synthetic "through" edge — presentation only: not selectable/editable.
+      // Drawn THINNER than a real edge so it reads as derived, and dashed only
+      // when it re-routes a dashed link (re.dashed, set in 10a). Bold + coloured
+      // when incident to the selected node (highlightedEdgeIds only holds real
+      // edge ids, so we check incidence directly); dimmed when some OTHER node
+      // is the sole selection.
       const incident = state.selectedNodeId === re.from || state.selectedNodeId === re.to;
-      let strokeWidth   = 1.5;
+      let strokeWidth   = 1;
       let strokeOpacity = 0.6;
       let dimmed        = false;
-      // Stay gray by default — only show the effect colour when incident to the
-      // selected node (synthetic edges aren't directly selectable, so node
-      // selection is their only "selected" state). Mirrors real-edge behaviour.
       let strokeColor   = "var(--edge-default)";
       let markerName    = "default";
       if (state.selectedNodeId && state.selectedNodeIds.size <= 1) {
         if (incident) {
-          strokeWidth = 2; strokeOpacity = 0.95;
+          strokeWidth = 1.5; strokeOpacity = 0.95;   // still thinner than a real highlighted edge (2)
           strokeColor = effectStroke(re.effect);
           markerName  = effectMarker(re.effect);
         } else {
           dimmed = true;
         }
       }
+      const synthDash = re.dashed ? ' stroke-dasharray="5 4"' : '';
       const effectClass = ' effect-' + re.effect;   // increases / decreases / neutral
       content += '<path class="edge-path synthetic' + effectClass + (dimmed ? ' dimmed' : '') +
         '" d="' + pathD + '" stroke="' + strokeColor +
         '" stroke-width="' + strokeWidth + '" stroke-opacity="' + strokeOpacity +
-        '" marker-end="url(#arrow_' + markerName + ')"></path>';
+        '"' + synthDash + ' marker-end="url(#arrow_' + markerName + ')"></path>';
       continue;
     }
 
     const edge = re.edge;
+    if (!isEdgeVisible(edge)) continue;   // hidden via the sidebar edge filters
     // Default styling — overridden if the edge is highlighted by a selection.
     let strokeColor   = "var(--edge-default)";
     let strokeWidth   = 1;
@@ -332,7 +391,9 @@ function render() {
     const effectClass = edge.effect ? ' effect-' + edge.effect : '';
     const isEdgeUndoFlashed = undoFlashEdgeIds && undoFlashEdgeIds.has(edge.id);
     const classAttr = ' class="edge-path' + effectClass + (dimmed ? ' dimmed' : '') + (isEdgeFlashed ? ' flashed' : '') + (isEdgeUndoFlashed ? ' undo-flash' : '') + (isEdgeSelected ? ' selected' : '') + '"';
-    content += '<path' + classAttr + ' data-edge-id="' + edge.id + '" d="' + pathD + '" stroke="' + strokeColor + '" stroke-width="' + strokeWidth + '" stroke-opacity="' + strokeOpacity + '"' + markerEnd + '></path>';
+    // Dashed line style (inline, so it persists through every selection state).
+    const dashAttr = edge.style === "dashed" ? ' stroke-dasharray="6 5"' : '';
+    content += '<path' + classAttr + ' data-edge-id="' + edge.id + '" d="' + pathD + '" stroke="' + strokeColor + '" stroke-width="' + strokeWidth + '" stroke-opacity="' + strokeOpacity + '"' + dashAttr + markerEnd + '></path>';
   }
 
   // Pre-compute the set of search-match ids once so the per-node check
@@ -352,7 +413,9 @@ function render() {
     const pos = layout.positions[node.id];
     if (!pos) continue;
     const stream   = streamById[node.stream];
-    const category = CATEGORIES[node.category];
+    const fillInfo = nodePrimaryFill(node, "ngrad_" + (_nodeGradSeq++));
+    const textColor = fillInfo.textColor;
+    const chips    = nodeSecondaryChips(node, pos);
 
     // Class flags applied to the <g> wrapper — see 05-visualization.css
     // and 12-no-borders.css (state glows) + 13-search.css (search halo).
@@ -376,6 +439,7 @@ function render() {
     if (drag && drag.nodeId === node.id) nodeClasses += " dragging-source";
 
     content += '<g class="' + nodeClasses + '" data-node-id="' + node.id + '">';
+    content += fillInfo.defs;   // per-node gradient def (empty unless multi-primary)
 
     // ── Background rect with conditional border ──
     let strokeColor = "rgba(0,0,0,0.4)";
@@ -397,7 +461,7 @@ function render() {
       strokeWidth = 2;
     }
 
-    content += '<rect class="node-rect" x="' + pos.x + '" y="' + pos.y + '" width="' + pos.width + '" height="' + pos.height + '" rx="5" fill="' + category.color + '" stroke="' + strokeColor + '" stroke-width="' + strokeWidth + '"></rect>';
+    content += '<rect class="node-rect" x="' + pos.x + '" y="' + pos.y + '" width="' + pos.width + '" height="' + pos.height + '" rx="5" fill="' + fillInfo.fill + '" stroke="' + strokeColor + '" stroke-width="' + strokeWidth + '"></rect>';
 
     // ── Coloured stripe down the left edge (the stream colour) ──
     // We draw it as a path so only the left corners are rounded — the right
@@ -424,12 +488,16 @@ function render() {
     // 13/12 ratio of the previous hard-coded line-height) means the gap
     // between lines scales with the font-size, so labels stay legible when
     // --map-text-scale grows on zoom-out without lines overlapping.
-    const labelLines = wrapLabel(node.label, 24);
+    // Lines were wrapped to the node's inner width by computeLayout (which used
+    // them to grow the box height); consume them so box height and rendered
+    // line count always agree. Anchored to the box top, x at the symmetric inset.
+    const labelLines = pos.labelLines || wrapLabel(node.label, 24);
+    const labelX = pos.x + LABEL_INSET;
     const labelBlockTopY = pos.y + 16;
-    content += '<text class="node-label" x="' + (pos.x + 14) + '" y="' + labelBlockTopY + '" fill="' + category.textColor + '" dominant-baseline="middle">';
+    content += '<text class="node-label" x="' + labelX + '" y="' + labelBlockTopY + '" fill="' + textColor + '" dominant-baseline="middle">';
     for (let lineIdx = 0; lineIdx < labelLines.length; lineIdx++) {
       const dy = lineIdx === 0 ? "0" : "1.083em";
-      content += '<tspan x="' + (pos.x + 14) + '" dy="' + dy + '">' + escapeHtml(labelLines[lineIdx]) + '</tspan>';
+      content += '<tspan x="' + labelX + '" dy="' + dy + '">' + escapeHtml(labelLines[lineIdx]) + '</tspan>';
     }
     content += '</text>';
 
@@ -438,20 +506,18 @@ function render() {
     if (valueText) {
       const deltaInfo = formatNodeDelta(node.id);
       const valueY = pos.y + pos.height - 12;
-      content += '<text class="node-value" x="' + (pos.x + 14) + '" y="' + valueY + '" fill="' + category.textColor + '" dominant-baseline="middle" opacity="0.75">' + escapeHtml(valueText) + '</text>';
+      content += '<text class="node-value" x="' + (pos.x + LABEL_INSET) + '" y="' + valueY + '" fill="' + textColor + '" dominant-baseline="middle" opacity="0.75">' + escapeHtml(valueText) + '</text>';
 
       if (deltaInfo.text && deltaInfo.text !== "—") {
-        let deltaColor = "#1c1917";
-        if (node.direction === "higher_better") {
-          deltaColor = deltaInfo.pct > 0 ? "#065f46" : "#7f1d1d";
-        } else if (node.direction === "lower_better") {
-          deltaColor = deltaInfo.pct < 0 ? "#065f46" : "#7f1d1d";
-        } else {
-          deltaColor = deltaInfo.pct > 0 ? "#1e3a8a" : "#7c2d12";
-        }
-        content += '<text class="node-delta" x="' + (pos.x + pos.width - 10) + '" y="' + valueY + '" fill="' + deltaColor + '" text-anchor="end" dominant-baseline="middle" font-weight="600">' + escapeHtml(deltaInfo.text) + '</text>';
+        const deltaColor = deltaColorFor(node, deltaInfo);
+        // Sit the delta just left of any secondary chips so they keep the corner.
+        const deltaX = chips.svg ? chips.leftEdge - 6 : pos.x + pos.width - LABEL_INSET;
+        content += '<text class="node-delta" x="' + deltaX + '" y="' + valueY + '" fill="' + deltaColor + '" text-anchor="end" dominant-baseline="middle" font-weight="600">' + escapeHtml(deltaInfo.text) + '</text>';
       }
     }
+
+    // ── Secondary category chips (bottom-right) ──
+    content += chips.svg;
 
     // Edge-drag handle on the right edge of every node. Visible only on hover
     // via CSS. Mousedown starts an edge-drag (see 16e-canvas-edit.js).
@@ -483,18 +549,21 @@ function render() {
   // ───── Drag preview (a translucent copy of the dragged node at cursor) ──
   if (drag && drag.active && nodeById[drag.nodeId]) {
     const node = nodeById[drag.nodeId];
-    const category = CATEGORIES[node.category] || { color: "#a3a3a3", textColor: "#ffffff" };
+    const fillInfo = nodePrimaryFill(node, "ndragprev");
     const stream   = streamById[node.stream] || { color: "#94a3b8" };
+    const dpos = layout.positions[drag.nodeId];
+    const previewH = (dpos && dpos.height) || NODE_HEIGHT;
+    const previewLines = (dpos && dpos.labelLines) || wrapLabel(node.label, 24);
     const px = drag.currentX - NODE_WIDTH / 2;
-    const py = drag.currentY - NODE_HEIGHT / 2;
+    const py = drag.currentY - previewH / 2;
     content += '<g class="node-drag-preview">';
-    content += '<rect x="' + px + '" y="' + py + '" width="' + NODE_WIDTH + '" height="' + NODE_HEIGHT + '" rx="5" fill="' + category.color + '" stroke="rgba(0,0,0,0.4)" stroke-width="1"></rect>';
-    content += '<rect x="' + px + '" y="' + py + '" width="6" height="' + NODE_HEIGHT + '" rx="2" fill="' + stream.color + '"></rect>';
-    const previewLines = wrapLabel(node.label, 24);
-    content += '<text class="node-label" x="' + (px + 14) + '" y="' + (py + 16) + '" fill="' + category.textColor + '" dominant-baseline="middle">';
+    content += fillInfo.defs;
+    content += '<rect x="' + px + '" y="' + py + '" width="' + NODE_WIDTH + '" height="' + previewH + '" rx="5" fill="' + fillInfo.fill + '" stroke="rgba(0,0,0,0.4)" stroke-width="1"></rect>';
+    content += '<rect x="' + px + '" y="' + py + '" width="6" height="' + previewH + '" rx="2" fill="' + stream.color + '"></rect>';
+    content += '<text class="node-label" x="' + (px + LABEL_INSET) + '" y="' + (py + 16) + '" fill="' + fillInfo.textColor + '" dominant-baseline="middle">';
     for (let i = 0; i < previewLines.length; i++) {
       const dy = i === 0 ? "0" : "1.083em";
-      content += '<tspan x="' + (px + 14) + '" dy="' + dy + '">' + escapeHtml(previewLines[i]) + '</tspan>';
+      content += '<tspan x="' + (px + LABEL_INSET) + '" dy="' + dy + '">' + escapeHtml(previewLines[i]) + '</tspan>';
     }
     content += '</text>';
     // Group drag: a count badge in the corner so it's clear the whole

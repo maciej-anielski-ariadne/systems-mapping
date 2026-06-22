@@ -185,8 +185,7 @@ function renderNodeEditBlock(node) {
   html += editRow("Stage",
     selectInput("stage", STAGES.map(s => ({ value: s.id, label: s.label })), node.stage));
 
-  const catOptions = Object.keys(CATEGORIES).map(id => ({ value: id, label: CATEGORIES[id].label }));
-  html += editRow("Category", selectInput("category", catOptions, node.category));
+  html += editRow("Categories", categoryEditControl(node));
 
   html += editRow("Baseline",
     '<input type="number" step="any" class="detail-edit-input detail-edit-number" data-field="baseline" value="' + (node.baseline !== undefined && node.baseline !== null ? node.baseline : "") + '" placeholder="(blank = no value)">');
@@ -209,17 +208,45 @@ function editRow(label, controlHtml) {
   return '<div class="detail-edit-row"><span class="detail-edit-label">' + escapeHtml(label) + '</span><div class="detail-edit-control">' + controlHtml + '</div></div>';
 }
 
+// Multi-select category editor: a checkbox per category, split into Primary
+// (fill — several blend into a gradient) and Secondary (corner chips) groups by
+// each category's class. Checkboxes carry data-field="categoryToggle" so the
+// existing change-listener routes them to applyNodeFieldEdit.
+function categoryEditControl(node) {
+  const primSet = new Set(node.primaryCategories || (node.category ? [node.category] : []));
+  const secSet  = new Set(node.secondaryCategories || []);
+  const byClass = splitCategoriesByClass(Object.keys(CATEGORIES));
+  const group = (title, list, checkedSet) => {
+    if (!list.length) return "";
+    let h = '<div class="detail-cat-group"><div class="detail-cat-group-title">' + title + '</div>';
+    for (const id of list) {
+      const c = CATEGORIES[id];
+      h += '<label class="detail-cat-opt"><input type="checkbox" data-field="categoryToggle" data-cat="' + escapeHtml(id) + '"' +
+           (checkedSet.has(id) ? " checked" : "") + '>' +
+           '<span class="detail-cat-swatch" style="background:' + c.color + '"></span>' + escapeHtml(c.label) + '</label>';
+    }
+    return h + '</div>';
+  };
+  return group("Primary · fill", byClass.primary, primSet) +
+         group("Secondary · chips", byClass.secondary, secSet);
+}
+
 // Category / stream / stage tag chips shown at the top of both view and edit
 // mode. Same markup in both — extracted so changing the chip style (e.g.
 // adding an icon) only happens in one place.
 function renderTagRow(node) {
-  const stream   = streamById[node.stream];
-  const category = CATEGORIES[node.category];
-  const stage    = stageById[node.stage];
+  const stream = streamById[node.stream];
+  const stage  = stageById[node.stage];
+  const catIds = nodeCategoryIds(node);
 
   let html = '<div class="detail-tags">';
-  if (category) {
-    html += '<span class="detail-tag category" style="background: ' + category.color + '; color: ' + category.textColor + ';">' + escapeHtml(category.label) + '</span>';
+  for (const id of catIds) {
+    const c = CATEGORIES[id];
+    if (!c) continue;
+    // Secondary categories read as the corner chip — show a small leading swatch.
+    const isSecondary = (c.class || "primary") === "secondary";
+    html += '<span class="detail-tag category' + (isSecondary ? " secondary" : "") + '" style="background: ' + c.color + '; color: ' + c.textColor + ';">' +
+            (isSecondary ? '▪ ' : '') + escapeHtml(c.label) + '</span>';
   }
   if (stream) html += '<span class="detail-tag">' + escapeHtml(stream.label) + '</span>';
   if (stage)  html += '<span class="detail-tag">' + escapeHtml(stage.label) + '</span>';
@@ -265,6 +292,10 @@ function renderOutgoingEdgesBlock(node) {
       }
       html +=     '</select>';
       html +=     '<input type="number" step="any" class="detail-edit-input detail-edit-number outgoing-edge-elasticity" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="elasticity" value="' + (edge.elasticity !== undefined && edge.elasticity !== null ? edge.elasticity : "") + '" placeholder="ε = ' + defaultElasticity + '" title="Elasticity (blank = default for this effect)">';
+      html +=     '<select class="detail-edit-input detail-edit-select outgoing-edge-style" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="style" title="Line style">';
+      html +=       '<option value="solid"'  + (edge.style === "dashed" ? "" : " selected") + '>Solid</option>';
+      html +=       '<option value="dashed"' + (edge.style === "dashed" ? " selected" : "") + '>Dashed</option>';
+      html +=     '</select>';
       html +=   '</div>';
       html +=   '<textarea class="detail-edit-input detail-edit-textarea outgoing-edge-description" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="description" rows="2" placeholder="Optional description">' + escapeHtml(edge.description || "") + '</textarea>';
       html += '</div>';
@@ -474,9 +505,35 @@ function applyNodeFieldEdit(node, field, input) {
   } else if (field === "stage") {
     if (!stageById[value]) return;
     node.stage = value;
-  } else if (field === "category") {
-    if (!CATEGORIES[value]) return;
-    node.category = value;
+  } else if (field === "categoryToggle") {
+    const catId = input.getAttribute("data-cat");
+    if (!CATEGORIES[catId]) return;
+    // Snapshot so we can fully revert if the edit would empty the node.
+    const prev = {
+      primaryCategories:   (node.primaryCategories   || []).slice(),
+      secondaryCategories: (node.secondaryCategories || []).slice(),
+      categoryIds:         (node.categoryIds         || []).slice(),
+      category:            node.category,
+    };
+    const isSecondary = (CATEGORIES[catId].class || "primary") === "secondary";
+    const listName = isSecondary ? "secondaryCategories" : "primaryCategories";
+    const set = new Set(node[listName] || []);
+    if (value) set.add(catId); else set.delete(catId);
+    const allIds = Object.keys(CATEGORIES);   // re-derive in CATEGORIES order
+    node[listName] = allIds.filter(id => set.has(id));
+    node.primaryCategories   = node.primaryCategories   || [];
+    node.secondaryCategories = node.secondaryCategories || [];
+    node.categoryIds = node.primaryCategories.concat(node.secondaryCategories);
+    // A node must keep at least one category — fully revert if it'd empty.
+    if (node.categoryIds.length === 0) {
+      node.primaryCategories   = prev.primaryCategories;
+      node.secondaryCategories = prev.secondaryCategories;
+      node.categoryIds         = prev.categoryIds;
+      node.category            = prev.category;
+      input.checked = true;
+      return;
+    }
+    node.category = node.primaryCategories[0] || node.categoryIds[0];
   } else if (field === "baseline") {
     if (value === undefined) { delete node.baseline; }
     else if (value === 0)    { delete node.baseline; input.value = ""; }   // simulation divides by baseline
@@ -504,6 +561,11 @@ function applyEdgeFieldEdit(edgeId, field, input) {
   if (field === "effect") {
     if (!EFFECT_OPTIONS.includes(input.value)) return;
     edge.effect = input.value;
+  } else if (field === "style") {
+    if (input.value === "dashed") edge.style = "dashed"; else delete edge.style;
+    // Line style doesn't affect layout — preserve focus.
+    if (typeof applyCanvasMutation === "function") applyCanvasMutation({ skipDetailRender: true });
+    return;
   } else if (field === "elasticity") {
     const v = parseFloat(input.value);
     if (input.value === "" || isNaN(v)) delete edge.elasticity;

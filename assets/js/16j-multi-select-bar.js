@@ -48,7 +48,10 @@ function renderMultiSelectBar() {
     return;
   }
 
-  const categoryOpts = Object.keys(CATEGORIES).map(id => ({ value: id, label: CATEGORIES[id].label || id }));
+  // Bulk-set replaces the PRIMARY (fill) category, so only offer primaries.
+  const categoryOpts = Object.keys(CATEGORIES)
+    .filter(id => (CATEGORIES[id].class || "primary") !== "secondary")
+    .map(id => ({ value: id, label: CATEGORIES[id].label || id }));
   const streamOpts   = STREAMS.map(s => ({ value: s.id, label: s.label || s.id }));
   const stageOpts    = STAGES.map(s => ({ value: s.id, label: s.label || s.id }));
 
@@ -84,6 +87,14 @@ function batchSetProperty(field, value) {
     if (!node) continue;
     if (node[field] === value) continue;
     node[field] = value;
+    // Setting the primary category bulk-replaces it while keeping each node's
+    // existing secondary chips.
+    if (field === "category") {
+      const secs = (node.categoryIds || []).filter(cid => CATEGORIES[cid] && (CATEGORIES[cid].class || "primary") === "secondary");
+      node.primaryCategories = [value];
+      node.secondaryCategories = secs;
+      node.categoryIds = [value].concat(secs);
+    }
     changed++;
   }
   if (!changed) {

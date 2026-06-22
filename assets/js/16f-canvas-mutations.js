@@ -88,7 +88,7 @@ function addStage() {
 
 // Categories are stored in a plain object — Object.keys() preserves insertion
 // order, so reordering means rebuilding the object in the new order.
-function addCategory() {
+function addCategory(catClass) {
   const counter = Object.keys(CATEGORIES).length + 1;
   let id = "category_" + counter;
   let n = counter;
@@ -99,6 +99,7 @@ function addCategory() {
     color: color,
     // Label colour auto-contrasts against the fill — see pickTextColor (04-utils.js).
     textColor: typeof pickTextColor === "function" ? pickTextColor(color) : "#ffffff",
+    class: catClass === "secondary" ? "secondary" : "primary",
   };
   applyCanvasMutation();
   // Categories edit fully inline now — drop straight into renaming the new row.
@@ -177,23 +178,30 @@ function deleteStageWithCascade(stageId) {
 function deleteCategoryWithCascade(catId) {
   const cat = CATEGORIES[catId];
   if (!cat) return;
-  const nodesToDelete = NODES.filter(n => n.category === catId);
-  const nodeIdSet = new Set(nodesToDelete.map(n => n.id));
+  const catsOf = n => (n.categoryIds && n.categoryIds.length) ? n.categoryIds : [n.category];
+  const usingNodes = NODES.filter(n => catsOf(n).indexOf(catId) >= 0);
+  // A node is removed only if this is its ONLY category; multi-category nodes
+  // are just untagged (the category stripped from their lists).
+  const soleNodes = usingNodes.filter(n => catsOf(n).length <= 1);
+  const untagCount = usingNodes.length - soleNodes.length;
+  const nodeIdSet = new Set(soleNodes.map(n => n.id));
   const edgesToDelete = EDGES.filter(e => nodeIdSet.has(e.from) || nodeIdSet.has(e.to));
-  const msg = nodesToDelete.length === 0
-    ? 'Delete category "' + cat.label + '"?'
-    : 'Delete category "' + cat.label + '"?\n\n' + nodesToDelete.length + ' node(s) and ' + edgesToDelete.length + ' edge(s) will also be removed.';
+
+  let msg = 'Delete category "' + cat.label + '"?';
+  const parts = [];
+  if (soleNodes.length)  parts.push(soleNodes.length + ' node(s) using only this category (and ' + edgesToDelete.length + ' edge(s)) will be removed');
+  if (untagCount)        parts.push(untagCount + ' node(s) will be untagged');
+  if (parts.length)      msg += '\n\n' + parts.join(';\n') + '.';
   if (!confirm(msg)) return;
 
-  const ids = Object.keys(CATEGORIES);
-  const snapshot = {
-    kind: "category",
-    catId: catId,
-    cat: Object.assign({}, cat),
-    catIndex: ids.indexOf(catId),
-    nodes: nodesToDelete.map(cloneNodeForUndo),
-    edges: edgesToDelete.map(cloneEdgeForUndo),
-  };
+  // Untag from the multi-category survivors.
+  for (const n of usingNodes) {
+    if (nodeIdSet.has(n.id)) continue;
+    if (n.categoryIds)         n.categoryIds         = n.categoryIds.filter(id => id !== catId);
+    if (n.primaryCategories)   n.primaryCategories   = n.primaryCategories.filter(id => id !== catId);
+    if (n.secondaryCategories) n.secondaryCategories = n.secondaryCategories.filter(id => id !== catId);
+    n.category = (n.primaryCategories && n.primaryCategories[0]) || (n.categoryIds && n.categoryIds[0]) || n.category;
+  }
   delete CATEGORIES[catId];
   NODES = NODES.filter(n => !nodeIdSet.has(n.id));
   EDGES = EDGES.filter(e => !nodeIdSet.has(e.from) && !nodeIdSet.has(e.to));
@@ -204,9 +212,8 @@ function deleteCategoryWithCascade(catId) {
     state.descendantSet = new Set();
     state.highlightedEdgeIds = new Set();
   }
-  pushUndo(snapshot);
   applyCanvasMutation();
-  showUndoToast("Category deleted", () => restoreFromUndo(snapshot));
+  showUndoToast("Category deleted", () => restoreFromUndo(null));
 }
 
 // ───── Reorder (drag-to-reorder from the sidebar) ─────────────────────────
