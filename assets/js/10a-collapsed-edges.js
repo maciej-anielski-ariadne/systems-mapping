@@ -49,28 +49,32 @@ function computeRenderEdges() {
   }
 
   // ───── (b) Synthetic edges: visible → (hidden…) → visible ─────────────────
-  function recordSynth(from, to, product) {
+  function recordSynth(from, to, product, dashed) {
     if (from === to) return;                       // drop degenerate self-loops
     const key = pairKey(from, to);
     if (realPairKey.has(key)) return;              // a real edge already shows this pair
     let acc = synthAccum.get(key);
-    if (!acc) { acc = { from, to, signs: new Set() }; synthAccum.set(key, acc); }
+    if (!acc) { acc = { from, to, signs: new Set(), dashed: false }; synthAccum.set(key, acc); }
     acc.signs.add(product > 0 ? 1 : product < 0 ? -1 : 0);
+    // The synthetic edge inherits a dashed look if ANY re-routed chain reaching
+    // this pair contains a dashed link.
+    if (dashed) acc.dashed = true;
   }
 
   // Walk forward from a hidden node, multiplying signed elasticities. `pathHidden`
   // is the set of hidden node ids on the CURRENT path; backtracking on return
   // lets two distinct branches each pass through a shared hidden node (diamonds)
   // while still preventing infinite recursion around hidden cycles.
-  function dfsThroughHidden(srcVisibleId, hiddenEdge, product, pathHidden) {
+  function dfsThroughHidden(srcVisibleId, hiddenEdge, product, pathHidden, pathDashed) {
     const mid = hiddenEdge.to;                      // hidden by construction
     for (const next of outgoingEdges[mid]) {
       const p = product * resolveEdgeElasticity(next);
+      const d = pathDashed || next.style === "dashed";
       if (isVisibleId(next.to)) {
-        recordSynth(srcVisibleId, next.to, p);       // reached the far visible side
+        recordSynth(srcVisibleId, next.to, p, d);    // reached the far visible side
       } else if (!pathHidden.has(next.to)) {
         pathHidden.add(next.to);
-        dfsThroughHidden(srcVisibleId, next, p, pathHidden);
+        dfsThroughHidden(srcVisibleId, next, p, pathHidden, d);
         pathHidden.delete(next.to);
       }
     }
@@ -80,7 +84,7 @@ function computeRenderEdges() {
     if (!visibleNodeIds.has(a.id)) continue;
     for (const e0 of outgoingEdges[a.id]) {
       if (isVisibleId(e0.to)) continue;            // direct visible→visible handled in (a)
-      dfsThroughHidden(a.id, e0, resolveEdgeElasticity(e0), new Set([e0.to]));
+      dfsThroughHidden(a.id, e0, resolveEdgeElasticity(e0), new Set([e0.to]), e0.style === "dashed");
     }
   }
 
@@ -98,6 +102,7 @@ function computeRenderEdges() {
       to: acc.to,
       effect,
       netSign,
+      dashed: acc.dashed,
     });
   }
 

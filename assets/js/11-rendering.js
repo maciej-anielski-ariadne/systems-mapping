@@ -316,33 +316,33 @@ function render() {
       " " + endX + "," + endY;
 
     if (re.synthetic) {
-      // Synthetic "through" edge — presentation only: dashed, no hit-path, not
-      // selectable/editable. Bold + coloured when incident to the selected node
-      // (highlightedEdgeIds only holds real edge ids, so we check incidence
-      // directly); dimmed when some OTHER node is the sole selection.
+      // Synthetic "through" edge — presentation only: not selectable/editable.
+      // Drawn THINNER than a real edge so it reads as derived, and dashed only
+      // when it re-routes a dashed link (re.dashed, set in 10a). Bold + coloured
+      // when incident to the selected node (highlightedEdgeIds only holds real
+      // edge ids, so we check incidence directly); dimmed when some OTHER node
+      // is the sole selection.
       const incident = state.selectedNodeId === re.from || state.selectedNodeId === re.to;
-      let strokeWidth   = 1.5;
+      let strokeWidth   = 1;
       let strokeOpacity = 0.6;
       let dimmed        = false;
-      // Stay gray by default — only show the effect colour when incident to the
-      // selected node (synthetic edges aren't directly selectable, so node
-      // selection is their only "selected" state). Mirrors real-edge behaviour.
       let strokeColor   = "var(--edge-default)";
       let markerName    = "default";
       if (state.selectedNodeId && state.selectedNodeIds.size <= 1) {
         if (incident) {
-          strokeWidth = 2; strokeOpacity = 0.95;
+          strokeWidth = 1.5; strokeOpacity = 0.95;   // still thinner than a real highlighted edge (2)
           strokeColor = effectStroke(re.effect);
           markerName  = effectMarker(re.effect);
         } else {
           dimmed = true;
         }
       }
+      const synthDash = re.dashed ? ' stroke-dasharray="5 4"' : '';
       const effectClass = ' effect-' + re.effect;   // increases / decreases / neutral
       content += '<path class="edge-path synthetic' + effectClass + (dimmed ? ' dimmed' : '') +
         '" d="' + pathD + '" stroke="' + strokeColor +
         '" stroke-width="' + strokeWidth + '" stroke-opacity="' + strokeOpacity +
-        '" marker-end="url(#arrow_' + markerName + ')"></path>';
+        '"' + synthDash + ' marker-end="url(#arrow_' + markerName + ')"></path>';
       continue;
     }
 
@@ -399,7 +399,9 @@ function render() {
     const effectClass = edge.effect ? ' effect-' + edge.effect : '';
     const isEdgeUndoFlashed = undoFlashEdgeIds && undoFlashEdgeIds.has(edge.id);
     const classAttr = ' class="edge-path' + effectClass + (dimmed ? ' dimmed' : '') + (isEdgeFlashed ? ' flashed' : '') + (isEdgeUndoFlashed ? ' undo-flash' : '') + (isEdgeSelected ? ' selected' : '') + '"';
-    content += '<path' + classAttr + ' data-edge-id="' + edge.id + '" d="' + pathD + '" stroke="' + strokeColor + '" stroke-width="' + strokeWidth + '" stroke-opacity="' + strokeOpacity + '"' + markerEnd + '></path>';
+    // Dashed line style (inline, so it persists through every selection state).
+    const dashAttr = edge.style === "dashed" ? ' stroke-dasharray="6 5"' : '';
+    content += '<path' + classAttr + ' data-edge-id="' + edge.id + '" d="' + pathD + '" stroke="' + strokeColor + '" stroke-width="' + strokeWidth + '" stroke-opacity="' + strokeOpacity + '"' + dashAttr + markerEnd + '></path>';
   }
 
   // Pre-compute the set of search-match ids once so the per-node check

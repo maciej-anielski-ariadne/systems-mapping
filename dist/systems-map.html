@@ -1192,10 +1192,9 @@ body.panning * {
 }
 
 /* Synthetic "through" edges — re-routed causal effects that span one or more
- * collapsed stages. Drawn dashed so they read as derived, not real, edges. */
-.edge-path.synthetic {
-  stroke-dasharray: 6 5;
-}
+ * collapsed stages. Drawn thinner than real edges (in 11-rendering.js) so they
+ * read as derived; the dash is applied inline only when the re-routed chain
+ * contains a dashed link, so a synthetic edge inherits its links' style. */
 .edge-path.synthetic.effect-neutral {
   color: var(--edge-default);
 }
@@ -5514,14 +5513,16 @@ function _serializeShape(data) {
   lines.push("# from / to    - source and target node ids");
   lines.push("# effect       - enables / increases / decreases");
   lines.push("# elasticity   - OPTIONAL per-edge override. Blank = use default for the effect.");
+  lines.push("# style        - OPTIONAL line style: 'dashed', or blank for solid (default).");
   lines.push("# description  - explanation shown in the detail panel");
-  lines.push("from,to,effect,elasticity,description");
+  lines.push("from,to,effect,elasticity,style,description");
   for (const edge of builder.edges || []) {
     lines.push(csvRow([
       edge.from,
       edge.to,
       edge.effect,
       edge.elasticity === undefined || edge.elasticity === null || edge.elasticity === "" ? "" : edge.elasticity,
+      edge.style === "dashed" ? "dashed" : "",
       edge.description || "",
     ]));
   }
@@ -5859,6 +5860,9 @@ function loadDataFromCsv(csvText) {
       };
       const elasticityValue = parseNumericCell(row.elasticity);
       if (elasticityValue !== undefined) edge.elasticity = elasticityValue;
+      // Line style: "dashed" or (default) solid. Only stored when dashed, so an
+      // old CSV with no `style` column loads as solid.
+      if ((row.style || "").trim().toLowerCase() === "dashed") edge.style = "dashed";
 
       parsedEdges.push(edge);
     }
@@ -6785,28 +6789,32 @@ function computeRenderEdges() {
   }
 
   // ───── (b) Synthetic edges: visible → (hidden…) → visible ─────────────────
-  function recordSynth(from, to, product) {
+  function recordSynth(from, to, product, dashed) {
     if (from === to) return;                       // drop degenerate self-loops
     const key = pairKey(from, to);
     if (realPairKey.has(key)) return;              // a real edge already shows this pair
     let acc = synthAccum.get(key);
-    if (!acc) { acc = { from, to, signs: new Set() }; synthAccum.set(key, acc); }
+    if (!acc) { acc = { from, to, signs: new Set(), dashed: false }; synthAccum.set(key, acc); }
     acc.signs.add(product > 0 ? 1 : product < 0 ? -1 : 0);
+    // The synthetic edge inherits a dashed look if ANY re-routed chain reaching
+    // this pair contains a dashed link.
+    if (dashed) acc.dashed = true;
   }
 
   // Walk forward from a hidden node, multiplying signed elasticities. `pathHidden`
   // is the set of hidden node ids on the CURRENT path; backtracking on return
   // lets two distinct branches each pass through a shared hidden node (diamonds)
   // while still preventing infinite recursion around hidden cycles.
-  function dfsThroughHidden(srcVisibleId, hiddenEdge, product, pathHidden) {
+  function dfsThroughHidden(srcVisibleId, hiddenEdge, product, pathHidden, pathDashed) {
     const mid = hiddenEdge.to;                      // hidden by construction
     for (const next of outgoingEdges[mid]) {
       const p = product * resolveEdgeElasticity(next);
+      const d = pathDashed || next.style === "dashed";
       if (isVisibleId(next.to)) {
-        recordSynth(srcVisibleId, next.to, p);       // reached the far visible side
+        recordSynth(srcVisibleId, next.to, p, d);    // reached the far visible side
       } else if (!pathHidden.has(next.to)) {
         pathHidden.add(next.to);
-        dfsThroughHidden(srcVisibleId, next, p, pathHidden);
+        dfsThroughHidden(srcVisibleId, next, p, pathHidden, d);
         pathHidden.delete(next.to);
       }
     }
@@ -6816,7 +6824,7 @@ function computeRenderEdges() {
     if (!visibleNodeIds.has(a.id)) continue;
     for (const e0 of outgoingEdges[a.id]) {
       if (isVisibleId(e0.to)) continue;            // direct visible→visible handled in (a)
-      dfsThroughHidden(a.id, e0, resolveEdgeElasticity(e0), new Set([e0.to]));
+      dfsThroughHidden(a.id, e0, resolveEdgeElasticity(e0), new Set([e0.to]), e0.style === "dashed");
     }
   }
 
@@ -6834,6 +6842,7 @@ function computeRenderEdges() {
       to: acc.to,
       effect,
       netSign,
+      dashed: acc.dashed,
     });
   }
 
@@ -7161,33 +7170,33 @@ function render() {
       " " + endX + "," + endY;
 
     if (re.synthetic) {
-      // Synthetic "through" edge — presentation only: dashed, no hit-path, not
-      // selectable/editable. Bold + coloured when incident to the selected node
-      // (highlightedEdgeIds only holds real edge ids, so we check incidence
-      // directly); dimmed when some OTHER node is the sole selection.
+      // Synthetic "through" edge — presentation only: not selectable/editable.
+      // Drawn THINNER than a real edge so it reads as derived, and dashed only
+      // when it re-routes a dashed link (re.dashed, set in 10a). Bold + coloured
+      // when incident to the selected node (highlightedEdgeIds only holds real
+      // edge ids, so we check incidence directly); dimmed when some OTHER node
+      // is the sole selection.
       const incident = state.selectedNodeId === re.from || state.selectedNodeId === re.to;
-      let strokeWidth   = 1.5;
+      let strokeWidth   = 1;
       let strokeOpacity = 0.6;
       let dimmed        = false;
-      // Stay gray by default — only show the effect colour when incident to the
-      // selected node (synthetic edges aren't directly selectable, so node
-      // selection is their only "selected" state). Mirrors real-edge behaviour.
       let strokeColor   = "var(--edge-default)";
       let markerName    = "default";
       if (state.selectedNodeId && state.selectedNodeIds.size <= 1) {
         if (incident) {
-          strokeWidth = 2; strokeOpacity = 0.95;
+          strokeWidth = 1.5; strokeOpacity = 0.95;   // still thinner than a real highlighted edge (2)
           strokeColor = effectStroke(re.effect);
           markerName  = effectMarker(re.effect);
         } else {
           dimmed = true;
         }
       }
+      const synthDash = re.dashed ? ' stroke-dasharray="5 4"' : '';
       const effectClass = ' effect-' + re.effect;   // increases / decreases / neutral
       content += '<path class="edge-path synthetic' + effectClass + (dimmed ? ' dimmed' : '') +
         '" d="' + pathD + '" stroke="' + strokeColor +
         '" stroke-width="' + strokeWidth + '" stroke-opacity="' + strokeOpacity +
-        '" marker-end="url(#arrow_' + markerName + ')"></path>';
+        '"' + synthDash + ' marker-end="url(#arrow_' + markerName + ')"></path>';
       continue;
     }
 
@@ -7244,7 +7253,9 @@ function render() {
     const effectClass = edge.effect ? ' effect-' + edge.effect : '';
     const isEdgeUndoFlashed = undoFlashEdgeIds && undoFlashEdgeIds.has(edge.id);
     const classAttr = ' class="edge-path' + effectClass + (dimmed ? ' dimmed' : '') + (isEdgeFlashed ? ' flashed' : '') + (isEdgeUndoFlashed ? ' undo-flash' : '') + (isEdgeSelected ? ' selected' : '') + '"';
-    content += '<path' + classAttr + ' data-edge-id="' + edge.id + '" d="' + pathD + '" stroke="' + strokeColor + '" stroke-width="' + strokeWidth + '" stroke-opacity="' + strokeOpacity + '"' + markerEnd + '></path>';
+    // Dashed line style (inline, so it persists through every selection state).
+    const dashAttr = edge.style === "dashed" ? ' stroke-dasharray="6 5"' : '';
+    content += '<path' + classAttr + ' data-edge-id="' + edge.id + '" d="' + pathD + '" stroke="' + strokeColor + '" stroke-width="' + strokeWidth + '" stroke-opacity="' + strokeOpacity + '"' + dashAttr + markerEnd + '></path>';
   }
 
   // Pre-compute the set of search-match ids once so the per-node check
@@ -8559,6 +8570,10 @@ function renderOutgoingEdgesBlock(node) {
       }
       html +=     '</select>';
       html +=     '<input type="number" step="any" class="detail-edit-input detail-edit-number outgoing-edge-elasticity" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="elasticity" value="' + (edge.elasticity !== undefined && edge.elasticity !== null ? edge.elasticity : "") + '" placeholder="ε = ' + defaultElasticity + '" title="Elasticity (blank = default for this effect)">';
+      html +=     '<select class="detail-edit-input detail-edit-select outgoing-edge-style" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="style" title="Line style">';
+      html +=       '<option value="solid"'  + (edge.style === "dashed" ? "" : " selected") + '>Solid</option>';
+      html +=       '<option value="dashed"' + (edge.style === "dashed" ? " selected" : "") + '>Dashed</option>';
+      html +=     '</select>';
       html +=   '</div>';
       html +=   '<textarea class="detail-edit-input detail-edit-textarea outgoing-edge-description" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="description" rows="2" placeholder="Optional description">' + escapeHtml(edge.description || "") + '</textarea>';
       html += '</div>';
@@ -8824,6 +8839,11 @@ function applyEdgeFieldEdit(edgeId, field, input) {
   if (field === "effect") {
     if (!EFFECT_OPTIONS.includes(input.value)) return;
     edge.effect = input.value;
+  } else if (field === "style") {
+    if (input.value === "dashed") edge.style = "dashed"; else delete edge.style;
+    // Line style doesn't affect layout — preserve focus.
+    if (typeof applyCanvasMutation === "function") applyCanvasMutation({ skipDetailRender: true });
+    return;
   } else if (field === "elasticity") {
     const v = parseFloat(input.value);
     if (input.value === "" || isNaN(v)) delete edge.elasticity;
@@ -9080,6 +9100,7 @@ function seedBuilderFromLiveData() {
   state.builder.edges = EDGES.map(e => ({
     from: e.from, to: e.to, effect: e.effect,
     elasticity: e.elasticity !== undefined ? e.elasticity : "",
+    style: e.style === "dashed" ? "dashed" : "",
     description: e.description || "",
   }));
   state.builder.focusAfterRender = null;
@@ -10014,12 +10035,13 @@ function renderBuilderEdgesStep() {
               sortableTh("edges", "to",          "To",          ' style="width:200px"') +
               sortableTh("edges", "effect",      "Effect",      ' style="width:130px"') +
               sortableTh("edges", "elasticity",  "Elasticity",  ' style="width:110px"') +
+              '<th style="width:96px">Style</th>' +
               sortableTh("edges", "description", "Description", "") +
               '<th style="width:90px"></th>' +
             '</tr></thead><tbody>';
 
   if (state.builder.edges.length === 0) {
-    html += tableEmptyRow(7, 'No edges yet. Click "+ Add edge".');
+    html += tableEmptyRow(8, 'No edges yet. Click "+ Add edge".');
   } else {
     sortedBuilderIndices("edges").forEach((i) => {
       const e = state.builder.edges[i];
@@ -10036,6 +10058,10 @@ function renderBuilderEdgesStep() {
                   ).join("") +
                 '</select></td>';
       html +=   '<td><input type="number" step="any" data-section="edges" data-field="elasticity" data-index="' + i + '" value="' + escapeHtml(e.elasticity === undefined ? "" : e.elasticity) + '" placeholder="(default)" /></td>';
+      html +=   '<td><select data-section="edges" data-field="style" data-index="' + i + '">' +
+                  '<option value="solid"'  + (e.style === "dashed" ? "" : " selected") + '>Solid</option>' +
+                  '<option value="dashed"' + (e.style === "dashed" ? " selected" : "") + '>Dashed</option>' +
+                '</select></td>';
       html +=   '<td><input type="text" data-section="edges" data-field="description" data-index="' + i + '" value="' + escapeHtml(e.description) + '" placeholder="Why this link exists" /></td>';
       html +=   rowActionsHtml("edges", i);
       html += '</tr>';
@@ -15093,8 +15119,9 @@ function renderExportSvg(model, opts) {
   for (const edge of model.edges) {
     const fromPos = lay.positions[edge.from], toPos = lay.positions[edge.to];
     if (!fromPos || !toPos) continue;
+    const dashAttr = edge.style === "dashed" ? ' stroke-dasharray="6 5"' : '';
     s += '<path d="' + exportEdgePath(fromPos, toPos) + '" fill="none" stroke="' + pal.edgeDefault +
-         '" stroke-width="1" stroke-opacity="0.45"></path>';
+         '" stroke-width="1" stroke-opacity="0.45"' + dashAttr + '></path>';
   }
 
   // Nodes.

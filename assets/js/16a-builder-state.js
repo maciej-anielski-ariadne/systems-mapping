@@ -112,6 +112,7 @@ function seedBuilderFromLiveData() {
   state.builder.edges = EDGES.map(e => ({
     from: e.from, to: e.to, effect: e.effect,
     elasticity: e.elasticity !== undefined ? e.elasticity : "",
+    style: e.style === "dashed" ? "dashed" : "",
     description: e.description || "",
   }));
   state.builder.focusAfterRender = null;

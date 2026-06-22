@@ -378,8 +378,9 @@ function renderExportSvg(model, opts) {
   for (const edge of model.edges) {
     const fromPos = lay.positions[edge.from], toPos = lay.positions[edge.to];
     if (!fromPos || !toPos) continue;
+    const dashAttr = edge.style === "dashed" ? ' stroke-dasharray="6 5"' : '';
     s += '<path d="' + exportEdgePath(fromPos, toPos) + '" fill="none" stroke="' + pal.edgeDefault +
-         '" stroke-width="1" stroke-opacity="0.45"></path>';
+         '" stroke-width="1" stroke-opacity="0.45"' + dashAttr + '></path>';
   }
 
   // Nodes.

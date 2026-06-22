@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup — edge line styles (solid / dashed)</title>
+<style>
+  :root{
+    --bg-deepest:#0a0e1a; --bg-deep:#111827; --bg-light:#232a3d; --border-subtle:#2a3346;
+    --text-primary:#e7ecf3; --text-secondary:#a1adc4; --text-tertiary:#6b7691; --accent-green:#34d399; --accent-amber:#fbbf24;
+    --edge-default:#3a455e; --edge-increases:#34d399; --edge-decreases:#f87171; --edge-enables:#a78bfa;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;background:var(--bg-deepest);color:var(--text-primary);font-family:system-ui,-apple-system,Segoe UI,Arial,sans-serif;}
+  .wrap{max-width:1180px;margin:0 auto;padding:30px 24px 80px;}
+  h1{font-size:22px;margin:0 0 6px;}
+  h2{font-size:15px;margin:34px 0 4px;border-top:1px solid var(--border-subtle);padding-top:24px;}
+  h2 .tag{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-left:8px;}
+  .lead{color:var(--text-secondary);font-size:14px;line-height:1.55;margin:0;max-width:880px;}
+  .note{color:var(--text-tertiary);font-size:12.5px;line-height:1.5;margin:8px 0 0;max-width:880px;}
+  .note b{color:var(--text-secondary);}
+  .row{display:flex;flex-wrap:wrap;gap:18px;margin-top:14px;}
+  .panel{background:#0d1320;border:1px solid var(--border-subtle);border-radius:8px;padding:6px 8px 4px;}
+  .panel .cap{font-size:11.5px;color:var(--text-secondary);text-align:center;padding:4px 2px 6px;}
+  .panel .cap b{color:var(--text-primary);}
+  .reco{color:var(--accent-green);font-weight:600;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Edge line styles</h1>
+  <p class="lead">Investigation result: <b>real edges are already drawn solid by default.</b> The only edges that render
+    dashed are <b>synthetic "through" edges</b> (a causal link auto-re-routed when a stream/stage/category is hidden) and
+    the brief <b>draft edge</b> while you drag to create one. Below: what a per-edge <b>dashed</b> option would look like,
+    and the choices for the synthetic edge. Edges are drawn with the app's real bezier + arrowheads and colours.</p>
+  <p class="note"><b>Nothing is built yet.</b> Pick what "dashed" should mean and what to do with synthetic edges, and I'll implement it.</p>
+
+  <h2>1 · Real edges — solid (today, unchanged) <span class="tag" style="color:var(--text-tertiary)">baseline</span></h2>
+  <div class="row" id="solidRow"></div>
+
+  <h2>2 · New: a per-edge <span style="color:var(--accent-amber)">dashed</span> option <span class="tag" style="color:var(--accent-amber)">to add</span></h2>
+  <p class="note">A new per-edge style (solid = default, dashed = opt-in) you'd set on an edge — useful to mark a link as
+    weak / uncertain / planned. Same colours and arrowheads, just a dashed stroke.</p>
+  <div class="row" id="dashedRow"></div>
+
+  <h2>3 · How edges look when a node is selected <span class="tag" style="color:var(--text-tertiary)">solid vs dashed</span></h2>
+  <p class="note">Selecting a node traces its causal chain: node borders glow (<b style="color:#60a5fa">blue</b> = upstream
+    cause, <b style="color:#fbbf24">amber</b> = downstream impact, <b style="color:#e7ecf3">white</b> = the selected
+    node); edges on the trace become bold + coloured with an arrowhead, edges off the trace dim almost to nothing
+    (~0.05 — shown a little brighter here so you can see it). A dashed edge keeps its dashes in every state.</p>
+  <div class="row" id="selSolidRow"></div>
+  <div class="row" id="selDashedRow"></div>
+
+  <h2>4 · Synthetic "through" edge <span class="tag" style="color:var(--accent-green)">chosen</span></h2>
+  <p class="note">Appears when a hidden stage/stream/category sits between two nodes, so the app re-routes the causal
+    path as one derived arrow. New behaviour: drawn <b>thinner</b> than a real edge (so it still reads as derived), and
+    it <b>inherits dashing from the underlying edge(s)</b> it re-routes — thin solid when they're all solid, thin dashed
+    if any link in the hidden chain is dashed. (For reference, the old always-dashed 1.5&nbsp;px look is shown last.)</p>
+  <div class="row" id="synthRow"></div>
+</div>
+
+<script>
+  const COL = { default:"#3a455e", increases:"#34d399", decreases:"#f87171", enables:"#a78bfa" };
+  const SEL = { selected:"#ffffff", ancestor:"#60a5fa", descendant:"#fbbf24" };
+  let mid = 0;
+  function panel(opts){
+    const W=270, H=92, ny=30, nh=32, nw=66;
+    const ax=14, bx=W-14-nw;
+    const sx=ax+nw, sy=ny+nh/2, ex=bx, ey=ny+nh/2;
+    const ctrl=Math.max(40, Math.abs(ex-sx)*0.5);
+    const d="M "+sx+","+sy+" C "+(sx+ctrl)+","+sy+" "+(ex-ctrl)+","+ey+" "+ex+","+ey;
+    const col = COL[opts.effect||"default"];
+    const mk = "mk"+(mid++);
+    const dash = opts.dashed ? ' stroke-dasharray="'+(opts.dashArr||"6 5")+'"' : '';
+    const arrow = opts.arrow!==false ? ' marker-end="url(#'+mk+')"' : '';
+    const glow = opts.glow ? ' style="filter:drop-shadow(0 0 6px '+col+')"' : '';
+    const w = opts.width||2, op = opts.opacity!=null?opts.opacity:0.95;
+    // border: a selection-role key ("selected"/"ancestor"/"descendant") or null for the default dark border.
+    const node = (x,label,role)=>{
+      const bc = role ? SEL[role] : "rgba(0,0,0,0.4)";
+      const bw = role ? (role==="selected"?2.5:2) : 1;
+      return '<rect x="'+x+'" y="'+ny+'" width="'+nw+'" height="'+nh+'" rx="5" fill="#7dd3fc" stroke="'+bc+'" stroke-width="'+bw+'"></rect>'+
+        '<text x="'+(x+nw/2)+'" y="'+(ny+nh/2)+'" text-anchor="middle" dominant-baseline="central" font-family="Arial" font-size="11" fill="#082f49">'+label+'</text>';
+    };
+    const wrapO = opts.fade!=null ? ' opacity="'+opts.fade+'"' : '';
+    return '<div class="panel"><svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'">'+
+      '<defs><marker id="'+mk+'" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">'+
+      '<path d="M 0 0 L 10 5 L 0 10 z" fill="'+col+'"></path></marker></defs>'+
+      '<g'+wrapO+'>'+
+      node(ax,opts.aLabel||"A",opts.aRole)+
+      '<path d="'+d+'" fill="none" stroke="'+col+'" stroke-width="'+w+'" stroke-opacity="'+op+'"'+dash+arrow+glow+'></path>'+
+      node(bx,opts.bLabel||"B",opts.bRole)+
+      '</g></svg><div class="cap">'+opts.cap+'</div></div>';
+  }
+
+  document.getElementById("solidRow").innerHTML = [
+    panel({effect:"default", width:1, opacity:0.45, arrow:false, cap:'<b>Default</b> · unselected'}),
+    panel({effect:"increases", cap:'<b>Increases</b> (green)'}),
+    panel({effect:"decreases", cap:'<b>Decreases</b> (red)'}),
+    panel({effect:"enables",   cap:'<b>Enables</b> (purple)'}),
+  ].join("");
+
+  document.getElementById("dashedRow").innerHTML = [
+    panel({effect:"default", width:1.5, opacity:0.6, arrow:false, dashed:true, cap:'<b>Default</b> · dashed'}),
+    panel({effect:"increases", dashed:true, cap:'<b>Increases</b> · dashed'}),
+    panel({effect:"decreases", dashed:true, cap:'<b>Decreases</b> · dashed'}),
+    panel({effect:"enables",   dashed:true, cap:'<b>Enables</b> · dashed'}),
+  ].join("");
+
+  // Selection states (each shown solid then dashed).
+  function selRow(dashed){
+    return [
+      panel({effect:"increases", dashed:dashed, aRole:"ancestor", bRole:"selected", aLabel:"cause", bLabel:"SEL",
+             cap:'<b>Highlighted</b> · upstream→selected'}),
+      panel({effect:"decreases", dashed:dashed, aRole:"selected", bRole:"descendant", aLabel:"SEL", bLabel:"impact",
+             cap:'<b>Highlighted</b> · selected→downstream'}),
+      panel({effect:"default", dashed:dashed, width:1, opacity:0.18, arrow:false, fade:0.45,
+             cap:'<b>Dimmed</b> · off the trace (~0.05 in-app)'}),
+      panel({effect:"enables", dashed:dashed, width:3, opacity:1, glow:true,
+             cap:'<b>Selected edge</b> · clicked (bold + glow)'}),
+    ].join("");
+  }
+  document.getElementById("selSolidRow").innerHTML  = selRow(false);
+  document.getElementById("selDashedRow").innerHTML = selRow(true);
+
+  document.getElementById("synthRow").innerHTML = [
+    panel({effect:"default", width:1, opacity:0.55, arrow:true, cap:'<b class="reco">Thin SOLID</b> · underlying edges all solid'}),
+    panel({effect:"default", width:1, opacity:0.55, dashed:true, dashArr:"5 4", arrow:true, cap:'<b class="reco">Thin DASHED</b> · re-routes a dashed link'}),
+    panel({effect:"default", width:1.5, opacity:0.6, dashed:true, arrow:true, cap:'(old: always dashed, 1.5px)'}),
+  ].join("");
+</script>
+</body>
+</html>

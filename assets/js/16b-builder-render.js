@@ -593,12 +593,13 @@ function renderBuilderEdgesStep() {
               sortableTh("edges", "to",          "To",          ' style="width:200px"') +
               sortableTh("edges", "effect",      "Effect",      ' style="width:130px"') +
               sortableTh("edges", "elasticity",  "Elasticity",  ' style="width:110px"') +
+              '<th style="width:96px">Style</th>' +
               sortableTh("edges", "description", "Description", "") +
               '<th style="width:90px"></th>' +
             '</tr></thead><tbody>';
 
   if (state.builder.edges.length === 0) {
-    html += tableEmptyRow(7, 'No edges yet. Click "+ Add edge".');
+    html += tableEmptyRow(8, 'No edges yet. Click "+ Add edge".');
   } else {
     sortedBuilderIndices("edges").forEach((i) => {
       const e = state.builder.edges[i];
@@ -615,6 +616,10 @@ function renderBuilderEdgesStep() {
                   ).join("") +
                 '</select></td>';
       html +=   '<td><input type="number" step="any" data-section="edges" data-field="elasticity" data-index="' + i + '" value="' + escapeHtml(e.elasticity === undefined ? "" : e.elasticity) + '" placeholder="(default)" /></td>';
+      html +=   '<td><select data-section="edges" data-field="style" data-index="' + i + '">' +
+                  '<option value="solid"'  + (e.style === "dashed" ? "" : " selected") + '>Solid</option>' +
+                  '<option value="dashed"' + (e.style === "dashed" ? " selected" : "") + '>Dashed</option>' +
+                '</select></td>';
       html +=   '<td><input type="text" data-section="edges" data-field="description" data-index="' + i + '" value="' + escapeHtml(e.description) + '" placeholder="Why this link exists" /></td>';
       html +=   rowActionsHtml("edges", i);
       html += '</tr>';

@@ -324,6 +324,9 @@ function loadDataFromCsv(csvText) {
       };
       const elasticityValue = parseNumericCell(row.elasticity);
       if (elasticityValue !== undefined) edge.elasticity = elasticityValue;
+      // Line style: "dashed" or (default) solid. Only stored when dashed, so an
+      // old CSV with no `style` column loads as solid.
+      if ((row.style || "").trim().toLowerCase() === "dashed") edge.style = "dashed";
 
       parsedEdges.push(edge);
     }

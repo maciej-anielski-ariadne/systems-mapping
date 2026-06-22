@@ -292,6 +292,10 @@ function renderOutgoingEdgesBlock(node) {
       }
       html +=     '</select>';
       html +=     '<input type="number" step="any" class="detail-edit-input detail-edit-number outgoing-edge-elasticity" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="elasticity" value="' + (edge.elasticity !== undefined && edge.elasticity !== null ? edge.elasticity : "") + '" placeholder="ε = ' + defaultElasticity + '" title="Elasticity (blank = default for this effect)">';
+      html +=     '<select class="detail-edit-input detail-edit-select outgoing-edge-style" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="style" title="Line style">';
+      html +=       '<option value="solid"'  + (edge.style === "dashed" ? "" : " selected") + '>Solid</option>';
+      html +=       '<option value="dashed"' + (edge.style === "dashed" ? " selected" : "") + '>Dashed</option>';
+      html +=     '</select>';
       html +=   '</div>';
       html +=   '<textarea class="detail-edit-input detail-edit-textarea outgoing-edge-description" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="description" rows="2" placeholder="Optional description">' + escapeHtml(edge.description || "") + '</textarea>';
       html += '</div>';
@@ -557,6 +561,11 @@ function applyEdgeFieldEdit(edgeId, field, input) {
   if (field === "effect") {
     if (!EFFECT_OPTIONS.includes(input.value)) return;
     edge.effect = input.value;
+  } else if (field === "style") {
+    if (input.value === "dashed") edge.style = "dashed"; else delete edge.style;
+    // Line style doesn't affect layout — preserve focus.
+    if (typeof applyCanvasMutation === "function") applyCanvasMutation({ skipDetailRender: true });
+    return;
   } else if (field === "elasticity") {
     const v = parseFloat(input.value);
     if (input.value === "" || isNaN(v)) delete edge.elasticity;

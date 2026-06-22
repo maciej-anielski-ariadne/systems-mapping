@@ -165,14 +165,16 @@ function _serializeShape(data) {
   lines.push("# from / to    - source and target node ids");
   lines.push("# effect       - enables / increases / decreases");
   lines.push("# elasticity   - OPTIONAL per-edge override. Blank = use default for the effect.");
+  lines.push("# style        - OPTIONAL line style: 'dashed', or blank for solid (default).");
   lines.push("# description  - explanation shown in the detail panel");
-  lines.push("from,to,effect,elasticity,description");
+  lines.push("from,to,effect,elasticity,style,description");
   for (const edge of builder.edges || []) {
     lines.push(csvRow([
       edge.from,
       edge.to,
       edge.effect,
       edge.elasticity === undefined || edge.elasticity === null || edge.elasticity === "" ? "" : edge.elasticity,
+      edge.style === "dashed" ? "dashed" : "",
       edge.description || "",
     ]));
   }
