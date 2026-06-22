@@ -8046,7 +8046,11 @@ function renderLegendFilters() {
   for (const g of LEGEND_FILTER_GROUPS) {
     const c = document.getElementById(g.containerId);
     if (!c) continue;
-    const hidden = g.hiddenSet();
+    // Each group's hidden-set is a state Set initialised in 03-state.js. Fall
+    // back to an empty Set so a render can never throw on `.has(...)` if one is
+    // ever missing (e.g. a state-restore race or a partially-loaded state) —
+    // the row simply renders as "not hidden" rather than crashing the sidebar.
+    const hidden = g.hiddenSet() || new Set();
     const shown = g.items.filter(f => !hidden.has(f.id)).length;
     let html = sectionTitleHtml(g.title, shown, g.items.length);
     for (const f of g.items) {
