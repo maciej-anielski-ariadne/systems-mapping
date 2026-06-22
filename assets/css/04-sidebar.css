@@ -108,12 +108,12 @@
   font-size: 9px;
 }
 
-/* Every heading uses ONE indent (the swatch-inclusive axis) so the heading
- * column stays straight across sections. Stages carry an inert marker in the
- * swatch slot (.sidebar-stage-mark), so their labels share the axis too — no
- * more zigzag between Stages and Streams/Categories. */
+/* Heading + "+ Add" buttons + swatches share ONE left column (the row's content
+ * edge); the item labels sit one swatch-width further in. So the heading caps
+ * the swatch column with a straight label column to its right — and all the
+ * sections agree (no zigzag), matching the mockup. */
 .sidebar-section-title {
-  padding-left: var(--title-indent-l-swatch);
+  padding-left: var(--row-pad-l);
   padding-right: var(--title-indent-r);
 }
 
@@ -209,31 +209,27 @@
 }
 
 .sidebar-edit-drag {
-  flex: 0 0 auto;
-  width: var(--drag-w);
-  text-align: center;
+  /* Out of flow so the swatch owns the flush-left column (matches the mockup).
+     The whole row is draggable, so this grip is just a faint hover hint;
+     pointer-events:none lets clicks pass through to the swatch behind it. */
+  position: absolute;
+  left: 1px;
+  top: 50%;
+  transform: translateY(-50%);
   color: var(--text-tertiary);
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1;
-  cursor: grab;
-  padding: 0;
+  letter-spacing: -1px;
   user-select: none;
-  /* Reorder is a secondary action — hide the grip at rest so the swatch owns
-     the left scan column; reveal it on hover OR keyboard focus within the row
-     (the row stays draggable either way). */
   opacity: 0;
-  transition: opacity 0.12s;
+  pointer-events: none;
 }
 
-.sidebar-edit-row:hover .sidebar-edit-drag,
-.sidebar-edit-row:focus-within .sidebar-edit-drag {
-  opacity: 1;
-}
-
-.sidebar-edit-drag:active {
-  cursor: grabbing;
-}
+/* No hover reveal of the grip — it would overlap the now-flush swatch, and the
+ * row's primary action is click-to-toggle (cursor stays pointer). The whole row
+ * is still draggable for reordering. */
+.sidebar-edit-row.dragging { cursor: grabbing; }
 
 .sidebar-edit-label {
   flex: 1 1 auto;
@@ -284,15 +280,13 @@
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
 }
 
-/* Inert spacer in the swatch slot of STAGE rows — stages have no colour, but the
- * marker keeps their labels on the same left axis as swatched rows. A very faint
- * hollow square reads as "no colour" rather than an empty gap. */
+/* Invisible spacer in the swatch slot of STAGE rows — stages have no colour, so
+ * the slot stays empty rather than carrying a box outline (which read as an
+ * unchecked checkbox). It only reserves the swatch width so stage labels line
+ * up with the swatched rows below. */
 .sidebar-stage-mark {
   flex: 0 0 var(--swatch-w);
   width: var(--swatch-w);
-  height: 16px;
-  border-radius: 3px;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
   pointer-events: none;
 }
 
@@ -394,6 +388,7 @@
   color: var(--accent-blue);
   border-radius: 4px;
   padding: var(--pad-button);
+  padding-left: var(--row-pad-l);   /* "+" lines up with the heading + swatch column */
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.04em;
