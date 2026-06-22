@@ -365,6 +365,7 @@ function renderExportSvg(model, opts) {
   // map draws an edge when nothing is selected). Effect colours and arrowheads
   // are the app's *highlight* state, so they are deliberately not used here.
   for (const edge of model.edges) {
+    if (typeof isEdgeVisible === "function" && !isEdgeVisible(edge)) continue;   // honour the sidebar edge filters
     const fromPos = lay.positions[edge.from], toPos = lay.positions[edge.to];
     if (!fromPos || !toPos) continue;
     const dashAttr = edge.style === "dashed" ? ' stroke-dasharray="6 5"' : '';

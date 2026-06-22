@@ -75,3 +75,41 @@ function isNodeVisible(node) {
   for (const c of nodeCategoryIds(node)) if (state.hiddenCategories.has(c)) return false;
   return true;
 }
+
+// A (real) edge is drawn only if neither its effect nor its line style is
+// hidden via the sidebar "Edge types" / "Line style" filters. Purely visual —
+// the simulation still runs over every edge. Shared by the renderer + export.
+function isEdgeVisible(edge) {
+  if (state.hiddenEffects.has(edge.effect)) return false;
+  if (state.hiddenStyles.has(edge.style || "solid")) return false;
+  return true;
+}
+
+// ───── Edge / trace filters (toggle the sidebar legend rows) ──────────────
+// Edge effect + line-style filters are purely visual, so they only re-render.
+function toggleEffect(effect) {
+  if (state.hiddenEffects.has(effect)) state.hiddenEffects.delete(effect);
+  else state.hiddenEffects.add(effect);
+  render();
+  renderSidebar();
+  saveUiStateToStorage();
+}
+
+function toggleStyle(style) {
+  if (state.hiddenStyles.has(style)) state.hiddenStyles.delete(style);
+  else state.hiddenStyles.add(style);
+  render();
+  renderSidebar();
+  saveUiStateToStorage();
+}
+
+// Trace direction filter changes which side of the causal trace is highlighted,
+// so recompute the current selection's highlight sets before re-rendering.
+function toggleTrace(dir) {
+  if (state.hiddenTrace.has(dir)) state.hiddenTrace.delete(dir);
+  else state.hiddenTrace.add(dir);
+  if (typeof refreshTraceForSelection === "function") refreshTraceForSelection();
+  render();
+  renderSidebar();
+  saveUiStateToStorage();
+}

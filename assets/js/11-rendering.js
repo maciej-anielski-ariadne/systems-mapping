@@ -303,6 +303,10 @@ function render() {
     const pathD = edgeBezierPath(fromPos, toPos);
 
     if (re.synthetic) {
+      // Honour the sidebar edge filters (re.dashed marks a re-routed chain that
+      // contains a dashed link).
+      if (state.hiddenEffects.has(re.effect)) continue;
+      if (state.hiddenStyles.has(re.dashed ? "dashed" : "solid")) continue;
       // Synthetic "through" edge — presentation only: not selectable/editable.
       // Drawn THINNER than a real edge so it reads as derived, and dashed only
       // when it re-routes a dashed link (re.dashed, set in 10a). Bold + coloured
@@ -334,6 +338,7 @@ function render() {
     }
 
     const edge = re.edge;
+    if (!isEdgeVisible(edge)) continue;   // hidden via the sidebar edge filters
     // Default styling — overridden if the edge is highlighted by a selection.
     let strokeColor   = "var(--edge-default)";
     let strokeWidth   = 1;

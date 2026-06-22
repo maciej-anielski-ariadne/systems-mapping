@@ -43,6 +43,9 @@ function saveUiStateToStorage() {
       hiddenStreams:        Array.from(state.hiddenStreams),
       hiddenCategories:     Array.from(state.hiddenCategories),
       hiddenStages:         Array.from(state.hiddenStages),
+      hiddenEffects:        Array.from(state.hiddenEffects),
+      hiddenStyles:         Array.from(state.hiddenStyles),
+      hiddenTrace:          Array.from(state.hiddenTrace),
       simulationMode:       !!state.simulationMode,
       userOverrides:        state.userOverrides || {},
       selectedNodeId:       state.selectedNodeId || null,
@@ -106,6 +109,9 @@ function applyRestoredUiState(ui) {
   state.hiddenStreams    = new Set(Array.isArray(ui.hiddenStreams)    ? ui.hiddenStreams    : []);
   state.hiddenCategories = new Set(Array.isArray(ui.hiddenCategories) ? ui.hiddenCategories : []);
   state.hiddenStages     = new Set(Array.isArray(ui.hiddenStages)     ? ui.hiddenStages     : []);
+  state.hiddenEffects    = new Set(Array.isArray(ui.hiddenEffects)    ? ui.hiddenEffects    : []);
+  state.hiddenStyles     = new Set(Array.isArray(ui.hiddenStyles)     ? ui.hiddenStyles     : []);
+  state.hiddenTrace      = new Set(Array.isArray(ui.hiddenTrace)      ? ui.hiddenTrace      : []);
   state.userOverrides    = (ui.userOverrides && typeof ui.userOverrides === "object") ? ui.userOverrides : {};
 
   // Hidden streams change row heights and hidden stages change column widths —

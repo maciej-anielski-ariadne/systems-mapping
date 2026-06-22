@@ -54,9 +54,12 @@ function getDescendants(nodeId, depth = state.highlightDepth) {
 // Edges crossed while walking up- and downstream within `depth` hops of the
 // selected node — i.e. every edge along the highlighted ancestor/descendant
 // chains. BFS by node, collecting edge ids as we step outward.
-function computeHighlightedEdges(nodeId, depth = state.highlightDepth) {
+function computeHighlightedEdges(nodeId, depth = state.highlightDepth, showUp = true, showDown = true) {
   const edges = new Set();
-  for (const [adjacency, endpointKey] of [[incomingEdges, "from"], [outgoingEdges, "to"]]) {
+  const directions = [];
+  if (showUp)   directions.push([incomingEdges, "from"]);   // upstream chain
+  if (showDown) directions.push([outgoingEdges, "to"]);     // downstream chain
+  for (const [adjacency, endpointKey] of directions) {
     const visited = new Set([nodeId]);
     let frontier = [nodeId];
     for (let level = 0; level < depth && frontier.length; level++) {
@@ -117,14 +120,31 @@ function computeMaxHighlightDepth() {
 // of blue/amber borders. Called by selectNode / toggle / marquee / setSelection.
 function refreshNeighborHighlight() {
   if (state.selectedNodeIds.size === 1 && state.selectedNodeId) {
-    state.ancestorSet        = getAncestors(state.selectedNodeId);
-    state.descendantSet      = getDescendants(state.selectedNodeId);
-    state.highlightedEdgeIds = computeHighlightedEdges(state.selectedNodeId);
+    Object.assign(state, computeTraceFor(state.selectedNodeId));
   } else {
     state.ancestorSet        = new Set();
     state.descendantSet      = new Set();
     state.highlightedEdgeIds = new Set();
   }
+}
+
+// The ancestor / descendant / highlighted-edge sets for a node's causal trace,
+// honouring the sidebar "Trace" filter (state.hiddenTrace can suppress the
+// upstream and/or downstream side). Shared by node selection and edge selection.
+function computeTraceFor(nodeId) {
+  const showUp   = !state.hiddenTrace.has("ancestors");
+  const showDown = !state.hiddenTrace.has("descendants");
+  return {
+    ancestorSet:        showUp   ? getAncestors(nodeId)   : new Set(),
+    descendantSet:      showDown ? getDescendants(nodeId) : new Set(),
+    highlightedEdgeIds: computeHighlightedEdges(nodeId, state.highlightDepth, showUp, showDown),
+  };
+}
+
+// Recompute the current selection's trace in place (used when the trace filter
+// toggles). Works for a selected node or a selected edge (both set selectedNodeId).
+function refreshTraceForSelection() {
+  if (state.selectedNodeId) Object.assign(state, computeTraceFor(state.selectedNodeId));
 }
 
 // Toggle behaviour: clicking the already-selected node deselects it. A plain
@@ -248,9 +268,7 @@ function selectEdge(edgeId) {
     // selectNode toggles when called with the current id; we already handled
     // that above so it's safe to set directly here.
     state.selectedNodeId = edge.from;
-    state.ancestorSet = getAncestors(edge.from);
-    state.descendantSet = getDescendants(edge.from);
-    state.highlightedEdgeIds = computeHighlightedEdges(edge.from);
+    Object.assign(state, computeTraceFor(edge.from));
     render();
     renderDetailPanel();
     saveUiStateToStorage();

@@ -1031,6 +1031,25 @@ body.panel-resizing {
   color: var(--text-secondary);
 }
 
+/* Clickable legend rows (Edge types / Line style / Trace filters). Same
+ * toggle + dim model as the stream/category filter rows — .filter-row.disabled
+ * (above) dims and strikes through the label when the row is toggled off. */
+.legend-filter-row {
+  display: flex;
+  align-items: center;
+  padding: 5px 6px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.legend-filter-row:hover { background: var(--bg-light); }
+.legend-filter-row .filter-label { flex: 1; font-size: 12px; color: var(--text-secondary); }
+.legend-filter-row .filter-count { margin-left: 8px; }
+
+/* Neutral line-style swatches (style is orthogonal to the effect colour). */
+.legend-line-solid  { background: var(--text-secondary); }
+.legend-line-dashed { height: 0; background: none; border-top: 2px dashed var(--text-secondary); }
+
 </style>
   <style>
 /* === assets/css/05-visualization.css === */
@@ -3957,39 +3976,13 @@ body.no-data .detail-panel {
       <div id="category-filters"></div>
     </div>
 
-    <!-- Edge legend (static) -->
-    <div class="sidebar-section">
-      <div class="sidebar-section-title">
-        <span>Edge Legend</span>
-      </div>
-      <div class="legend-row">
-        <div class="legend-line" style="background: var(--edge-enables);"></div>
-        <div class="legend-label">Enables / supports</div>
-      </div>
-      <div class="legend-row">
-        <div class="legend-line" style="background: var(--edge-increases);"></div>
-        <div class="legend-label">Increases</div>
-      </div>
-      <div class="legend-row">
-        <div class="legend-line" style="background: var(--edge-decreases);"></div>
-        <div class="legend-label">Decreases</div>
-      </div>
-    </div>
-
-    <!-- Trace legend (static) -->
-    <div class="sidebar-section">
-      <div class="sidebar-section-title">
-        <span>Trace Legend</span>
-      </div>
-      <div class="legend-row">
-        <div class="legend-swatch" style="box-shadow: inset 0 0 0 2px var(--edge-ancestor), 0 0 4px var(--edge-ancestor);"></div>
-        <div class="legend-label">Upstream sources</div>
-      </div>
-      <div class="legend-row">
-        <div class="legend-swatch" style="box-shadow: inset 0 0 0 2px var(--edge-descendant), 0 0 4px var(--edge-descendant);"></div>
-        <div class="legend-label">Downstream impacts</div>
-      </div>
-    </div>
+    <!-- Edge / trace filters — JS fills these (renderEdgeTypeFilters /
+         renderEdgeStyleFilters / renderTraceFilters in 13-sidebar.js). Each row
+         toggles like Streams: click to hide that edge effect / line style on the
+         map (or suppress a trace direction); click again to show it. -->
+    <div class="sidebar-section"><div id="edge-type-filters"></div></div>
+    <div class="sidebar-section"><div id="edge-style-filters"></div></div>
+    <div class="sidebar-section"><div id="trace-filters"></div></div>
   </aside>
 
   <!-- ============== PANEL RESIZE HANDLES ==============
@@ -4356,6 +4349,9 @@ const state = {
   hiddenStreams: new Set(),
   hiddenCategories: new Set(),
   hiddenStages: new Set(),
+  hiddenEffects: new Set(),    // edge effects hidden via the "Edge types" filter
+  hiddenStyles: new Set(),     // edge line styles ("solid"/"dashed") hidden via "Line style"
+  hiddenTrace: new Set(),      // "ancestors"/"descendants" suppressed in the causal trace
   ancestorSet: new Set(),
   descendantSet: new Set(),
   highlightedEdgeIds: new Set(),
@@ -4787,6 +4783,9 @@ function saveUiStateToStorage() {
       hiddenStreams:        Array.from(state.hiddenStreams),
       hiddenCategories:     Array.from(state.hiddenCategories),
       hiddenStages:         Array.from(state.hiddenStages),
+      hiddenEffects:        Array.from(state.hiddenEffects),
+      hiddenStyles:         Array.from(state.hiddenStyles),
+      hiddenTrace:          Array.from(state.hiddenTrace),
       simulationMode:       !!state.simulationMode,
       userOverrides:        state.userOverrides || {},
       selectedNodeId:       state.selectedNodeId || null,
@@ -4850,6 +4849,9 @@ function applyRestoredUiState(ui) {
   state.hiddenStreams    = new Set(Array.isArray(ui.hiddenStreams)    ? ui.hiddenStreams    : []);
   state.hiddenCategories = new Set(Array.isArray(ui.hiddenCategories) ? ui.hiddenCategories : []);
   state.hiddenStages     = new Set(Array.isArray(ui.hiddenStages)     ? ui.hiddenStages     : []);
+  state.hiddenEffects    = new Set(Array.isArray(ui.hiddenEffects)    ? ui.hiddenEffects    : []);
+  state.hiddenStyles     = new Set(Array.isArray(ui.hiddenStyles)     ? ui.hiddenStyles     : []);
+  state.hiddenTrace      = new Set(Array.isArray(ui.hiddenTrace)      ? ui.hiddenTrace      : []);
   state.userOverrides    = (ui.userOverrides && typeof ui.userOverrides === "object") ? ui.userOverrides : {};
 
   // Hidden streams change row heights and hidden stages change column widths —
@@ -6453,9 +6455,12 @@ function getDescendants(nodeId, depth = state.highlightDepth) {
 // Edges crossed while walking up- and downstream within `depth` hops of the
 // selected node — i.e. every edge along the highlighted ancestor/descendant
 // chains. BFS by node, collecting edge ids as we step outward.
-function computeHighlightedEdges(nodeId, depth = state.highlightDepth) {
+function computeHighlightedEdges(nodeId, depth = state.highlightDepth, showUp = true, showDown = true) {
   const edges = new Set();
-  for (const [adjacency, endpointKey] of [[incomingEdges, "from"], [outgoingEdges, "to"]]) {
+  const directions = [];
+  if (showUp)   directions.push([incomingEdges, "from"]);   // upstream chain
+  if (showDown) directions.push([outgoingEdges, "to"]);     // downstream chain
+  for (const [adjacency, endpointKey] of directions) {
     const visited = new Set([nodeId]);
     let frontier = [nodeId];
     for (let level = 0; level < depth && frontier.length; level++) {
@@ -6516,14 +6521,31 @@ function computeMaxHighlightDepth() {
 // of blue/amber borders. Called by selectNode / toggle / marquee / setSelection.
 function refreshNeighborHighlight() {
   if (state.selectedNodeIds.size === 1 && state.selectedNodeId) {
-    state.ancestorSet        = getAncestors(state.selectedNodeId);
-    state.descendantSet      = getDescendants(state.selectedNodeId);
-    state.highlightedEdgeIds = computeHighlightedEdges(state.selectedNodeId);
+    Object.assign(state, computeTraceFor(state.selectedNodeId));
   } else {
     state.ancestorSet        = new Set();
     state.descendantSet      = new Set();
     state.highlightedEdgeIds = new Set();
   }
+}
+
+// The ancestor / descendant / highlighted-edge sets for a node's causal trace,
+// honouring the sidebar "Trace" filter (state.hiddenTrace can suppress the
+// upstream and/or downstream side). Shared by node selection and edge selection.
+function computeTraceFor(nodeId) {
+  const showUp   = !state.hiddenTrace.has("ancestors");
+  const showDown = !state.hiddenTrace.has("descendants");
+  return {
+    ancestorSet:        showUp   ? getAncestors(nodeId)   : new Set(),
+    descendantSet:      showDown ? getDescendants(nodeId) : new Set(),
+    highlightedEdgeIds: computeHighlightedEdges(nodeId, state.highlightDepth, showUp, showDown),
+  };
+}
+
+// Recompute the current selection's trace in place (used when the trace filter
+// toggles). Works for a selected node or a selected edge (both set selectedNodeId).
+function refreshTraceForSelection() {
+  if (state.selectedNodeId) Object.assign(state, computeTraceFor(state.selectedNodeId));
 }
 
 // Toggle behaviour: clicking the already-selected node deselects it. A plain
@@ -6647,9 +6669,7 @@ function selectEdge(edgeId) {
     // selectNode toggles when called with the current id; we already handled
     // that above so it's safe to set directly here.
     state.selectedNodeId = edge.from;
-    state.ancestorSet = getAncestors(edge.from);
-    state.descendantSet = getDescendants(edge.from);
-    state.highlightedEdgeIds = computeHighlightedEdges(edge.from);
+    Object.assign(state, computeTraceFor(edge.from));
     render();
     renderDetailPanel();
     saveUiStateToStorage();
@@ -6779,6 +6799,44 @@ function isNodeVisible(node) {
   // Hidden if ANY category the node carries (primary or secondary) is hidden.
   for (const c of nodeCategoryIds(node)) if (state.hiddenCategories.has(c)) return false;
   return true;
+}
+
+// A (real) edge is drawn only if neither its effect nor its line style is
+// hidden via the sidebar "Edge types" / "Line style" filters. Purely visual —
+// the simulation still runs over every edge. Shared by the renderer + export.
+function isEdgeVisible(edge) {
+  if (state.hiddenEffects.has(edge.effect)) return false;
+  if (state.hiddenStyles.has(edge.style || "solid")) return false;
+  return true;
+}
+
+// ───── Edge / trace filters (toggle the sidebar legend rows) ──────────────
+// Edge effect + line-style filters are purely visual, so they only re-render.
+function toggleEffect(effect) {
+  if (state.hiddenEffects.has(effect)) state.hiddenEffects.delete(effect);
+  else state.hiddenEffects.add(effect);
+  render();
+  renderSidebar();
+  saveUiStateToStorage();
+}
+
+function toggleStyle(style) {
+  if (state.hiddenStyles.has(style)) state.hiddenStyles.delete(style);
+  else state.hiddenStyles.add(style);
+  render();
+  renderSidebar();
+  saveUiStateToStorage();
+}
+
+// Trace direction filter changes which side of the causal trace is highlighted,
+// so recompute the current selection's highlight sets before re-rendering.
+function toggleTrace(dir) {
+  if (state.hiddenTrace.has(dir)) state.hiddenTrace.delete(dir);
+  else state.hiddenTrace.add(dir);
+  if (typeof refreshTraceForSelection === "function") refreshTraceForSelection();
+  render();
+  renderSidebar();
+  saveUiStateToStorage();
 }
 
 </script>            <!-- show/hide streams/stages -->
@@ -7203,6 +7261,10 @@ function render() {
     const pathD = edgeBezierPath(fromPos, toPos);
 
     if (re.synthetic) {
+      // Honour the sidebar edge filters (re.dashed marks a re-routed chain that
+      // contains a dashed link).
+      if (state.hiddenEffects.has(re.effect)) continue;
+      if (state.hiddenStyles.has(re.dashed ? "dashed" : "solid")) continue;
       // Synthetic "through" edge — presentation only: not selectable/editable.
       // Drawn THINNER than a real edge so it reads as derived, and dashed only
       // when it re-routes a dashed link (re.dashed, set in 10a). Bold + coloured
@@ -7234,6 +7296,7 @@ function render() {
     }
 
     const edge = re.edge;
+    if (!isEdgeVisible(edge)) continue;   // hidden via the sidebar edge filters
     // Default styling — overridden if the edge is highlighted by a selection.
     let strokeColor   = "var(--edge-default)";
     let strokeWidth   = 1;
@@ -7683,6 +7746,9 @@ function renderSidebar() {
   renderStagesList();
   renderStreamsList();
   renderCategoriesList();
+  renderEdgeTypeFilters();
+  renderEdgeStyleFilters();
+  renderTraceFilters();
 
   // Newly-rendered rows have data-tooltip; wire them up to the tooltip system.
   if (typeof wireDataTooltips === "function") wireDataTooltips(sidebarEl);
@@ -7821,6 +7887,98 @@ function renderCategoriesList() {
   container.querySelectorAll("[data-cat-class]").forEach(btn => {
     btn.addEventListener("click", () => {
       if (typeof addCategory === "function") addCategory(btn.getAttribute("data-cat-class"));
+    });
+  });
+}
+
+// ───── Edge-type / line-style / trace filters ───────────────────────────
+// Three click-to-toggle filter groups using the same toggle+dim model as the
+// Stream / Category filters: click a row to hide that edge effect or line
+// style on the map (or to suppress a direction of the causal trace), click
+// again to restore it. Each renders into its own container in index.html.
+const EDGE_TYPE_FILTERS = [
+  { id: "enables",   label: "Enables / supports" },
+  { id: "increases", label: "Increases" },
+  { id: "decreases", label: "Decreases" },
+];
+const TRACE_FILTERS = [
+  { id: "ancestors",   label: "Upstream sources",   varName: "--edge-ancestor"   },
+  { id: "descendants", label: "Downstream impacts", varName: "--edge-descendant" },
+];
+
+// One filter row. `count` is omitted (null) for trace rows, which aren't counts.
+function legendFilterRow(kind, id, swatch, label, count, isOff, tip) {
+  return '<div class="legend-filter-row filter-row ' + (isOff ? "disabled" : "") + '" data-legend-kind="' + kind + '" data-legend-id="' + escapeHtml(id) + '" data-tooltip="' + escapeHtml(tip) + '">' +
+    swatch +
+    '<div class="filter-label">' + escapeHtml(label) + '</div>' +
+    (count != null ? '<div class="filter-count">' + count + '</div>' : '') +
+    '</div>';
+}
+
+function sectionTitleHtml(label, shown, total) {
+  return '<div class="sidebar-section-title"><span>' + label + '</span><span class="count">' + shown + ' / ' + total + '</span></div>';
+}
+
+function renderEdgeTypeFilters() {
+  const c = document.getElementById("edge-type-filters");
+  if (!c) return;
+  const shown = EDGE_TYPE_FILTERS.filter(f => !state.hiddenEffects.has(f.id)).length;
+  let html = sectionTitleHtml("Edge types", shown, EDGE_TYPE_FILTERS.length);
+  for (const f of EDGE_TYPE_FILTERS) {
+    const isOff = state.hiddenEffects.has(f.id);
+    const count = EDGES.reduce((a, e) => e.effect === f.id ? a + 1 : a, 0);
+    const swatch = '<div class="legend-line" style="background: var(--edge-' + f.id + ');"></div>';
+    html += legendFilterRow("effect", f.id, swatch, f.label, count, isOff,
+      (isOff ? "Click to show " : "Click to hide ") + f.label + " edges on the map.");
+  }
+  c.innerHTML = html;
+  wireLegendFilters(c);
+}
+
+function renderEdgeStyleFilters() {
+  const c = document.getElementById("edge-style-filters");
+  if (!c) return;
+  const styles = [
+    { id: "solid",  label: "Solid",  swatchClass: "legend-line-solid",  count: EDGES.reduce((a, e) => (e.style || "solid") !== "dashed" ? a + 1 : a, 0) },
+    { id: "dashed", label: "Dashed", swatchClass: "legend-line-dashed", count: EDGES.reduce((a, e) => e.style === "dashed" ? a + 1 : a, 0) },
+  ];
+  const shown = styles.filter(s => !state.hiddenStyles.has(s.id)).length;
+  let html = sectionTitleHtml("Line style", shown, styles.length);
+  for (const s of styles) {
+    const isOff = state.hiddenStyles.has(s.id);
+    const swatch = '<div class="legend-line ' + s.swatchClass + '"></div>';
+    html += legendFilterRow("style", s.id, swatch, s.label, s.count, isOff,
+      (isOff ? "Click to show " : "Click to hide ") + s.label.toLowerCase() + " edges on the map.");
+  }
+  c.innerHTML = html;
+  wireLegendFilters(c);
+}
+
+function renderTraceFilters() {
+  const c = document.getElementById("trace-filters");
+  if (!c) return;
+  const shown = TRACE_FILTERS.filter(f => !state.hiddenTrace.has(f.id)).length;
+  let html = sectionTitleHtml("Trace", shown, TRACE_FILTERS.length);
+  for (const f of TRACE_FILTERS) {
+    const isOff = state.hiddenTrace.has(f.id);
+    const swatch = '<div class="legend-swatch" style="box-shadow: inset 0 0 0 2px var(' + f.varName + '), 0 0 4px var(' + f.varName + ');"></div>';
+    html += legendFilterRow("trace", f.id, swatch, f.label, null, isOff,
+      (isOff ? "Click to show " : "Click to hide ") + f.label.toLowerCase() + " when a node is selected.");
+  }
+  c.innerHTML = html;
+  wireLegendFilters(c);
+}
+
+// Wire each filter row to its toggle. Re-rendered each call on fresh DOM, so
+// exactly one listener per row (no stacking).
+function wireLegendFilters(container) {
+  container.querySelectorAll(".legend-filter-row").forEach(row => {
+    row.addEventListener("click", () => {
+      const kind = row.getAttribute("data-legend-kind");
+      const id   = row.getAttribute("data-legend-id");
+      if      (kind === "effect" && typeof toggleEffect === "function") toggleEffect(id);
+      else if (kind === "style"  && typeof toggleStyle  === "function") toggleStyle(id);
+      else if (kind === "trace"  && typeof toggleTrace  === "function") toggleTrace(id);
     });
   });
 }
@@ -15170,6 +15328,7 @@ function renderExportSvg(model, opts) {
   // map draws an edge when nothing is selected). Effect colours and arrowheads
   // are the app's *highlight* state, so they are deliberately not used here.
   for (const edge of model.edges) {
+    if (typeof isEdgeVisible === "function" && !isEdgeVisible(edge)) continue;   // honour the sidebar edge filters
     const fromPos = lay.positions[edge.from], toPos = lay.positions[edge.to];
     if (!fromPos || !toPos) continue;
     const dashAttr = edge.style === "dashed" ? ' stroke-dasharray="6 5"' : '';

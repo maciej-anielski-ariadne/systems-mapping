@@ -23,6 +23,9 @@ function renderSidebar() {
   renderStagesList();
   renderStreamsList();
   renderCategoriesList();
+  renderEdgeTypeFilters();
+  renderEdgeStyleFilters();
+  renderTraceFilters();
 
   // Newly-rendered rows have data-tooltip; wire them up to the tooltip system.
   if (typeof wireDataTooltips === "function") wireDataTooltips(sidebarEl);
@@ -161,6 +164,98 @@ function renderCategoriesList() {
   container.querySelectorAll("[data-cat-class]").forEach(btn => {
     btn.addEventListener("click", () => {
       if (typeof addCategory === "function") addCategory(btn.getAttribute("data-cat-class"));
+    });
+  });
+}
+
+// ───── Edge-type / line-style / trace filters ───────────────────────────
+// Three click-to-toggle filter groups using the same toggle+dim model as the
+// Stream / Category filters: click a row to hide that edge effect or line
+// style on the map (or to suppress a direction of the causal trace), click
+// again to restore it. Each renders into its own container in index.html.
+const EDGE_TYPE_FILTERS = [
+  { id: "enables",   label: "Enables / supports" },
+  { id: "increases", label: "Increases" },
+  { id: "decreases", label: "Decreases" },
+];
+const TRACE_FILTERS = [
+  { id: "ancestors",   label: "Upstream sources",   varName: "--edge-ancestor"   },
+  { id: "descendants", label: "Downstream impacts", varName: "--edge-descendant" },
+];
+
+// One filter row. `count` is omitted (null) for trace rows, which aren't counts.
+function legendFilterRow(kind, id, swatch, label, count, isOff, tip) {
+  return '<div class="legend-filter-row filter-row ' + (isOff ? "disabled" : "") + '" data-legend-kind="' + kind + '" data-legend-id="' + escapeHtml(id) + '" data-tooltip="' + escapeHtml(tip) + '">' +
+    swatch +
+    '<div class="filter-label">' + escapeHtml(label) + '</div>' +
+    (count != null ? '<div class="filter-count">' + count + '</div>' : '') +
+    '</div>';
+}
+
+function sectionTitleHtml(label, shown, total) {
+  return '<div class="sidebar-section-title"><span>' + label + '</span><span class="count">' + shown + ' / ' + total + '</span></div>';
+}
+
+function renderEdgeTypeFilters() {
+  const c = document.getElementById("edge-type-filters");
+  if (!c) return;
+  const shown = EDGE_TYPE_FILTERS.filter(f => !state.hiddenEffects.has(f.id)).length;
+  let html = sectionTitleHtml("Edge types", shown, EDGE_TYPE_FILTERS.length);
+  for (const f of EDGE_TYPE_FILTERS) {
+    const isOff = state.hiddenEffects.has(f.id);
+    const count = EDGES.reduce((a, e) => e.effect === f.id ? a + 1 : a, 0);
+    const swatch = '<div class="legend-line" style="background: var(--edge-' + f.id + ');"></div>';
+    html += legendFilterRow("effect", f.id, swatch, f.label, count, isOff,
+      (isOff ? "Click to show " : "Click to hide ") + f.label + " edges on the map.");
+  }
+  c.innerHTML = html;
+  wireLegendFilters(c);
+}
+
+function renderEdgeStyleFilters() {
+  const c = document.getElementById("edge-style-filters");
+  if (!c) return;
+  const styles = [
+    { id: "solid",  label: "Solid",  swatchClass: "legend-line-solid",  count: EDGES.reduce((a, e) => (e.style || "solid") !== "dashed" ? a + 1 : a, 0) },
+    { id: "dashed", label: "Dashed", swatchClass: "legend-line-dashed", count: EDGES.reduce((a, e) => e.style === "dashed" ? a + 1 : a, 0) },
+  ];
+  const shown = styles.filter(s => !state.hiddenStyles.has(s.id)).length;
+  let html = sectionTitleHtml("Line style", shown, styles.length);
+  for (const s of styles) {
+    const isOff = state.hiddenStyles.has(s.id);
+    const swatch = '<div class="legend-line ' + s.swatchClass + '"></div>';
+    html += legendFilterRow("style", s.id, swatch, s.label, s.count, isOff,
+      (isOff ? "Click to show " : "Click to hide ") + s.label.toLowerCase() + " edges on the map.");
+  }
+  c.innerHTML = html;
+  wireLegendFilters(c);
+}
+
+function renderTraceFilters() {
+  const c = document.getElementById("trace-filters");
+  if (!c) return;
+  const shown = TRACE_FILTERS.filter(f => !state.hiddenTrace.has(f.id)).length;
+  let html = sectionTitleHtml("Trace", shown, TRACE_FILTERS.length);
+  for (const f of TRACE_FILTERS) {
+    const isOff = state.hiddenTrace.has(f.id);
+    const swatch = '<div class="legend-swatch" style="box-shadow: inset 0 0 0 2px var(' + f.varName + '), 0 0 4px var(' + f.varName + ');"></div>';
+    html += legendFilterRow("trace", f.id, swatch, f.label, null, isOff,
+      (isOff ? "Click to show " : "Click to hide ") + f.label.toLowerCase() + " when a node is selected.");
+  }
+  c.innerHTML = html;
+  wireLegendFilters(c);
+}
+
+// Wire each filter row to its toggle. Re-rendered each call on fresh DOM, so
+// exactly one listener per row (no stacking).
+function wireLegendFilters(container) {
+  container.querySelectorAll(".legend-filter-row").forEach(row => {
+    row.addEventListener("click", () => {
+      const kind = row.getAttribute("data-legend-kind");
+      const id   = row.getAttribute("data-legend-id");
+      if      (kind === "effect" && typeof toggleEffect === "function") toggleEffect(id);
+      else if (kind === "style"  && typeof toggleStyle  === "function") toggleStyle(id);
+      else if (kind === "trace"  && typeof toggleTrace  === "function") toggleTrace(id);
     });
   });
 }

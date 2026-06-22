@@ -29,6 +29,9 @@ const state = {
   hiddenStreams: new Set(),
   hiddenCategories: new Set(),
   hiddenStages: new Set(),
+  hiddenEffects: new Set(),    // edge effects hidden via the "Edge types" filter
+  hiddenStyles: new Set(),     // edge line styles ("solid"/"dashed") hidden via "Line style"
+  hiddenTrace: new Set(),      // "ancestors"/"descendants" suppressed in the causal trace
   ancestorSet: new Set(),
   descendantSet: new Set(),
   highlightedEdgeIds: new Set(),

@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup — sidebar: line-type & trace filters</title>
+<style>
+  :root{
+    --bg-deepest:#0a0e1a; --bg-deep:#111827; --bg-light:#232a3d; --bg-lighter:#2c354b;
+    --border-subtle:#2a3346; --text-primary:#e7ecf3; --text-secondary:#a1adc4; --text-tertiary:#6b7691;
+    --accent-green:#34d399;
+    --edge-enables:#a78bfa; --edge-increases:#34d399; --edge-decreases:#f87171;
+    --edge-ancestor:#60a5fa; --edge-descendant:#fbbf24;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;background:var(--bg-deepest);color:var(--text-primary);font-family:system-ui,-apple-system,Segoe UI,Arial,sans-serif;}
+  .wrap{max-width:980px;margin:0 auto;padding:30px 24px 80px;}
+  h1{font-size:22px;margin:0 0 6px;}
+  .lead{color:var(--text-secondary);font-size:14px;line-height:1.55;margin:0;max-width:840px;}
+  .note{color:var(--text-tertiary);font-size:12.5px;line-height:1.5;margin:8px 0 0;max-width:840px;}
+  .note b{color:var(--text-secondary);}
+  .cols{display:flex;gap:40px;flex-wrap:wrap;margin-top:24px;align-items:flex-start;}
+  .col h2{font-size:13px;color:var(--text-secondary);margin:0 0 10px;font-weight:600;}
+  .col h2 .tag{font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-left:6px;}
+
+  .panel{width:290px;background:var(--bg-deep);border:1px solid var(--border-subtle);border-radius:8px;padding:14px 12px;}
+  .sec-title{display:flex;align-items:center;justify-content:space-between;margin:14px 0 6px;}
+  .sec-title:first-child{margin-top:0;}
+  .sec-title .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-tertiary);}
+  .sec-title .count{font-family:ui-monospace,monospace;font-size:10px;color:var(--text-tertiary);}
+
+  .row{display:flex;align-items:center;gap:10px;padding:5px 6px;border-radius:5px;cursor:pointer;}
+  .row:hover{background:var(--bg-light);}
+  .row.off{opacity:.38;}
+  .row .name{flex:1;font-size:13px;color:var(--text-primary);white-space:nowrap;}
+  .row .cnt{font-family:ui-monospace,monospace;font-size:10px;color:var(--text-tertiary);}
+  .swline{width:22px;height:0;border-top:3px solid #888;flex-shrink:0;border-radius:2px;}
+  .swline.dash{border-top-style:dashed;border-top-width:2px;}
+  .swsq{width:14px;height:14px;border-radius:3px;flex-shrink:0;background:transparent;}
+  .reco{color:var(--accent-green);font-weight:600;}
+  .legend-static{display:flex;align-items:center;gap:10px;padding:4px 6px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Sidebar — line-type &amp; trace filters</h1>
+  <p class="lead">The two read-only legends (<b>Edge Legend</b>, <b>Trace Legend</b>) become click-to-toggle filters that
+    work exactly like Streams / Categories: click a row to hide that kind on the map, click again to show it; an off row
+    dims. Left = today (static legends). Right = proposed (interactive filters).</p>
+
+  <div class="cols">
+    <div class="col">
+      <h2>Today <span class="tag" style="color:var(--text-tertiary)">static legends</span></h2>
+      <div class="panel">
+        <div class="sec-title"><span class="lbl">Edge Legend</span></div>
+        <div class="legend-static"><span class="swline" style="border-color:var(--edge-enables)"></span><span class="name">Enables / supports</span></div>
+        <div class="legend-static"><span class="swline" style="border-color:var(--edge-increases)"></span><span class="name">Increases</span></div>
+        <div class="legend-static"><span class="swline" style="border-color:var(--edge-decreases)"></span><span class="name">Decreases</span></div>
+        <div class="sec-title"><span class="lbl">Trace Legend</span></div>
+        <div class="legend-static"><span class="swsq" style="box-shadow:inset 0 0 0 2px var(--edge-ancestor),0 0 4px var(--edge-ancestor)"></span><span class="name">Upstream sources</span></div>
+        <div class="legend-static"><span class="swsq" style="box-shadow:inset 0 0 0 2px var(--edge-descendant),0 0 4px var(--edge-descendant)"></span><span class="name">Downstream impacts</span></div>
+      </div>
+    </div>
+
+    <div class="col">
+      <h2>Proposed <span class="tag reco">interactive filters</span></h2>
+      <div class="panel">
+        <div class="sec-title"><span class="lbl">Edge types</span><span class="count">3 / 3</span></div>
+        <div class="row"><span class="swline" style="border-color:var(--edge-enables)"></span><span class="name">Enables / supports</span><span class="cnt">5</span></div>
+        <div class="row"><span class="swline" style="border-color:var(--edge-increases)"></span><span class="name">Increases</span><span class="cnt">8</span></div>
+        <div class="row off"><span class="swline" style="border-color:var(--edge-decreases)"></span><span class="name">Decreases</span><span class="cnt">3</span></div>
+
+        <div class="sec-title"><span class="lbl">Line style</span><span class="count">2 / 2</span></div>
+        <div class="row"><span class="swline" style="border-color:#8b95ab"></span><span class="name">Solid</span><span class="cnt">14</span></div>
+        <div class="row"><span class="swline dash" style="border-color:#8b95ab"></span><span class="name">Dashed</span><span class="cnt">2</span></div>
+
+        <div class="sec-title"><span class="lbl">Trace</span><span class="count">2 / 2</span></div>
+        <div class="row"><span class="swsq" style="box-shadow:inset 0 0 0 2px var(--edge-ancestor),0 0 4px var(--edge-ancestor)"></span><span class="name">Upstream sources</span></div>
+        <div class="row off"><span class="swsq" style="box-shadow:inset 0 0 0 2px var(--edge-descendant),0 0 4px var(--edge-descendant)"></span><span class="name">Downstream impacts</span></div>
+      </div>
+    </div>
+  </div>
+
+  <p class="note" style="margin-top:26px"><b>Behaviour</b> (all "same way as others" — toggle + dim):<br>
+    • <b>Edge types</b> — hide all edges of an effect (e.g. turn off Decreases). Count = edges of that effect.<br>
+    • <b>Line style</b> — hide all solid or all dashed edges. (Shown because we just added solid/dashed — tell me if this is what you meant by "line types", or if "line types" = the edge effects above, or both.)<br>
+    • <b>Trace</b> — when a node is selected, toggle whether <b>upstream causes</b> and/or <b>downstream impacts</b> are highlighted. Turn off Downstream → selecting a node lights up only what feeds into it.</p>
+
+  <p class="note"><b>Scope to confirm:</b> include all three groups, or drop the Line-style group? Then I'll build it the same way as the existing filters.</p>
+</div>
+</body>
+</html>
