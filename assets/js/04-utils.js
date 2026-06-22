@@ -41,6 +41,47 @@ function wrapLabel(text, maxCharsPerLine) {
   return lines;
 }
 
+// Wrap a node label to fill a pixel width, measuring real text width at the
+// node-label font (Arial 12px / weight 500) rather than guessing by character
+// count. Returns an array of lines (words kept whole; a single word wider than
+// the line is left to overflow, same as before). No line cap — the box "grows
+// to fit", so the caller derives the node height from the line count. Cached by
+// `width|text` since computeLayout may re-run often (drag, hover) and labels
+// rarely change. The font must match .node-label in 05-visualization.css.
+const _labelLineCache = new Map();
+let _labelMeasureCtx = null;
+function measureLabelLines(text, maxWidthPx) {
+  text = String(text == null ? "" : text);
+  if (!text) return [""];
+  const key = maxWidthPx + "|" + text;
+  const cached = _labelLineCache.get(key);
+  if (cached) return cached;
+
+  if (!_labelMeasureCtx) {
+    _labelMeasureCtx = document.createElement("canvas").getContext("2d");
+  }
+  _labelMeasureCtx.font = "500 12px Arial, Helvetica, sans-serif";
+
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines = [];
+  let current = "";
+  for (const word of words) {
+    const trial = current ? current + " " + word : word;
+    // Start a new line once adding the word would exceed the width — but never
+    // on an empty line (a lone over-wide word stays whole and overflows).
+    if (current && _labelMeasureCtx.measureText(trial).width > maxWidthPx) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = trial;
+    }
+  }
+  if (current) lines.push(current);
+  const result = lines.length ? lines : [""];
+  _labelLineCache.set(key, result);
+  return result;
+}
+
 // Replace the five HTML-unsafe characters with their entity equivalents so the
 // resulting text is safe to inject into innerHTML / SVG markup strings.
 function escapeHtml(text) {

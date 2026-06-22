@@ -137,9 +137,14 @@ function revertInlineRename() {
   return true;
 }
 
-// Internal — repaint the canvas + detail panel so the live label change
-// shows up. Both are cheap (no layout recompute) so it's fine per-keystroke.
+// Internal — repaint the canvas + detail panel so the live label change shows
+// up. We recompute layout first: under grow-to-fit the wrapped lines and box
+// height are baked into layout.positions by computeLayout, so without this the
+// canvas would keep drawing the stale label (and stale height) until commit.
+// Cheap per-keystroke — measureLabelLines is cached by text, so only the one
+// renamed node re-measures; every other node is a cache hit.
 function refreshAfterInlineRenameKey() {
+  if (typeof computeLayout === "function") layout = computeLayout();
   if (typeof render === "function") render();
   if (typeof renderDetailPanel === "function") renderDetailPanel();
 }

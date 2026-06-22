@@ -4179,10 +4179,24 @@ customer_satisfaction,monthly_revenue,increases,0.1,Happier customers retain lon
 
 // Size of each node (rectangle) drawn on the map, in pixels.
 const NODE_WIDTH  = 220;
-const NODE_HEIGHT = 70;
+// Minimum / default node-box height. Real nodes "grow to fit" their label —
+// the height is computed from how many lines the name wraps to (nodeBoxHeight
+// in 08-layout.js), floored at NODE_HEIGHT. A brand-new single-line node, the
+// "type to create" cursor slot, the hover "+ add node" ghost, and empty rows
+// are all exactly this tall.
+const NODE_HEIGHT = 44;
 
 // Vertical gap between two stacked nodes in the same cell.
 const NODE_GAP_Y = 8;
+
+// Grow-to-fit label metrics.
+//   LABEL_INSET    – symmetric left/right text inset inside a node, so the
+//                    label spans the full node width (the left inset also
+//                    clears the stream-colour stripe).
+//   NODE_LINE_STEP – vertical advance between wrapped label lines (matches the
+//                    renderer's dy of 1.083em at the 12px label font).
+const LABEL_INSET    = 14;
+const NODE_LINE_STEP = 13;
 
 // Padding at the top and bottom of every stream row.
 const ROW_PADDING = 16;
@@ -4503,6 +4517,47 @@ function wrapLabel(text, maxCharsPerLine) {
     return lines.slice(0, 2);
   }
   return lines;
+}
+
+// Wrap a node label to fill a pixel width, measuring real text width at the
+// node-label font (Arial 12px / weight 500) rather than guessing by character
+// count. Returns an array of lines (words kept whole; a single word wider than
+// the line is left to overflow, same as before). No line cap — the box "grows
+// to fit", so the caller derives the node height from the line count. Cached by
+// `width|text` since computeLayout may re-run often (drag, hover) and labels
+// rarely change. The font must match .node-label in 05-visualization.css.
+const _labelLineCache = new Map();
+let _labelMeasureCtx = null;
+function measureLabelLines(text, maxWidthPx) {
+  text = String(text == null ? "" : text);
+  if (!text) return [""];
+  const key = maxWidthPx + "|" + text;
+  const cached = _labelLineCache.get(key);
+  if (cached) return cached;
+
+  if (!_labelMeasureCtx) {
+    _labelMeasureCtx = document.createElement("canvas").getContext("2d");
+  }
+  _labelMeasureCtx.font = "500 12px Arial, Helvetica, sans-serif";
+
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines = [];
+  let current = "";
+  for (const word of words) {
+    const trial = current ? current + " " + word : word;
+    // Start a new line once adding the word would exceed the width — but never
+    // on an empty line (a lone over-wide word stays whole and overflows).
+    if (current && _labelMeasureCtx.measureText(trial).width > maxWidthPx) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = trial;
+    }
+  }
+  if (current) lines.push(current);
+  const result = lines.length ? lines : [""];
+  _labelLineCache.set(key, result);
+  return result;
 }
 
 // Replace the five HTML-unsafe characters with their entity equivalents so the
@@ -6005,15 +6060,59 @@ function getOutcomeBorderColor(nodeId) {
 // =============================================================================
 // LAYOUT — decide where every node sits on the canvas
 // -----------------------------------------------------------------------------
-// `computeLayout` runs once after a CSV is loaded. It works out:
-//   • the height of each stream row (tall enough to fit its busiest cell)
+// `computeLayout` runs after a CSV is loaded and again whenever the canvas
+// geometry changes (a stream/stage is toggled, a node is added/moved, a drag or
+// hover opens a slot). It works out:
+//   • each node's GROWN height — tall enough for its wrapped label (grow-to-fit)
+//   • the height of each stream row (tall enough to fit its tallest cell stack)
 //   • the X position of each column (based on stage order)
-//   • the X/Y position of every node (within its (stream, stage) cell)
+//   • the X/Y position of every node (cumulative stacking within its cell)
 //   • the overall SVG width/height
 //
-// The result is stored in the global `layout` object (see 03-state.js) and is
-// then used by the renderer in 11-rendering.js to actually draw things.
+// Nodes in a cell stack by CUMULATIVE height (not a fixed slot pitch), so boxes
+// of different heights sit flush. positions[id] carries { x, y, width, height,
+// labelLines } and is the single source of truth the renderer, edge anchoring,
+// hit-testing, export, and scroll-into-view all read.
+//
+// The result is stored in the global `layout` object (see 03-state.js).
 // =============================================================================
+
+// Node height for a label that wraps to `lineCount` lines. The label block is
+// anchored to the box top (first line centred at +16, matching the renderer)
+// and each extra line adds NODE_LINE_STEP; a value-bearing node reserves a
+// bottom row for its value/delta. Floored at NODE_HEIGHT (the minimum box).
+function nodeBoxHeight(lineCount, hasValue) {
+  const lines = Math.max(1, lineCount);
+  const labelBottom = 23 + (lines - 1) * NODE_LINE_STEP;   // ~bottom of last label line
+  const height = labelBottom + (hasValue ? 35 : 14);       // value row, or just bottom padding
+  return Math.max(NODE_HEIGHT, height);
+}
+
+// Wrap a node's label to the node's inner width and return { lines, height }.
+// Value-bearing nodes (those with a baseline) reserve room for the value row.
+function measureNode(node) {
+  const lines = measureLabelLines(node.label || node.id || "", NODE_WIDTH - LABEL_INSET * 2);
+  const hasValue = node.baseline !== undefined;
+  return { lines: lines, height: nodeBoxHeight(lines.length, hasValue) };
+}
+
+// Top Y (layout coords) of slot `slotIndex` within a (stream, stage) cell,
+// summing the real heights of the nodes above it (NODE_HEIGHT for any empty
+// slot beyond the existing nodes). Reads the live `layout`, so it reflects the
+// current per-node heights. Used by the renderer (cursor / ghost placeholders)
+// and keyboard scroll-into-view to convert an ordinal slot to a pixel offset.
+function slotTopY(streamId, stageId, slotIndex) {
+  if (!layout || !layout.rowY || layout.rowY[streamId] === undefined) return null;
+  const cellNodes = (layout.cells && layout.cells[streamId + ":" + stageId]) || [];
+  let y = layout.rowY[streamId] + ROW_PADDING;
+  const slot = Math.max(0, slotIndex | 0);
+  for (let i = 0; i < slot; i++) {
+    const n = cellNodes[i];
+    const h = (n && layout.positions[n.id]) ? layout.positions[n.id].height : NODE_HEIGHT;
+    y += h + NODE_GAP_Y;
+  }
+  return y;
+}
 
 function computeLayout() {
   // ───── Group nodes into (stream, stage) cells ─────────────────────────
@@ -6024,66 +6123,75 @@ function computeLayout() {
     cells[key].push(node);
   }
 
-  // ───── Height of each stream row (max nodes in any of its cells) ──────
-  // Hidden streams get a compact COLLAPSED_ROW_HEIGHT instead — their row
-  // label stays visible as a clickable stub so the user can re-expand.
-  //
-  // While the user is hovering a cell whose contents are already at the
-  // row's max-slot count, we reserve one extra slot so the ghost preview
-  // ("+ add another") has somewhere to sit without overlapping the row
-  // below. The slot disappears the moment the hover leaves.
-  const hoverCell = (state.canvasEdit && state.canvasEdit.hoverCell) || null;
-  // During a node drag, the dropCell behaves like hoverCell: we reserve one
-  // extra slot in the target cell so the parted siblings have somewhere to open
-  // their landing gap without overlapping the row below. The dragged node is
-  // still in NODES (ghosted in its source cell), so the source row already has
-  // the right height.
-  const dragDropCell = (state.canvasEdit && state.canvasEdit.draggingNode && state.canvasEdit.draggingNode.dropCell) || null;
-  const draggedNodeId = (state.canvasEdit && state.canvasEdit.draggingNode && state.canvasEdit.draggingNode.nodeId) || null;
+  // ───── Measure every node once (wrapped label + grown height) ─────────
+  // measureLabelLines (04-utils) caches by text, so re-running computeLayout
+  // during a drag/hover is cheap.
+  const measured = {};
+  for (const node of NODES) measured[node.id] = measureNode(node);
+  const heightOf = id => (measured[id] ? measured[id].height : NODE_HEIGHT);
+
+  // Transient interaction state that reshapes the layout.
+  const hoverCell      = (state.canvasEdit && state.canvasEdit.hoverCell) || null;
+  const cursorCell     = (state.canvasEdit && state.canvasEdit.cursorCell) || null;
+  const draggingNode   = (state.canvasEdit && state.canvasEdit.draggingNode) || null;
+  const dragDropCell   = (draggingNode && draggingNode.dropCell) || null;
+  const draggedNodeId  = (draggingNode && draggingNode.nodeId) || null;
+  const draggedIdSet   = draggingNode
+    ? new Set((draggingNode.groupIds && draggingNode.groupIds.length) ? draggingNode.groupIds : [draggingNode.nodeId])
+    : null;
+
+  // Summed height of a stack of nodes (heights + the gaps between them).
+  const stackHeight = nodes => {
+    if (!nodes || nodes.length === 0) return 0;
+    let sum = 0;
+    for (const n of nodes) sum += heightOf(n.id);
+    return sum + (nodes.length - 1) * NODE_GAP_Y;
+  };
+
+  // ───── Height of each stream row = its tallest cell's summed stack ────
+  // (A cell with two tall multi-line nodes can exceed a cell with more short
+  // ones, so we sum heights rather than counting nodes.) Hidden streams get a
+  // compact stub. While hovering to add, or dragging a node in, we reserve the
+  // extra slot's height so the ghost / drop target has somewhere to land.
   const rowHeights = {};
   for (const stream of STREAMS) {
-    if (state.hiddenStreams.has(stream.id)) {
-      rowHeights[stream.id] = COLLAPSED_ROW_HEIGHT;
-      continue;
-    }
-    let maxNodesInCell = 0;
+    if (state.hiddenStreams.has(stream.id)) { rowHeights[stream.id] = COLLAPSED_ROW_HEIGHT; continue; }
+    let maxContent = 0;
     for (const stage of STAGES) {
       if (state.hiddenStages.has(stage.id)) continue;   // hidden column isn't drawn
       const cellNodes = cells[stream.id + ":" + stage.id] || [];
-      if (cellNodes.length > maxNodesInCell) maxNodesInCell = cellNodes.length;
+      const baseStack = stackHeight(cellNodes);
+      let content = baseStack;
+
+      // A placeholder (the "+ add node" hover ghost OR the keyboard cursor's
+      // "type to create" slot) lands a default-height box just below the cell's
+      // own stack — reserve room for it so the row grows to contain it rather
+      // than letting it overflow into the row below.
+      const reserveAfterStack = (cellNodes.length ? baseStack + NODE_GAP_Y : 0) + NODE_HEIGHT;
+      if (hoverCell && hoverCell.streamId === stream.id && hoverCell.stageId === stage.id) {
+        content = Math.max(content, reserveAfterStack);
+      }
+      if (cursorCell && cursorCell.streamId === stream.id && cursorCell.stageId === stage.id) {
+        content = Math.max(content, reserveAfterStack);
+      }
+      if (dragDropCell && dragDropCell.streamId === stream.id && dragDropCell.stageId === stage.id) {
+        // Reserve the dragged node's own height alongside the kept siblings.
+        const kept = cellNodes.filter(n => !(draggedIdSet && draggedIdSet.has(n.id)));
+        content = Math.max(content, (kept.length ? stackHeight(kept) + NODE_GAP_Y : 0) + heightOf(draggedNodeId));
+      }
+      if (content > maxContent) maxContent = content;
     }
-    if (hoverCell && hoverCell.streamId === stream.id) {
-      const inHoverCell = (cells[stream.id + ":" + hoverCell.stageId] || []).length;
-      if (inHoverCell + 1 > maxNodesInCell) maxNodesInCell = inHoverCell + 1;
-    }
-    if (dragDropCell && dragDropCell.streamId === stream.id) {
-      // Count cell-occupants excluding the dragged node (which will leave
-      // its source cell when the drop commits, but is still in NODES now).
-      const cellNodes = cells[stream.id + ":" + dragDropCell.stageId] || [];
-      let inCell = 0;
-      for (const n of cellNodes) if (n.id !== draggedNodeId) inCell++;
-      if (inCell + 1 > maxNodesInCell) maxNodesInCell = inCell + 1;
-    }
-    // Minimum 1 unit tall even if every cell is empty, so the row header
-    // still has somewhere to sit.
-    const units = Math.max(1, maxNodesInCell);
-    rowHeights[stream.id] = units * NODE_HEIGHT + (units - 1) * NODE_GAP_Y + ROW_PADDING * 2;
+    if (maxContent === 0) maxContent = NODE_HEIGHT;   // empty row still fits one default node
+    rowHeights[stream.id] = maxContent + ROW_PADDING * 2;
   }
 
   // ───── Cumulative Y position for each row ─────────────────────────────
   const rowY = {};
   let cursorY = SVG_PADDING_TOP + COL_HEADER_HEIGHT;
-  for (const stream of STREAMS) {
-    rowY[stream.id] = cursorY;
-    cursorY += rowHeights[stream.id];
-  }
+  for (const stream of STREAMS) { rowY[stream.id] = cursorY; cursorY += rowHeights[stream.id]; }
   const totalHeight = cursorY + SVG_PADDING_BOTTOM;
 
   // ───── X position + width for each column ─────────────────────────────
-  // Hidden stages collapse to a compact COLLAPSED_COL_WIDTH stub (the column
-  // header stays as a clickable stub so the user can re-expand). Per-stage
-  // widths are stored so the renderer can place headers/dividers and so
-  // canvas hit-testing knows the true column extents.
   const colX = {};
   const colWidths = {};
   let cursorX = SVG_PADDING_LEFT + ROW_HEADER_WIDTH;
@@ -6095,62 +6203,54 @@ function computeLayout() {
   }
   const totalWidth = cursorX - COL_GAP + SVG_PADDING_RIGHT;
 
-  // ───── Position every individual node ─────────────────────────────────
+  // ───── Position every node by cumulative offset within its cell ───────
   const positions = {};
-  // The set of nodes currently being dragged (single or multi-select group).
-  // Inside the drag's target cell these are lifted out of the kept-sibling
-  // stack and dropped into the opening gap; everywhere else they sit normally
-  // (ghosted in their source cell).
-  const draggingNode = (state.canvasEdit && state.canvasEdit.draggingNode) || null;
-  const draggedIdSet = draggingNode
-    ? new Set((draggingNode.groupIds && draggingNode.groupIds.length) ? draggingNode.groupIds : [draggingNode.nodeId])
-    : null;
-  const STEP = NODE_HEIGHT + NODE_GAP_Y;
+  const setPos = (n, x, y) => {
+    positions[n.id] = { x: x, y: y, width: NODE_WIDTH, height: heightOf(n.id), labelLines: measured[n.id].lines };
+  };
+
   for (const stream of STREAMS) {
     for (const stage of STAGES) {
       if (state.hiddenStages.has(stage.id)) continue;   // hidden column: no node positions
       const cellNodes = cells[stream.id + ":" + stage.id] || [];
       const cellTopY = rowY[stream.id] + ROW_PADDING;
+      const x = colX[stage.id];
 
-      // During a drag, the target cell parts its kept (non-dragged) siblings to
-      // open a one-slot gap at the insert index, and the dragged node's ghost
-      // drops into that gap (so a same-cell reorder reads as a sortable list:
-      // the stack vacates the source slot and opens where it'll land). The live
-      // preview still follows the cursor; this is the resting/landing state.
+      // Drag target cell: part the kept siblings to open a gap at insertIndex.
+      // For a same-cell reorder the dragged ghost(s) rest in the gap; for a
+      // cross-cell move the gap is empty space the drop-slot marker fills.
       const isDragTarget = dragDropCell && dragDropCell.streamId === stream.id &&
                            dragDropCell.stageId === stage.id && dragDropCell.insertIndex != null;
       if (isDragTarget) {
         const insertIdx = dragDropCell.insertIndex;
-        let keptIdx  = 0;   // running slot among kept (non-dragged) siblings
-        let gapStack = 0;   // stack offset for ghost(s) landing in the gap
-        for (const n of cellNodes) {
-          let slot;
-          if (draggedIdSet && draggedIdSet.has(n.id)) {
-            slot = insertIdx + gapStack;
-            gapStack++;
-          } else {
-            slot = keptIdx < insertIdx ? keptIdx : keptIdx + 1;
-            keptIdx++;
+        const kept = [], dragged = [];
+        for (const n of cellNodes) (draggedIdSet && draggedIdSet.has(n.id) ? dragged : kept).push(n);
+        const gapHeight = heightOf(draggedNodeId);
+        let y = cellTopY;
+        for (let i = 0; i <= kept.length; i++) {
+          if (i === insertIdx) {
+            if (dragged.length) {
+              for (const d of dragged) { setPos(d, x, y); y += heightOf(d.id) + NODE_GAP_Y; }
+            } else {
+              y += gapHeight + NODE_GAP_Y;     // empty landing gap (cross-cell drag)
+            }
           }
-          positions[n.id] = { x: colX[stage.id], y: cellTopY + slot * STEP, width: NODE_WIDTH, height: NODE_HEIGHT };
+          if (i < kept.length) { setPos(kept[i], x, y); y += heightOf(kept[i].id) + NODE_GAP_Y; }
         }
         continue;
       }
 
-      // While the placeholder hovers this cell, part the stack: every note at
-      // or after the insert slot drops down one slot so the shadow placeholder
-      // has an open gap to sit in (the renderer draws it at the same slot).
+      // Normal path, optionally parting the stack for the hover "+ add" ghost:
+      // every node at/after the insert slot drops by one default-height slot so
+      // the ghost (rendered separately) has an open gap to sit in.
       const gapAt = (hoverCell && hoverCell.streamId === stream.id &&
                      hoverCell.stageId === stage.id && hoverCell.insertIndex != null)
                   ? hoverCell.insertIndex : null;
-      for (let nodeIdx = 0; nodeIdx < cellNodes.length; nodeIdx++) {
-        const slot = (gapAt !== null && nodeIdx >= gapAt) ? nodeIdx + 1 : nodeIdx;
-        positions[cellNodes[nodeIdx].id] = {
-          x: colX[stage.id],
-          y: cellTopY + slot * STEP,
-          width: NODE_WIDTH,
-          height: NODE_HEIGHT,
-        };
+      let y = cellTopY;
+      for (let idx = 0; idx < cellNodes.length; idx++) {
+        if (gapAt !== null && idx === gapAt) y += NODE_HEIGHT + NODE_GAP_Y;   // open the ghost gap
+        setPos(cellNodes[idx], x, y);
+        y += heightOf(cellNodes[idx].id) + NODE_GAP_Y;
       }
     }
   }
@@ -6801,15 +6901,13 @@ function render() {
     const hov = state.canvasEdit && state.canvasEdit.hoverCell;
     const sameAsHover = hov && hov.streamId === cursorCell.streamId && hov.stageId === cursorCell.stageId;
     if (!sameAsHover) {
-      // Defensive clamp — a delete elsewhere can shrink streamRowCount while
-      // the cursor still references the now-out-of-range slot. Use the
-      // row's height-in-slots from the layout to bound the placeholder
-      // rather than rendering below the row.
-      const rowH = layout.rowHeights[cursorCell.streamId] || NODE_HEIGHT + ROW_PADDING * 2;
-      const slotCapacity = Math.max(1, Math.floor((rowH - ROW_PADDING * 2 + NODE_GAP_Y) / (NODE_HEIGHT + NODE_GAP_Y)));
-      const slot = Math.max(0, Math.min(slotCapacity - 1, cursorCell.slotIndex || 0));
+      // Land the placeholder at the cumulative top of its slot (heights vary).
+      // Clamp to the cell's "next empty" slot so a stale slotIndex (e.g. after a
+      // delete) can't render the box below the row.
+      const cursorCellNodes = (layout.cells && layout.cells[cursorCell.streamId + ":" + cursorCell.stageId]) || [];
+      const slot = Math.max(0, Math.min(cursorCellNodes.length, cursorCell.slotIndex || 0));
       const x = layout.colX[cursorCell.stageId];
-      const y = layout.rowY[cursorCell.streamId] + ROW_PADDING + slot * (NODE_HEIGHT + NODE_GAP_Y);
+      const y = slotTopY(cursorCell.streamId, cursorCell.stageId, slot);
       content += '<g class="cursor-cell">';
       content +=   '<rect x="' + x + '" y="' + y + '" width="' + NODE_WIDTH + '" height="' + NODE_HEIGHT + '" rx="5"></rect>';
       content +=   '<text x="' + (x + NODE_WIDTH / 2) + '" y="' + (y + NODE_HEIGHT / 2) + '" text-anchor="middle" dominant-baseline="central">Type to create a node</text>';
@@ -6832,8 +6930,9 @@ function render() {
     // when no insertIndex is set.
     const insertSlot = hoverCell.insertIndex != null ? hoverCell.insertIndex : existingInCell;
     const ghostX = layout.colX[hoverCell.stageId];
-    const ghostY = layout.rowY[hoverCell.streamId] + ROW_PADDING + insertSlot * (NODE_HEIGHT + NODE_GAP_Y);
-    const ghostLabel = existingInCell > 0 ? "+ add another" : "+ add node";
+    // Cumulative top of the gap computeLayout opened for this insert slot.
+    const ghostY = slotTopY(hoverCell.streamId, hoverCell.stageId, insertSlot);
+    const ghostLabel = "+ add node";
     content += '<g class="ghost-cell" data-stream-id="' + escapeHtml(hoverCell.streamId) + '" data-stage-id="' + escapeHtml(hoverCell.stageId) + '" data-insert-index="' + insertSlot + '">';
     content +=   '<rect x="' + ghostX + '" y="' + ghostY + '" width="' + NODE_WIDTH + '" height="' + NODE_HEIGHT + '" rx="5"></rect>';
     content +=   '<text x="' + (ghostX + NODE_WIDTH / 2) + '" y="' + (ghostY + NODE_HEIGHT / 2) + '" text-anchor="middle" dominant-baseline="central">' + ghostLabel + '</text>';
@@ -6847,12 +6946,21 @@ function render() {
   // placeholder. For a same-cell reorder the dragged node's faint ghost rests
   // inside it; for a cross-cell move the gap is open space.
   const drag = state.canvasEdit && state.canvasEdit.draggingNode;
-  if (drag && drag.dropCell && layout.rowY[drag.dropCell.streamId] !== undefined && layout.colX[drag.dropCell.stageId] !== undefined) {
+  if (drag && drag.dropCell && drag.dropCell.insertIndex != null && layout.rowY[drag.dropCell.streamId] !== undefined && layout.colX[drag.dropCell.stageId] !== undefined) {
     const dc = drag.dropCell;
     const cellLeft = layout.colX[dc.stageId];
-    const cellTop  = layout.rowY[dc.streamId] + ROW_PADDING;
-    const slotY = cellTop + dc.insertIndex * (NODE_HEIGHT + NODE_GAP_Y);
-    content += '<rect class="drop-slot" x="' + cellLeft + '" y="' + slotY + '" width="' + NODE_WIDTH + '" height="' + NODE_HEIGHT + '" rx="5"></rect>';
+    // Top of the gap = cumulative height of the kept siblings above the insert
+    // slot (the dragged group is excluded — it's the one landing here).
+    const groupSet = new Set((drag.groupIds && drag.groupIds.length) ? drag.groupIds : [drag.nodeId]);
+    const kept = (layout.cells[dc.streamId + ":" + dc.stageId] || []).filter(n => !groupSet.has(n.id));
+    let slotY = layout.rowY[dc.streamId] + ROW_PADDING;
+    for (let i = 0; i < dc.insertIndex && i < kept.length; i++) {
+      const kp = layout.positions[kept[i].id];
+      slotY += ((kp && kp.height) || NODE_HEIGHT) + NODE_GAP_Y;
+    }
+    const dpos = layout.positions[drag.nodeId];
+    const dropH = (dpos && dpos.height) || NODE_HEIGHT;
+    content += '<rect class="drop-slot" x="' + cellLeft + '" y="' + slotY + '" width="' + NODE_WIDTH + '" height="' + dropH + '" rx="5"></rect>';
   }
 
   // ───── Row label strip on the left (per stream) ───────────────────────
@@ -7091,12 +7199,16 @@ function render() {
     // 13/12 ratio of the previous hard-coded line-height) means the gap
     // between lines scales with the font-size, so labels stay legible when
     // --map-text-scale grows on zoom-out without lines overlapping.
-    const labelLines = wrapLabel(node.label, 24);
+    // Lines were wrapped to the node's inner width by computeLayout (which used
+    // them to grow the box height); consume them so box height and rendered
+    // line count always agree. Anchored to the box top, x at the symmetric inset.
+    const labelLines = pos.labelLines || wrapLabel(node.label, 24);
+    const labelX = pos.x + LABEL_INSET;
     const labelBlockTopY = pos.y + 16;
-    content += '<text class="node-label" x="' + (pos.x + 14) + '" y="' + labelBlockTopY + '" fill="' + category.textColor + '" dominant-baseline="middle">';
+    content += '<text class="node-label" x="' + labelX + '" y="' + labelBlockTopY + '" fill="' + category.textColor + '" dominant-baseline="middle">';
     for (let lineIdx = 0; lineIdx < labelLines.length; lineIdx++) {
       const dy = lineIdx === 0 ? "0" : "1.083em";
-      content += '<tspan x="' + (pos.x + 14) + '" dy="' + dy + '">' + escapeHtml(labelLines[lineIdx]) + '</tspan>';
+      content += '<tspan x="' + labelX + '" dy="' + dy + '">' + escapeHtml(labelLines[lineIdx]) + '</tspan>';
     }
     content += '</text>';
 
@@ -7105,7 +7217,7 @@ function render() {
     if (valueText) {
       const deltaInfo = formatNodeDelta(node.id);
       const valueY = pos.y + pos.height - 12;
-      content += '<text class="node-value" x="' + (pos.x + 14) + '" y="' + valueY + '" fill="' + category.textColor + '" dominant-baseline="middle" opacity="0.75">' + escapeHtml(valueText) + '</text>';
+      content += '<text class="node-value" x="' + (pos.x + LABEL_INSET) + '" y="' + valueY + '" fill="' + category.textColor + '" dominant-baseline="middle" opacity="0.75">' + escapeHtml(valueText) + '</text>';
 
       if (deltaInfo.text && deltaInfo.text !== "—") {
         let deltaColor = "#1c1917";
@@ -7116,7 +7228,7 @@ function render() {
         } else {
           deltaColor = deltaInfo.pct > 0 ? "#1e3a8a" : "#7c2d12";
         }
-        content += '<text class="node-delta" x="' + (pos.x + pos.width - 10) + '" y="' + valueY + '" fill="' + deltaColor + '" text-anchor="end" dominant-baseline="middle" font-weight="600">' + escapeHtml(deltaInfo.text) + '</text>';
+        content += '<text class="node-delta" x="' + (pos.x + pos.width - LABEL_INSET) + '" y="' + valueY + '" fill="' + deltaColor + '" text-anchor="end" dominant-baseline="middle" font-weight="600">' + escapeHtml(deltaInfo.text) + '</text>';
       }
     }
 
@@ -7152,16 +7264,18 @@ function render() {
     const node = nodeById[drag.nodeId];
     const category = CATEGORIES[node.category] || { color: "#a3a3a3", textColor: "#ffffff" };
     const stream   = streamById[node.stream] || { color: "#94a3b8" };
+    const dpos = layout.positions[drag.nodeId];
+    const previewH = (dpos && dpos.height) || NODE_HEIGHT;
+    const previewLines = (dpos && dpos.labelLines) || wrapLabel(node.label, 24);
     const px = drag.currentX - NODE_WIDTH / 2;
-    const py = drag.currentY - NODE_HEIGHT / 2;
+    const py = drag.currentY - previewH / 2;
     content += '<g class="node-drag-preview">';
-    content += '<rect x="' + px + '" y="' + py + '" width="' + NODE_WIDTH + '" height="' + NODE_HEIGHT + '" rx="5" fill="' + category.color + '" stroke="rgba(0,0,0,0.4)" stroke-width="1"></rect>';
-    content += '<rect x="' + px + '" y="' + py + '" width="6" height="' + NODE_HEIGHT + '" rx="2" fill="' + stream.color + '"></rect>';
-    const previewLines = wrapLabel(node.label, 24);
-    content += '<text class="node-label" x="' + (px + 14) + '" y="' + (py + 16) + '" fill="' + category.textColor + '" dominant-baseline="middle">';
+    content += '<rect x="' + px + '" y="' + py + '" width="' + NODE_WIDTH + '" height="' + previewH + '" rx="5" fill="' + category.color + '" stroke="rgba(0,0,0,0.4)" stroke-width="1"></rect>';
+    content += '<rect x="' + px + '" y="' + py + '" width="6" height="' + previewH + '" rx="2" fill="' + stream.color + '"></rect>';
+    content += '<text class="node-label" x="' + (px + LABEL_INSET) + '" y="' + (py + 16) + '" fill="' + category.textColor + '" dominant-baseline="middle">';
     for (let i = 0; i < previewLines.length; i++) {
       const dy = i === 0 ? "0" : "1.083em";
-      content += '<tspan x="' + (px + 14) + '" dy="' + dy + '">' + escapeHtml(previewLines[i]) + '</tspan>';
+      content += '<tspan x="' + (px + LABEL_INSET) + '" dy="' + dy + '">' + escapeHtml(previewLines[i]) + '</tspan>';
     }
     content += '</text>';
     // Group drag: a count badge in the corner so it's clear the whole
@@ -10852,7 +10966,7 @@ function initCanvasEdit() {
     if (event.key === "Shift" && state.canvasEdit.shiftHeld) {
       setShiftHeld(false);
       // Suppressed hoverCell needs explicit clearing so the row layout
-      // stops reserving the "+ add another" slot.
+      // stops reserving the "+ add node" slot.
       if (state.canvasEdit.hoverCell) {
         state.canvasEdit.hoverCell = null;
         layout = computeLayout();
@@ -11879,19 +11993,31 @@ function dropCellForDrag(x, y, draggedNodeId) {
   if (!found) return null;
   const { stream: foundStream, stage: foundStage } = found;
 
+  // Exclude the ENTIRE drag group (not just the grabbed node) so insertIndex
+  // is counted in the same group-excluded slot space the renderer drop-slot,
+  // computeLayout's parted stack, and moveNodesToCell all use — otherwise a
+  // group member sitting above the cursor in the target cell throws the index
+  // (and the live gap / final order) off by one.
+  const drag = state.canvasEdit && state.canvasEdit.draggingNode;
+  const groupSet = new Set((drag && drag.groupIds && drag.groupIds.length) ? drag.groupIds : [draggedNodeId]);
   const siblings = [];
   for (const n of NODES) {
-    if (n.id === draggedNodeId) continue;
+    if (groupSet.has(n.id)) continue;
     if (n.stream === foundStream.id && n.stage === foundStage.id) siblings.push(n);
   }
 
   // Insertion index = position before the first sibling whose vertical mid is
-  // below the cursor. If past all of them, append.
+  // below the cursor. If past all of them, append. Walk the siblings' real
+  // (variable) heights cumulatively rather than a fixed slot pitch — read each
+  // height from layout (parting-independent), falling back to a fresh measure.
   const cellTopY = layout.rowY[foundStream.id] + ROW_PADDING;
+  let offsetY = cellTopY;
   let insertIndex = siblings.length;
   for (let i = 0; i < siblings.length; i++) {
-    const slotMidY = cellTopY + i * (NODE_HEIGHT + NODE_GAP_Y) + NODE_HEIGHT / 2;
-    if (y < slotMidY) { insertIndex = i; break; }
+    const sp = layout.positions[siblings[i].id];
+    const h = (sp && sp.height) || measureNode(siblings[i]).height;
+    if (y < offsetY + h / 2) { insertIndex = i; break; }
+    offsetY += h + NODE_GAP_Y;
   }
   return { streamId: foundStream.id, stageId: foundStage.id, insertIndex: insertIndex };
 }
@@ -12835,9 +12961,14 @@ function revertInlineRename() {
   return true;
 }
 
-// Internal — repaint the canvas + detail panel so the live label change
-// shows up. Both are cheap (no layout recompute) so it's fine per-keystroke.
+// Internal — repaint the canvas + detail panel so the live label change shows
+// up. We recompute layout first: under grow-to-fit the wrapped lines and box
+// height are baked into layout.positions by computeLayout, so without this the
+// canvas would keep drawing the stale label (and stale height) until commit.
+// Cheap per-keystroke — measureLabelLines is cached by text, so only the one
+// renamed node re-measures; every other node is a cache hit.
 function refreshAfterInlineRenameKey() {
+  if (typeof computeLayout === "function") layout = computeLayout();
   if (typeof render === "function") render();
   if (typeof renderDetailPanel === "function") renderDetailPanel();
 }
@@ -12976,6 +13107,9 @@ function moveCursorToSlot(streamId, stageId, slotIndex) {
     // position within the cell.
     if (state.selectedNodeId) deselectAll();
     state.canvasEdit.cursorCell = { streamId: streamId, stageId: stageId, slotIndex: slot };
+    // Recompute so the row reserves height for the cursor placeholder (grow-to-
+    // fit) before we render and scroll to it.
+    if (typeof computeLayout === "function") layout = computeLayout();
     render();
     scrollCellIntoView(streamId, stageId, slot);
   }
@@ -12998,8 +13132,16 @@ function scrollCellIntoView(streamId, stageId, slotIndex) {
   if (x === undefined || y === undefined) return;
   const slot = slotIndex || 0;
   const zoom = (state.zoomLevel && !isNaN(state.zoomLevel)) ? state.zoomLevel : 1.0;
-  const slotTop    = (y + ROW_PADDING + slot * (NODE_HEIGHT + NODE_GAP_Y)) * zoom;
-  const slotBottom = slotTop + NODE_HEIGHT * zoom;
+  // Cumulative slot top (heights vary), and the height of whatever sits at the
+  // slot (a real node's height, else a default new-node slot).
+  const topLayout = (typeof slotTopY === "function")
+    ? slotTopY(streamId, stageId, slot)
+    : (y + ROW_PADDING + slot * (NODE_HEIGHT + NODE_GAP_Y));
+  const cellNodes = (layout.cells && layout.cells[streamId + ":" + stageId]) || [];
+  const atSlot = cellNodes[slot];
+  const slotH = (atSlot && layout.positions[atSlot.id]) ? layout.positions[atSlot.id].height : NODE_HEIGHT;
+  const slotTop    = topLayout * zoom;
+  const slotBottom = slotTop + slotH * zoom;
   const cellLeft   = x * zoom;
   const cellRight  = cellLeft + NODE_WIDTH  * zoom;
   const viewLeft   = scrollEl.scrollLeft;
@@ -14506,15 +14648,30 @@ function computeExportLayout(nodeIds, streamOrder, stageIds) {
   }
   const totalWidth = cursorX - COL_GAP + SVG_PADDING_RIGHT;
 
-  // Rows: packed top→bottom over the (reordered) included streams.
+  // Rows: packed top→bottom over the (reordered) included streams. Row height
+  // is the tallest cell's SUMMED stack height (nodes grow to fit their labels),
+  // reusing each node's grown height from the live layout.
+  // Per-node grown height: reuse the live layout's measurement, falling back to
+  // a fresh measure for any node without a live position (e.g. one in a stage
+  // that's collapsed on the canvas but pulled into a selection export).
+  const exHeight = id => {
+    const p = layout.positions[id];
+    if (p && p.height) return p.height;
+    const n = nodeById[id];
+    return n ? measureNode(n).height : NODE_HEIGHT;
+  };
   const rowHeights = {}, rowY = {};
   for (const streamId of streamOrder) {
-    let maxInCell = 1;
+    let maxContent = 0;
     for (const stageId of stageIds) {
       const c = cells[streamId + ":" + stageId];
-      if (c && c.length > maxInCell) maxInCell = c.length;
+      if (!c || !c.length) continue;
+      let sum = 0;
+      for (const n of c) sum += exHeight(n.id);
+      sum += (c.length - 1) * NODE_GAP_Y;
+      if (sum > maxContent) maxContent = sum;
     }
-    rowHeights[streamId] = maxInCell * NODE_HEIGHT + (maxInCell - 1) * NODE_GAP_Y + ROW_PADDING * 2;
+    rowHeights[streamId] = (maxContent || NODE_HEIGHT) + ROW_PADDING * 2;   // floor empty rows only (matches live)
   }
   let cursorY = SVG_PADDING_TOP + COL_HEADER_HEIGHT;
   for (const streamId of streamOrder) {
@@ -14524,14 +14681,17 @@ function computeExportLayout(nodeIds, streamOrder, stageIds) {
   const totalHeight = cursorY + SVG_PADDING_BOTTOM;
 
   const positions = {};
-  const STEP = NODE_HEIGHT + NODE_GAP_Y;
   for (const streamId of streamOrder) {
     for (const stageId of stageIds) {
       const c = cells[streamId + ":" + stageId];
       if (!c) continue;
-      const cellTopY = rowY[streamId] + ROW_PADDING;
+      let y = rowY[streamId] + ROW_PADDING;
       for (let i = 0; i < c.length; i++) {
-        positions[c[i].id] = { x: colX[stageId], y: cellTopY + i * STEP, width: NODE_WIDTH, height: NODE_HEIGHT };
+        const h = exHeight(c[i].id);
+        const live = layout.positions[c[i].id];
+        const lines = (live && live.labelLines) || measureLabelLines(c[i].label || c[i].id || "", NODE_WIDTH - LABEL_INSET * 2);
+        positions[c[i].id] = { x: colX[stageId], y: y, width: NODE_WIDTH, height: h, labelLines: lines };
+        y += h + NODE_GAP_Y;
       }
     }
   }
@@ -14696,12 +14856,14 @@ function renderExportSvg(model, opts) {
          ' A ' + barRadius + ',' + barRadius + ' 0 0 1 ' + (barLeft + barRadius) + ',' + barTop +
          ' Z" fill="' + stream.color + '"></path>';
 
-    // Wrapped label (up to 2 lines).
-    const labelLines = wrapLabel(node.label, 24);
-    s += '<text class="xn-label" x="' + (pos.x + 14) + '" y="' + (pos.y + 16) +
+    // Wrapped label — reuse the same grow-to-fit lines the layout sized the box
+    // from, so the export matches the live map. Anchored at the symmetric inset.
+    const labelLines = pos.labelLines || measureLabelLines(node.label || node.id || "", NODE_WIDTH - LABEL_INSET * 2);
+    const lx = pos.x + LABEL_INSET;
+    s += '<text class="xn-label" x="' + lx + '" y="' + (pos.y + 16) +
          '" fill="' + category.textColor + '" dominant-baseline="middle">';
     for (let i = 0; i < labelLines.length; i++) {
-      s += '<tspan x="' + (pos.x + 14) + '" dy="' + (i === 0 ? "0" : "1.083em") + '">' + escapeHtml(labelLines[i]) + '</tspan>';
+      s += '<tspan x="' + lx + '" dy="' + (i === 0 ? "0" : "1.083em") + '">' + escapeHtml(labelLines[i]) + '</tspan>';
     }
     s += '</text>';
 
@@ -14709,7 +14871,7 @@ function renderExportSvg(model, opts) {
     const valueText = formatNodeValue(node.id);
     if (valueText) {
       const valueY = pos.y + pos.height - 12;
-      s += '<text class="xn-value" x="' + (pos.x + 14) + '" y="' + valueY +
+      s += '<text class="xn-value" x="' + (pos.x + LABEL_INSET) + '" y="' + valueY +
            '" fill="' + category.textColor + '" dominant-baseline="middle" opacity="0.75">' + escapeHtml(valueText) + '</text>';
       const deltaInfo = formatNodeDelta(node.id);
       if (deltaInfo.text && deltaInfo.text !== "—") {
@@ -14717,7 +14879,7 @@ function renderExportSvg(model, opts) {
         if (node.direction === "higher_better")      deltaColor = deltaInfo.pct > 0 ? "#065f46" : "#7f1d1d";
         else if (node.direction === "lower_better")  deltaColor = deltaInfo.pct < 0 ? "#065f46" : "#7f1d1d";
         else                                         deltaColor = deltaInfo.pct > 0 ? "#1e3a8a" : "#7c2d12";
-        s += '<text class="xn-delta" x="' + (pos.x + pos.width - 10) + '" y="' + valueY +
+        s += '<text class="xn-delta" x="' + (pos.x + pos.width - LABEL_INSET) + '" y="' + valueY +
              '" fill="' + deltaColor + '" text-anchor="end" dominant-baseline="middle">' + escapeHtml(deltaInfo.text) + '</text>';
       }
     }

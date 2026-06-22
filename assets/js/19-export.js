@@ -197,15 +197,30 @@ function computeExportLayout(nodeIds, streamOrder, stageIds) {
   }
   const totalWidth = cursorX - COL_GAP + SVG_PADDING_RIGHT;
 
-  // Rows: packed top→bottom over the (reordered) included streams.
+  // Rows: packed top→bottom over the (reordered) included streams. Row height
+  // is the tallest cell's SUMMED stack height (nodes grow to fit their labels),
+  // reusing each node's grown height from the live layout.
+  // Per-node grown height: reuse the live layout's measurement, falling back to
+  // a fresh measure for any node without a live position (e.g. one in a stage
+  // that's collapsed on the canvas but pulled into a selection export).
+  const exHeight = id => {
+    const p = layout.positions[id];
+    if (p && p.height) return p.height;
+    const n = nodeById[id];
+    return n ? measureNode(n).height : NODE_HEIGHT;
+  };
   const rowHeights = {}, rowY = {};
   for (const streamId of streamOrder) {
-    let maxInCell = 1;
+    let maxContent = 0;
     for (const stageId of stageIds) {
       const c = cells[streamId + ":" + stageId];
-      if (c && c.length > maxInCell) maxInCell = c.length;
+      if (!c || !c.length) continue;
+      let sum = 0;
+      for (const n of c) sum += exHeight(n.id);
+      sum += (c.length - 1) * NODE_GAP_Y;
+      if (sum > maxContent) maxContent = sum;
     }
-    rowHeights[streamId] = maxInCell * NODE_HEIGHT + (maxInCell - 1) * NODE_GAP_Y + ROW_PADDING * 2;
+    rowHeights[streamId] = (maxContent || NODE_HEIGHT) + ROW_PADDING * 2;   // floor empty rows only (matches live)
   }
   let cursorY = SVG_PADDING_TOP + COL_HEADER_HEIGHT;
   for (const streamId of streamOrder) {
@@ -215,14 +230,17 @@ function computeExportLayout(nodeIds, streamOrder, stageIds) {
   const totalHeight = cursorY + SVG_PADDING_BOTTOM;
 
   const positions = {};
-  const STEP = NODE_HEIGHT + NODE_GAP_Y;
   for (const streamId of streamOrder) {
     for (const stageId of stageIds) {
       const c = cells[streamId + ":" + stageId];
       if (!c) continue;
-      const cellTopY = rowY[streamId] + ROW_PADDING;
+      let y = rowY[streamId] + ROW_PADDING;
       for (let i = 0; i < c.length; i++) {
-        positions[c[i].id] = { x: colX[stageId], y: cellTopY + i * STEP, width: NODE_WIDTH, height: NODE_HEIGHT };
+        const h = exHeight(c[i].id);
+        const live = layout.positions[c[i].id];
+        const lines = (live && live.labelLines) || measureLabelLines(c[i].label || c[i].id || "", NODE_WIDTH - LABEL_INSET * 2);
+        positions[c[i].id] = { x: colX[stageId], y: y, width: NODE_WIDTH, height: h, labelLines: lines };
+        y += h + NODE_GAP_Y;
       }
     }
   }
@@ -387,12 +405,14 @@ function renderExportSvg(model, opts) {
          ' A ' + barRadius + ',' + barRadius + ' 0 0 1 ' + (barLeft + barRadius) + ',' + barTop +
          ' Z" fill="' + stream.color + '"></path>';
 
-    // Wrapped label (up to 2 lines).
-    const labelLines = wrapLabel(node.label, 24);
-    s += '<text class="xn-label" x="' + (pos.x + 14) + '" y="' + (pos.y + 16) +
+    // Wrapped label — reuse the same grow-to-fit lines the layout sized the box
+    // from, so the export matches the live map. Anchored at the symmetric inset.
+    const labelLines = pos.labelLines || measureLabelLines(node.label || node.id || "", NODE_WIDTH - LABEL_INSET * 2);
+    const lx = pos.x + LABEL_INSET;
+    s += '<text class="xn-label" x="' + lx + '" y="' + (pos.y + 16) +
          '" fill="' + category.textColor + '" dominant-baseline="middle">';
     for (let i = 0; i < labelLines.length; i++) {
-      s += '<tspan x="' + (pos.x + 14) + '" dy="' + (i === 0 ? "0" : "1.083em") + '">' + escapeHtml(labelLines[i]) + '</tspan>';
+      s += '<tspan x="' + lx + '" dy="' + (i === 0 ? "0" : "1.083em") + '">' + escapeHtml(labelLines[i]) + '</tspan>';
     }
     s += '</text>';
 
@@ -400,7 +420,7 @@ function renderExportSvg(model, opts) {
     const valueText = formatNodeValue(node.id);
     if (valueText) {
       const valueY = pos.y + pos.height - 12;
-      s += '<text class="xn-value" x="' + (pos.x + 14) + '" y="' + valueY +
+      s += '<text class="xn-value" x="' + (pos.x + LABEL_INSET) + '" y="' + valueY +
            '" fill="' + category.textColor + '" dominant-baseline="middle" opacity="0.75">' + escapeHtml(valueText) + '</text>';
       const deltaInfo = formatNodeDelta(node.id);
       if (deltaInfo.text && deltaInfo.text !== "—") {
@@ -408,7 +428,7 @@ function renderExportSvg(model, opts) {
         if (node.direction === "higher_better")      deltaColor = deltaInfo.pct > 0 ? "#065f46" : "#7f1d1d";
         else if (node.direction === "lower_better")  deltaColor = deltaInfo.pct < 0 ? "#065f46" : "#7f1d1d";
         else                                         deltaColor = deltaInfo.pct > 0 ? "#1e3a8a" : "#7c2d12";
-        s += '<text class="xn-delta" x="' + (pos.x + pos.width - 10) + '" y="' + valueY +
+        s += '<text class="xn-delta" x="' + (pos.x + pos.width - LABEL_INSET) + '" y="' + valueY +
              '" fill="' + deltaColor + '" text-anchor="end" dominant-baseline="middle">' + escapeHtml(deltaInfo.text) + '</text>';
       }
     }

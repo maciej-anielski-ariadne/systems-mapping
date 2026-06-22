@@ -89,7 +89,7 @@ function initCanvasEdit() {
     if (event.key === "Shift" && state.canvasEdit.shiftHeld) {
       setShiftHeld(false);
       // Suppressed hoverCell needs explicit clearing so the row layout
-      // stops reserving the "+ add another" slot.
+      // stops reserving the "+ add node" slot.
       if (state.canvasEdit.hoverCell) {
         state.canvasEdit.hoverCell = null;
         layout = computeLayout();
@@ -1116,19 +1116,31 @@ function dropCellForDrag(x, y, draggedNodeId) {
   if (!found) return null;
   const { stream: foundStream, stage: foundStage } = found;
 
+  // Exclude the ENTIRE drag group (not just the grabbed node) so insertIndex
+  // is counted in the same group-excluded slot space the renderer drop-slot,
+  // computeLayout's parted stack, and moveNodesToCell all use — otherwise a
+  // group member sitting above the cursor in the target cell throws the index
+  // (and the live gap / final order) off by one.
+  const drag = state.canvasEdit && state.canvasEdit.draggingNode;
+  const groupSet = new Set((drag && drag.groupIds && drag.groupIds.length) ? drag.groupIds : [draggedNodeId]);
   const siblings = [];
   for (const n of NODES) {
-    if (n.id === draggedNodeId) continue;
+    if (groupSet.has(n.id)) continue;
     if (n.stream === foundStream.id && n.stage === foundStage.id) siblings.push(n);
   }
 
   // Insertion index = position before the first sibling whose vertical mid is
-  // below the cursor. If past all of them, append.
+  // below the cursor. If past all of them, append. Walk the siblings' real
+  // (variable) heights cumulatively rather than a fixed slot pitch — read each
+  // height from layout (parting-independent), falling back to a fresh measure.
   const cellTopY = layout.rowY[foundStream.id] + ROW_PADDING;
+  let offsetY = cellTopY;
   let insertIndex = siblings.length;
   for (let i = 0; i < siblings.length; i++) {
-    const slotMidY = cellTopY + i * (NODE_HEIGHT + NODE_GAP_Y) + NODE_HEIGHT / 2;
-    if (y < slotMidY) { insertIndex = i; break; }
+    const sp = layout.positions[siblings[i].id];
+    const h = (sp && sp.height) || measureNode(siblings[i]).height;
+    if (y < offsetY + h / 2) { insertIndex = i; break; }
+    offsetY += h + NODE_GAP_Y;
   }
   return { streamId: foundStream.id, stageId: foundStage.id, insertIndex: insertIndex };
 }

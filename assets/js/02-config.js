@@ -8,10 +8,24 @@
 
 // Size of each node (rectangle) drawn on the map, in pixels.
 const NODE_WIDTH  = 220;
-const NODE_HEIGHT = 70;
+// Minimum / default node-box height. Real nodes "grow to fit" their label —
+// the height is computed from how many lines the name wraps to (nodeBoxHeight
+// in 08-layout.js), floored at NODE_HEIGHT. A brand-new single-line node, the
+// "type to create" cursor slot, the hover "+ add node" ghost, and empty rows
+// are all exactly this tall.
+const NODE_HEIGHT = 44;
 
 // Vertical gap between two stacked nodes in the same cell.
 const NODE_GAP_Y = 8;
+
+// Grow-to-fit label metrics.
+//   LABEL_INSET    – symmetric left/right text inset inside a node, so the
+//                    label spans the full node width (the left inset also
+//                    clears the stream-colour stripe).
+//   NODE_LINE_STEP – vertical advance between wrapped label lines (matches the
+//                    renderer's dy of 1.083em at the 12px label font).
+const LABEL_INSET    = 14;
+const NODE_LINE_STEP = 13;
 
 // Padding at the top and bottom of every stream row.
 const ROW_PADDING = 16;
