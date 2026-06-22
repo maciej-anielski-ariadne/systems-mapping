@@ -186,27 +186,24 @@
   font-weight: 600;
   pointer-events: none;   /* clicks fall through to the colour input behind it */
 }
-/* Plain variant for stages (no colour) — a neutral count badge, same size. */
+/* Neutral badge for every NON-picker box (stages, edge-types, line-style, trace):
+ * filled with the sidebar background so it reads as "not editable", unlike the
+ * coloured Category / Stream colour-picker boxes. */
 .count-swatch--plain {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-deepest);
-  color: var(--text-tertiary);
+  background: transparent;   /* blends with the sidebar at rest AND on hover — no box */
+  color: var(--text-secondary);
   font-family: var(--font-mono);
   font-size: 10px;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
   filter: none;
 }
-/* Read-only badge (edge-type legend): fixed effect colour, shown at full
- * strength so it matches the edge lines on the map (no saturate mute). */
-.count-swatch--readonly { filter: none; }
 
 /* Line-style legend badge: a neutral count box with a solid / dashed mini-line
  * under the count (a line style has no colour of its own). */
 .count-swatch--style {
-  background: var(--bg-deepest);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  background: transparent;
   filter: none;
 }
 .count-swatch--style .count-num {

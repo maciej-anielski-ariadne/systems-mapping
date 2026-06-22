@@ -201,7 +201,7 @@ const LEGEND_FILTER_GROUPS = [
     countInSwatch: true },
   { kind: "trace", containerId: "trace-filters", title: "Trace", ctx: "when a node is selected",
     items: TRACE_FILTERS, hiddenSet: () => state.hiddenTrace,
-    swatch: f => '<div class="legend-swatch" style="box-shadow: inset 0 0 0 2px var(' + f.varName + '), 0 0 4px var(' + f.varName + ');"></div>',
+    swatch: () => '<span class="count-swatch count-swatch--plain"></span>',
     count:  () => null },
 ];
 
@@ -281,17 +281,11 @@ function countSwatch(color, count) {
     '</span>';
 }
 
-// Read-only colour-count badge (no picker) for the edge-type legend rows: a box
-// filled with the edge's effect colour, with the edge count inside — mirrors the
-// category badge so the legend reads the same way.
+// Neutral count badge for the edge-type legend rows. The box is not an editable
+// colour picker, so it matches the sidebar background like the other non-picker
+// boxes — only the editable Category / Stream swatches carry colour.
 function edgeCountBadge(effectId, count) {
-  let tc = "#1c1917";
-  try {
-    const hex = getComputedStyle(document.documentElement).getPropertyValue("--edge-" + effectId).trim();
-    if (hex && typeof pickTextColor === "function") tc = pickTextColor(hex);
-  } catch (e) { /* fall back to dark text */ }
-  return '<span class="count-swatch count-swatch--readonly" style="background: var(--edge-' + effectId + ')">' +
-    '<span class="count-num" style="color:' + tc + '">' + count + '</span></span>';
+  return '<span class="count-swatch count-swatch--plain">' + count + '</span>';
 }
 
 // Read-only badge for the line-style legend rows: a neutral count box with a
