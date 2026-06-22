@@ -425,6 +425,9 @@
   height: 12px;
   border-radius: 2px;
   flex-shrink: 0;
+  /* Dark hairline so a light swatch reads as a distinct chip (restored as an
+     inset ring after the flat-look border wipe). */
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.4);
 }
 .detail-tag.category.secondary { font-size: 10px; opacity: 0.95; }
 

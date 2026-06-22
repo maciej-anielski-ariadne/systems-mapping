@@ -221,10 +221,20 @@
 /* Subtle pop-out: any focused cell input/select gets a blue ring so the user
  * can find it quickly even with many rows on screen. */
 .builder-table input:focus,
-.builder-table select:focus {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 25%, transparent);
+.builder-table select:focus,
+.builder-table textarea:focus,
+.builder-defaults input:focus {
+  box-shadow: var(--focus-ring);
   position: relative;
   z-index: 2;
+}
+
+/* Invalid cell — red inset ring (the flat-look stand-in for a red border;
+ * moved here from the old 12-no-borders.css). */
+.builder-table input.invalid,
+.builder-table select.invalid,
+.builder-table textarea.invalid {
+  box-shadow: inset 0 0 0 2px var(--accent-red);
 }
 
 .builder-table input[type="color"] {

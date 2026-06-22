@@ -272,6 +272,9 @@
   width: var(--swatch-w);
   height: 16px;
   border-radius: 3px;
+  /* Faint hairline so a near-background swatch colour still reads as a chip
+     (restored as an inset ring after the flat-look border wipe). */
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
 }
 
 /* Inline trash-icon delete button for compact filter rows. Hidden until the

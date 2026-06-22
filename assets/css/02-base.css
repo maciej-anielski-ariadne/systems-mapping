@@ -13,6 +13,11 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  /* Flat look: no element draws a CSS border. (This was a separate
+     `border: 0 !important` wipe in the old 12-no-borders.css; folded into the
+     base reset now that the flat aesthetic is intentional, not an override.
+     SVG node / divider strokes are suppressed in 05-visualization.css.) */
+  border: 0;
 }
 
 /* Lock the viewport to the window size so the app doesn't scroll as a whole.
@@ -75,4 +80,13 @@ body::before {
   width: 0;
   height: 0;
   display: none;
+}
+
+/* === Keyboard focus ring on buttons (accessibility) ===
+   Native outlines are removed app-wide, so give every <button> a visible focus
+   ring when reached by keyboard. :focus-visible only, so mouse clicks stay
+   clean. Form inputs carry their own focus ring in their component files. */
+button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
