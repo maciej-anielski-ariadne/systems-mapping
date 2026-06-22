@@ -8049,7 +8049,7 @@ function renderStagesList() {
   const container = document.getElementById("stages-list");
   const countEl   = document.getElementById("stages-count");
   if (!container) return;
-  if (countEl) countEl.textContent = STAGES.length;
+  if (countEl) countEl.textContent = STAGES.filter(s => !state.hiddenStages.has(s.id)).length + " / " + STAGES.length;
 
   if (STAGES.length === 0) {
     container.innerHTML = '<div class="sidebar-empty">No stages yet. Click "+ Add stage" to create one.</div>';
@@ -8149,7 +8149,8 @@ function renderCategoriesList() {
   };
 
   const group = (title, classKey, ids, addLabel) => {
-    let h = '<div class="sidebar-section-title"><span>' + title + '</span><span class="count">' + ids.length + '</span></div>';
+    const shown = ids.filter(id => !state.hiddenCategories.has(id)).length;
+    let h = '<div class="sidebar-section-title"><span>' + title + '</span><span class="count">' + shown + ' / ' + ids.length + '</span></div>';
     h += ids.length ? ids.map(catRow).join("") : '<div class="sidebar-empty">None yet.</div>';
     h += '<button class="sidebar-add-btn sidebar-cat-add" data-cat-class="' + classKey + '">' + addLabel + '</button>';
     return h;
