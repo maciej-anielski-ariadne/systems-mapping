@@ -57,8 +57,8 @@ body::before {
   position: fixed;
   inset: 0;
   background-image:
-    linear-gradient(rgba(58, 69, 94, 0.08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(58, 69, 94, 0.08) 1px, transparent 1px);
+    linear-gradient(color-mix(in srgb, var(--border-strong) 8%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--border-strong) 8%, transparent) 1px, transparent 1px);
   background-size: 32px 32px;
   pointer-events: none;
   z-index: 0;

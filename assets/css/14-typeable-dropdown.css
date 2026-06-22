@@ -35,7 +35,6 @@
   height: 1px;
   padding: 0;
   margin: 0;
-  border: 0;
   clip: rect(0 0 0 0);
   overflow: hidden;
   pointer-events: none;
@@ -59,19 +58,13 @@
   background-repeat: no-repeat;
 }
 
-.typeable-dropdown.open .typeable-dropdown-input {
-  /* Match the popup's visual prominence while it's open. */
-  border-color: var(--accent-blue);
-}
-
 /* The popup is position:fixed so it floats over scroll containers
  * (`.builder-step-scroll`, the detail panel itself, etc.) without being
  * clipped. JS sets left / top / minWidth / maxHeight per-open. */
 .typeable-dropdown-popup {
   position: fixed;
-  z-index: 400;                                   /* above builder overlay (200) and cell editor (300) */
+  z-index: var(--z-dropdown);                                   /* above builder overlay (200) and cell editor (300) */
   background: var(--bg-deep);
-  border: 1px solid var(--accent-blue);
   border-radius: 4px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
   padding: 4px 0;

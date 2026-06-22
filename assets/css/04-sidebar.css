@@ -28,7 +28,6 @@
   --title-indent-r:        calc(var(--row-pad-r) + var(--delete-w) + var(--row-gap));         /* 34px */
 
   background: var(--bg-deep);
-  border-right: 1px solid var(--border-subtle);
   overflow-y: auto;
   /* No top padding so the sticky .panel-header sits flush against the top.
    * Bottom padding gives whitespace below the last section. */
@@ -55,7 +54,7 @@
   bottom: 0;
   left: 0;
   width: var(--panel-strip-w);
-  z-index: 30;     /* above the viz, below the builder overlay (200) */
+  z-index: var(--z-panel-strip);     /* above the viz, below the builder overlay (200) */
   overflow: hidden;
   padding: 0;
   min-width: 0;
@@ -88,12 +87,7 @@
 
 .sidebar-section {
   padding: 0 20px 24px;
-  border-bottom: 1px solid var(--border-subtle);
   margin-bottom: 20px;
-}
-
-.sidebar-section:last-child {
-  border-bottom: none;
 }
 
 /* Small uppercase heading at the top of each sidebar block */
@@ -169,7 +163,6 @@
  * row's trash icon, so the compact row stays clean. */
 .sidebar-cat-reclass {
   flex-shrink: 0;
-  border: none;
   background: transparent;
   color: var(--text-tertiary);
   font-size: 10px;
@@ -181,7 +174,7 @@
   transition: opacity 0.12s, background 0.12s, color 0.12s;
 }
 .sidebar-edit-row:hover .sidebar-cat-reclass { opacity: 1; }
-.sidebar-cat-reclass:hover { color: var(--text-primary); background: var(--bg-lighter, #2c354b); }
+.sidebar-cat-reclass:hover { color: var(--text-primary); background: var(--bg-lighter); }
 
 /* Gap between the Primary and Secondary category groups. */
 .sidebar-cat-group-gap { height: 14px; }
@@ -268,8 +261,8 @@
   border-radius: 4px;
 }
 .sidebar-edit-color::-webkit-color-swatch-wrapper { padding: 0; }
-.sidebar-edit-color::-webkit-color-swatch         { border-radius: 4px; border: none; }
-.sidebar-edit-color::-moz-color-swatch            { border-radius: 4px; border: none; }
+.sidebar-edit-color::-webkit-color-swatch         { border-radius: 4px; }
+.sidebar-edit-color::-moz-color-swatch            { border-radius: 4px; }
 
 /* Compact inline colour swatch — a native colour input shrunk to swatch size
  * so streams / categories can be recoloured directly in the filter row without
@@ -279,7 +272,6 @@
   width: var(--swatch-w);
   height: 16px;
   border-radius: 3px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 /* Inline trash-icon delete button for compact filter rows. Hidden until the
@@ -304,7 +296,7 @@
 }
 
 .sidebar-row-delete:hover {
-  background: rgba(239, 68, 68, 0.18);
+  background: color-mix(in srgb, var(--red-tint-base) 18%, transparent);
   color: #fca5a5;
 }
 
@@ -347,7 +339,7 @@
   padding: 2px 6px;
   margin: -2px 0;
   outline: none;
-  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.5);
+  box-shadow: var(--focus-ring);
   text-decoration: none !important;
 }
 

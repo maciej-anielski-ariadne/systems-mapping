@@ -13,12 +13,12 @@
 .builder-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(10, 14, 26, 0.92);
+  background: color-mix(in srgb, var(--bg-deepest) 92%, transparent);
   backdrop-filter: blur(4px);
   display: none;             /* JS toggles to "flex" when open */
   align-items: stretch;
   justify-content: center;
-  z-index: 200;              /* above the drop zone (z 50) and everything else */
+  z-index: var(--z-overlay);              /* above the drop zone (z 50) and everything else */
   padding: 32px;
   font-family: var(--font-ui);
 }
@@ -29,7 +29,6 @@
   width: 100%;
   max-width: 1180px;
   background: var(--bg-deep);
-  border: 1px solid var(--border-strong);
   border-radius: 12px;
   display: flex;
   flex-direction: column;
@@ -43,7 +42,6 @@
   gap: 16px;
   padding: 16px 24px;
   background: var(--bg-mid);
-  border-bottom: 1px solid var(--border-subtle);
 }
 
 .builder-title {
@@ -66,7 +64,6 @@
   text-transform: uppercase;
   background: var(--bg-light);
   color: var(--text-tertiary);
-  border: 1px solid var(--border-subtle);
   padding: 4px 10px;
   border-radius: 4px;
   cursor: pointer;
@@ -75,19 +72,16 @@
 
 .builder-step-dot:hover {
   color: var(--text-secondary);
-  border-color: var(--border-strong);
 }
 
 .builder-step-dot.active {
   background: var(--accent-blue);
   color: var(--bg-deepest);
-  border-color: var(--accent-blue);
 }
 
 .builder-close {
   background: transparent;
   color: var(--text-tertiary);
-  border: 1px solid var(--border-subtle);
   width: 30px;
   height: 30px;
   border-radius: 6px;
@@ -101,7 +95,6 @@
 
 .builder-close:hover {
   color: var(--text-primary);
-  border-color: var(--border-strong);
 }
 
 /* ───── Card body — split into a fixed top section and a scrolling table area ─────
@@ -121,7 +114,6 @@
 .builder-step-static {
   padding: 24px 24px 16px 24px;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--border-subtle);
 }
 
 .builder-step-static:empty {  /* hide the fixed section + its divider when there's nothing above */
@@ -170,7 +162,6 @@
   margin-bottom: 16px;
   padding: 12px 14px;
   background: var(--bg-mid);
-  border-left: 3px solid var(--accent-blue);
   border-radius: 4px;
   max-width: 760px;
 }
@@ -183,7 +174,6 @@
   border-collapse: separate;
   border-spacing: 0;
   background: var(--bg-mid);
-  border: 1px solid var(--border-subtle);
   border-radius: 6px;
   margin-bottom: 12px;
 }
@@ -196,7 +186,6 @@
   text-transform: uppercase;
   color: var(--text-tertiary);
   padding: 10px 10px;
-  border-bottom: 1px solid var(--border-subtle);
   background: var(--bg-deep);
   position: sticky;
   top: 0;
@@ -211,11 +200,8 @@
 
 .builder-table td {
   padding: 6px 6px;
-  border-bottom: 1px solid var(--border-subtle);
   vertical-align: middle;
 }
-
-.builder-table tr:last-child td { border-bottom: none; }
 
 .builder-table input[type="text"],
 .builder-table input[type="number"],
@@ -223,13 +209,12 @@
   width: 100%;
   background: var(--bg-deep);
   color: var(--text-primary);
-  border: 1px solid var(--border-subtle);
   border-radius: 4px;
   padding: 6px 8px;
   font-family: var(--font-mono);
   font-size: 12px;
   outline: none;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: box-shadow 0.15s;
   box-sizing: border-box;
 }
 
@@ -237,22 +222,15 @@
  * can find it quickly even with many rows on screen. */
 .builder-table input:focus,
 .builder-table select:focus {
-  border-color: var(--accent-blue);
-  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.25);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 25%, transparent);
   position: relative;
   z-index: 2;
-}
-
-.builder-table input.invalid,
-.builder-table select.invalid {
-  border-color: var(--accent-red);
 }
 
 .builder-table input[type="color"] {
   width: 40px;
   height: 28px;
   padding: 0;
-  border: 1px solid var(--border-subtle);
   border-radius: 4px;
   background: var(--bg-deep);
   cursor: pointer;
@@ -294,7 +272,6 @@
 .builder-row-action {
   background: var(--bg-light);
   color: var(--text-tertiary);
-  border: 1px solid var(--border-subtle);
   border-radius: 4px;
   width: 26px;
   height: 26px;
@@ -313,7 +290,7 @@
   background: var(--bg-lighter);
 }
 
-.builder-row-action.danger:hover { color: var(--accent-red); border-color: var(--accent-red); }
+.builder-row-action.danger:hover { color: var(--accent-red); }
 
 .builder-empty-row td {
   text-align: center;
@@ -339,7 +316,6 @@
 .builder-action {
   background: var(--bg-mid);
   color: var(--text-secondary);
-  border: 1px solid var(--border-subtle);
   padding: 7px 12px;
   border-radius: 6px;
   font-family: var(--font-mono);
@@ -352,20 +328,17 @@
 
 .builder-action:hover {
   color: var(--text-primary);
-  border-color: var(--border-strong);
   background: var(--bg-light);
 }
 
 .builder-action.primary {
   background: var(--accent-blue);
   color: var(--bg-deepest);
-  border-color: var(--accent-blue);
   font-weight: 600;
 }
 
 .builder-action.primary:hover {
-  background: #93c5fd;
-  border-color: #93c5fd;
+  background: var(--accent-blue-hi);
 }
 
 .builder-action:disabled,
@@ -397,7 +370,7 @@
 
 /* Selected-row highlight. */
 .builder-table tr.selected td {
-  background: rgba(96, 165, 250, 0.10);
+  background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
 }
 
 /* The bulk action bar — accent-tinted strip above the table. */
@@ -408,8 +381,7 @@
   flex-wrap: wrap;
   margin-bottom: 12px;
   padding: 8px 12px;
-  background: rgba(96, 165, 250, 0.08);
-  border: 1px solid var(--accent-blue);
+  background: color-mix(in srgb, var(--accent-blue) 8%, transparent);
   border-radius: 6px;
 }
 
@@ -431,7 +403,6 @@
 .builder-bulk-select {
   background: var(--bg-deep);
   color: var(--text-primary);
-  border: 1px solid var(--border-subtle);
   border-radius: 4px;
   padding: 6px 8px;
   font-family: var(--font-mono);
@@ -439,8 +410,6 @@
   outline: none;
   min-width: 130px;
 }
-
-.builder-bulk-select:focus { border-color: var(--accent-blue); }
 
 .builder-bulk-elasticity {
   display: inline-flex;
@@ -452,7 +421,6 @@
   width: 110px;
   background: var(--bg-deep);
   color: var(--text-primary);
-  border: 1px solid var(--border-subtle);
   border-radius: 4px;
   padding: 6px 8px;
   font-family: var(--font-mono);
@@ -460,11 +428,8 @@
   outline: none;
 }
 
-.builder-bulk-input:focus { border-color: var(--accent-blue); }
-
 .builder-bulk-bar .builder-action.danger {
   color: var(--accent-red);
-  border-color: var(--accent-red);
 }
 
 .builder-bulk-bar .builder-action.danger:hover {
@@ -494,7 +459,6 @@
   margin-bottom: 20px;
   padding: 14px;
   background: var(--bg-mid);
-  border: 1px solid var(--border-subtle);
   border-radius: 6px;
 }
 
@@ -513,15 +477,12 @@
   width: 100px;
   background: var(--bg-deep);
   color: var(--text-primary);
-  border: 1px solid var(--border-subtle);
   border-radius: 4px;
   padding: 6px 8px;
   font-family: var(--font-mono);
   font-size: 13px;
   outline: none;
 }
-
-.builder-defaults input:focus { border-color: var(--accent-blue); }
 
 /* ───── Review step (step 6) ────────────────────────────────────────── */
 .builder-review-grid {
@@ -533,7 +494,6 @@
 
 .builder-review-tile {
   background: var(--bg-mid);
-  border: 1px solid var(--border-subtle);
   border-radius: 6px;
   padding: 14px 16px;
 }
@@ -555,18 +515,9 @@
 
 .builder-validation {
   background: var(--bg-mid);
-  border: 1px solid var(--border-subtle);
   border-radius: 6px;
   padding: 14px 16px;
   margin-bottom: 16px;
-}
-
-.builder-validation.ok {
-  border-color: var(--status-good);
-}
-
-.builder-validation.errors {
-  border-color: var(--accent-red);
 }
 
 .builder-validation-title {
@@ -598,7 +549,6 @@
   gap: 8px;
   padding: 14px 24px;
   background: var(--bg-mid);
-  border-top: 1px solid var(--border-subtle);
 }
 
 .builder-footer-spacer { flex: 1; }
@@ -632,12 +582,11 @@
  * fast typing and the box visibly jitters. */
 .builder-cell-editor {
   position: fixed;
-  z-index: 300;
+  z-index: var(--z-cell-editor);
   background: var(--bg-deep);
   color: var(--text-primary);
-  border: 1px solid var(--accent-blue);
   border-radius: 4px;
-  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.25);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 25%, transparent);
   padding: 6px 8px;                    /* matches .builder-table input */
   font-family: var(--font-mono);       /* matches .builder-table input */
   font-size: 12px;                     /* matches .builder-table input */

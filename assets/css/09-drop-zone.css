@@ -13,34 +13,32 @@
 .drop-zone {
   position: absolute;
   inset: 0;
-  background: rgba(10, 14, 26, 0.92);
+  background: color-mix(in srgb, var(--bg-deepest) 92%, transparent);
   backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 50;
+  z-index: var(--z-chrome);
   padding: 32px;
 }
 
 /* When dragging a file over the window, brighten the drop zone */
 body.drag-active .drop-zone {
-  background: rgba(96, 165, 250, 0.12);
+  background: color-mix(in srgb, var(--accent-blue) 12%, transparent);
   backdrop-filter: blur(8px);
 }
 
 body.drag-active .drop-zone-inner {
-  border-color: var(--accent-blue);
-  box-shadow: 0 0 60px rgba(96, 165, 250, 0.3);
+  box-shadow: 0 0 60px color-mix(in srgb, var(--accent-blue) 30%, transparent);
 }
 
 .drop-zone-inner {
   max-width: 540px;
   text-align: center;
   background: var(--bg-deep);
-  border: 2px dashed var(--border-strong);
   border-radius: 12px;
   padding: 40px 32px;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition: box-shadow 0.2s;
 }
 
 .drop-zone-icon {
@@ -79,28 +77,24 @@ body.drag-active .drop-zone-inner {
   font-weight: 500;
   background: var(--bg-light);
   color: var(--text-primary);
-  border: 1px solid var(--border-strong);
   padding: 10px 16px;
   border-radius: 6px;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background 0.15s;
 }
 
 .drop-zone-button:hover {
   background: var(--bg-lighter);
-  border-color: var(--text-tertiary);
 }
 
 .drop-zone-button.primary {
   background: var(--accent-blue);
   color: var(--bg-deepest);
-  border-color: var(--accent-blue);
   font-weight: 600;
 }
 
 .drop-zone-button.primary:hover {
-  background: #93c5fd;
-  border-color: #93c5fd;
+  background: var(--accent-blue-hi);
 }
 
 .drop-zone-hint {
@@ -108,5 +102,4 @@ body.drag-active .drop-zone-inner {
   color: var(--text-tertiary);
   line-height: 1.5;
   padding-top: 16px;
-  border-top: 1px solid var(--border-subtle);
 }

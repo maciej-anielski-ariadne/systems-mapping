@@ -17,7 +17,7 @@
   border-radius: 6px;
   font-size: 12.5px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4), 0 0 0 2px var(--accent-green);
-  z-index: 200;
+  z-index: var(--z-overlay);
   max-width: 380px;
 }
 
@@ -67,7 +67,7 @@
   transition: background 0.12s, color 0.12s;
 }
 .undo-toast .undo-link:hover {
-  background: rgba(96, 165, 250, 0.15);
+  background: color-mix(in srgb, var(--accent-blue) 15%, transparent);
   color: var(--text-primary);
 }
 
@@ -104,9 +104,8 @@
 }
 
 .multi-select-bar .msb-select {
-  background: var(--bg-dark, #0f172a);
+  background: var(--bg-dark);
   color: var(--text-primary);
-  border: 1px solid var(--border-strong);
   border-radius: 5px;
   font-size: 12px;
   padding: 5px 6px;
@@ -115,8 +114,7 @@
 
 .multi-select-bar .msb-delete {
   background: none;
-  color: var(--accent-red, #f87171);
-  border: 1px solid var(--border-strong);
+  color: var(--accent-red);
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.08em;
@@ -127,7 +125,7 @@
   transition: background 0.12s, color 0.12s;
 }
 .multi-select-bar .msb-delete:hover {
-  background: rgba(248, 113, 113, 0.15);
+  background: color-mix(in srgb, var(--accent-red) 15%, transparent);
 }
 
 /* === When no data is loaded, the side panels are dimmed and inert === */
@@ -148,7 +146,7 @@ body.no-data .detail-panel {
   position: absolute;
   bottom: 12px;
   right: 12px;
-  z-index: 50;
+  z-index: var(--z-chrome);
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -170,7 +168,7 @@ body.no-data .detail-panel {
   flex-direction: column;
   gap: 3px;
   width: 120px;
-  background: rgba(17, 24, 39, 0.85);
+  background: color-mix(in srgb, var(--bg-deep) 85%, transparent);
   backdrop-filter: blur(8px);
   padding: 5px 6px;
   border-radius: 6px;

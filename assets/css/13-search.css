@@ -12,7 +12,7 @@
   top: calc(100% + 4px);
   left: 0;
   right: 0;
-  z-index: 40;                /* above the viz, below the builder overlay */
+  z-index: var(--z-header);                /* above the viz, below the builder overlay */
   max-height: min(420px, 60vh);
   overflow-y: auto;
   background: var(--bg-deep);
@@ -117,7 +117,7 @@
  * from 12-no-borders.css. A subtle amber drop-shadow so matches stand
  * out without overpowering the white selection / blue trace glows. */
 .node-group.search-match .node-rect {
-  filter: drop-shadow(0 0 4px rgba(251, 191, 36, 0.75));
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent-amber) 75%, transparent));
 }
 
 /* When the search match is also the selected node, the white selection

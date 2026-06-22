@@ -1,65 +1,158 @@
 /* =============================================================================
- * DESIGN TOKENS (colors, fonts)
+ * DESIGN TOKENS (colours, fonts, and the spacing / radius / motion / elevation
+ * scales the rest of the app builds on)
  * -----------------------------------------------------------------------------
- * Every colour and font in the app is defined here as a CSS "variable". Changing
- * one of these values changes that colour or font everywhere in the app. This
- * lets non-technical editors retheme the app without hunting through every CSS
- * file.
+ * Every colour, font, radius, duration and shadow in the app is defined here as
+ * a CSS "variable". Changing one value here changes it everywhere — so a
+ * non-technical editor can retheme the app without hunting through every file.
  *
  * How CSS variables work:
- *   :root { --my-color: #ff0000; }      ← define a variable
- *   .some-class { color: var(--my-color); } ← use it
+ *   :root { --my-color: #ff0000; }          ← define a variable
+ *   .some-class { color: var(--my-color); }  ← use it
+ *   color-mix(in srgb, var(--x) 20%, transparent)  ← a 20%-opacity tint of --x
  *
  * Naming convention:
  *   --bg-*      → background shades (deepest is darkest)
- *   --text-*    → text shades (primary is brightest, tertiary is dimmest)
- *   --border-*  → border colours
- *   --accent-*  → highlight colours
- *   --edge-*    → arrow colours in the visualization
+ *   --text-*    → text shades (primary brightest, tertiary dimmest)
+ *   --border-*  → low-contrast shades used for hairline fills / dividers / rings
+ *   --accent-*  → highlight / semantic hues
+ *   --edge-*    → arrow colours in the map (semantic aliases of the accents)
+ *   --radius-*  --space-*  --fs-*  --fw-*  --dur-*  --shadow-*  --z-*  → scales
  *   --font-*    → font families (font files are in ../fonts/)
+ *
+ * NOTE ON BORDERS: 12-no-borders.css wipes every CSS `border` with
+ * `border: 0 !important`, so --border-subtle / --border-strong are NOT used as
+ * real borders — they are the low-contrast shades behind dividers, the faint
+ * background grid, and the box-shadow "rings" that stand in for borders.
  * ========================================================================== */
 
 :root {
-  /* Background shades, dark-to-light */
-  --bg-deepest:     #0a0e1a;
-  --bg-deep:        #111827;
-  --bg-mid:         #1a2030;
-  --bg-light:       #232a3d;
-  --bg-lighter:     #2c354b;
+  /* ===== Background shades, dark → light ================================== */
+  --bg-deepest: #0a0e1a;
+  --bg-deep:    #111827;
+  --bg-mid:     #1a2030;
+  --bg-light:   #232a3d;
+  --bg-lighter: #2c354b;
+  --bg-dark:    #0f172a;   /* slate used by the multi-select dropdown (was an
+                              UNDEFINED token relying on a hardcoded fallback) */
 
-  /* Borders */
-  --border-subtle:  #2a3346;
-  --border-strong:  #3a455e;
+  /* ===== Low-contrast "border" shades (see note above) =================== */
+  --border-subtle: #2a3346;
+  --border-strong: #3a455e;
 
-  /* Text shades */
+  /* ===== Text shades ===================================================== */
   --text-primary:   #e7ecf3;
   --text-secondary: #a1adc4;
   --text-tertiary:  #6b7691;
 
-  /* Accent / highlight colours */
+  /* ===== Accent / semantic hues ========================================== */
   --accent-blue:    #60a5fa;
+  --accent-blue-hi: #93c5fd;   /* lighter blue for primary-button hover (was
+                                  hardcoded #93c5fd in 5 places) */
   --accent-amber:   #fbbf24;
-  --accent-orange:  #fb923c;
   --accent-green:   #34d399;
   --accent-red:     #f87171;
   --accent-purple:  #a78bfa;
+  /* (--accent-orange #fb923c removed in the consolidation — it had 0 references.) */
 
-  /* Outcome-status colours (used by JS to colour borders / deltas when an
-     outcome metric moves "good" or "bad" relative to baseline) */
-  --status-good:    #10b981;
-  --status-bad:     #f87171;
+  /* Two literals that aren't an accent but recur in tints; kept as tokens so
+     they stop being raw hex. Both get unified into the accents in a later pass. */
+  --red-tint-base: #ef4444;    /* delete / danger background tints */
+  --flash-green:   #4ade80;    /* undo / redo "what changed" pulse */
 
-  /* Arrow colours in the map */
-  --edge-default:   #3a455e;   /* normal, unselected arrow */
-  --edge-dim:       #232a3d;   /* dimmed-out arrow */
-  --edge-ancestor:  #60a5fa;   /* upstream chain (blue) */
-  --edge-descendant:#fbbf24;   /* downstream chain (amber) */
-  --edge-increases: #34d399;   /* "X increases Y" arrow (green) */
-  --edge-decreases: #f87171;   /* "X decreases Y" arrow (red) */
-  --edge-enables:   #a78bfa;   /* "X enables Y" arrow (purple) */
+  /* ===== Outcome-status colours (JS colours deltas good/bad vs baseline) == */
+  --status-good: #10b981;             /* a distinct, deeper green from accent-green */
+  --status-bad:  var(--accent-red);   /* was a byte-identical copy of accent-red */
 
-  /* Font families — loaded locally from ../fonts/fonts.css */
-  --font-display:   Arial, Helvetica, sans-serif;
-  --font-ui:        Arial, Helvetica, sans-serif;
-  --font-mono:      Arial, Helvetica, sans-serif;
+  /* ===== Map arrow colours — semantic aliases of the accents / shades ===== *
+   * These were previously hardcoded copies of the hex values above, so editing
+   * an accent did NOT move the matching edge colour. Aliased here so they stay
+   * in lockstep. */
+  --edge-default:    var(--border-strong);  /* normal, unselected arrow */
+  --edge-dim:        var(--bg-light);        /* dimmed-out arrow */
+  --edge-ancestor:   var(--accent-blue);     /* upstream chain (blue) */
+  --edge-descendant: var(--accent-amber);    /* downstream chain (amber) */
+  --edge-increases:  var(--accent-green);    /* "X increases Y" (green) */
+  --edge-decreases:  var(--accent-red);      /* "X decreases Y" (red) */
+  --edge-enables:    var(--accent-purple);   /* "X enables Y" (purple) */
+
+  /* ===== Focus ring ====================================================== *
+   * The blue 2px ring used on focused inputs / cells (was the hand-written
+   * `0 0 0 2px rgba(96,165,250,.5)` repeated ~8×). color-mix(... 50% ...)
+   * resolves to exactly that rgba. */
+  --focus-ring: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 50%, transparent);
+
+  /* ===== Radius scale ==================================================== *
+   * Introduced now at the values already in use; rules are migrated onto these
+   * in the component-consolidation pass. */
+  --radius-xs:   3px;
+  --radius-sm:   5px;
+  --radius-md:   6px;
+  --radius-lg:   8px;
+  --radius-xl:   12px;
+  --radius-full: 9999px;
+
+  /* ===== Spacing scale (4px grid) ======================================== */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+
+  /* ===== Type scale (target; applied in the typography pass) ============= */
+  --fs-2xs:  10px;
+  --fs-xs:   11px;
+  --fs-sm:   12px;
+  --fs-base: 13px;
+  --fs-md:   16px;
+  --fs-lg:   18px;
+  --fs-xl:   22px;
+
+  /* ===== Font weights ==================================================== */
+  --fw-medium:   500;
+  --fw-semibold: 600;
+  --fw-bold:     700;
+
+  /* ===== Motion ========================================================== */
+  --dur-fast:  0.12s;
+  --dur-base:  0.15s;
+  --dur-slow:  0.18s;
+  --dur-flash: 1.4s;
+  --ease:      ease;
+
+  /* ===== Elevation (drop shadows) ======================================== */
+  --shadow-pop:    0 6px 24px rgba(0, 0, 0, 0.4);    /* tooltip / toast */
+  --shadow-pop-lg: 0 12px 32px rgba(0, 0, 0, 0.55);  /* dropdown / popup */
+  --shadow-drag:   0 8px 28px rgba(0, 0, 0, 0.6);    /* dragged element / bar */
+  --shadow-panel:  4px 0 18px rgba(0, 0, 0, 0.55);   /* unpinned panel overlay */
+
+  /* ===== Z-index ladder (documents the real stacking order) ============== *
+   *   base content ............ 0–1
+   *   unpinned panel strips .... 30
+   *   panel resize handles ..... 35
+   *   header (+ its dropdowns) . 40
+   *   viz controls / toasts .... 50–221
+   *   builder overlay .......... 200
+   *   canvas edge-picker ....... 250   (intentionally ABOVE the builder so it
+   *                                     can open from view mode; it is NOT
+   *                                     "below the builder" as an old comment
+   *                                     in 05-visualization.css claimed)
+   *   builder cell editor ...... 300
+   *   typeable-dropdown popup .. 400   (above every overlay) */
+  --z-panel-strip: 30;
+  --z-resize:      35;
+  --z-header:      40;
+  --z-chrome:      50;
+  --z-overlay:     200;
+  --z-edge-picker: 250;
+  --z-cell-editor: 300;
+  --z-dropdown:    400;
+
+  /* ===== Font families — loaded locally from ../fonts/fonts.css ========== *
+   * Currently all Arial (the loaded Fraunces / IBM Plex faces are switched on
+   * in the typography pass). */
+  --font-display: Arial, Helvetica, sans-serif;
+  --font-ui:      Arial, Helvetica, sans-serif;
+  --font-mono:    Arial, Helvetica, sans-serif;
 }

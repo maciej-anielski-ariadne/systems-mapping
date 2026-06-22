@@ -14,7 +14,6 @@
 
 .detail-panel {
   background: var(--bg-deep);
-  border-left: 1px solid var(--border-subtle);
   overflow-y: auto;
   /* No top padding so the sticky .panel-header sits flush against the top.
    * Side + bottom padding give the rest of the content breathing room. */
@@ -39,7 +38,7 @@
   bottom: 0;
   right: 0;
   width: var(--panel-strip-w);
-  z-index: 30;
+  z-index: var(--z-panel-strip);
   overflow: hidden;
   padding: 0;
   min-width: 0;
@@ -103,7 +102,6 @@
   padding: 14px;
   background: var(--bg-mid);
   border-radius: 6px;
-  border: 1px solid var(--border-subtle);
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.7;
@@ -149,7 +147,7 @@
 }
 
 .detail-mode-button.active:hover {
-  background: #93c5fd;
+  background: var(--accent-blue-hi);
 }
 
 /* === Tags row at the top of a selected node's details === */
@@ -169,13 +167,11 @@
   border-radius: 3px;
   color: var(--text-secondary);
   background: var(--bg-mid);
-  border: 1px solid var(--border-subtle);
 }
 
 /* The category tag uses the category's own fill colour */
 .detail-tag.category {
   color: var(--bg-deepest);
-  border: none;
   font-weight: 600;
 }
 
@@ -284,7 +280,6 @@
   margin: 12px 0;
   padding: 10px 12px;
   background: var(--bg-deepest);
-  border: 1px solid var(--border-subtle);
   border-radius: 6px;
 }
 
@@ -331,7 +326,7 @@
   margin: 0;
 }
 .detail-value-input:focus {
-  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.5);
+  box-shadow: var(--focus-ring);
 }
 
 /* === Generic detail-panel action buttons === */
@@ -345,7 +340,6 @@
   flex: 1;
   background: var(--bg-mid);
   color: var(--text-secondary);
-  border: 1px solid var(--border-subtle);
   padding: 8px 12px;
   border-radius: 5px;
   font-family: var(--font-mono);
@@ -358,21 +352,18 @@
 .detail-button:hover {
   color: var(--text-primary);
   background: var(--bg-light);
-  border-color: var(--border-strong);
 }
 
 .detail-button.active {
   background: var(--bg-light);
   color: var(--text-primary);
-  border-color: var(--accent-blue);
 }
 
 .detail-button.detail-delete-btn {
   color: var(--accent-red);
 }
 .detail-button.detail-delete-btn:hover {
-  background: rgba(239, 68, 68, 0.15);
-  border-color: var(--accent-red);
+  background: color-mix(in srgb, var(--red-tint-base) 15%, transparent);
   color: var(--accent-red);
 }
 
@@ -433,7 +424,6 @@
   width: 12px;
   height: 12px;
   border-radius: 2px;
-  border: 1px solid rgba(0, 0, 0, 0.4);
   flex-shrink: 0;
 }
 .detail-tag.category.secondary { font-size: 10px; opacity: 0.95; }
@@ -451,7 +441,7 @@
 }
 
 .detail-edit-input:focus {
-  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.5);
+  box-shadow: var(--focus-ring);
 }
 
 .detail-edit-textarea {
@@ -535,7 +525,7 @@
  * settles (no class-removal needed mid-animation because the animation
  * runs once and ends with the base styling). */
 @keyframes outgoing-edge-flash {
-  0%   { background: rgba(96, 165, 250, 0.5); }
+  0%   { background: color-mix(in srgb, var(--accent-blue) 50%, transparent); }
   100% { background: var(--bg-mid); }
 }
 .outgoing-edge-row.flash {
@@ -578,7 +568,7 @@
   transition: background 0.12s, color 0.12s;
 }
 .outgoing-edge-delete:hover {
-  background: rgba(239, 68, 68, 0.2);
+  background: color-mix(in srgb, var(--red-tint-base) 20%, transparent);
   color: var(--accent-red);
 }
 

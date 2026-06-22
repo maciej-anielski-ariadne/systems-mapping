@@ -141,13 +141,12 @@ body.no-data .panel-pin {
 .app-header {
   grid-column: 1 / -1;     /* span from column 1 to the last column */
   background: var(--bg-deep);
-  border-bottom: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
   padding: 0 24px;
   gap: 24px;
   position: relative;
-  z-index: 40;
+  z-index: var(--z-header);
 }
 
 /* === Search box ===
@@ -162,18 +161,12 @@ body.no-data .panel-pin {
 .search-input {
   width: 100%;
   background: var(--bg-mid);
-  border: 1px solid var(--border-subtle);
   color: var(--text-primary);
   font-family: var(--font-mono);
   font-size: 13px;
   padding: 9px 14px 9px 36px;  /* extra left padding leaves room for the icon */
   border-radius: 6px;
   outline: none;
-  transition: border-color 0.15s;
-}
-
-.search-input:focus {
-  border-color: var(--accent-blue);
 }
 
 .search-icon {
@@ -189,7 +182,6 @@ body.no-data .panel-pin {
 .header-button {
   background: var(--bg-mid);
   color: var(--text-secondary);
-  border: 1px solid var(--border-subtle);
   padding: 8px 14px;
   border-radius: 6px;
   font-family: var(--font-mono);
@@ -202,7 +194,6 @@ body.no-data .panel-pin {
 
 .header-button:hover {
   color: var(--text-primary);
-  border-color: var(--border-strong);
   background: var(--bg-light);
 }
 
@@ -210,7 +201,6 @@ body.no-data .panel-pin {
 .header-button.active {
   background: var(--accent-blue);
   color: var(--bg-deepest);
-  border-color: var(--accent-blue);
 }
 
 /* "Edit", "Save", "Export", and "Publish" all need an existing map to act on;
@@ -231,7 +221,6 @@ body.no-data .export-image-trigger:hover,
 body.no-data .publish-html-trigger:hover {
   background: var(--bg-mid);
   color: var(--text-secondary);
-  border-color: var(--border-subtle);
 }
 
 /* === Panel resize handles ===
@@ -247,7 +236,7 @@ body.no-data .publish-html-trigger:hover {
   bottom: 0;
   width: 6px;
   cursor: col-resize;
-  z-index: 35;     /* above unpinned panel strips (30), below header (40) */
+  z-index: var(--z-resize);     /* above unpinned panel strips (30), below header (40) */
   background: transparent;
   transition: background 0.12s ease;
 }
@@ -256,11 +245,11 @@ body.no-data .publish-html-trigger:hover {
 .detail-resize-handle  { right: var(--detail-w);  }
 
 .panel-resize-handle:hover {
-  background: rgba(96, 165, 250, 0.25);   /* accent-blue, faint */
+  background: color-mix(in srgb, var(--accent-blue) 25%, transparent);   /* accent-blue, faint */
 }
 
 .panel-resize-handle.dragging {
-  background: rgba(96, 165, 250, 0.55);
+  background: color-mix(in srgb, var(--accent-blue) 55%, transparent);
 }
 
 /* Resize handle only makes sense when its panel is in pinned (full-width)

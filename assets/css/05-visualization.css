@@ -104,17 +104,17 @@ body.panning * {
    variant also forces full opacity so a flashed node is never washed out by an
    unrelated selection's dimming. Auto-cleared after the animation by JS. */
 @keyframes undo-flash-pulse {
-  0%   { filter: drop-shadow(0 0 0   rgba(74, 222, 128, 0)); }
-  20%  { filter: drop-shadow(0 0 9px rgba(74, 222, 128, 0.95)); }
-  50%  { filter: drop-shadow(0 0 2px rgba(74, 222, 128, 0.35)); }
-  70%  { filter: drop-shadow(0 0 9px rgba(74, 222, 128, 0.9)); }
-  100% { filter: drop-shadow(0 0 0   rgba(74, 222, 128, 0)); }
+  0%   { filter: drop-shadow(0 0 0   color-mix(in srgb, var(--flash-green) 0%, transparent)); }
+  20%  { filter: drop-shadow(0 0 9px color-mix(in srgb, var(--flash-green) 95%, transparent)); }
+  50%  { filter: drop-shadow(0 0 2px color-mix(in srgb, var(--flash-green) 35%, transparent)); }
+  70%  { filter: drop-shadow(0 0 9px color-mix(in srgb, var(--flash-green) 90%, transparent)); }
+  100% { filter: drop-shadow(0 0 0   color-mix(in srgb, var(--flash-green) 0%, transparent)); }
 }
 .node-group.undo-flash {
   opacity: 1 !important;
 }
 .node-group.undo-flash .node-rect {
-  stroke: rgba(74, 222, 128, 0.95);
+  stroke: color-mix(in srgb, var(--flash-green) 95%, transparent);
   stroke-width: 2.5;
   animation: undo-flash-pulse 1.4s ease;
 }
@@ -276,7 +276,7 @@ body.panning * {
  * the note under the cursor) and a shift+click on the gap reaches the SVG,
  * which creates the note via the marquee-candidate path in 16e-canvas-edit.js. */
 .ghost-cell rect {
-  fill: rgba(96, 165, 250, 0.08);
+  fill: color-mix(in srgb, var(--accent-blue) 8%, transparent);
   stroke: var(--accent-blue);
   stroke-width: 1.5;
   stroke-dasharray: 5 4;
@@ -297,7 +297,7 @@ body.panning * {
 }
 body.canvas-shift-edit .ghost-cell rect {
   opacity: 1;
-  fill: rgba(96, 165, 250, 0.18);
+  fill: color-mix(in srgb, var(--accent-blue) 18%, transparent);
 }
 body.canvas-shift-edit .ghost-cell text {
   opacity: 0.85;
@@ -309,7 +309,7 @@ body.canvas-shift-edit .ghost-cell text {
  * input cursor lives here". No hover/cursor styling — interaction is
  * keyboard-only (typing creates the node; arrows move the cursor). */
 .cursor-cell rect {
-  fill: rgba(96, 165, 250, 0.06);
+  fill: color-mix(in srgb, var(--accent-blue) 6%, transparent);
   stroke: var(--accent-blue);
   stroke-width: 2;
   stroke-dasharray: 6 4;
@@ -329,12 +329,12 @@ body.canvas-shift-edit .ghost-cell text {
 /* "Add outgoing edge" picker — small floating panel anchored next
  * to the source node, wraps a typeable dropdown of every other node so the
  * user can filter by name and hit Enter to commit. Sits above the canvas
- * but below the builder overlay so it can be opened from view mode. */
+ * and above the builder overlay (z-index 250 > 200) so it can be opened from
+ * view mode. */
 .canvas-edge-picker {
   position: fixed;
-  z-index: 250;
+  z-index: var(--z-edge-picker);
   background: var(--bg-deep);
-  border: 1px solid var(--accent-blue);
   border-radius: 6px;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.6);
   padding: 10px 12px;
@@ -353,7 +353,6 @@ body.canvas-shift-edit .ghost-cell text {
   width: 100%;
   background: var(--bg-deepest);
   color: var(--text-primary);
-  border: 1px solid var(--border-subtle);
   border-radius: 4px;
   padding: 8px 10px;
   font-family: var(--font-ui);
@@ -361,8 +360,7 @@ body.canvas-shift-edit .ghost-cell text {
   outline: none;
 }
 .canvas-edge-picker .typeable-dropdown-input:focus {
-  border-color: var(--accent-blue);
-  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.25);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 25%, transparent);
 }
 
 /* Edge handle on the right edge of every node. Hidden by default; reveals
@@ -421,7 +419,7 @@ body.canvas-shift-edit .node-group:active {
    forced fully opaque/coloured so it stands out even if it would otherwise be
    dimmed by a selection. See the node .undo-flash block above. */
 .edge-path.undo-flash {
-  stroke: rgba(74, 222, 128, 0.95) !important;
+  stroke: color-mix(in srgb, var(--flash-green) 95%, transparent) !important;
   stroke-opacity: 1 !important;
   opacity: 1 !important;
   stroke-width: 3;
@@ -480,8 +478,8 @@ body.node-dragging * {
 }
 /* Marquee selection box (shift+drag on empty canvas). See 16e-canvas-edit.js. */
 .marquee-box {
-  fill: rgba(96, 165, 250, 0.12);
-  stroke: var(--accent-blue, #60a5fa);
+  fill: color-mix(in srgb, var(--accent-blue) 12%, transparent);
+  stroke: var(--accent-blue);
   stroke-width: 1;
   stroke-dasharray: 4 3;
   pointer-events: none;
@@ -491,7 +489,7 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
 /* Drag landing slot — the gap the siblings parted to open. Mirrors the
  * new-note placeholder (.ghost-cell) so create and move read the same. */
 .drop-slot {
-  fill: rgba(96, 165, 250, 0.12);
+  fill: color-mix(in srgb, var(--accent-blue) 12%, transparent);
   stroke: var(--accent-blue);
   stroke-width: 1.5;
   stroke-dasharray: 5 4;
