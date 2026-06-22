@@ -533,3 +533,14 @@ window.addEventListener("drop", event => {
     toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
   });
 })();
+
+// ───── Viz "⋯ more" toggle — reveals the Highlight-Depth card ─────────────
+(() => {
+  const cluster = document.getElementById("viz-controls-cluster");
+  const moreBtn = document.getElementById("viz-more-toggle");
+  if (!cluster || !moreBtn) return;
+  moreBtn.addEventListener("click", () => {
+    const shown = cluster.classList.toggle("show-more");
+    moreBtn.setAttribute("aria-expanded", shown ? "true" : "false");
+  });
+})();

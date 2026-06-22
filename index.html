@@ -115,10 +115,9 @@
          centred in the header; the label reads "Click here to (un)pin" and
          the pin icon sits to the right of the text as if it were part of it. -->
     <div class="panel-header">
-      <button class="panel-pin sidebar-pin" id="sidebar-pin" title="Click to unpin sidebar" aria-label="Click to unpin sidebar">
-        <span class="panel-pin-label">Click here to unpin</span>
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
-          <path d="M14 4h2v2l-3 4v3h3l1 1v1h-5v6h-1v-6H6v-1l1-1h3v-3L7 6V4h2"/>
+      <button class="panel-pin sidebar-pin" id="sidebar-pin" title="Collapse sidebar" aria-label="Collapse sidebar">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="15 6 9 12 15 18"></polyline>
         </svg>
       </button>
     </div>
@@ -226,6 +225,10 @@
         </div>
       </div>
 
+      <!-- "More" toggle reveals the advanced Highlight-Depth card, tucked away
+           by default so Zoom is the only resting control. JS in 17-events.js. -->
+      <button class="viz-more-toggle" id="viz-more-toggle" title="More map controls (highlight depth)" aria-label="More map controls" aria-expanded="false">⋯</button>
+
     </div>
 
     <!-- Optional CSV-import overlay. No longer shown at startup — the
@@ -260,10 +263,9 @@
     <!-- Sticky header strip with the centred "Click here to (un)pin" label +
          pin icon. -->
     <div class="panel-header">
-      <button class="panel-pin detail-pin" id="detail-pin" title="Click to unpin details" aria-label="Click to unpin details">
-        <span class="panel-pin-label">Click here to unpin</span>
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
-          <path d="M14 4h2v2l-3 4v3h3l1 1v1h-5v6h-1v-6H6v-1l1-1h3v-3L7 6V4h2"/>
+      <button class="panel-pin detail-pin" id="detail-pin" title="Collapse details" aria-label="Collapse details">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="9 6 15 12 9 18"></polyline>
         </svg>
       </button>
     </div>
