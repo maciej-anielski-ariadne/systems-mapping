@@ -495,3 +495,41 @@ window.addEventListener("drop", event => {
   const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
   if (file) readCsvFile(file);
 });
+
+// ───── Export ▾ header menu ──────────────────────────────────────────────
+// Groups Save / Export / Publish under one trigger. The menu items keep their
+// *-trigger classes, so their action handlers (wired above by class) still
+// fire; this block only toggles the dropdown open/closed.
+(() => {
+  const menu    = document.getElementById("export-menu");
+  const trigger = menu && menu.querySelector(".header-menu-trigger");
+  const list    = document.getElementById("export-menu-list");
+  if (!menu || !trigger || !list) return;
+
+  const close = () => { list.hidden = true;  trigger.setAttribute("aria-expanded", "false"); };
+  const open  = () => { list.hidden = false; trigger.setAttribute("aria-expanded", "true");  };
+
+  trigger.addEventListener("click", event => {
+    event.stopPropagation();
+    list.hidden ? open() : close();
+  });
+  // Picking an item runs its own action handler and then closes the menu.
+  list.querySelectorAll(".header-menu-item").forEach(item =>
+    item.addEventListener("click", close)
+  );
+  // Click outside or press Escape to dismiss.
+  document.addEventListener("click", event => { if (!menu.contains(event.target)) close(); });
+  document.addEventListener("keydown", event => { if (event.key === "Escape") close(); });
+})();
+
+// ───── Sidebar "Map appearance" accordion ────────────────────────────────
+// Collapses the advanced edge-type / line-style / trace filters into one group.
+(() => {
+  const acc    = document.getElementById("map-appearance");
+  const toggle = document.getElementById("map-appearance-toggle");
+  if (!acc || !toggle) return;
+  toggle.addEventListener("click", () => {
+    const collapsed = acc.classList.toggle("collapsed");
+    toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  });
+})();

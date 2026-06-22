@@ -203,6 +203,65 @@ body.no-data .panel-pin {
   color: var(--bg-deepest);
 }
 
+/* === Ranked header: one primary action (Create) ===
+ * The single filled, highest-emphasis action so the eye has an entry point. */
+.header-button--primary {
+  background: var(--accent-blue);
+  color: var(--bg-deepest);
+  font-weight: var(--fw-semibold);
+}
+.header-button--primary:hover {
+  background: var(--accent-blue-hi);
+  color: var(--bg-deepest);
+}
+
+/* === Export ▾ menu (groups Save / Export / Publish) === */
+.header-menu {
+  position: relative;
+  display: inline-flex;
+}
+.header-menu-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: var(--z-header);
+  min-width: 168px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  background: var(--bg-deep);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-pop-lg);
+}
+.header-menu-list[hidden] { display: none; }
+.header-menu-item {
+  background: transparent;
+  color: var(--text-secondary);
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 8px 10px;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+.header-menu-item:hover {
+  background: var(--bg-light);
+  color: var(--text-primary);
+}
+
+/* Thin separator before the Simulate mode toggle. */
+.header-divider {
+  width: 1px;
+  height: 22px;
+  flex: 0 0 1px;
+  background: var(--border-subtle);
+  margin: 0 4px;
+}
+
 /* "Edit", "Save", "Export", and "Publish" all need an existing map to act on;
  * dim them while there's nothing loaded so the user knows they aren't
  * actionable yet. (body.no-data is set only when the drop-zone overlay is

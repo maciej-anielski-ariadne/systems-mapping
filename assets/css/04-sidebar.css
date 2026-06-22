@@ -444,3 +444,31 @@
  * gradient: 5px dash, 4px gap. */
 .legend-line-solid  { background: var(--text-secondary); }
 .legend-line-dashed { background: repeating-linear-gradient(to right, var(--text-secondary) 0 5px, transparent 5px 9px); }
+
+/* === "Map appearance" accordion ===
+ * Folds the advanced edge-type / line-style / trace filters into one
+ * collapsible group so the sidebar stays calm at rest (collapsed by default;
+ * one click reveals them — nothing is removed). */
+.sidebar-accordion-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: transparent;
+  cursor: pointer;
+  padding: 2px 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: var(--fw-semibold);
+  color: var(--text-tertiary);
+  transition: color var(--dur-fast);
+}
+.sidebar-accordion-header:hover { color: var(--text-secondary); }
+
+.sidebar-accordion-chevron { transition: transform var(--dur-base); }
+.sidebar-accordion.collapsed .sidebar-accordion-chevron { transform: rotate(-90deg); }
+
+.sidebar-accordion-body { margin-top: 12px; }
+.sidebar-accordion.collapsed .sidebar-accordion-body { display: none; }

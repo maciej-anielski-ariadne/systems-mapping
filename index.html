@@ -82,14 +82,25 @@
       <div id="search-results" class="search-results" hidden></div>
     </div>
 
-    <!-- Header action buttons. Classes are picked up by JS in 17-events.js
-         and wired to their handlers — see that file. -->
-    <button class="header-button create-map-trigger"   data-tooltip="Clear the canvas and start a fresh map from an empty 3×3 starter grid. Asks for confirmation if a map is loaded.">Create</button>
-    <button class="header-button edit-data-trigger"    data-tooltip="Open the form-based wizard pre-populated with the current map. Useful for bulk edits.">Edit</button>
-    <button class="header-button save-data-trigger"    data-tooltip="Save the current map as a CSV (openable in Excel / Sheets, or re-importable here).">Save</button>
-    <button class="header-button import-data-trigger"  data-tooltip="Import a CSV map file from your computer. Same as drag-dropping a .csv onto the window.">Import</button>
-    <button class="header-button export-image-trigger" data-tooltip="Copy the canvas to the clipboard as a PNG image. Captures what's on screen — zoom/pan to frame the part you want. If a node is selected, only its highlighted nodes and edges are copied. Connected nodes are packed closer together.">Export</button>
-    <button class="header-button publish-html-trigger" data-tooltip="Publish a self-contained, view-only HTML page of the canvas (pan / zoom / hover). Same framing logic as Export.">Publish</button>
+    <!-- Header action buttons, ranked: one primary (Create), two secondary
+         (Edit / Import), the three "get data out" actions grouped under an
+         Export ▾ menu, then the Simulate mode toggle past a divider. The
+         trigger classes / ids are unchanged, so the handlers in 17-events.js
+         still bind; 17-events.js also wires the Export-menu open/close. -->
+    <button class="header-button header-button--primary create-map-trigger" data-tooltip="Clear the canvas and start a fresh map from an empty 3×3 starter grid. Asks for confirmation if a map is loaded.">Create</button>
+    <button class="header-button edit-data-trigger"   data-tooltip="Open the form-based wizard pre-populated with the current map. Useful for bulk edits.">Edit</button>
+    <button class="header-button import-data-trigger" data-tooltip="Import a CSV map file from your computer. Same as drag-dropping a .csv onto the window.">Import</button>
+
+    <div class="header-menu" id="export-menu">
+      <button class="header-button header-menu-trigger" aria-haspopup="true" aria-expanded="false" data-tooltip="Get the map out — save as CSV, copy as a PNG image, or publish a view-only HTML page.">Export&nbsp;▾</button>
+      <div class="header-menu-list" id="export-menu-list" hidden>
+        <button class="header-menu-item save-data-trigger"    data-tooltip="Save the current map as a CSV (openable in Excel / Sheets, or re-importable here).">Save CSV</button>
+        <button class="header-menu-item export-image-trigger" data-tooltip="Copy the canvas to the clipboard as a PNG image. Captures what's on screen. If a node is selected, only its highlighted nodes and edges are copied.">Export PNG</button>
+        <button class="header-menu-item publish-html-trigger" data-tooltip="Publish a self-contained, view-only HTML page of the canvas (pan / zoom / hover).">Publish HTML</button>
+      </div>
+    </div>
+
+    <span class="header-divider" aria-hidden="true"></span>
     <button id="sim-toggle-button" class="header-button" data-tooltip="Toggle simulation mode — sliders on every controllable input, downstream values recompute live.">Simulate</button>
   </header>
 
@@ -155,9 +166,17 @@
          renderEdgeStyleFilters / renderTraceFilters in 13-sidebar.js). Each row
          toggles like Streams: click to hide that edge effect / line style on the
          map (or suppress a trace direction); click again to show it. -->
-    <div class="sidebar-section"><div id="edge-type-filters"></div></div>
-    <div class="sidebar-section"><div id="edge-style-filters"></div></div>
-    <div class="sidebar-section"><div id="trace-filters"></div></div>
+    <div class="sidebar-section sidebar-accordion collapsed" id="map-appearance">
+      <button class="sidebar-accordion-header" id="map-appearance-toggle" aria-expanded="false" aria-controls="map-appearance-body">
+        <span>Map appearance</span>
+        <span class="sidebar-accordion-chevron" aria-hidden="true">▾</span>
+      </button>
+      <div class="sidebar-accordion-body" id="map-appearance-body">
+        <div id="edge-type-filters"></div>
+        <div id="edge-style-filters"></div>
+        <div id="trace-filters"></div>
+      </div>
+    </div>
   </aside>
 
   <!-- ============== PANEL RESIZE HANDLES ==============
