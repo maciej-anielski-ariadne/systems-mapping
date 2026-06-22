@@ -216,6 +216,10 @@
 .detail-edge-item {
   --edge-color: var(--border-strong);
   display: block;
+  width: 100%;            /* it is a <button> now — reset native chrome */
+  text-align: left;
+  font: inherit;
+  color: inherit;
   padding: var(--space-1) var(--space-2) var(--space-1) calc(var(--space-2) + 3px);   /* +3 on the left so content sits past the stripe */
   background: var(--bg-mid);
   border-radius: 0 5px 5px 0;
@@ -228,6 +232,22 @@
 .detail-edge-item:hover {
   background: var(--bg-light);
   transform: translateX(2px);
+}
+
+/* Keyboard focus: re-state the inset colour stripe AND add the ring, so the
+ * global button:focus-visible (which would otherwise REPLACE box-shadow) can't
+ * erase the coloured edge marker. */
+.detail-edge-item:focus-visible {
+  outline: none;
+  background: var(--bg-light);
+  box-shadow: inset 3px 0 0 var(--edge-color), var(--focus-ring);
+}
+
+/* The global reduced-motion block only zeroes durations, not the translateX
+ * nudge — suppress it explicitly. */
+@media (prefers-reduced-motion: reduce) {
+  .detail-edge-item:hover,
+  .detail-edge-item:focus-visible { transform: none; }
 }
 
 .detail-edge-item.increases { --edge-color: var(--accent-green);  }
@@ -430,9 +450,9 @@
   height: 12px;
   border-radius: 2px;
   flex-shrink: 0;
-  /* Dark hairline so a light swatch reads as a distinct chip (restored as an
-     inset ring after the flat-look border wipe). */
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.4);
+  /* White ring (~3:1) so even a dark, near-background fill keeps a visible
+     boundary — matches the left sidebar's .sidebar-edit-swatch (WCAG 1.4.11). */
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
 }
 
 /* T4: cap category-colour saturation so it stays quiet next to the accents. */

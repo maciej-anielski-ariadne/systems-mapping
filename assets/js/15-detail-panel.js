@@ -91,7 +91,7 @@ function renderViewMode(node) {
 
   // ───── Edit Node button (full-width, centred, above Direct Inputs) ──
   html += '<div class="detail-mode-toggle">';
-  html +=   '<button class="detail-mode-button" data-action="toggle-edit-mode">Edit Node</button>';
+  html +=   '<button class="detail-mode-button" data-action="toggle-edit-mode" aria-pressed="false">Edit Node</button>';
   html += '</div>';
 
   // ───── Direct inputs + impacts ──────────────────────────────────────
@@ -148,7 +148,7 @@ function renderEditMode(node) {
 
   // ───── Done editing button (full-width, top of edit mode) ────────────
   html += '<div class="detail-mode-toggle">';
-  html +=   '<button class="detail-mode-button active" data-action="toggle-edit-mode">Done editing</button>';
+  html +=   '<button class="detail-mode-button active" data-action="toggle-edit-mode" aria-pressed="true">Done editing</button>';
   html += '</div>';
 
   // ───── Edit form ─────────────────────────────────────────────────────
@@ -607,13 +607,17 @@ function renderEdgeItem(otherNode, edge, direction) {
   const elasticitySign = elasticity > 0 ? "+" : "";
   const elasticityText = elasticity !== 0 ? "ε = " + elasticitySign + elasticity.toFixed(2) : "ε = 0";
 
-  let html = '<div class="detail-edge-item ' + effectClass + '" data-target-node="' + otherNode.id + '">';
+  // A real <button> so the "jump to the connected node" action is Tab-reachable
+  // and Enter/Space-activatable (the click handler in wireViewModeHandlers works
+  // unchanged). aria-label names the otherwise-implicit navigate action.
+  const jumpDir = direction === "from" ? "upstream" : "downstream";
+  let html = '<button type="button" class="detail-edge-item ' + effectClass + '" data-target-node="' + escapeHtml(otherNode.id) + '" aria-label="Jump to ' + jumpDir + ' node: ' + escapeHtml(otherNode.label) + '">';
   html +=   '<div class="detail-edge-header">';
   html +=     '<div class="detail-edge-name">' + arrow + ' ' + escapeHtml(otherNode.label) + '</div>';
   html +=     '<div class="detail-edge-elasticity">' + escapeHtml(elasticityText) + '</div>';
   html +=   '</div>';
   html +=   '<div class="detail-edge-effect ' + effectClass + '">' + edge.effect + '</div>';
   html +=   '<div class="detail-edge-desc">' + escapeHtml(edge.description) + '</div>';
-  html += '</div>';
+  html += '</button>';
   return html;
 }
