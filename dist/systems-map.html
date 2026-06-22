@@ -2052,46 +2052,54 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
  * increases, red = decreases, purple = enables). Painted with
  * box-shadow:inset because 12-no-borders.css strips real borders.
  * `--edge-color` is overridden per modifier class below. */
-.detail-edge-item {
+/* Shared edge-stripe frame — the 3px coloured left stripe signals the effect
+ * type (green = increases, red = decreases, purple = enables) on a bg-mid card.
+ * box-shadow:inset because 12-no-borders.css strips real borders. ONE definition
+ * used by both the read-only edge rows (.edge-stripe--nav, a <button>) and the
+ * editable edge editors (.edge-stripe--edit, a <div>); only --edge-color differs
+ * per effect modifier. */
+.edge-stripe {
   --edge-color: var(--border-strong);
-  display: block;
-  width: 100%;            /* it is a <button> now — reset native chrome */
-  text-align: left;
-  font: inherit;
-  color: inherit;
-  padding: var(--space-1) 0 var(--space-1) calc(var(--edge-stripe-w) + var(--space-0_5));   /* L: just past the 3px stripe (label axis); R: 0 so the elasticity lands on the value rail */
   background: var(--bg-mid);
   border-radius: 0 5px 5px 0;
   box-shadow: inset 3px 0 0 var(--edge-color);
-  margin-bottom: var(--row-gap);
-  cursor: pointer;
-  transition: all 0.12s;
 }
+.edge-stripe.increases { --edge-color: var(--accent-green);  }
+.edge-stripe.decreases { --edge-color: var(--accent-red);    }
+.edge-stripe.enables   { --edge-color: var(--accent-purple); }
 
-.detail-edge-item:hover {
+/* Read-only variant — a <button> so "jump to the connected node" is keyboard
+ * operable. Resets native chrome; content sits past the 3px stripe with R:0 so
+ * the elasticity lands on the value rail. */
+.edge-stripe--nav {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  padding: var(--space-1) 0 var(--space-1) calc(var(--edge-stripe-w) + var(--space-0_5));
+  margin-bottom: var(--row-gap);
+  transition: all 0.12s;   /* for the :hover translateX/background (the edit variant had none) */
+}
+.edge-stripe--nav:hover {
   background: var(--bg-light);
   transform: translateX(2px);
 }
-
 /* Keyboard focus: re-state the inset colour stripe AND add the ring, so the
  * global button:focus-visible (which would otherwise REPLACE box-shadow) can't
  * erase the coloured edge marker. */
-.detail-edge-item:focus-visible {
+.edge-stripe--nav:focus-visible {
   outline: none;
   background: var(--bg-light);
   box-shadow: inset 3px 0 0 var(--edge-color), var(--focus-ring);
 }
-
 /* The global reduced-motion block only zeroes durations, not the translateX
  * nudge — suppress it explicitly. */
 @media (prefers-reduced-motion: reduce) {
-  .detail-edge-item:hover,
-  .detail-edge-item:focus-visible { transform: none; }
+  .edge-stripe--nav:hover,
+  .edge-stripe--nav:focus-visible { transform: none; }
 }
-
-.detail-edge-item.increases { --edge-color: var(--accent-green);  }
-.detail-edge-item.decreases { --edge-color: var(--accent-red);    }
-.detail-edge-item.enables   { --edge-color: var(--accent-purple); }
 
 .detail-edge-header {
   display: flex;
@@ -2360,6 +2368,21 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   box-shadow: var(--focus-ring);
 }
 
+/* One-shot "fields unlocked" pulse — a ring that ripples out of each field when
+ * the user toggles INTO edit mode. Gated by .just-unlocked, which renderDetailPanel
+ * adds only on the view→edit toggle (via _justUnlocked) and never on the field
+ * re-renders that happen while editing, so it doesn't replay. */
+@keyframes detail-field-unlock {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-blue) 55%, transparent); }
+  100% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent-blue) 0%, transparent); }
+}
+.is-editing.just-unlocked .detail-edit-input {
+  animation: detail-field-unlock 0.55s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .is-editing.just-unlocked .detail-edit-input { animation: none; }
+}
+
 .detail-edit-textarea {
   resize: vertical;
   min-height: 44px;
@@ -2421,31 +2444,25 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   line-height: 1.5;
 }
 
-.outgoing-edge-row {
-  --edge-color: var(--border-strong);
+/* Editable variant — a <div> column of editor controls. Frame + colours come
+ * from .edge-stripe above; only the editor padding / layout differ here. */
+.edge-stripe--edit {
   padding: var(--space-1) var(--space-2) var(--space-1) calc(var(--space-2) + 3px);
-  background: var(--bg-mid);
-  border-radius: 0 5px 5px 0;
-  box-shadow: inset 3px 0 0 var(--edge-color);
   margin-bottom: var(--space-2);
   display: flex;
   flex-direction: column;
   gap: var(--gap-md);
 }
-.outgoing-edge-row.increases { --edge-color: var(--accent-green);  }
-.outgoing-edge-row.decreases { --edge-color: var(--accent-red);    }
-.outgoing-edge-row.enables   { --edge-color: var(--accent-purple); }
 
-/* Brief background highlight when an edge was just clicked on the canvas.
- * The .flash class is removed automatically by the JS after the animation
- * settles (no class-removal needed mid-animation because the animation
- * runs once and ends with the base styling). */
-@keyframes outgoing-edge-flash {
+/* Brief background highlight when an edge was just clicked on the canvas. The
+ * .flash class is dropped on the next render (the animation runs once and ends
+ * on the base styling, so no mid-animation removal is needed). */
+@keyframes edge-stripe-flash {
   0%   { background: color-mix(in srgb, var(--accent-blue) 50%, transparent); }
   100% { background: var(--bg-mid); }
 }
-.outgoing-edge-row.flash {
-  animation: outgoing-edge-flash 1.4s ease;
+.edge-stripe--edit.flash {
+  animation: edge-stripe-flash 1.4s ease;
 }
 
 .outgoing-edge-header {
@@ -8784,6 +8801,7 @@ function renderDetailPanel() {
 
   const editMode = !!(state.canvasEdit && state.canvasEdit.editMode);
   contentState.classList.toggle("is-editing", editMode);
+  contentState.classList.remove("just-unlocked");
   contentState.innerHTML = renderNodeSkeleton(node, editMode);
 
   // Upgrade every freshly-rendered <select> into a typable filterable dropdown.
@@ -8798,6 +8816,13 @@ function renderDetailPanel() {
     wireEditModeHandlers(node, contentState);
   } else {
     wireViewModeHandlers(node, contentState);
+  }
+
+  // One-shot "fields unlocked" pulse, set when the user toggled into edit mode
+  // (cleared immediately so it doesn't replay on subsequent field re-renders).
+  if (state.canvasEdit && state.canvasEdit._justUnlocked) {
+    contentState.classList.add("just-unlocked");
+    state.canvasEdit._justUnlocked = false;
   }
 }
 
@@ -9028,7 +9053,7 @@ function renderOutgoingEdgesBlock(node) {
       const target = nodeById[edge.to];
       const defaultElasticity = DEFAULT_ELASTICITY_BY_EFFECT[edge.effect];
       const flashClass = (edge.id === flashedId) ? " flash" : "";
-      html += '<div class="outgoing-edge-row ' + edge.effect + flashClass + '" data-edge-row-id="' + escapeHtml(edge.id) + '">';
+      html += '<div class="edge-stripe edge-stripe--edit ' + edge.effect + flashClass + '" data-edge-row-id="' + escapeHtml(edge.id) + '">';
       html +=   '<div class="outgoing-edge-header">';
       html +=     '<button class="outgoing-edge-target-link" data-jump-node="' + escapeHtml(edge.to) + '" title="Jump to target node">→ ' + escapeHtml(target ? target.label : edge.to) + '</button>';
       html +=     '<button class="outgoing-edge-delete" data-edge-action="delete" data-edge-id="' + escapeHtml(edge.id) + '" title="Delete this edge">×</button>';
@@ -9109,6 +9134,8 @@ function wireSharedHandlers(node, contentState) {
       state.canvasEdit.editMode = !state.canvasEdit.editMode;
       if (!state.canvasEdit.editMode) {
         state.canvasEdit.addingEdgeFromNodeId = null;
+      } else {
+        state.canvasEdit._justUnlocked = true;   // pulse the fields on view→edit
       }
       renderDetailPanel();
     });
@@ -9116,7 +9143,7 @@ function wireSharedHandlers(node, contentState) {
 
   // Edge stripes navigate to the connected node — in BOTH modes. In edit, the
   // Direct Inputs are read-only links to the source node where they're edited.
-  contentState.querySelectorAll(".detail-edge-item").forEach(item => {
+  contentState.querySelectorAll(".edge-stripe--nav").forEach(item => {
     item.addEventListener("click", () => {
       const targetNodeId = item.getAttribute("data-target-node");
       selectNode(targetNodeId);
@@ -9156,7 +9183,7 @@ function wireEditModeHandlers(node, contentState) {
   });
 
   // Outgoing-edges row edits + delete.
-  contentState.querySelectorAll(".outgoing-edge-row [data-edge-field]").forEach(input => {
+  contentState.querySelectorAll(".edge-stripe--edit [data-edge-field]").forEach(input => {
     const edgeId = input.getAttribute("data-edge-id");
     const field  = input.getAttribute("data-edge-field");
     input.addEventListener("change", () => {
@@ -9360,7 +9387,7 @@ function renderEdgeItem(otherNode, edge, direction) {
   // and Enter/Space-activatable (the click handler in wireViewModeHandlers works
   // unchanged). aria-label names the otherwise-implicit navigate action.
   const jumpDir = direction === "from" ? "upstream" : "downstream";
-  let html = '<button type="button" class="detail-edge-item ' + effectClass + '" data-target-node="' + escapeHtml(otherNode.id) + '" aria-label="Jump to ' + jumpDir + ' node: ' + escapeHtml(otherNode.label) + '">';
+  let html = '<button type="button" class="edge-stripe edge-stripe--nav ' + effectClass + '" data-target-node="' + escapeHtml(otherNode.id) + '" aria-label="Jump to ' + jumpDir + ' node: ' + escapeHtml(otherNode.label) + '">';
   html +=   '<div class="detail-edge-header">';
   html +=     '<div class="detail-edge-name">' + arrow + ' ' + escapeHtml(otherNode.label) + '</div>';
   html +=     '<div class="detail-edge-elasticity">' + escapeHtml(elasticityText) + '</div>';

@@ -43,6 +43,7 @@ function renderDetailPanel() {
 
   const editMode = !!(state.canvasEdit && state.canvasEdit.editMode);
   contentState.classList.toggle("is-editing", editMode);
+  contentState.classList.remove("just-unlocked");
   contentState.innerHTML = renderNodeSkeleton(node, editMode);
 
   // Upgrade every freshly-rendered <select> into a typable filterable dropdown.
@@ -57,6 +58,13 @@ function renderDetailPanel() {
     wireEditModeHandlers(node, contentState);
   } else {
     wireViewModeHandlers(node, contentState);
+  }
+
+  // One-shot "fields unlocked" pulse, set when the user toggled into edit mode
+  // (cleared immediately so it doesn't replay on subsequent field re-renders).
+  if (state.canvasEdit && state.canvasEdit._justUnlocked) {
+    contentState.classList.add("just-unlocked");
+    state.canvasEdit._justUnlocked = false;
   }
 }
 
@@ -287,7 +295,7 @@ function renderOutgoingEdgesBlock(node) {
       const target = nodeById[edge.to];
       const defaultElasticity = DEFAULT_ELASTICITY_BY_EFFECT[edge.effect];
       const flashClass = (edge.id === flashedId) ? " flash" : "";
-      html += '<div class="outgoing-edge-row ' + edge.effect + flashClass + '" data-edge-row-id="' + escapeHtml(edge.id) + '">';
+      html += '<div class="edge-stripe edge-stripe--edit ' + edge.effect + flashClass + '" data-edge-row-id="' + escapeHtml(edge.id) + '">';
       html +=   '<div class="outgoing-edge-header">';
       html +=     '<button class="outgoing-edge-target-link" data-jump-node="' + escapeHtml(edge.to) + '" title="Jump to target node">→ ' + escapeHtml(target ? target.label : edge.to) + '</button>';
       html +=     '<button class="outgoing-edge-delete" data-edge-action="delete" data-edge-id="' + escapeHtml(edge.id) + '" title="Delete this edge">×</button>';
@@ -368,6 +376,8 @@ function wireSharedHandlers(node, contentState) {
       state.canvasEdit.editMode = !state.canvasEdit.editMode;
       if (!state.canvasEdit.editMode) {
         state.canvasEdit.addingEdgeFromNodeId = null;
+      } else {
+        state.canvasEdit._justUnlocked = true;   // pulse the fields on view→edit
       }
       renderDetailPanel();
     });
@@ -375,7 +385,7 @@ function wireSharedHandlers(node, contentState) {
 
   // Edge stripes navigate to the connected node — in BOTH modes. In edit, the
   // Direct Inputs are read-only links to the source node where they're edited.
-  contentState.querySelectorAll(".detail-edge-item").forEach(item => {
+  contentState.querySelectorAll(".edge-stripe--nav").forEach(item => {
     item.addEventListener("click", () => {
       const targetNodeId = item.getAttribute("data-target-node");
       selectNode(targetNodeId);
@@ -415,7 +425,7 @@ function wireEditModeHandlers(node, contentState) {
   });
 
   // Outgoing-edges row edits + delete.
-  contentState.querySelectorAll(".outgoing-edge-row [data-edge-field]").forEach(input => {
+  contentState.querySelectorAll(".edge-stripe--edit [data-edge-field]").forEach(input => {
     const edgeId = input.getAttribute("data-edge-id");
     const field  = input.getAttribute("data-edge-field");
     input.addEventListener("change", () => {
@@ -619,7 +629,7 @@ function renderEdgeItem(otherNode, edge, direction) {
   // and Enter/Space-activatable (the click handler in wireViewModeHandlers works
   // unchanged). aria-label names the otherwise-implicit navigate action.
   const jumpDir = direction === "from" ? "upstream" : "downstream";
-  let html = '<button type="button" class="detail-edge-item ' + effectClass + '" data-target-node="' + escapeHtml(otherNode.id) + '" aria-label="Jump to ' + jumpDir + ' node: ' + escapeHtml(otherNode.label) + '">';
+  let html = '<button type="button" class="edge-stripe edge-stripe--nav ' + effectClass + '" data-target-node="' + escapeHtml(otherNode.id) + '" aria-label="Jump to ' + jumpDir + ' node: ' + escapeHtml(otherNode.label) + '">';
   html +=   '<div class="detail-edge-header">';
   html +=     '<div class="detail-edge-name">' + arrow + ' ' + escapeHtml(otherNode.label) + '</div>';
   html +=     '<div class="detail-edge-elasticity">' + escapeHtml(elasticityText) + '</div>';
