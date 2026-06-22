@@ -191,8 +191,9 @@ const LINE_STYLE_FILTERS = [
 const LEGEND_FILTER_GROUPS = [
   { kind: "effect", containerId: "edge-type-filters",  title: "Edge types", ctx: "edges on the map",
     items: EDGE_TYPE_FILTERS,  hiddenSet: () => state.hiddenEffects,
-    swatch: f => '<div class="legend-line" style="background: var(--edge-' + f.id + ');"></div>',
-    count:  (f, counts) => counts.effects[f.id] || 0 },
+    swatch: (f, count) => edgeCountBadge(f.id, count),
+    count:  (f, counts) => counts.effects[f.id] || 0,
+    countInSwatch: true },
   { kind: "style", containerId: "edge-style-filters", title: "Line style", ctx: "edges on the map",
     items: LINE_STYLE_FILTERS, hiddenSet: () => state.hiddenStyles,
     swatch: f => '<div class="legend-line ' + f.swatchClass + '"></div>',
@@ -243,7 +244,9 @@ function renderLegendFilters() {
     let html = sectionTitleHtml(g.title, shown, g.items.length);
     for (const f of g.items) {
       const isOff = hidden.has(f.id);
-      html += legendFilterRow(g.kind, f.id, g.swatch(f), f.label, g.count(f, counts), isOff,
+      const cnt = g.count(f, counts);
+      const sw  = g.countInSwatch ? g.swatch(f, cnt) : g.swatch(f);
+      html += legendFilterRow(g.kind, f.id, sw, f.label, g.countInSwatch ? null : cnt, isOff,
         "Click to " + (isOff ? "show " : "hide ") + f.label.toLowerCase() + " " + g.ctx + ".");
     }
     c.innerHTML = html;
@@ -275,6 +278,19 @@ function countSwatch(color, count) {
     '<input type="color" class="sidebar-edit-color" data-field="color" value="' + escapeHtml(c) + '" title="Colour" aria-label="Colour">' +
     '<span class="count-num" style="color:' + tc + '">' + count + '</span>' +
     '</span>';
+}
+
+// Read-only colour-count badge (no picker) for the edge-type legend rows: a box
+// filled with the edge's effect colour, with the edge count inside — mirrors the
+// category badge so the legend reads the same way.
+function edgeCountBadge(effectId, count) {
+  let tc = "#1c1917";
+  try {
+    const hex = getComputedStyle(document.documentElement).getPropertyValue("--edge-" + effectId).trim();
+    if (hex && typeof pickTextColor === "function") tc = pickTextColor(hex);
+  } catch (e) { /* fall back to dark text */ }
+  return '<span class="count-swatch count-swatch--readonly" style="background: var(--edge-' + effectId + ')">' +
+    '<span class="count-num" style="color:' + tc + '">' + count + '</span></span>';
 }
 
 // Small inline trash-icon delete button shared by every sidebar row.
