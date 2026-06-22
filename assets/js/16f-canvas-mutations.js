@@ -88,7 +88,7 @@ function addStage() {
 
 // Categories are stored in a plain object — Object.keys() preserves insertion
 // order, so reordering means rebuilding the object in the new order.
-function addCategory() {
+function addCategory(catClass) {
   const counter = Object.keys(CATEGORIES).length + 1;
   let id = "category_" + counter;
   let n = counter;
@@ -99,7 +99,7 @@ function addCategory() {
     color: color,
     // Label colour auto-contrasts against the fill — see pickTextColor (04-utils.js).
     textColor: typeof pickTextColor === "function" ? pickTextColor(color) : "#ffffff",
-    class: "primary",
+    class: catClass === "secondary" ? "secondary" : "primary",
   };
   applyCanvasMutation();
   // Categories edit fully inline now — drop straight into renaming the new row.

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup — sidebar: Primary / Secondary category headings</title>
+<style>
+  :root{
+    --bg-deepest:#0a0e1a; --bg-deep:#111827; --bg-mid:#1a2030; --bg-light:#232a3d; --bg-lighter:#2c354b;
+    --border-subtle:#2a3346; --text-primary:#e7ecf3; --text-secondary:#a1adc4; --text-tertiary:#6b7691;
+    --accent-green:#34d399; --accent-amber:#fbbf24;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;background:var(--bg-deepest);color:var(--text-primary);font-family:system-ui,-apple-system,Segoe UI,Arial,sans-serif;}
+  .wrap{max-width:960px;margin:0 auto;padding:30px 24px 80px;}
+  h1{font-size:22px;margin:0 0 6px;}
+  .lead{color:var(--text-secondary);font-size:14px;line-height:1.55;margin:0 0 4px;max-width:820px;}
+  .note{color:var(--text-tertiary);font-size:12.5px;line-height:1.5;margin:8px 0 0;max-width:820px;}
+  .note b{color:var(--text-secondary);}
+  .cols{display:flex;gap:40px;flex-wrap:wrap;margin-top:24px;align-items:flex-start;}
+  .col h2{font-size:13px;color:var(--text-secondary);margin:0 0 10px;font-weight:600;}
+  .col h2 .tag{font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-left:6px;}
+
+  /* Sidebar panel — approximates the real left panel. */
+  .panel{width:280px;background:var(--bg-deep);border:1px solid var(--border-subtle);border-radius:8px;padding:14px 12px;}
+  .sec-title{display:flex;align-items:center;justify-content:space-between;margin:0 0 7px;}
+  .sec-title .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-tertiary);}
+  .sec-title .count{font-family:ui-monospace,monospace;font-size:10px;color:var(--text-tertiary);}
+  .grp-gap{height:18px;}
+
+  .row{display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:5px;}
+  .row:hover{background:var(--bg-light);}
+  .row .swatch{width:16px;height:16px;border-radius:3px;border:1px solid rgba(0,0,0,.4);flex-shrink:0;}
+  .row .swatch.chip{width:13px;height:13px;border-radius:2px;}
+  .row .name{flex:1;font-size:13px;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .row .cnt{font-family:ui-monospace,monospace;font-size:10px;color:var(--text-tertiary);}
+  .row .move,.row .del{opacity:0;border:none;background:transparent;color:var(--text-tertiary);cursor:pointer;font-size:11px;padding:2px 4px;border-radius:4px;}
+  .row .move{font-size:10px;letter-spacing:.02em;}
+  .row:hover .move,.row:hover .del{opacity:1;}
+  .row .move:hover,.row .del:hover{color:var(--text-primary);background:var(--bg-lighter);}
+  .chk{display:inline-flex;align-items:center;gap:3px;font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-tertiary);}
+  .add{margin-top:6px;background:transparent;border:none;color:var(--accent-green);font-size:12px;cursor:pointer;padding:4px 6px;}
+  .empty{font-size:11.5px;color:var(--text-tertiary);font-style:italic;padding:4px 6px;}
+  .reco{color:var(--accent-green);font-weight:600;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Sidebar — Primary / Secondary categories as separate headings</h1>
+  <p class="lead">Split the single <b>Categories</b> list into two labelled groups: <b>Primary</b> (fill) and
+    <b>Secondary</b> (chips). Left = today (one list with a per-row "chip" checkbox). Right = the proposed split.</p>
+  <p class="note"><b>Key decision:</b> with separate headings the per-row "chip" checkbox is redundant (the heading
+    already says the class). So to move a category between groups, hover a row and click a small <b>→ chip / → fill</b>
+    button (it jumps to the other group). Each group gets its own <b>+ Add</b> so a new category lands in the right class.
+    Nothing built yet — confirm and I'll implement.</p>
+
+  <div class="cols">
+    <div class="col">
+      <h2>Current <span class="tag" style="color:var(--text-tertiary)">combined</span></h2>
+      <div class="panel">
+        <div class="sec-title"><span class="lbl">Categories</span><span class="count">5</span></div>
+        <div class="row"><span class="swatch" style="background:#d4a373"></span><span class="name">Resource</span><label class="chk"><input type="checkbox">chip</label><span class="cnt">3</span><button class="del">🗑</button></div>
+        <div class="row"><span class="swatch" style="background:#7dd3fc"></span><span class="name">Activity</span><label class="chk"><input type="checkbox">chip</label><span class="cnt">3</span><button class="del">🗑</button></div>
+        <div class="row"><span class="swatch" style="background:#5eead4"></span><span class="name">Metric</span><label class="chk"><input type="checkbox">chip</label><span class="cnt">4</span><button class="del">🗑</button></div>
+        <div class="row"><span class="swatch" style="background:#86efac"></span><span class="name">Outcome</span><label class="chk"><input type="checkbox">chip</label><span class="cnt">3</span><button class="del">🗑</button></div>
+        <div class="row"><span class="swatch" style="background:#fca5a5"></span><span class="name">Risk</span><label class="chk"><input type="checkbox" checked>chip</label><span class="cnt">2</span><button class="del">🗑</button></div>
+        <button class="add">+ Add category</button>
+      </div>
+    </div>
+
+    <div class="col">
+      <h2>Proposed <span class="tag reco">split headings</span></h2>
+      <div class="panel">
+        <div class="sec-title"><span class="lbl">Primary categories · fill</span><span class="count">4</span></div>
+        <div class="row"><span class="swatch" style="background:#d4a373"></span><span class="name">Resource</span><button class="move" title="Make this a secondary chip">→ chip</button><span class="cnt">3</span><button class="del">🗑</button></div>
+        <div class="row"><span class="swatch" style="background:#7dd3fc"></span><span class="name">Activity</span><button class="move">→ chip</button><span class="cnt">3</span><button class="del">🗑</button></div>
+        <div class="row"><span class="swatch" style="background:#5eead4"></span><span class="name">Metric</span><button class="move">→ chip</button><span class="cnt">4</span><button class="del">🗑</button></div>
+        <div class="row"><span class="swatch" style="background:#86efac"></span><span class="name">Outcome</span><button class="move">→ chip</button><span class="cnt">3</span><button class="del">🗑</button></div>
+        <button class="add">+ Add primary</button>
+
+        <div class="grp-gap"></div>
+
+        <div class="sec-title"><span class="lbl">Secondary categories · chips</span><span class="count">1</span></div>
+        <div class="row"><span class="swatch chip" style="background:#fca5a5"></span><span class="name">Risk</span><button class="move" title="Make this a primary fill">→ fill</button><span class="cnt">2</span><button class="del">🗑</button></div>
+        <button class="add">+ Add secondary</button>
+      </div>
+    </div>
+  </div>
+
+  <p class="note" style="margin-top:26px"><b>Open questions for you:</b><br>
+    1. Headings wording — “Primary categories” / “Secondary categories”, or “Fill” / “Chips”, or something else?<br>
+    2. Reclassify affordance — the hover <b>→ chip / → fill</b> button shown here (recommended), or keep the checkbox, or drag a row between groups?<br>
+    3. Empty secondary group — hide the heading entirely when there are no secondary categories, or always show it with a faint “none yet” line + the + Add button?</p>
+</div>
+</body>
+</html>

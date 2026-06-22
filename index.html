@@ -142,16 +142,14 @@
     </div>
 
     <!-- Category filters + editing — JS fills the list in 13-sidebar.js.
-         Categories follow the same edit pattern as streams: per-row pencil
-         expands to an inline form (label / fill colour / text colour /
-         delete). Click the compact row to toggle visibility. -->
+         Rendered as two groups (Primary · fill / Secondary · chips), each with
+         its own heading, count and "+ Add" button. Per-row edit matches streams:
+         click the swatch to recolour, double-click the name to rename, the
+         "→ chip / → fill" button reclassifies, trash deletes; click the row body
+         to toggle visibility. The headings + add buttons are rendered (not
+         static), so they're wired per-render in 13-sidebar.js. -->
     <div class="sidebar-section" id="category-filters-section">
-      <div class="sidebar-section-title">
-        <span>Categories</span>
-        <span class="count" id="categories-count"></span>
-      </div>
       <div id="category-filters"></div>
-      <button class="sidebar-add-btn" data-add="category">+ Add category</button>
     </div>
 
     <!-- Edge legend (static) -->

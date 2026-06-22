@@ -164,20 +164,27 @@
   color: var(--text-tertiary);
 }
 
-/* Primary/secondary "chip" toggle on each category row. */
-.sidebar-cat-class {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 9.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-tertiary);
-  cursor: pointer;
-  user-select: none;
+/* Reclassify button ("→ chip" / "→ fill") — moves a category between the
+ * Primary and Secondary groups. Hidden until the row is hovered, like the
+ * row's trash icon, so the compact row stays clean. */
+.sidebar-cat-reclass {
   flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  padding: 2px 5px;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s, background 0.12s, color 0.12s;
 }
-.sidebar-cat-class input { margin: 0; width: 11px; height: 11px; cursor: pointer; }
+.sidebar-edit-row:hover .sidebar-cat-reclass { opacity: 1; }
+.sidebar-cat-reclass:hover { color: var(--text-primary); background: var(--bg-lighter, #2c354b); }
+
+/* Gap between the Primary and Secondary category groups. */
+.sidebar-cat-group-gap { height: 14px; }
 
 /* === Sidebar edit rows (Streams, Stages) ===
  * Two states: compact (drag handle + label + count + pencil) and expanded
