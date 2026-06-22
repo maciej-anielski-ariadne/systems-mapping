@@ -194,9 +194,10 @@ systems_mapping/
     │   ├── 09-drop-zone.css         "Drop a CSV here" overlay
     │   ├── 10-misc.css              Toast, status bar, zoom controls, no-data dimming
     │   ├── 11-builder.css           Build / Edit wizard overlay
-    │   ├── 12-no-borders.css        Global override — strips every CSS border, replaces
-    │   │                            state with drop-shadows / box-shadows
-    │   └── 13-search.css            Search dropdown + map-match halo
+    │   ├── 13-search.css            Search dropdown + map-match halo
+    │   └── 14-typeable-dropdown.css Typable / filterable <select> replacement
+    │                                (flat look = `border: 0` in 02-base.css;
+    │                                 state shown via drop-shadow / box-shadow rings)
     ├── js/
     │   ├── 01-sample-data.js        Embedded SAMPLE_CSV string (sample.csv copy)
     │   ├── 02-config.js             Pixel sizes (NODE_WIDTH etc.) + shared option lists
@@ -278,7 +279,8 @@ features are split across multiple files:
 | Search behaviour / fuzzy matching | `assets/js/17a-search.js`, `assets/css/13-search.css` |
 | Button behaviour | `assets/js/17-events.js` |
 | Sample data dataset | `assets/data/sample.csv` |
-| Strip every border (or restore them) | `assets/css/12-no-borders.css` |
+| Colours, fonts &amp; design tokens (radius / spacing / motion scales) | `assets/css/01-variables.css` |
+| The flat look (no borders) | `border: 0` in `assets/css/02-base.css`; state shown as box-shadow rings in the component files |
 
 > **Note on sample data:** the `SAMPLE_CSV` constant in
 > `assets/js/01-sample-data.js` is a byte-for-byte copy of

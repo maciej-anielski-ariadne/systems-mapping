@@ -169,69 +169,166 @@
   <style>
 /* === assets/css/01-variables.css === */
 /* =============================================================================
- * DESIGN TOKENS (colors, fonts)
+ * DESIGN TOKENS (colours, fonts, and the spacing / radius / motion / elevation
+ * scales the rest of the app builds on)
  * -----------------------------------------------------------------------------
- * Every colour and font in the app is defined here as a CSS "variable". Changing
- * one of these values changes that colour or font everywhere in the app. This
- * lets non-technical editors retheme the app without hunting through every CSS
- * file.
+ * Every colour, font, radius, duration and shadow in the app is defined here as
+ * a CSS "variable". Changing one value here changes it everywhere — so a
+ * non-technical editor can retheme the app without hunting through every file.
  *
  * How CSS variables work:
- *   :root { --my-color: #ff0000; }      ← define a variable
- *   .some-class { color: var(--my-color); } ← use it
+ *   :root { --my-color: #ff0000; }          ← define a variable
+ *   .some-class { color: var(--my-color); }  ← use it
+ *   color-mix(in srgb, var(--x) 20%, transparent)  ← a 20%-opacity tint of --x
  *
  * Naming convention:
  *   --bg-*      → background shades (deepest is darkest)
- *   --text-*    → text shades (primary is brightest, tertiary is dimmest)
- *   --border-*  → border colours
- *   --accent-*  → highlight colours
- *   --edge-*    → arrow colours in the visualization
+ *   --text-*    → text shades (primary brightest, tertiary dimmest)
+ *   --border-*  → low-contrast shades used for hairline fills / dividers / rings
+ *   --accent-*  → highlight / semantic hues
+ *   --edge-*    → arrow colours in the map (semantic aliases of the accents)
+ *   --radius-*  --space-*  --fs-*  --fw-*  --dur-*  --shadow-*  --z-*  → scales
  *   --font-*    → font families (font files are in ../fonts/)
+ *
+ * NOTE ON BORDERS: 12-no-borders.css wipes every CSS `border` with
+ * `border: 0 !important`, so --border-subtle / --border-strong are NOT used as
+ * real borders — they are the low-contrast shades behind dividers, the faint
+ * background grid, and the box-shadow "rings" that stand in for borders.
  * ========================================================================== */
 
 :root {
-  /* Background shades, dark-to-light */
-  --bg-deepest:     #0a0e1a;
-  --bg-deep:        #111827;
-  --bg-mid:         #1a2030;
-  --bg-light:       #232a3d;
-  --bg-lighter:     #2c354b;
+  /* ===== Background shades, dark → light ================================== */
+  --bg-deepest: #0a0e1a;
+  --bg-deep:    #111827;
+  --bg-mid:     #1a2030;
+  --bg-light:   #232a3d;
+  --bg-lighter: #2c354b;
+  --bg-dark:    #0f172a;   /* slate used by the multi-select dropdown (was an
+                              UNDEFINED token relying on a hardcoded fallback) */
 
-  /* Borders */
-  --border-subtle:  #2a3346;
-  --border-strong:  #3a455e;
+  /* ===== Low-contrast "border" shades (see note above) =================== */
+  --border-subtle: #2a3346;
+  --border-strong: #3a455e;
 
-  /* Text shades */
+  /* ===== Text shades ===================================================== */
   --text-primary:   #e7ecf3;
   --text-secondary: #a1adc4;
-  --text-tertiary:  #6b7691;
+  --text-tertiary:  #8c97ad;   /* lightened for WCAG-AA contrast on the dark
+                                  surfaces (was #6b7691, which failed AA — 3.6:1
+                                  on bg-mid — for the most-used label colour) */
 
-  /* Accent / highlight colours */
+  /* ===== Accent / semantic hues ========================================== */
   --accent-blue:    #60a5fa;
+  --accent-blue-hi: #93c5fd;   /* lighter blue for primary-button hover (was
+                                  hardcoded #93c5fd in 5 places) */
   --accent-amber:   #fbbf24;
-  --accent-orange:  #fb923c;
   --accent-green:   #34d399;
   --accent-red:     #f87171;
   --accent-purple:  #a78bfa;
+  /* (--accent-orange #fb923c removed in the consolidation — it had 0 references.) */
 
-  /* Outcome-status colours (used by JS to colour borders / deltas when an
-     outcome metric moves "good" or "bad" relative to baseline) */
-  --status-good:    #10b981;
-  --status-bad:     #f87171;
+  /* Two literals that aren't an accent but recur in tints; kept as tokens so
+     they stop being raw hex. Both get unified into the accents in a later pass. */
+  --red-tint-base: var(--accent-red);     /* T4: danger tints use the one red */
+  --flash-green:   var(--accent-green);   /* T4: undo/redo pulse uses the one green */
 
-  /* Arrow colours in the map */
-  --edge-default:   #3a455e;   /* normal, unselected arrow */
-  --edge-dim:       #232a3d;   /* dimmed-out arrow */
-  --edge-ancestor:  #60a5fa;   /* upstream chain (blue) */
-  --edge-descendant:#fbbf24;   /* downstream chain (amber) */
-  --edge-increases: #34d399;   /* "X increases Y" arrow (green) */
-  --edge-decreases: #f87171;   /* "X decreases Y" arrow (red) */
-  --edge-enables:   #a78bfa;   /* "X enables Y" arrow (purple) */
+  /* ===== Outcome-status colours (JS colours deltas good/bad vs baseline) == */
+  --status-good: var(--accent-green);  /* T4: one green for the whole app */
+  --status-bad:  var(--accent-red);    /* one red */
 
-  /* Font families — loaded locally from ../fonts/fonts.css */
-  --font-display:   Arial, Helvetica, sans-serif;
-  --font-ui:        Arial, Helvetica, sans-serif;
-  --font-mono:      Arial, Helvetica, sans-serif;
+  /* ===== Map arrow colours — semantic aliases of the accents / shades ===== *
+   * These were previously hardcoded copies of the hex values above, so editing
+   * an accent did NOT move the matching edge colour. Aliased here so they stay
+   * in lockstep. */
+  --edge-default:    var(--border-strong);  /* normal, unselected arrow */
+  --edge-dim:        var(--bg-light);        /* dimmed-out arrow */
+  --edge-ancestor:   var(--accent-blue);     /* upstream chain (blue) */
+  --edge-descendant: var(--accent-amber);    /* downstream chain (amber) */
+  --edge-increases:  var(--accent-green);    /* "X increases Y" (green) */
+  --edge-decreases:  var(--accent-red);      /* "X decreases Y" (red) */
+  --edge-enables:    var(--accent-purple);   /* "X enables Y" (purple) */
+
+  /* ===== Focus ring ====================================================== *
+   * The blue 2px ring used on focused inputs / cells (was the hand-written
+   * `0 0 0 2px rgba(96,165,250,.5)` repeated ~8×). color-mix(... 50% ...)
+   * resolves to exactly that rgba. */
+  --focus-ring: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 50%, transparent);
+
+  /* ===== Radius scale ==================================================== *
+   * Introduced now at the values already in use; rules are migrated onto these
+   * in the component-consolidation pass. */
+  --radius-xs:   3px;
+  --radius-sm:   5px;
+  --radius-md:   6px;
+  --radius-lg:   8px;
+  --radius-xl:   12px;
+  --radius-full: 9999px;
+
+  /* ===== Spacing scale (4px grid) ======================================== */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+
+  /* ===== Type scale (target; applied in the typography pass) ============= */
+  --fs-2xs:  10px;
+  --fs-xs:   11px;
+  --fs-sm:   12px;
+  --fs-base: 13px;
+  --fs-md:   16px;
+  --fs-lg:   18px;
+  --fs-xl:   22px;
+
+  /* ===== Font weights ==================================================== */
+  --fw-medium:   500;
+  --fw-semibold: 600;
+  --fw-bold:     700;
+
+  /* ===== Motion ========================================================== */
+  --dur-fast:  0.12s;
+  --dur-base:  0.15s;
+  --dur-slow:  0.18s;
+  --dur-flash: 1.4s;
+  --ease:      ease;
+
+  /* ===== Elevation (drop shadows) ======================================== */
+  --shadow-pop:    0 6px 24px rgba(0, 0, 0, 0.4);    /* tooltip / toast */
+  --shadow-pop-lg: 0 12px 32px rgba(0, 0, 0, 0.55);  /* dropdown / popup */
+  --shadow-drag:   0 8px 28px rgba(0, 0, 0, 0.6);    /* dragged element / bar */
+  --shadow-panel:  4px 0 18px rgba(0, 0, 0, 0.55);   /* unpinned panel overlay */
+
+  /* ===== Z-index ladder (documents the real stacking order) ============== *
+   *   base content ............ 0–1
+   *   unpinned panel strips .... 30
+   *   panel resize handles ..... 35
+   *   header (+ its dropdowns) . 40
+   *   viz controls / toasts .... 50–221
+   *   builder overlay .......... 200
+   *   canvas edge-picker ....... 250   (intentionally ABOVE the builder so it
+   *                                     can open from view mode; it is NOT
+   *                                     "below the builder" as an old comment
+   *                                     in 05-visualization.css claimed)
+   *   builder cell editor ...... 300
+   *   typeable-dropdown popup .. 400   (above every overlay) */
+  --z-panel-strip: 30;
+  --z-resize:      35;
+  --z-header:      40;
+  --z-chrome:      50;
+  --z-overlay:     200;
+  --z-edge-picker: 250;
+  --z-cell-editor: 300;
+  --z-dropdown:    400;
+
+  /* ===== Font families — loaded locally from ../fonts/fonts.css ========== *
+   * Tier 4 = two fonts only: a humanist sans (IBM Plex Sans) for UI AND titles,
+   * and a true monospace (IBM Plex Mono) for numeric readouts / tracked labels.
+   * The editorial serif (Fraunces) is dropped; title hierarchy comes from size
+   * + weight. System fallbacks keep things working if a face fails to load. */
+  --font-display: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-ui:      'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono:    'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 }
 
 </style>
@@ -252,6 +349,11 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  /* Flat look: no element draws a CSS border. (This was a separate
+     `border: 0 !important` wipe in the old 12-no-borders.css; folded into the
+     base reset now that the flat aesthetic is intentional, not an override.
+     SVG node / divider strokes are suppressed in 05-visualization.css.) */
+  border: 0;
 }
 
 /* Lock the viewport to the window size so the app doesn't scroll as a whole.
@@ -296,8 +398,8 @@ body::before {
   position: fixed;
   inset: 0;
   background-image:
-    linear-gradient(rgba(58, 69, 94, 0.08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(58, 69, 94, 0.08) 1px, transparent 1px);
+    linear-gradient(color-mix(in srgb, var(--border-strong) 8%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--border-strong) 8%, transparent) 1px, transparent 1px);
   background-size: 32px 32px;
   pointer-events: none;
   z-index: 0;
@@ -314,6 +416,29 @@ body::before {
   width: 0;
   height: 0;
   display: none;
+}
+
+/* === Respect the user's reduced-motion preference ===
+   Globally neutralise animations + transitions (the 1.4s undo/flash pulses,
+   panel hover-expands, focus fades) for users who ask the OS to reduce motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* === Keyboard focus ring on buttons (accessibility) ===
+   Native outlines are removed app-wide, so give every <button> a visible focus
+   ring when reached by keyboard. :focus-visible only, so mouse clicks stay
+   clean. Form inputs carry their own focus ring in their component files. */
+button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 </style>
@@ -383,34 +508,26 @@ body::before {
   margin-bottom: 8px;
 }
 
-/* === Pin / unpin button ===
- * Reads "Click here to (un)pin" with the pin icon at the right of the
- * text, like a glyph at the end of the sentence. The whole button is
- * centred in the panel header. Hidden behind a label-collapsed state when
- * the panel is collapsed to a strip (text wouldn't fit). */
+/* === Collapse / expand handle ===
+ * A minimal chevron button in each panel header. Clicking collapses the panel
+ * to a thin strip (which still hover-expands); the chevron flips to point
+ * inward as the "expand" affordance when collapsed. Replaces the old verbose
+ * "Click here to (un)pin" pin with always-docked panels + a quiet handle. */
 .panel-pin {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
+  justify-content: center;
+  padding: 6px;
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
   cursor: pointer;
-  border-radius: 6px;
-  font-family: var(--font-ui);
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  transition: background 0.15s, color 0.15s;
-}
-
-.panel-pin-label {
-  white-space: nowrap;
+  border-radius: var(--radius-md);
+  transition: background var(--dur-base), color var(--dur-base);
 }
 
 .panel-pin svg {
   flex-shrink: 0;
-  transition: transform 0.22s ease;
+  transition: transform var(--dur-slow) ease;
 }
 
 .panel-pin:hover {
@@ -418,32 +535,10 @@ body::before {
   background: var(--bg-light);
 }
 
-/* Both pins start upright (head up, tip down). When unpinned they tilt so
- * the tip points toward the outside edge of the window — left pin tilts
- * clockwise (tip → lower-left), right pin tilts counter-clockwise (tip →
- * lower-right). The transition on `.panel-pin svg` animates the change. */
-.app.sidebar-unpinned .sidebar-pin svg { transform: rotate(45deg);  }
-.app.detail-unpinned  .detail-pin  svg { transform: rotate(-45deg); }
-
-/* In strip mode the text doesn't fit, so hide it and shrink the button
- * back to an icon-only square. The label reappears when the panel is
- * pinned again, or when the user hovers the strip to expand it. */
-.app.sidebar-unpinned .sidebar       .panel-pin-label,
-.app.detail-unpinned  .detail-panel  .panel-pin-label {
-  display: none;
-}
-.app.sidebar-unpinned .sidebar:hover       .panel-pin-label,
-.app.detail-unpinned  .detail-panel:hover  .panel-pin-label {
-  display: inline;
-}
-
-.app.sidebar-unpinned .sidebar       .panel-pin,
-.app.detail-unpinned  .detail-panel  .panel-pin {
-  padding: 6px 8px;
-}
-.app.sidebar-unpinned .sidebar:hover       .panel-pin,
-.app.detail-unpinned  .detail-panel:hover  .panel-pin {
-  padding: 6px 12px;
+/* Collapsed → flip the chevron to point inward ("expand"). */
+.app.sidebar-unpinned .sidebar-pin svg,
+.app.detail-unpinned  .detail-pin  svg {
+  transform: rotate(180deg);
 }
 
 /* The panels get dimmed + pointer-events: none in the no-data state
@@ -462,13 +557,12 @@ body.no-data .panel-pin {
 .app-header {
   grid-column: 1 / -1;     /* span from column 1 to the last column */
   background: var(--bg-deep);
-  border-bottom: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
   padding: 0 24px;
   gap: 24px;
   position: relative;
-  z-index: 40;
+  z-index: var(--z-header);
 }
 
 /* === Search box ===
@@ -483,18 +577,12 @@ body.no-data .panel-pin {
 .search-input {
   width: 100%;
   background: var(--bg-mid);
-  border: 1px solid var(--border-subtle);
   color: var(--text-primary);
   font-family: var(--font-mono);
   font-size: 13px;
   padding: 9px 14px 9px 36px;  /* extra left padding leaves room for the icon */
   border-radius: 6px;
   outline: none;
-  transition: border-color 0.15s;
-}
-
-.search-input:focus {
-  border-color: var(--accent-blue);
 }
 
 .search-icon {
@@ -510,7 +598,6 @@ body.no-data .panel-pin {
 .header-button {
   background: var(--bg-mid);
   color: var(--text-secondary);
-  border: 1px solid var(--border-subtle);
   padding: 8px 14px;
   border-radius: 6px;
   font-family: var(--font-mono);
@@ -523,7 +610,6 @@ body.no-data .panel-pin {
 
 .header-button:hover {
   color: var(--text-primary);
-  border-color: var(--border-strong);
   background: var(--bg-light);
 }
 
@@ -531,7 +617,65 @@ body.no-data .panel-pin {
 .header-button.active {
   background: var(--accent-blue);
   color: var(--bg-deepest);
-  border-color: var(--accent-blue);
+}
+
+/* === Ranked header: one primary action (Create) ===
+ * The single filled, highest-emphasis action so the eye has an entry point. */
+.header-button--primary {
+  background: var(--accent-blue);
+  color: var(--bg-deepest);
+  font-weight: var(--fw-semibold);
+}
+.header-button--primary:hover {
+  background: var(--accent-blue-hi);
+  color: var(--bg-deepest);
+}
+
+/* === Export ▾ menu (groups Save / Export / Publish) === */
+.header-menu {
+  position: relative;
+  display: inline-flex;
+}
+.header-menu-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: var(--z-header);
+  min-width: 168px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  background: var(--bg-deep);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-pop-lg);
+}
+.header-menu-list[hidden] { display: none; }
+.header-menu-item {
+  background: transparent;
+  color: var(--text-secondary);
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 8px 10px;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+.header-menu-item:hover {
+  background: var(--bg-light);
+  color: var(--text-primary);
+}
+
+/* Thin separator before the Simulate mode toggle. */
+.header-divider {
+  width: 1px;
+  height: 22px;
+  flex: 0 0 1px;
+  background: var(--border-subtle);
+  margin: 0 4px;
 }
 
 /* "Edit", "Save", "Export", and "Publish" all need an existing map to act on;
@@ -552,7 +696,6 @@ body.no-data .export-image-trigger:hover,
 body.no-data .publish-html-trigger:hover {
   background: var(--bg-mid);
   color: var(--text-secondary);
-  border-color: var(--border-subtle);
 }
 
 /* === Panel resize handles ===
@@ -568,7 +711,7 @@ body.no-data .publish-html-trigger:hover {
   bottom: 0;
   width: 6px;
   cursor: col-resize;
-  z-index: 35;     /* above unpinned panel strips (30), below header (40) */
+  z-index: var(--z-resize);     /* above unpinned panel strips (30), below header (40) */
   background: transparent;
   transition: background 0.12s ease;
 }
@@ -577,11 +720,11 @@ body.no-data .publish-html-trigger:hover {
 .detail-resize-handle  { right: var(--detail-w);  }
 
 .panel-resize-handle:hover {
-  background: rgba(96, 165, 250, 0.25);   /* accent-blue, faint */
+  background: color-mix(in srgb, var(--accent-blue) 25%, transparent);   /* accent-blue, faint */
 }
 
 .panel-resize-handle.dragging {
-  background: rgba(96, 165, 250, 0.55);
+  background: color-mix(in srgb, var(--accent-blue) 55%, transparent);
 }
 
 /* Resize handle only makes sense when its panel is in pinned (full-width)
@@ -631,7 +774,6 @@ body.panel-resizing {
   --title-indent-r:        calc(var(--row-pad-r) + var(--delete-w) + var(--row-gap));         /* 34px */
 
   background: var(--bg-deep);
-  border-right: 1px solid var(--border-subtle);
   overflow-y: auto;
   /* No top padding so the sticky .panel-header sits flush against the top.
    * Bottom padding gives whitespace below the last section. */
@@ -658,7 +800,7 @@ body.panel-resizing {
   bottom: 0;
   left: 0;
   width: var(--panel-strip-w);
-  z-index: 30;     /* above the viz, below the builder overlay (200) */
+  z-index: var(--z-panel-strip);     /* above the viz, below the builder overlay (200) */
   overflow: hidden;
   padding: 0;
   min-width: 0;
@@ -691,12 +833,7 @@ body.panel-resizing {
 
 .sidebar-section {
   padding: 0 20px 24px;
-  border-bottom: 1px solid var(--border-subtle);
   margin-bottom: 20px;
-}
-
-.sidebar-section:last-child {
-  border-bottom: none;
 }
 
 /* Small uppercase heading at the top of each sidebar block */
@@ -772,7 +909,6 @@ body.panel-resizing {
  * row's trash icon, so the compact row stays clean. */
 .sidebar-cat-reclass {
   flex-shrink: 0;
-  border: none;
   background: transparent;
   color: var(--text-tertiary);
   font-size: 10px;
@@ -784,7 +920,7 @@ body.panel-resizing {
   transition: opacity 0.12s, background 0.12s, color 0.12s;
 }
 .sidebar-edit-row:hover .sidebar-cat-reclass { opacity: 1; }
-.sidebar-cat-reclass:hover { color: var(--text-primary); background: var(--bg-lighter, #2c354b); }
+.sidebar-cat-reclass:hover { color: var(--text-primary); background: var(--bg-lighter); }
 
 /* Gap between the Primary and Secondary category groups. */
 .sidebar-cat-group-gap { height: 14px; }
@@ -871,8 +1007,8 @@ body.panel-resizing {
   border-radius: 4px;
 }
 .sidebar-edit-color::-webkit-color-swatch-wrapper { padding: 0; }
-.sidebar-edit-color::-webkit-color-swatch         { border-radius: 4px; border: none; }
-.sidebar-edit-color::-moz-color-swatch            { border-radius: 4px; border: none; }
+.sidebar-edit-color::-webkit-color-swatch         { border-radius: 4px; }
+.sidebar-edit-color::-moz-color-swatch            { border-radius: 4px; }
 
 /* Compact inline colour swatch — a native colour input shrunk to swatch size
  * so streams / categories can be recoloured directly in the filter row without
@@ -882,7 +1018,9 @@ body.panel-resizing {
   width: var(--swatch-w);
   height: 16px;
   border-radius: 3px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  /* Faint hairline so a near-background swatch colour still reads as a chip
+     (restored as an inset ring after the flat-look border wipe). */
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
 }
 
 /* Inline trash-icon delete button for compact filter rows. Hidden until the
@@ -907,7 +1045,7 @@ body.panel-resizing {
 }
 
 .sidebar-row-delete:hover {
-  background: rgba(239, 68, 68, 0.18);
+  background: color-mix(in srgb, var(--red-tint-base) 18%, transparent);
   color: #fca5a5;
 }
 
@@ -950,7 +1088,7 @@ body.panel-resizing {
   padding: 2px 6px;
   margin: -2px 0;
   outline: none;
-  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.5);
+  box-shadow: var(--focus-ring);
   text-decoration: none !important;
 }
 
@@ -1053,6 +1191,42 @@ body.panel-resizing {
 .legend-line-solid  { background: var(--text-secondary); }
 .legend-line-dashed { background: repeating-linear-gradient(to right, var(--text-secondary) 0 5px, transparent 5px 9px); }
 
+/* === "Map appearance" accordion ===
+ * Folds the advanced edge-type / line-style / trace filters into one
+ * collapsible group so the sidebar stays calm at rest (collapsed by default;
+ * one click reveals them — nothing is removed). */
+.sidebar-accordion-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: transparent;
+  cursor: pointer;
+  padding: 2px 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: var(--fw-semibold);
+  color: var(--text-tertiary);
+  transition: color var(--dur-fast);
+}
+.sidebar-accordion-header:hover { color: var(--text-secondary); }
+
+.sidebar-accordion-chevron { transition: transform var(--dur-base); }
+.sidebar-accordion.collapsed .sidebar-accordion-chevron { transform: rotate(-90deg); }
+
+.sidebar-accordion-body { margin-top: 12px; }
+.sidebar-accordion.collapsed .sidebar-accordion-body { display: none; }
+
+/* T4: cap decorative stream / category swatch saturation so the custom colours
+   stay quiet next to the semantic accent hues (blue / amber / green / red /
+   purple). Matches the muted map fills. */
+.sidebar-edit-swatch,
+.legend-swatch {
+  filter: saturate(0.65);
+}
+
 </style>
   <style>
 /* === assets/css/05-visualization.css === */
@@ -1130,28 +1304,68 @@ body.panning * {
 
 .node-rect {
   transition: filter 0.15s, opacity 0.15s;
+  /* The renderer emits an inline stroke on every node rect; the flat look means
+     rectangles never show an outline — only the glow states below. A CSS class
+     rule overrides the SVG inline `stroke` attribute without needing !important. */
+  stroke: transparent;
+  /* T4 near-monochrome map: fills are desaturated at rest. Full colour returns
+     only for the selected node + its causal trace (rules below), so the map
+     shows at most ~3 colour meanings at once. */
+  filter: saturate(0.32);
 }
 
-.node-group:hover .node-rect {
-  filter: brightness(1.15);
+/* The stream-colour stripe down each node's left edge is muted with the fill. */
+.node-stripe {
+  filter: saturate(0.32);
+  transition: filter 0.15s;
+}
+
+/* Hovering a resting node brightens it slightly but keeps it muted (the
+   :not() guards stop this from overriding an active-trace node's glow). */
+.node-group:hover:not(.selected):not(.ancestor):not(.descendant) .node-rect {
+  filter: saturate(0.32) brightness(1.12);
 }
 
 .node-group.dimmed {
   opacity: 0.18;
 }
 
+/* === Selection / trace state glows ===
+ * Flat look → node rectangles never show an outline; selection and causal-trace
+ * states read as stacked drop-shadow halos instead (moved here from the old
+ * 12-no-borders.css). Each stacks a tight inner ring, a mid bloom and a wide
+ * soft tail. Selected = white (loudest); ancestor = blue (upstream);
+ * descendant = amber (downstream); hovered = soft white (subtler). */
 .node-group.selected .node-rect {
-  stroke-width: 2.5;
+  filter:
+    drop-shadow(0 0 2px rgba(255, 255, 255, 1))
+    drop-shadow(0 0 8px rgba(255, 255, 255, 0.9))
+    drop-shadow(0 0 18px rgba(255, 255, 255, 0.55));
 }
 
 .node-group.ancestor .node-rect {
-  stroke: var(--edge-ancestor);
-  stroke-width: 2;
+  filter:
+    drop-shadow(0 0 2px var(--edge-ancestor))
+    drop-shadow(0 0 7px var(--edge-ancestor))
+    drop-shadow(0 0 14px color-mix(in srgb, var(--accent-blue) 55%, transparent));
 }
 
 .node-group.descendant .node-rect {
-  stroke: var(--edge-descendant);
-  stroke-width: 2;
+  filter:
+    drop-shadow(0 0 2px var(--edge-descendant))
+    drop-shadow(0 0 7px var(--edge-descendant))
+    drop-shadow(0 0 14px color-mix(in srgb, var(--accent-amber) 55%, transparent));
+}
+
+.node-group.hovered:not(.selected):not(.ancestor):not(.descendant) .node-rect {
+  filter: saturate(0.32) drop-shadow(0 0 5px rgba(255, 255, 255, 0.5));
+}
+
+/* Active-trace nodes regain their full stream-stripe colour. */
+.node-group.selected .node-stripe,
+.node-group.ancestor .node-stripe,
+.node-group.descendant .node-stripe {
+  filter: saturate(1);
 }
 
 /* === Undo / redo "what changed" pulse ===
@@ -1162,18 +1376,18 @@ body.panning * {
    variant also forces full opacity so a flashed node is never washed out by an
    unrelated selection's dimming. Auto-cleared after the animation by JS. */
 @keyframes undo-flash-pulse {
-  0%   { filter: drop-shadow(0 0 0   rgba(74, 222, 128, 0)); }
-  20%  { filter: drop-shadow(0 0 9px rgba(74, 222, 128, 0.95)); }
-  50%  { filter: drop-shadow(0 0 2px rgba(74, 222, 128, 0.35)); }
-  70%  { filter: drop-shadow(0 0 9px rgba(74, 222, 128, 0.9)); }
-  100% { filter: drop-shadow(0 0 0   rgba(74, 222, 128, 0)); }
+  0%   { filter: drop-shadow(0 0 0   color-mix(in srgb, var(--flash-green) 0%, transparent)); }
+  20%  { filter: drop-shadow(0 0 9px color-mix(in srgb, var(--flash-green) 95%, transparent)); }
+  50%  { filter: drop-shadow(0 0 2px color-mix(in srgb, var(--flash-green) 35%, transparent)); }
+  70%  { filter: drop-shadow(0 0 9px color-mix(in srgb, var(--flash-green) 90%, transparent)); }
+  100% { filter: drop-shadow(0 0 0   color-mix(in srgb, var(--flash-green) 0%, transparent)); }
 }
 .node-group.undo-flash {
   opacity: 1 !important;
 }
 .node-group.undo-flash .node-rect {
-  stroke: rgba(74, 222, 128, 0.95);
-  stroke-width: 2.5;
+  /* Glow-only (flat look) — the green pulse comes from the animated drop-shadow
+     in @keyframes undo-flash-pulse above, not a stroke. */
   animation: undo-flash-pulse 1.4s ease;
 }
 
@@ -1318,9 +1532,11 @@ body.panning * {
   opacity: 0.7;
 }
 
-/* Dotted vertical divider between columns */
+/* Dotted vertical divider between columns. Kept transparent in the flat look
+ * (matches the long-standing rendered state); the dotted style is preserved so
+ * it can be surfaced by switching the stroke back to var(--border-subtle). */
 .col-divider {
-  stroke: var(--border-subtle);
+  stroke: transparent;
   stroke-width: 1;
   stroke-dasharray: 2 4;
 }
@@ -1334,7 +1550,7 @@ body.panning * {
  * the note under the cursor) and a shift+click on the gap reaches the SVG,
  * which creates the note via the marquee-candidate path in 16e-canvas-edit.js. */
 .ghost-cell rect {
-  fill: rgba(96, 165, 250, 0.08);
+  fill: color-mix(in srgb, var(--accent-blue) 8%, transparent);
   stroke: var(--accent-blue);
   stroke-width: 1.5;
   stroke-dasharray: 5 4;
@@ -1355,7 +1571,7 @@ body.panning * {
 }
 body.canvas-shift-edit .ghost-cell rect {
   opacity: 1;
-  fill: rgba(96, 165, 250, 0.18);
+  fill: color-mix(in srgb, var(--accent-blue) 18%, transparent);
 }
 body.canvas-shift-edit .ghost-cell text {
   opacity: 0.85;
@@ -1367,7 +1583,7 @@ body.canvas-shift-edit .ghost-cell text {
  * input cursor lives here". No hover/cursor styling — interaction is
  * keyboard-only (typing creates the node; arrows move the cursor). */
 .cursor-cell rect {
-  fill: rgba(96, 165, 250, 0.06);
+  fill: color-mix(in srgb, var(--accent-blue) 6%, transparent);
   stroke: var(--accent-blue);
   stroke-width: 2;
   stroke-dasharray: 6 4;
@@ -1387,12 +1603,12 @@ body.canvas-shift-edit .ghost-cell text {
 /* "Add outgoing edge" picker — small floating panel anchored next
  * to the source node, wraps a typeable dropdown of every other node so the
  * user can filter by name and hit Enter to commit. Sits above the canvas
- * but below the builder overlay so it can be opened from view mode. */
+ * and above the builder overlay (z-index 250 > 200) so it can be opened from
+ * view mode. */
 .canvas-edge-picker {
   position: fixed;
-  z-index: 250;
+  z-index: var(--z-edge-picker);
   background: var(--bg-deep);
-  border: 1px solid var(--accent-blue);
   border-radius: 6px;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.6);
   padding: 10px 12px;
@@ -1411,7 +1627,6 @@ body.canvas-shift-edit .ghost-cell text {
   width: 100%;
   background: var(--bg-deepest);
   color: var(--text-primary);
-  border: 1px solid var(--border-subtle);
   border-radius: 4px;
   padding: 8px 10px;
   font-family: var(--font-ui);
@@ -1419,8 +1634,7 @@ body.canvas-shift-edit .ghost-cell text {
   outline: none;
 }
 .canvas-edge-picker .typeable-dropdown-input:focus {
-  border-color: var(--accent-blue);
-  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.25);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 25%, transparent);
 }
 
 /* Edge handle on the right edge of every node. Hidden by default; reveals
@@ -1479,7 +1693,7 @@ body.canvas-shift-edit .node-group:active {
    forced fully opaque/coloured so it stands out even if it would otherwise be
    dimmed by a selection. See the node .undo-flash block above. */
 .edge-path.undo-flash {
-  stroke: rgba(74, 222, 128, 0.95) !important;
+  stroke: color-mix(in srgb, var(--flash-green) 95%, transparent) !important;
   stroke-opacity: 1 !important;
   opacity: 1 !important;
   stroke-width: 3;
@@ -1538,8 +1752,8 @@ body.node-dragging * {
 }
 /* Marquee selection box (shift+drag on empty canvas). See 16e-canvas-edit.js. */
 .marquee-box {
-  fill: rgba(96, 165, 250, 0.12);
-  stroke: var(--accent-blue, #60a5fa);
+  fill: color-mix(in srgb, var(--accent-blue) 12%, transparent);
+  stroke: var(--accent-blue);
   stroke-width: 1;
   stroke-dasharray: 4 3;
   pointer-events: none;
@@ -1549,7 +1763,7 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
 /* Drag landing slot — the gap the siblings parted to open. Mirrors the
  * new-note placeholder (.ghost-cell) so create and move read the same. */
 .drop-slot {
-  fill: rgba(96, 165, 250, 0.12);
+  fill: color-mix(in srgb, var(--accent-blue) 12%, transparent);
   stroke: var(--accent-blue);
   stroke-width: 1.5;
   stroke-dasharray: 5 4;
@@ -1576,7 +1790,6 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
 
 .detail-panel {
   background: var(--bg-deep);
-  border-left: 1px solid var(--border-subtle);
   overflow-y: auto;
   /* No top padding so the sticky .panel-header sits flush against the top.
    * Side + bottom padding give the rest of the content breathing room. */
@@ -1601,7 +1814,7 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   bottom: 0;
   right: 0;
   width: var(--panel-strip-w);
-  z-index: 30;
+  z-index: var(--z-panel-strip);
   overflow: hidden;
   padding: 0;
   min-width: 0;
@@ -1665,7 +1878,6 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   padding: 14px;
   background: var(--bg-mid);
   border-radius: 6px;
-  border: 1px solid var(--border-subtle);
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.7;
@@ -1711,7 +1923,7 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
 }
 
 .detail-mode-button.active:hover {
-  background: #93c5fd;
+  background: var(--accent-blue-hi);
 }
 
 /* === Tags row at the top of a selected node's details === */
@@ -1731,13 +1943,11 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   border-radius: 3px;
   color: var(--text-secondary);
   background: var(--bg-mid);
-  border: 1px solid var(--border-subtle);
 }
 
 /* The category tag uses the category's own fill colour */
 .detail-tag.category {
   color: var(--bg-deepest);
-  border: none;
   font-weight: 600;
 }
 
@@ -1846,7 +2056,6 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   margin: 12px 0;
   padding: 10px 12px;
   background: var(--bg-deepest);
-  border: 1px solid var(--border-subtle);
   border-radius: 6px;
 }
 
@@ -1893,7 +2102,7 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   margin: 0;
 }
 .detail-value-input:focus {
-  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.5);
+  box-shadow: var(--focus-ring);
 }
 
 /* === Generic detail-panel action buttons === */
@@ -1907,7 +2116,6 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   flex: 1;
   background: var(--bg-mid);
   color: var(--text-secondary);
-  border: 1px solid var(--border-subtle);
   padding: 8px 12px;
   border-radius: 5px;
   font-family: var(--font-mono);
@@ -1920,21 +2128,18 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
 .detail-button:hover {
   color: var(--text-primary);
   background: var(--bg-light);
-  border-color: var(--border-strong);
 }
 
 .detail-button.active {
   background: var(--bg-light);
   color: var(--text-primary);
-  border-color: var(--accent-blue);
 }
 
 .detail-button.detail-delete-btn {
   color: var(--accent-red);
 }
 .detail-button.detail-delete-btn:hover {
-  background: rgba(239, 68, 68, 0.15);
-  border-color: var(--accent-red);
+  background: color-mix(in srgb, var(--red-tint-base) 15%, transparent);
   color: var(--accent-red);
 }
 
@@ -1995,8 +2200,16 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   width: 12px;
   height: 12px;
   border-radius: 2px;
-  border: 1px solid rgba(0, 0, 0, 0.4);
   flex-shrink: 0;
+  /* Dark hairline so a light swatch reads as a distinct chip (restored as an
+     inset ring after the flat-look border wipe). */
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.4);
+}
+
+/* T4: cap category-colour saturation so it stays quiet next to the accents. */
+.detail-cat-swatch,
+.detail-tag.category {
+  filter: saturate(0.65);
 }
 .detail-tag.category.secondary { font-size: 10px; opacity: 0.95; }
 
@@ -2013,7 +2226,7 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
 }
 
 .detail-edit-input:focus {
-  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.5);
+  box-shadow: var(--focus-ring);
 }
 
 .detail-edit-textarea {
@@ -2097,7 +2310,7 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
  * settles (no class-removal needed mid-animation because the animation
  * runs once and ends with the base styling). */
 @keyframes outgoing-edge-flash {
-  0%   { background: rgba(96, 165, 250, 0.5); }
+  0%   { background: color-mix(in srgb, var(--accent-blue) 50%, transparent); }
   100% { background: var(--bg-mid); }
 }
 .outgoing-edge-row.flash {
@@ -2140,7 +2353,7 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   transition: background 0.12s, color 0.12s;
 }
 .outgoing-edge-delete:hover {
-  background: rgba(239, 68, 68, 0.2);
+  background: color-mix(in srgb, var(--red-tint-base) 20%, transparent);
   color: var(--accent-red);
 }
 
@@ -2234,7 +2447,6 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
 .tooltip {
   position: fixed;
   background: var(--bg-light);
-  border: 1px solid var(--border-strong);
   color: var(--text-primary);
   padding: 8px 12px;
   border-radius: 5px;
@@ -2270,8 +2482,6 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   color: var(--text-primary);
   margin-bottom: 6px;
   padding: 4px 0;
-  border-top: 1px solid var(--border-subtle);
-  border-bottom: 1px solid var(--border-subtle);
 }
 
 .tooltip-quant-label  { color: var(--text-tertiary); }
@@ -2326,7 +2536,6 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   font-size: 10px;
   background: var(--bg-light);
   color: var(--text-secondary);
-  border: 1px solid var(--border-strong);
   padding: 3px 8px;
   border-radius: 4px;
   cursor: pointer;
@@ -2353,7 +2562,6 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   line-height: 1.4;
   color: var(--status-bad);
   background: color-mix(in srgb, var(--status-bad) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--status-bad) 40%, transparent);
   border-radius: 6px;
   padding: 6px 8px;
   margin-bottom: 12px;
@@ -2429,7 +2637,7 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   margin: 0;
 }
 .sim-value-input:focus {
-  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.5);
+  box-shadow: var(--focus-ring);
 }
 
 .sim-slider-unit {
@@ -2460,7 +2668,6 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   border-radius: 50%;
   background: var(--accent-blue);
   cursor: pointer;
-  border: 2px solid var(--bg-deepest);
 }
 
 .sim-slider::-moz-range-thumb {
@@ -2469,7 +2676,6 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   border-radius: 50%;
   background: var(--accent-blue);
   cursor: pointer;
-  border: 2px solid var(--bg-deepest);
 }
 
 </style>
@@ -2490,34 +2696,32 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
 .drop-zone {
   position: absolute;
   inset: 0;
-  background: rgba(10, 14, 26, 0.92);
+  background: color-mix(in srgb, var(--bg-deepest) 92%, transparent);
   backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 50;
+  z-index: var(--z-chrome);
   padding: 32px;
 }
 
 /* When dragging a file over the window, brighten the drop zone */
 body.drag-active .drop-zone {
-  background: rgba(96, 165, 250, 0.12);
+  background: color-mix(in srgb, var(--accent-blue) 12%, transparent);
   backdrop-filter: blur(8px);
 }
 
 body.drag-active .drop-zone-inner {
-  border-color: var(--accent-blue);
-  box-shadow: 0 0 60px rgba(96, 165, 250, 0.3);
+  box-shadow: 0 0 60px color-mix(in srgb, var(--accent-blue) 30%, transparent);
 }
 
 .drop-zone-inner {
   max-width: 540px;
   text-align: center;
   background: var(--bg-deep);
-  border: 2px dashed var(--border-strong);
   border-radius: 12px;
   padding: 40px 32px;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition: box-shadow 0.2s;
 }
 
 .drop-zone-icon {
@@ -2556,28 +2760,24 @@ body.drag-active .drop-zone-inner {
   font-weight: 500;
   background: var(--bg-light);
   color: var(--text-primary);
-  border: 1px solid var(--border-strong);
   padding: 10px 16px;
   border-radius: 6px;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background 0.15s;
 }
 
 .drop-zone-button:hover {
   background: var(--bg-lighter);
-  border-color: var(--text-tertiary);
 }
 
 .drop-zone-button.primary {
   background: var(--accent-blue);
   color: var(--bg-deepest);
-  border-color: var(--accent-blue);
   font-weight: 600;
 }
 
 .drop-zone-button.primary:hover {
-  background: #93c5fd;
-  border-color: #93c5fd;
+  background: var(--accent-blue-hi);
 }
 
 .drop-zone-hint {
@@ -2585,7 +2785,6 @@ body.drag-active .drop-zone-inner {
   color: var(--text-tertiary);
   line-height: 1.5;
   padding-top: 16px;
-  border-top: 1px solid var(--border-subtle);
 }
 
 </style>
@@ -2610,7 +2809,7 @@ body.drag-active .drop-zone-inner {
   border-radius: 6px;
   font-size: 12.5px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4), 0 0 0 2px var(--accent-green);
-  z-index: 200;
+  z-index: var(--z-overlay);
   max-width: 380px;
 }
 
@@ -2660,7 +2859,7 @@ body.drag-active .drop-zone-inner {
   transition: background 0.12s, color 0.12s;
 }
 .undo-toast .undo-link:hover {
-  background: rgba(96, 165, 250, 0.15);
+  background: color-mix(in srgb, var(--accent-blue) 15%, transparent);
   color: var(--text-primary);
 }
 
@@ -2697,9 +2896,8 @@ body.drag-active .drop-zone-inner {
 }
 
 .multi-select-bar .msb-select {
-  background: var(--bg-dark, #0f172a);
+  background: var(--bg-dark);
   color: var(--text-primary);
-  border: 1px solid var(--border-strong);
   border-radius: 5px;
   font-size: 12px;
   padding: 5px 6px;
@@ -2708,8 +2906,7 @@ body.drag-active .drop-zone-inner {
 
 .multi-select-bar .msb-delete {
   background: none;
-  color: var(--accent-red, #f87171);
-  border: 1px solid var(--border-strong);
+  color: var(--accent-red);
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.08em;
@@ -2720,7 +2917,7 @@ body.drag-active .drop-zone-inner {
   transition: background 0.12s, color 0.12s;
 }
 .multi-select-bar .msb-delete:hover {
-  background: rgba(248, 113, 113, 0.15);
+  background: color-mix(in srgb, var(--accent-red) 15%, transparent);
 }
 
 /* === When no data is loaded, the side panels are dimmed and inert === */
@@ -2741,7 +2938,7 @@ body.no-data .detail-panel {
   position: absolute;
   bottom: 12px;
   right: 12px;
-  z-index: 50;
+  z-index: var(--z-chrome);
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -2763,7 +2960,7 @@ body.no-data .detail-panel {
   flex-direction: column;
   gap: 3px;
   width: 120px;
-  background: rgba(17, 24, 39, 0.85);
+  background: color-mix(in srgb, var(--bg-deep) 85%, transparent);
   backdrop-filter: blur(8px);
   padding: 5px 6px;
   border-radius: 6px;
@@ -2846,6 +3043,34 @@ body.no-data .detail-panel {
   background: transparent;
 }
 
+/* === T4: tuck the advanced Highlight-Depth card behind a "⋯ more" toggle ===
+ * Zoom is the only resting control; clicking ⋯ reveals the depth card. */
+.viz-depth-controls { display: none; }
+.viz-controls-cluster.show-more .viz-depth-controls { display: flex; }
+
+.viz-more-toggle {
+  align-self: flex-end;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 18px;
+  line-height: 1;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--bg-deep) 85%, transparent);
+  backdrop-filter: blur(8px);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background var(--dur-base), color var(--dur-base);
+}
+.viz-more-toggle:hover,
+.viz-controls-cluster.show-more .viz-more-toggle {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--bg-light) 92%, transparent);
+}
+
 </style>
   <style>
 /* === assets/css/11-builder.css === */
@@ -2864,12 +3089,12 @@ body.no-data .detail-panel {
 .builder-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(10, 14, 26, 0.92);
+  background: color-mix(in srgb, var(--bg-deepest) 92%, transparent);
   backdrop-filter: blur(4px);
   display: none;             /* JS toggles to "flex" when open */
   align-items: stretch;
   justify-content: center;
-  z-index: 200;              /* above the drop zone (z 50) and everything else */
+  z-index: var(--z-overlay);              /* above the drop zone (z 50) and everything else */
   padding: 32px;
   font-family: var(--font-ui);
 }
@@ -2880,7 +3105,6 @@ body.no-data .detail-panel {
   width: 100%;
   max-width: 1180px;
   background: var(--bg-deep);
-  border: 1px solid var(--border-strong);
   border-radius: 12px;
   display: flex;
   flex-direction: column;
@@ -2894,7 +3118,6 @@ body.no-data .detail-panel {
   gap: 16px;
   padding: 16px 24px;
   background: var(--bg-mid);
-  border-bottom: 1px solid var(--border-subtle);
 }
 
 .builder-title {
@@ -2917,7 +3140,6 @@ body.no-data .detail-panel {
   text-transform: uppercase;
   background: var(--bg-light);
   color: var(--text-tertiary);
-  border: 1px solid var(--border-subtle);
   padding: 4px 10px;
   border-radius: 4px;
   cursor: pointer;
@@ -2926,19 +3148,16 @@ body.no-data .detail-panel {
 
 .builder-step-dot:hover {
   color: var(--text-secondary);
-  border-color: var(--border-strong);
 }
 
 .builder-step-dot.active {
   background: var(--accent-blue);
   color: var(--bg-deepest);
-  border-color: var(--accent-blue);
 }
 
 .builder-close {
   background: transparent;
   color: var(--text-tertiary);
-  border: 1px solid var(--border-subtle);
   width: 30px;
   height: 30px;
   border-radius: 6px;
@@ -2952,7 +3171,6 @@ body.no-data .detail-panel {
 
 .builder-close:hover {
   color: var(--text-primary);
-  border-color: var(--border-strong);
 }
 
 /* ───── Card body — split into a fixed top section and a scrolling table area ─────
@@ -2972,7 +3190,6 @@ body.no-data .detail-panel {
 .builder-step-static {
   padding: 24px 24px 16px 24px;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--border-subtle);
 }
 
 .builder-step-static:empty {  /* hide the fixed section + its divider when there's nothing above */
@@ -3021,7 +3238,6 @@ body.no-data .detail-panel {
   margin-bottom: 16px;
   padding: 12px 14px;
   background: var(--bg-mid);
-  border-left: 3px solid var(--accent-blue);
   border-radius: 4px;
   max-width: 760px;
 }
@@ -3034,7 +3250,6 @@ body.no-data .detail-panel {
   border-collapse: separate;
   border-spacing: 0;
   background: var(--bg-mid);
-  border: 1px solid var(--border-subtle);
   border-radius: 6px;
   margin-bottom: 12px;
 }
@@ -3047,7 +3262,6 @@ body.no-data .detail-panel {
   text-transform: uppercase;
   color: var(--text-tertiary);
   padding: 10px 10px;
-  border-bottom: 1px solid var(--border-subtle);
   background: var(--bg-deep);
   position: sticky;
   top: 0;
@@ -3062,11 +3276,8 @@ body.no-data .detail-panel {
 
 .builder-table td {
   padding: 6px 6px;
-  border-bottom: 1px solid var(--border-subtle);
   vertical-align: middle;
 }
-
-.builder-table tr:last-child td { border-bottom: none; }
 
 .builder-table input[type="text"],
 .builder-table input[type="number"],
@@ -3074,36 +3285,38 @@ body.no-data .detail-panel {
   width: 100%;
   background: var(--bg-deep);
   color: var(--text-primary);
-  border: 1px solid var(--border-subtle);
   border-radius: 4px;
   padding: 6px 8px;
   font-family: var(--font-mono);
   font-size: 12px;
   outline: none;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: box-shadow 0.15s;
   box-sizing: border-box;
 }
 
 /* Subtle pop-out: any focused cell input/select gets a blue ring so the user
  * can find it quickly even with many rows on screen. */
 .builder-table input:focus,
-.builder-table select:focus {
-  border-color: var(--accent-blue);
-  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.25);
+.builder-table select:focus,
+.builder-table textarea:focus,
+.builder-defaults input:focus {
+  box-shadow: var(--focus-ring);
   position: relative;
   z-index: 2;
 }
 
+/* Invalid cell — red inset ring (the flat-look stand-in for a red border;
+ * moved here from the old 12-no-borders.css). */
 .builder-table input.invalid,
-.builder-table select.invalid {
-  border-color: var(--accent-red);
+.builder-table select.invalid,
+.builder-table textarea.invalid {
+  box-shadow: inset 0 0 0 2px var(--accent-red);
 }
 
 .builder-table input[type="color"] {
   width: 40px;
   height: 28px;
   padding: 0;
-  border: 1px solid var(--border-subtle);
   border-radius: 4px;
   background: var(--bg-deep);
   cursor: pointer;
@@ -3125,7 +3338,7 @@ body.no-data .detail-panel {
   color: var(--text-tertiary);
   user-select: none;
   font-family: var(--font-mono);
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: -0.1em;
   font-size: 14px;
 }
@@ -3145,7 +3358,6 @@ body.no-data .detail-panel {
 .builder-row-action {
   background: var(--bg-light);
   color: var(--text-tertiary);
-  border: 1px solid var(--border-subtle);
   border-radius: 4px;
   width: 26px;
   height: 26px;
@@ -3164,7 +3376,7 @@ body.no-data .detail-panel {
   background: var(--bg-lighter);
 }
 
-.builder-row-action.danger:hover { color: var(--accent-red); border-color: var(--accent-red); }
+.builder-row-action.danger:hover { color: var(--accent-red); }
 
 .builder-empty-row td {
   text-align: center;
@@ -3190,7 +3402,6 @@ body.no-data .detail-panel {
 .builder-action {
   background: var(--bg-mid);
   color: var(--text-secondary);
-  border: 1px solid var(--border-subtle);
   padding: 7px 12px;
   border-radius: 6px;
   font-family: var(--font-mono);
@@ -3203,20 +3414,17 @@ body.no-data .detail-panel {
 
 .builder-action:hover {
   color: var(--text-primary);
-  border-color: var(--border-strong);
   background: var(--bg-light);
 }
 
 .builder-action.primary {
   background: var(--accent-blue);
   color: var(--bg-deepest);
-  border-color: var(--accent-blue);
   font-weight: 600;
 }
 
 .builder-action.primary:hover {
-  background: #93c5fd;
-  border-color: #93c5fd;
+  background: var(--accent-blue-hi);
 }
 
 .builder-action:disabled,
@@ -3248,7 +3456,7 @@ body.no-data .detail-panel {
 
 /* Selected-row highlight. */
 .builder-table tr.selected td {
-  background: rgba(96, 165, 250, 0.10);
+  background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
 }
 
 /* The bulk action bar — accent-tinted strip above the table. */
@@ -3259,8 +3467,7 @@ body.no-data .detail-panel {
   flex-wrap: wrap;
   margin-bottom: 12px;
   padding: 8px 12px;
-  background: rgba(96, 165, 250, 0.08);
-  border: 1px solid var(--accent-blue);
+  background: color-mix(in srgb, var(--accent-blue) 8%, transparent);
   border-radius: 6px;
 }
 
@@ -3282,7 +3489,6 @@ body.no-data .detail-panel {
 .builder-bulk-select {
   background: var(--bg-deep);
   color: var(--text-primary);
-  border: 1px solid var(--border-subtle);
   border-radius: 4px;
   padding: 6px 8px;
   font-family: var(--font-mono);
@@ -3290,8 +3496,6 @@ body.no-data .detail-panel {
   outline: none;
   min-width: 130px;
 }
-
-.builder-bulk-select:focus { border-color: var(--accent-blue); }
 
 .builder-bulk-elasticity {
   display: inline-flex;
@@ -3303,7 +3507,6 @@ body.no-data .detail-panel {
   width: 110px;
   background: var(--bg-deep);
   color: var(--text-primary);
-  border: 1px solid var(--border-subtle);
   border-radius: 4px;
   padding: 6px 8px;
   font-family: var(--font-mono);
@@ -3311,11 +3514,8 @@ body.no-data .detail-panel {
   outline: none;
 }
 
-.builder-bulk-input:focus { border-color: var(--accent-blue); }
-
 .builder-bulk-bar .builder-action.danger {
   color: var(--accent-red);
-  border-color: var(--accent-red);
 }
 
 .builder-bulk-bar .builder-action.danger:hover {
@@ -3345,7 +3545,6 @@ body.no-data .detail-panel {
   margin-bottom: 20px;
   padding: 14px;
   background: var(--bg-mid);
-  border: 1px solid var(--border-subtle);
   border-radius: 6px;
 }
 
@@ -3364,15 +3563,12 @@ body.no-data .detail-panel {
   width: 100px;
   background: var(--bg-deep);
   color: var(--text-primary);
-  border: 1px solid var(--border-subtle);
   border-radius: 4px;
   padding: 6px 8px;
   font-family: var(--font-mono);
   font-size: 13px;
   outline: none;
 }
-
-.builder-defaults input:focus { border-color: var(--accent-blue); }
 
 /* ───── Review step (step 6) ────────────────────────────────────────── */
 .builder-review-grid {
@@ -3384,7 +3580,6 @@ body.no-data .detail-panel {
 
 .builder-review-tile {
   background: var(--bg-mid);
-  border: 1px solid var(--border-subtle);
   border-radius: 6px;
   padding: 14px 16px;
 }
@@ -3406,18 +3601,9 @@ body.no-data .detail-panel {
 
 .builder-validation {
   background: var(--bg-mid);
-  border: 1px solid var(--border-subtle);
   border-radius: 6px;
   padding: 14px 16px;
   margin-bottom: 16px;
-}
-
-.builder-validation.ok {
-  border-color: var(--status-good);
-}
-
-.builder-validation.errors {
-  border-color: var(--accent-red);
 }
 
 .builder-validation-title {
@@ -3449,7 +3635,6 @@ body.no-data .detail-panel {
   gap: 8px;
   padding: 14px 24px;
   background: var(--bg-mid);
-  border-top: 1px solid var(--border-subtle);
 }
 
 .builder-footer-spacer { flex: 1; }
@@ -3483,12 +3668,11 @@ body.no-data .detail-panel {
  * fast typing and the box visibly jitters. */
 .builder-cell-editor {
   position: fixed;
-  z-index: 300;
+  z-index: var(--z-cell-editor);
   background: var(--bg-deep);
   color: var(--text-primary);
-  border: 1px solid var(--accent-blue);
   border-radius: 4px;
-  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.25);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 25%, transparent);
   padding: 6px 8px;                    /* matches .builder-table input */
   font-family: var(--font-mono);       /* matches .builder-table input */
   font-size: 12px;                     /* matches .builder-table input */
@@ -3541,100 +3725,6 @@ body.no-data .detail-panel {
 
 </style>
   <style>
-/* === assets/css/12-no-borders.css === */
-/* =============================================================================
- * FLAT LOOK — remove every visible border from the app
- * -----------------------------------------------------------------------------
- * Loaded last so it overrides every earlier file. Affects three categories:
- *
- *   1. CSS `border` on every HTML element (panels, cards, inputs, buttons,
- *      tables, the detail-edge stripes, the drop zone's dashed frame, etc.)
- *   2. SVG `stroke` declarations / inline attributes that look like borders
- *      (column dividers, node rectangles).
- *   3. State indicators that previously relied on borders (selected /
- *      ancestor / descendant nodes, focused / invalid form cells). These get
- *      replaced with drop-shadow glows and box-shadow rings so the user can
- *      still see what's selected / focused / broken.
- *
- * `border-radius`, `border-collapse`, `border-spacing`, and `box-sizing` are
- * NOT borders — they're untouched.
- * ========================================================================== */
-
-/* --- 1. Wipe every CSS border on every element ----------------------------- */
-*,
-*::before,
-*::after {
-  border: 0 !important;
-}
-
-/* --- 2. SVG strokes that act as borders ----------------------------------- */
-.col-divider {
-  stroke: transparent !important;
-}
-
-.node-rect {
-  stroke: transparent !important;
-  stroke-width: 0 !important;
-}
-
-/* --- 3. State indicators (replacements for the borders we just killed) ----
- *
- * Each state stacks three drop-shadows: a tight inner ring (defined edge),
- * a mid-radius bloom (presence), and a wide soft tail (atmosphere). This
- * gives the glow much more visible mass than a single drop-shadow and
- * makes the colour read clearly even at smaller node sizes. Selected is
- * the brightest; hovered the subtlest; ancestor / descendant clearly
- * distinguishable from each other and from selection.
- */
-
-/* Selected node: bright white halo, the loudest state on the map */
-.node-group.selected .node-rect {
-  filter:
-    drop-shadow(0 0 2px rgba(255, 255, 255, 1))
-    drop-shadow(0 0 8px rgba(255, 255, 255, 0.9))
-    drop-shadow(0 0 18px rgba(255, 255, 255, 0.55));
-}
-
-/* Upstream causes: blue halo (matches the edge-ancestor colour) */
-.node-group.ancestor .node-rect {
-  filter:
-    drop-shadow(0 0 2px var(--edge-ancestor))
-    drop-shadow(0 0 7px var(--edge-ancestor))
-    drop-shadow(0 0 14px rgba(96, 165, 250, 0.55));
-}
-
-/* Downstream impacts: amber halo */
-.node-group.descendant .node-rect {
-  filter:
-    drop-shadow(0 0 2px var(--edge-descendant))
-    drop-shadow(0 0 7px var(--edge-descendant))
-    drop-shadow(0 0 14px rgba(251, 191, 36, 0.55));
-}
-
-/* Hovered node — soft brighten, deliberately weaker than selection so the
- * two don't compete when you mouse-over the already-selected node. */
-.node-group.hovered .node-rect {
-  filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.65));
-}
-
-/* Form inputs / selects no longer have a border, so use box-shadow rings
- * for the focused + invalid states the builder relies on. */
-.builder-table input:focus,
-.builder-table select:focus,
-.builder-table textarea:focus,
-.builder-defaults input:focus,
-.builder-cell-editor-textarea:focus {
-  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.55) !important;
-}
-
-.builder-table input.invalid,
-.builder-table select.invalid,
-.builder-table textarea.invalid {
-  box-shadow: inset 0 0 0 2px var(--accent-red) !important;
-}
-
-</style>
-  <style>
 /* === assets/css/13-search.css === */
 /* =============================================================================
  * SEARCH — dropdown of ranked results + map-halo for every match
@@ -3650,7 +3740,7 @@ body.no-data .detail-panel {
   top: calc(100% + 4px);
   left: 0;
   right: 0;
-  z-index: 40;                /* above the viz, below the builder overlay */
+  z-index: var(--z-header);                /* above the viz, below the builder overlay */
   max-height: min(420px, 60vh);
   overflow-y: auto;
   background: var(--bg-deep);
@@ -3755,7 +3845,7 @@ body.no-data .detail-panel {
  * from 12-no-borders.css. A subtle amber drop-shadow so matches stand
  * out without overpowering the white selection / blue trace glows. */
 .node-group.search-match .node-rect {
-  filter: drop-shadow(0 0 4px rgba(251, 191, 36, 0.75));
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent-amber) 75%, transparent));
 }
 
 /* When the search match is also the selected node, the white selection
@@ -3804,7 +3894,6 @@ body.no-data .detail-panel {
   height: 1px;
   padding: 0;
   margin: 0;
-  border: 0;
   clip: rect(0 0 0 0);
   overflow: hidden;
   pointer-events: none;
@@ -3828,19 +3917,13 @@ body.no-data .detail-panel {
   background-repeat: no-repeat;
 }
 
-.typeable-dropdown.open .typeable-dropdown-input {
-  /* Match the popup's visual prominence while it's open. */
-  border-color: var(--accent-blue);
-}
-
 /* The popup is position:fixed so it floats over scroll containers
  * (`.builder-step-scroll`, the detail panel itself, etc.) without being
  * clipped. JS sets left / top / minWidth / maxHeight per-open. */
 .typeable-dropdown-popup {
   position: fixed;
-  z-index: 400;                                   /* above builder overlay (200) and cell editor (300) */
+  z-index: var(--z-dropdown);                                   /* above builder overlay (200) and cell editor (300) */
   background: var(--bg-deep);
-  border: 1px solid var(--accent-blue);
   border-radius: 4px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
   padding: 4px 0;
@@ -3910,14 +3993,25 @@ body.no-data .detail-panel {
       <div id="search-results" class="search-results" hidden></div>
     </div>
 
-    <!-- Header action buttons. Classes are picked up by JS in 17-events.js
-         and wired to their handlers — see that file. -->
-    <button class="header-button create-map-trigger"   data-tooltip="Clear the canvas and start a fresh map from an empty 3×3 starter grid. Asks for confirmation if a map is loaded.">Create</button>
-    <button class="header-button edit-data-trigger"    data-tooltip="Open the form-based wizard pre-populated with the current map. Useful for bulk edits.">Edit</button>
-    <button class="header-button save-data-trigger"    data-tooltip="Save the current map as a CSV (openable in Excel / Sheets, or re-importable here).">Save</button>
-    <button class="header-button import-data-trigger"  data-tooltip="Import a CSV map file from your computer. Same as drag-dropping a .csv onto the window.">Import</button>
-    <button class="header-button export-image-trigger" data-tooltip="Copy the canvas to the clipboard as a PNG image. Captures what's on screen — zoom/pan to frame the part you want. If a node is selected, only its highlighted nodes and edges are copied. Connected nodes are packed closer together.">Export</button>
-    <button class="header-button publish-html-trigger" data-tooltip="Publish a self-contained, view-only HTML page of the canvas (pan / zoom / hover). Same framing logic as Export.">Publish</button>
+    <!-- Header action buttons, ranked: one primary (Create), two secondary
+         (Edit / Import), the three "get data out" actions grouped under an
+         Export ▾ menu, then the Simulate mode toggle past a divider. The
+         trigger classes / ids are unchanged, so the handlers in 17-events.js
+         still bind; 17-events.js also wires the Export-menu open/close. -->
+    <button class="header-button header-button--primary create-map-trigger" data-tooltip="Clear the canvas and start a fresh map from an empty 3×3 starter grid. Asks for confirmation if a map is loaded.">Create</button>
+    <button class="header-button edit-data-trigger"   data-tooltip="Open the form-based wizard pre-populated with the current map. Useful for bulk edits.">Edit</button>
+    <button class="header-button import-data-trigger" data-tooltip="Import a CSV map file from your computer. Same as drag-dropping a .csv onto the window.">Import</button>
+
+    <div class="header-menu" id="export-menu">
+      <button class="header-button header-menu-trigger" aria-haspopup="true" aria-expanded="false" data-tooltip="Get the map out — save as CSV, copy as a PNG image, or publish a view-only HTML page.">Export&nbsp;▾</button>
+      <div class="header-menu-list" id="export-menu-list" hidden>
+        <button class="header-menu-item save-data-trigger"    data-tooltip="Save the current map as a CSV (openable in Excel / Sheets, or re-importable here).">Save CSV</button>
+        <button class="header-menu-item export-image-trigger" data-tooltip="Copy the canvas to the clipboard as a PNG image. Captures what's on screen. If a node is selected, only its highlighted nodes and edges are copied.">Export PNG</button>
+        <button class="header-menu-item publish-html-trigger" data-tooltip="Publish a self-contained, view-only HTML page of the canvas (pan / zoom / hover).">Publish HTML</button>
+      </div>
+    </div>
+
+    <span class="header-divider" aria-hidden="true"></span>
     <button id="sim-toggle-button" class="header-button" data-tooltip="Toggle simulation mode — sliders on every controllable input, downstream values recompute live.">Simulate</button>
   </header>
 
@@ -3932,10 +4026,9 @@ body.no-data .detail-panel {
          centred in the header; the label reads "Click here to (un)pin" and
          the pin icon sits to the right of the text as if it were part of it. -->
     <div class="panel-header">
-      <button class="panel-pin sidebar-pin" id="sidebar-pin" title="Click to unpin sidebar" aria-label="Click to unpin sidebar">
-        <span class="panel-pin-label">Click here to unpin</span>
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
-          <path d="M14 4h2v2l-3 4v3h3l1 1v1h-5v6h-1v-6H6v-1l1-1h3v-3L7 6V4h2"/>
+      <button class="panel-pin sidebar-pin" id="sidebar-pin" title="Collapse sidebar" aria-label="Collapse sidebar">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="15 6 9 12 15 18"></polyline>
         </svg>
       </button>
     </div>
@@ -3983,9 +4076,17 @@ body.no-data .detail-panel {
          renderEdgeStyleFilters / renderTraceFilters in 13-sidebar.js). Each row
          toggles like Streams: click to hide that edge effect / line style on the
          map (or suppress a trace direction); click again to show it. -->
-    <div class="sidebar-section"><div id="edge-type-filters"></div></div>
-    <div class="sidebar-section"><div id="edge-style-filters"></div></div>
-    <div class="sidebar-section"><div id="trace-filters"></div></div>
+    <div class="sidebar-section sidebar-accordion collapsed" id="map-appearance">
+      <button class="sidebar-accordion-header" id="map-appearance-toggle" aria-expanded="false" aria-controls="map-appearance-body">
+        <span>Map appearance</span>
+        <span class="sidebar-accordion-chevron" aria-hidden="true">▾</span>
+      </button>
+      <div class="sidebar-accordion-body" id="map-appearance-body">
+        <div id="edge-type-filters"></div>
+        <div id="edge-style-filters"></div>
+        <div id="trace-filters"></div>
+      </div>
+    </div>
   </aside>
 
   <!-- ============== PANEL RESIZE HANDLES ==============
@@ -4035,6 +4136,10 @@ body.no-data .detail-panel {
         </div>
       </div>
 
+      <!-- "More" toggle reveals the advanced Highlight-Depth card, tucked away
+           by default so Zoom is the only resting control. JS in 17-events.js. -->
+      <button class="viz-more-toggle" id="viz-more-toggle" title="More map controls (highlight depth)" aria-label="More map controls" aria-expanded="false">⋯</button>
+
     </div>
 
     <!-- Optional CSV-import overlay. No longer shown at startup — the
@@ -4069,10 +4174,9 @@ body.no-data .detail-panel {
     <!-- Sticky header strip with the centred "Click here to (un)pin" label +
          pin icon. -->
     <div class="panel-header">
-      <button class="panel-pin detail-pin" id="detail-pin" title="Click to unpin details" aria-label="Click to unpin details">
-        <span class="panel-pin-label">Click here to unpin</span>
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
-          <path d="M14 4h2v2l-3 4v3h3l1 1v1h-5v6h-1v-6H6v-1l1-1h3v-3L7 6V4h2"/>
+      <button class="panel-pin detail-pin" id="detail-pin" title="Collapse details" aria-label="Collapse details">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="9 6 15 12 9 18"></polyline>
         </svg>
       </button>
     </div>
@@ -4083,7 +4187,7 @@ body.no-data .detail-panel {
       <p>Click any node to see what feeds into it and what it impacts downstream — recursively, across the whole map.</p>
       <p>Click again to deselect. Use the streams in the left panel to hide branches.</p>
       <div class="hint">
-        <b>DATA</b> — All structure and quantification is loaded from a CSV. Use <b>Build map</b> / <b>Edit map</b> in the header for the form-based wizard, or hand-edit the CSV in Excel / Sheets and drag it back in.<br><br>
+        <b>DATA</b> — All structure and quantification is loaded from a CSV. Use <b>Create</b> / <b>Edit</b> in the header for the form-based wizard, or hand-edit the CSV in Excel / Sheets and drag it back in.<br><br>
         <b>EDGES</b> — Each link is annotated as <i>enables</i>, <i>increases</i>, or <i>decreases</i>, with an elasticity that drives simulation propagation.
       </div>
     </div>
@@ -7423,7 +7527,7 @@ function render() {
       " L " + barLeft + "," + (barTop + barRadius) +
       " A " + barRadius + "," + barRadius + " 0 0 1 " + (barLeft + barRadius) + "," + barTop +
       " Z";
-    content += '<path d="' + barPath + '" fill="' + stream.color + '"></path>';
+    content += '<path class="node-stripe" d="' + barPath + '" fill="' + stream.color + '"></path>';
 
     // ── Label (wrapped to up to 2 lines) ──
     // One <text> with one or two <tspan> children. Using `dy="1.083em"` (the
@@ -14541,6 +14645,55 @@ window.addEventListener("drop", event => {
   const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
   if (file) readCsvFile(file);
 });
+
+// ───── Export ▾ header menu ──────────────────────────────────────────────
+// Groups Save / Export / Publish under one trigger. The menu items keep their
+// *-trigger classes, so their action handlers (wired above by class) still
+// fire; this block only toggles the dropdown open/closed.
+(() => {
+  const menu    = document.getElementById("export-menu");
+  const trigger = menu && menu.querySelector(".header-menu-trigger");
+  const list    = document.getElementById("export-menu-list");
+  if (!menu || !trigger || !list) return;
+
+  const close = () => { list.hidden = true;  trigger.setAttribute("aria-expanded", "false"); };
+  const open  = () => { list.hidden = false; trigger.setAttribute("aria-expanded", "true");  };
+
+  trigger.addEventListener("click", event => {
+    event.stopPropagation();
+    list.hidden ? open() : close();
+  });
+  // Picking an item runs its own action handler and then closes the menu.
+  list.querySelectorAll(".header-menu-item").forEach(item =>
+    item.addEventListener("click", close)
+  );
+  // Click outside or press Escape to dismiss.
+  document.addEventListener("click", event => { if (!menu.contains(event.target)) close(); });
+  document.addEventListener("keydown", event => { if (event.key === "Escape") close(); });
+})();
+
+// ───── Sidebar "Map appearance" accordion ────────────────────────────────
+// Collapses the advanced edge-type / line-style / trace filters into one group.
+(() => {
+  const acc    = document.getElementById("map-appearance");
+  const toggle = document.getElementById("map-appearance-toggle");
+  if (!acc || !toggle) return;
+  toggle.addEventListener("click", () => {
+    const collapsed = acc.classList.toggle("collapsed");
+    toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  });
+})();
+
+// ───── Viz "⋯ more" toggle — reveals the Highlight-Depth card ─────────────
+(() => {
+  const cluster = document.getElementById("viz-controls-cluster");
+  const moreBtn = document.getElementById("viz-more-toggle");
+  if (!cluster || !moreBtn) return;
+  moreBtn.addEventListener("click", () => {
+    const shown = cluster.classList.toggle("show-more");
+    moreBtn.setAttribute("aria-expanded", shown ? "true" : "false");
+  });
+})();
 
 </script>             <!-- wire up controls         -->
 <script>
