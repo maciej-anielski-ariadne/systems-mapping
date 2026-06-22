@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Right detail panel — alignment, accessibility & view↔edit convergence</title>
+<link rel="stylesheet" href="../assets/fonts/fonts.css">
+<style>
+:root{--page-bg:#070a13;--panel:#0e1320;--ink:#e7ecf3;--ink2:#a1adc4;--ink3:#8c97ad;--line:#222b3d;--line2:#33405a;
+  --accent:#60a5fa;--good:#34d399;--warn:#fbbf24;--bad:#f87171;--guide:#fbbf24;--rail:#60a5fa;}
+*{box-sizing:border-box;}
+html,body{margin:0;background:var(--page-bg);color:var(--ink);font-family:'IBM Plex Sans',system-ui,Arial,sans-serif;font-size:14px;line-height:1.55;}
+code{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:.92em;background:#151b2b;padding:1px 5px;border-radius:4px;color:#cdd6e8;}
+.wrap{max-width:1280px;margin:0 auto;padding:0 26px 120px;}
+.bar{position:sticky;top:0;z-index:60;background:rgba(8,11,19,.93);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);}
+.bar-in{max-width:1280px;margin:0 auto;padding:10px 26px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.bar h1{font-size:15px;margin:0;font-weight:600;white-space:nowrap;}
+.bar h1 span{color:var(--ink3);font-weight:400;}
+.seg{display:inline-flex;background:#141a28;border:1px solid var(--line);border-radius:9px;padding:3px;gap:2px;}
+.seg button{appearance:none;border:0;background:transparent;color:var(--ink2);font:inherit;font-size:12px;font-weight:600;padding:6px 11px;border-radius:6px;cursor:pointer;white-space:nowrap;}
+.seg button:hover{color:var(--ink);}
+.seg button[aria-pressed="true"]{background:var(--accent);color:#06101f;}
+.seg.opts button[aria-pressed="true"][data-o="current"]{background:#475569;color:#fff;}
+.seg.opts button[aria-pressed="true"][data-o="c"]{background:var(--good);color:#06210f;}
+.tog{appearance:none;border:1px solid var(--line2);background:#141a28;color:var(--ink2);font:inherit;font-size:12px;font-weight:600;padding:7px 12px;border-radius:8px;cursor:pointer;}
+.tog[aria-pressed="true"]{background:var(--accent);color:#06101f;border-color:var(--accent);}
+.tog.edit[aria-pressed="true"]{background:var(--warn);color:#2a1c00;border-color:var(--warn);}
+.bar nav{margin-left:auto;display:flex;gap:2px;flex-wrap:wrap;}
+.bar nav a{font-size:12px;color:var(--ink3);text-decoration:none;padding:5px 8px;border-radius:6px;}
+.bar nav a:hover{color:var(--ink);background:#141a28;}
+
+.hero{padding:30px 0 8px;}
+.hero h2{font-weight:600;font-size:25px;letter-spacing:-.01em;margin:0 0 10px;}
+.lead{color:var(--ink2);font-size:15px;line-height:1.6;max-width:900px;margin:0 0 10px;}
+.lead b{color:var(--ink);}
+.callout{max-width:900px;margin:14px 0 0;padding:13px 16px;border-radius:10px;background:#0f1626;border:1px solid var(--line);font-size:13px;color:var(--ink2);line-height:1.6;}
+.callout b{color:var(--ink);}.callout.rec{border-color:#2a4d3a;background:#0d1a14;}.callout.rec b{color:var(--good);}
+h3.sec{font-weight:600;font-size:22px;margin:48px 0 4px;padding-top:24px;border-top:1px solid var(--line);scroll-margin-top:70px;}
+h3.sec .n{color:var(--ink3);font-size:14px;font-family:'IBM Plex Mono',monospace;margin-right:10px;}
+.sub{color:var(--ink2);font-size:13.5px;max-width:920px;margin:6px 0 18px;line-height:1.6;}
+
+.layout{display:grid;grid-template-columns:420px 1fr;gap:22px;align-items:start;margin-top:14px;}
+@media(max-width:980px){.layout{grid-template-columns:1fr;}}
+.ocard{border:1px solid var(--line);border-radius:14px;background:var(--panel);overflow:hidden;position:sticky;top:64px;}
+.ocard-top{display:flex;align-items:center;gap:12px;padding:16px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap;}
+.ocard .badge{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding:5px 9px;border-radius:7px;}
+.ocard h4{margin:0;font-size:16px;font-weight:600;}
+.ocard .body{padding:14px 18px;font-size:12.5px;color:var(--ink2);line-height:1.55;}
+.ocard .body p{margin:0 0 10px;}
+.ocard h5{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink3);font-family:'IBM Plex Mono',monospace;margin:14px 0 6px;}
+.ocard ul{margin:0;padding-left:16px;}.ocard li{margin-bottom:4px;}.ocard .a11y li{color:#a7e0a0;}
+.tone-0{background:#1e2636;color:#cbd5e7;}.tone-a{background:#13233a;color:#9ec5ff;}.tone-b{background:#13283a;color:#8fd3e6;}.tone-c{background:#16291c;color:#a7e0a0;}
+
+.stagewrap{display:flex;gap:22px;flex-wrap:wrap;}
+.pcol{display:flex;flex-direction:column;gap:8px;}
+.pcap{font-size:11px;color:var(--ink3);font-family:'IBM Plex Mono',monospace;}.pcap b{color:var(--ink);}
+
+/* ===== faithful detail-panel reproduction (340px, Compact, flat dark) ===== */
+.dp{position:relative;width:340px;background:#111827;border-radius:10px;border:1px solid var(--line);
+  --gutter:16px;--value-rail:116px;--stripe:3px;padding:14px 0 16px;}
+.dp .g{padding:0 var(--gutter);}              /* gutter wrapper */
+.dp .chev{text-align:center;color:var(--ink3);font-family:'IBM Plex Mono',monospace;margin-bottom:8px;}
+/* alignment guides */
+.guide{position:absolute;top:8px;bottom:8px;width:1px;opacity:0;transition:opacity .15s;z-index:6;pointer-events:none;}
+.dp.showguides .guide{opacity:.85;}
+.guide.axis{background:repeating-linear-gradient(to bottom,var(--guide) 0 4px,transparent 4px 9px);}
+.guide.rail{background:repeating-linear-gradient(to bottom,var(--rail) 0 4px,transparent 4px 9px);}
+.guide.bad{background:repeating-linear-gradient(to bottom,var(--bad) 0 4px,transparent 4px 9px);}
+.glab{position:absolute;top:-2px;font-family:'IBM Plex Mono',monospace;font-size:8px;white-space:nowrap;}
+.guide.axis .glab,.guide.bad .glab{color:var(--guide);left:3px;}.guide.bad .glab{color:var(--bad);}
+.guide.rail .glab{color:var(--rail);right:3px;}
+
+.dp .tags{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;}
+.dp .tag{font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.06em;text-transform:uppercase;padding:3px 7px;border-radius:3px;color:var(--ink2);box-shadow:inset 0 0 0 1px var(--line2);}
+.dp .tag.cat{color:#06101f;font-weight:700;box-shadow:none;}
+.dp .name{font-family:'IBM Plex Sans';font-weight:600;font-size:22px;letter-spacing:-.01em;line-height:1.2;margin-bottom:8px;}
+.dp .desc{font-size:13px;color:var(--ink2);line-height:1.5;margin-bottom:12px;}
+.dp input.nameedit{width:100%;font-size:22px;font-weight:600;font-family:'IBM Plex Sans';background:#0a0e1a;color:var(--ink);border-radius:5px;padding:2px 8px;box-shadow:inset 0 0 0 1px var(--line2);}
+.dp textarea.descedit{width:100%;font-family:'IBM Plex Sans';font-size:13px;background:#0a0e1a;color:var(--ink);border-radius:5px;padding:6px 8px;box-shadow:inset 0 0 0 1px var(--line2);resize:vertical;min-height:40px;}
+
+/* labels + value rail */
+.dp .mlabel{font-family:'IBM Plex Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink3);}
+.dp .quant{background:#0a0e1a;border-radius:6px;margin-bottom:12px;}
+.dp .quant.card{padding:8px;}                  /* current: inset card (labels +8) */
+.dp .quant.band{padding:8px 0;box-shadow:none;background:transparent;}  /* aligned: full-width band */
+.dp .qrow{display:flex;justify-content:space-between;align-items:baseline;padding:2px 0;font-size:12px;gap:8px;}
+.dp .qrow.grid{display:grid;grid-template-columns:1fr var(--value-rail);align-items:baseline;}
+.dp .qrow .v{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;font-size:12px;color:var(--ink);text-align:right;}
+.dp .qrow .v.good{color:var(--good);}
+.dp .qrow input.vin{font-family:'IBM Plex Mono',monospace;font-size:12px;text-align:right;background:#1a2030;color:var(--ink);border-radius:4px;padding:3px 8px;width:100%;box-shadow:inset 0 0 0 1px var(--line2);}
+.dp .qrow .locked{color:var(--ink3);font-style:italic;}
+
+.dp .listtitle{display:flex;justify-content:space-between;font-family:'IBM Plex Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink3);margin:14px 0 6px;}
+.dp .listtitle.grid{display:grid;grid-template-columns:1fr var(--value-rail);}
+.dp .listtitle .ct{text-align:right;}
+
+.dp .edge{display:block;width:100%;text-align:left;background:#1a2030;border-radius:0 5px 5px 0;margin-bottom:4px;
+  box-shadow:inset var(--stripe) 0 0 var(--good);cursor:pointer;color:inherit;font:inherit;}
+.dp .edge.cur{padding:8px 8px 8px 11px;}        /* current: +8 text pad past the 3px stripe */
+.dp .edge.aln{padding:8px 8px 8px calc(var(--stripe) + 0px);padding-left:var(--stripe);}/* aligned: text at gutter+stripe */
+.dp .edge.aln{padding:8px 8px 8px 3px;}
+.dp .edge .etop{display:flex;justify-content:space-between;align-items:baseline;gap:8px;}
+.dp .edge.aln .etop{display:grid;grid-template-columns:1fr var(--value-rail);}
+.dp .edge .enm{font-size:12px;font-weight:500;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.dp .edge .eel{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ink3);text-align:right;}
+.dp .edge .eef{font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;color:var(--good);margin-top:3px;}
+.dp .edge .edesc{font-size:11px;color:var(--ink3);margin-top:4px;line-height:1.4;}
+.dp .edge.focusdemo{box-shadow:inset var(--stripe) 0 0 var(--good),0 0 0 2px color-mix(in srgb,var(--accent) 60%,transparent);background:#232a3d;}
+/* edit-mode edge editor leaves */
+.dp .edgectrls{display:flex;gap:6px;margin-top:6px;}
+.dp .edgectrls .sel{flex:1;font-family:'IBM Plex Mono',monospace;font-size:11px;background:#111827;color:var(--ink);border-radius:4px;padding:4px 6px;box-shadow:inset 0 0 0 1px var(--line2);}
+.dp .edgectrls .eln{flex:0 0 var(--value-rail);text-align:right;font-family:'IBM Plex Mono',monospace;font-size:11px;background:#111827;color:var(--ink);border-radius:4px;padding:4px 6px;box-shadow:inset 0 0 0 1px var(--line2);}
+.dp .xdel{float:right;color:var(--ink3);font-size:12px;}
+
+/* edit fields */
+.dp .field{margin-bottom:10px;}
+.dp .field .mlabel{display:block;margin-bottom:3px;}
+.dp .field input,.dp .field .selbox{width:100%;background:#1a2030;color:var(--ink);font-size:12px;border-radius:5px;padding:5px 8px;box-shadow:inset 0 0 0 1px var(--line2);}
+.dp .field .selbox{display:flex;justify-content:space-between;align-items:center;}
+.dp .catopt{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink2);padding:2px 0;}
+.dp .catopt .cb{width:14px;height:14px;border-radius:3px;box-shadow:inset 0 0 0 1px var(--line2);flex:0 0 14px;}
+.dp .catopt .cb.on{background:var(--accent);box-shadow:none;}
+.dp .catopt .csw{width:12px;height:12px;border-radius:2px;flex:0 0 12px;filter:saturate(.65);}
+.dp .catopt .csw.darkring{box-shadow:inset 0 0 0 1px rgba(0,0,0,.4);}
+.dp .catopt .csw.whitering{box-shadow:inset 0 0 0 1px rgba(255,255,255,.5);}
+.dp .modebtn{display:block;width:100%;text-align:center;background:#1a2030;color:var(--ink);padding:7px;border-radius:5px;font-size:12px;font-weight:600;margin:12px 0;cursor:pointer;}
+.dp .modebtn.active{background:var(--accent);color:#06101f;}
+.dp .addlink{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--accent);margin-top:6px;}
+.dp .delnode{text-align:center;color:var(--bad);font-family:'IBM Plex Mono',monospace;font-size:11px;text-transform:uppercase;margin-top:12px;}
+.dp .unlockpulse{animation:pulse 1.4s ease;}
+@keyframes pulse{0%{box-shadow:0 0 0 2px color-mix(in srgb,var(--warn) 0%,transparent);}30%{box-shadow:0 0 0 2px color-mix(in srgb,var(--warn) 55%,transparent);}100%{box-shadow:0 0 0 2px color-mix(in srgb,var(--warn) 0%,transparent);}}
+
+.matrix{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px;}
+.matrix th,.matrix td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top;}
+.matrix thead th{font-family:'IBM Plex Mono',monospace;font-size:11px;text-transform:uppercase;color:var(--ink3);position:sticky;top:54px;background:var(--page-bg);}
+.matrix td:first-child{color:var(--ink);font-weight:600;}
+.matrix .yes{color:var(--good);}.matrix .no{color:var(--ink3);}.matrix .partial{color:var(--warn);}
+.foot{margin-top:36px;padding-top:18px;border-top:1px solid var(--line);color:var(--ink3);font-size:12px;}
+</style>
+</head>
+<body>
+<div class="bar"><div class="bar-in">
+  <h1>Right panel <span>· align · a11y · view↔edit</span></h1>
+  <div class="seg opts" id="optseg" role="group">
+    <button data-o="current" aria-pressed="true">Current</button>
+    <button data-o="a" aria-pressed="false">A · align</button>
+    <button data-o="b" aria-pressed="false">B · + a11y</button>
+    <button data-o="c" aria-pressed="false">C · converge</button>
+  </div>
+  <button class="tog edit" id="editbtn" aria-pressed="false">✎ Edit mode</button>
+  <button class="tog" id="guidebtn" aria-pressed="true">▥ Guides</button>
+  <button class="tog" id="splitbtn" aria-pressed="false">⇄ Split vs Current</button>
+  <nav><a href="#how">How to read</a><a href="#preview">Preview</a><a href="#matrix">Matrix</a></nav>
+</div></div>
+
+<div class="wrap">
+  <div class="hero" id="how">
+    <h2>Right detail panel — aligned, accessible, and one skeleton across view &amp; edit</h2>
+    <p class="lead">Three cumulative options. The dashed <b style="color:var(--guide)">amber guide</b> marks the single
+      <b>label axis</b>; the dashed <b style="color:var(--rail)">blue guide</b> marks the shared <b>value rail</b> (88px).
+      Toggle <b>✎ Edit mode</b> to switch the panel between view and edit — on <b>Current</b> it's a different layout
+      (it jumps); on <b>C</b> the layout stays put and fields <b>unlock in place</b>. <b>⇄ Split</b> compares against today.</p>
+    <div class="callout">
+      <b>The ladder.</b>
+      <span style="color:#9ec5ff">●</span> <b>A — Align</b> (CSS-only): one label axis (the heading/quant/edge step → gutter+stripe) and one value rail for quant values, elasticities &amp; counts.
+      <span style="color:#8fd3e6">●</span> <b>B — + accessibility</b>: edge rows become real <code>&lt;button&gt;</code>s (Tab + Enter, focus ring), the dark category-swatch ring → white (matches the left sidebar), reduced-motion + aria-pressed toggle.
+      <span style="color:#a7e0a0">●</span> <b>C — Converge view↔edit</b>: one skeleton renders both modes; toggling Edit swaps only each field's leaf (span ↔ input) in place — no layout swap. A+B folded in.
+    </div>
+    <div class="callout rec"><b>Recommendation — Option C</b> (your chosen direction). The view &amp; edit modes are
+      currently two different DOM trees, so toggling reads as a rebuild. C is the only option that fixes that root cause —
+      and it's cheaper than it looks: the view edge-rows and edit edge-editors are <b>already the same stripe frame</b>,
+      the name/quant rows already rhyme, and the tag row is already shared. A and B land first as safe, independent steps.</div>
+  </div>
+
+  <h3 class="sec" id="preview"><span class="n">01</span>Live preview — both modes</h3>
+  <p class="sub">A faithful 340px Compact detail panel for <i>Content published</i>. Switch option + <b>✎ Edit</b>; the
+    option card on the left explains each. On <b>Option C</b>, toggle Edit and watch the structure stay fixed while the
+    fields light up (amber pulse) and become editable.</p>
+  <div class="layout">
+    <div class="ocard" id="ocard"></div>
+    <div><div class="stagewrap" id="stagewrap"></div></div>
+  </div>
+
+  <h3 class="sec" id="matrix"><span class="n">02</span>Decision matrix</h3>
+  <div style="overflow-x:auto"><table class="matrix">
+    <thead><tr><th>Dimension</th><th>Current</th><th>A · align</th><th>B · + a11y</th><th>C · converge</th></tr></thead>
+    <tbody>
+      <tr><td>Label left-edge</td><td class="bad">3 steps (0/+8/+11)</td><td class="yes">one axis</td><td class="yes">one axis</td><td class="yes">one axis</td></tr>
+      <tr><td>Value rail (values/ε/counts)</td><td class="bad">3 right edges</td><td class="yes">one 88px rail</td><td class="yes">one rail</td><td class="yes">one rail</td></tr>
+      <tr><td>Edge rows keyboard-operable</td><td class="bad">inert div</td><td class="bad">inert div</td><td class="yes">&lt;button&gt; + ring</td><td class="yes">&lt;button&gt; + ring</td></tr>
+      <tr><td>Category swatch ring</td><td class="bad">dark (vanishes)</td><td class="bad">dark</td><td class="yes">white ≥3:1</td><td class="yes">white ≥3:1</td></tr>
+      <tr><td>View↔edit = one layout</td><td class="bad">two trees (jumps)</td><td class="no">two trees</td><td class="no">two trees</td><td class="yes">one skeleton, unlocks in place</td></tr>
+      <tr><td>Toggle announced (aria-pressed)</td><td class="bad">no</td><td class="no">no</td><td class="yes">yes</td><td class="yes">yes (stable region)</td></tr>
+      <tr><td>Compact density kept</td><td>—</td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes</td></tr>
+      <tr><td>Surface / risk</td><td>—</td><td class="yes">CSS-only</td><td class="partial">CSS + 1-line div→button</td><td class="warn">render refactor (staged)</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="foot">Mockup only — nothing in the app is changed. Built before any change, per the standing instruction.
+    Recommended path: <b>A → B → C</b>, shipped in stages, with C (converge) as the target you chose.</div>
+</div>
+
+<script>
+const OPTS={
+  current:{tone:0,name:'Current',disr:'today',
+    sum:'View and edit are two different layouts. In view, label text starts at three left edges (name/headings at the gutter, quant labels +8px, edge content +11px) and the values sit at three right edges. The Direct-inputs/impacts rows are clickable but inert (no keyboard). The category swatch ring is dark.',
+    pts:[]},
+  a:{tone:'a',name:'A · Align within each mode',disr:'Low · CSS-only',
+    sum:'Pull card/stripe content out to one label axis (gutter; edge text at gutter+3px stripe) and pin every numeric readout — quant values, edge elasticities, section counts — to one shared 88px value rail (the --value-col token, defined but unused in view today). No structural change; view & edit stay separate.',
+    aligns:'Every mono label starts on one amber axis; every value lands on one blue rail. The quant block becomes a full-width band rather than an inset card.',
+    a11y:['Alignment only — does not yet fix the inert edge rows or the dark swatch ring (those are B).','Predictable label + value columns aid low-vision scanning.'],
+    changes:['Quant block padding → 0 horizontal so labels reach the gutter','Edge text padding → just the 3px stripe (content at gutter+3)','.detail-quant-row / .detail-edge-header / .detail-list-title become 1fr / 88px grids → values, ε and counts on one rail','Edit-mode edge inset + elasticity width reuse the same axis + rail'],
+    keeps:['Both render branches + handlers untouched','Section order in both modes','The clean edit-mode label-over-input baseline','Compact density'],
+    trade:'Kills the left zigzag and the three right edges in a pure-CSS pass, but leaves the inert edge a11y, the dark swatch ring, and the view/edit fork open.'},
+  b:{tone:'b',name:'B · + accessibility',disr:'Low · CSS + 1-line',
+    sum:'Everything in A, plus make the panel keyboard-operable and consistent with the left sidebar’s language: edge rows become real <button>s with focus rings, the category swatch ring goes white, reduced-motion is honoured, and the mode toggle announces its state.',
+    aligns:'Same single axis + value rail as A.',
+    a11y:['Edge rows → <button>: Tab-reachable, Enter/Space jumps to the node, inherits the --focus-ring','Focus ring re-states the coloured 3px stripe so the edge marker survives focus','Per-row aria-label “Jump to upstream/downstream node: …”','Category swatch ring rgba(0,0,0,.4) → rgba(255,255,255,.5) — keeps a boundary on dark fills (WCAG 1.4.11)','Reduced-motion: suppress the hover translateX (the global block only zeroes durations)','Mode toggle aria-pressed announces lock/unlock'],
+    changes:['All of A','renderEdgeItem div → <button> (the click listener is unchanged)','Add :focus-visible ring that re-states the stripe','Swatch ring → white .5; toggle aria-pressed; explicit dropdown focus ring'],
+    keeps:['All of A’s keeps','View click behaviour + existing handlers','Edit field writes + focus preservation'],
+    trade:'Biggest accessibility win for the smallest diff, and makes both panels speak one focus/swatch language. Still doesn’t merge view & edit — that’s C.'},
+  c:{tone:'c',name:'C · Converge view ↔ edit',disr:'Medium · staged refactor',
+    sum:'One renderNodeSkeleton(node, editMode) emits the SAME ordered sections in the SAME frames every render; a mode flag swaps only each frame’s leaf control (read-only span ↔ input/select/textarea). Toggling Edit reads as fields unlocking in place, never a rebuild. A’s axis/rail and B’s a11y are folded in so they land once for both modes.',
+    aligns:'Same axis + rail as A/B — and now the DOM is the same shape in both modes, so the toggle is a class-flip + leaf swap, and focus/scroll survive it.',
+    a11y:['All of B’s wins, landing once on the shared skeleton','Toggle aria-pressed on a now-STABLE region — AT announces “fields unlocked”, not a silent rebuild','Every value-rail input is labelled by its axis label via the shared frame','Stable DOM = focus + tab order survive the toggle and edits'],
+    changes:['All of A + B, expressed through one field() primitive','5 fixed frames in fixed positions: identity/tags · name · description · quantification · causal-edges','Merge .detail-edge-item + .outgoing-edge-row (already byte-identical) into one .edge-stripe','Name span ↔ input, description span ↔ textarea, quant value-spans ↔ inputs on the rail, Impacts stripe-rows ↔ stripe-editors — all in place','Replace the innerHTML view/edit fork with the single skeleton + .is-editing class flip + unlock highlight'],
+    keeps:['Section content + the clean edit baseline (editRow → field())','Shared tag row, the stripe frame, all field-write logic + focus preservation','Compact density + existing tokens — no new spacing system'],
+    trade:'The only option that fixes the root cause (two divergent trees). Biggest refactor (most of 15-detail-panel.js + some CSS), but bounded — the blocks already rhyme, so it’s mostly consolidation. Needs care where shapes differ (display name vs input) so row heights don’t jump, and clear affordances for the derived/locked quant rows and the Inputs-read-only / Impacts-editable asymmetry. Stage it: B → A → merge stripes → single skeleton.'},
+};
+
+const TAGS=[['Metric','cat','#5eead4'],['Operations','',''],['Outputs','','']];
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+const INPUTS=[['Content production','increases','+0.60','Content production directly drives the volume metric.']];
+const IMPACTS=[['Brand awareness','increases','+0.40','Sustained publishing raises brand awareness over time.'],
+               ['Leads generated','increases','+0.20','Content is a top-of-funnel lead source (cross-team effect).']];
+
+function tagsRow(){return `<div class="tags">${TAGS.map(t=>`<span class="tag ${t[1]}" ${t[1]==='cat'?`style="background:${t[2]};filter:saturate(.65)"`:''}>${esc(t[0])}</span>`).join('')}</div>`;}
+
+function edgeRow(e,opt,aligned,focus){
+  const tag = (opt==='b'||opt==='c')?'button':'div';
+  const cls = 'edge '+(aligned?'aln':'cur')+(focus?' focusdemo':'');
+  const top = aligned
+    ? `<div class="etop"><span class="enm">${e.dir} ${esc(e.nm)}</span><span class="eel">ε ${e.el}</span></div>`
+    : `<div class="etop"><span class="enm">${e.dir} ${esc(e.nm)}</span><span class="eel">ε ${e.el}</span></div>`;
+  return `<${tag} class="${cls}" type="button">${top}<div class="eef">${e.ef}</div><div class="edesc">${esc(e.desc)}</div></${tag}>`;
+}
+function edgeEdit(e,aligned){
+  return `<div class="edge aln" style="cursor:default"><div class="etop"><span class="enm">${e.dir} ${esc(e.nm)}</span><span class="xdel">×</span></div>
+    <div class="edgectrls"><span class="sel">increases ▾</span><span class="eln">${e.el.replace('+','')}</span></div>
+    <textarea class="descedit" style="margin-top:6px;min-height:32px">${esc(e.desc)}</textarea></div>`;
+}
+
+function buildPanel(opt,edit){
+  const aligned = (opt!=='current');
+  const converged = (opt==='c');
+  const valueRail = aligned;
+  let h='<div class="chev">›</div><div class="g">';
+  // guides
+  if(opt==='current'){
+    h += `<span class="guide bad" style="left:16px"><span class="glab">name/head 16</span></span>`;
+    h += `<span class="guide bad" style="left:24px"><span class="glab">quant +8</span></span>`;
+    h += `<span class="guide bad" style="left:27px"><span class="glab">edge +11</span></span>`;
+  } else {
+    h += `<span class="guide axis" style="left:16px"><span class="glab">label axis</span></span>`;
+    h += `<span class="guide rail" style="left:208px"><span class="glab" style="right:3px">value rail</span></span>`; // 340 - 16 - 116 = 208
+  }
+
+  if(converged){
+    // ONE skeleton; edit swaps leaves in place
+    h += tagsRow();
+    if(edit){ h += `<div class="field"><span class="mlabel">Stream</span><div class="selbox">Operations <span style="color:var(--ink3)">▾</span></div></div>
+      <div class="field"><span class="mlabel">Stage</span><div class="selbox">Outputs <span style="color:var(--ink3)">▾</span></div></div>`; }
+    // name
+    h += edit ? `<div class="field unlockpulse"><input class="nameedit" value="Content published"></div>`
+              : `<div class="name">Content published</div>`;
+    // description
+    h += edit ? `<textarea class="descedit unlockpulse">Number of articles or assets shipped each month.</textarea>`
+              : `<div class="desc">Number of articles or assets shipped each month.</div>`;
+    // quantification (rail grid both modes)
+    h += `<div class="quant band">`;
+    const qrow=(k,v,cls,input)=>`<div class="qrow grid"><span class="mlabel">${k}</span>${input?`<input class="vin${edit?' unlockpulse':''}" value="${v}">`:`<span class="v ${cls||''}">${v}</span>`}</div>`;
+    h += qrow('Baseline','20.0 pieces/mo','',edit);
+    h += `<div class="qrow grid"><span class="mlabel">Current</span><span class="v locked">20.0 (derived)</span></div>`;
+    h += `<div class="qrow grid"><span class="mlabel">Δ vs base</span><span class="v locked">—</span></div>`;
+    h += edit ? `<div class="qrow grid"><span class="mlabel">Outcome</span><div class="selbox" style="font-size:11px">Higher better ▾</div></div>`
+              : `<div class="qrow grid"><span class="mlabel">Outcome</span><span class="v good">↑ higher</span></div>`;
+    h += `</div>`;
+    // edges
+    h += `<div class="listtitle grid"><span>Direct inputs</span><span class="ct">1</span></div>`;
+    h += INPUTS.map(e=>edgeRow({dir:'←',nm:e[0],ef:e[1].toUpperCase(),el:e[2],desc:e[3]},opt,true,false)).join('');
+    h += `<div class="listtitle grid"><span>Direct impacts</span><span class="ct">2</span></div>`;
+    h += IMPACTS.map(e=> edit
+        ? edgeEdit({dir:'→',nm:e[0],el:e[2],desc:e[3]},true)
+        : edgeRow({dir:'→',nm:e[0],ef:e[1].toUpperCase(),el:e[2],desc:e[3]},opt,true,opt==='c'&&!edit&&e[0]==='Brand awareness')).join('');
+    if(edit){ h += `<div class="addlink">+ Add outgoing edge</div><div class="delnode">Delete node</div>`; }
+    h += '</div>';
+    return h;
+  }
+
+  // CURRENT / A / B — two separate layouts (view vs edit)
+  if(!edit){
+    h += tagsRow();
+    h += `<div class="name">Content published</div>`;
+    h += `<div class="desc">Number of articles or assets shipped each month.</div>`;
+    h += `<div class="quant ${aligned?'band':'card'}">`;
+    const qv=(k,v,cls)=> aligned
+      ? `<div class="qrow grid"><span class="mlabel">${k}</span><span class="v ${cls||''}">${v}</span></div>`
+      : `<div class="qrow"><span class="mlabel">${k}</span><span class="v ${cls||''}">${v}</span></div>`;
+    h += qv('Baseline','20.0 pieces/mo');
+    h += qv('Current','20.0 pieces/mo');
+    h += qv('Δ vs base','—');
+    h += qv('Outcome','↑ higher','good');
+    h += `</div>`;
+    h += `<div class="modebtn">Edit node</div>`;
+    h += aligned?`<div class="listtitle grid"><span>Direct inputs</span><span class="ct">1</span></div>`:`<div class="listtitle"><span>Direct inputs</span><span class="ct">1</span></div>`;
+    h += INPUTS.map(e=>edgeRow({dir:'←',nm:e[0],ef:e[1].toUpperCase(),el:e[2],desc:e[3]},opt,aligned,opt==='b'&&e[0]==='Content production')).join('');
+    h += aligned?`<div class="listtitle grid"><span>Direct impacts</span><span class="ct">2</span></div>`:`<div class="listtitle"><span>Direct impacts</span><span class="ct">2</span></div>`;
+    h += IMPACTS.map(e=>edgeRow({dir:'→',nm:e[0],ef:e[1].toUpperCase(),el:e[2],desc:e[3]},opt,aligned,false)).join('');
+    h += '</div>';
+    return h;
+  }
+  // edit layout (current/A/B) — different structure from view
+  h += `<div class="modebtn active">Done editing</div>`;
+  h += `<div class="mlabel" style="margin-bottom:6px">Node fields</div>`;
+  h += `<div class="field"><span class="mlabel">Label</span><input value="Content published"></div>`;
+  h += `<div class="field"><span class="mlabel">Description</span><textarea class="descedit" style="min-height:34px">Number of articles or assets shipped each month.</textarea></div>`;
+  h += `<div class="field"><span class="mlabel">Stream</span><div class="selbox">Operations <span style="color:var(--ink3)">▾</span></div></div>`;
+  h += `<div class="field"><span class="mlabel">Stage</span><div class="selbox">Outputs <span style="color:var(--ink3)">▾</span></div></div>`;
+  h += `<div class="mlabel" style="margin:8px 0 4px">Primary · fill</div>`;
+  const ringcls = (opt==='b')?'whitering':'darkring';
+  [['Resource','#d4a373',false],['Metric','#5eead4',true]].forEach(c=>{
+    h += `<div class="catopt"><span class="cb ${c[2]?'on':''}"></span><span class="csw ${ringcls}" style="background:${c[1]}"></span>${c[0]}</div>`;
+  });
+  h += `<div class="field" style="margin-top:8px"><span class="mlabel">Baseline</span><input value="20"></div>`;
+  h += `<div class="listtitle"><span>Outgoing edges</span><span class="ct">2</span></div>`;
+  h += IMPACTS.map(e=>edgeEdit({dir:'→',nm:e[0],el:e[2],desc:e[3]},aligned)).join('');
+  h += `<div class="addlink">+ Add outgoing edge</div><div class="delnode">Delete node</div>`;
+  h += '</div>';
+  return h;
+}
+
+let CUR='current',EDIT=false,GUIDES=true,SPLIT=false;
+const wrap=document.getElementById('stagewrap');
+function col(opt){
+  const o=OPTS[opt];const tag=opt==='current'?'Current':'Option '+opt.toUpperCase();
+  return `<div class="pcol"><div class="pcap"><b>${tag}</b> · ${EDIT?'edit mode':'view mode'}</div>
+    <div class="dp${GUIDES?' showguides':''}" data-opt="${opt}">${buildPanel(opt,EDIT)}</div></div>`;
+}
+function render(){
+  wrap.innerHTML = (SPLIT && CUR!=='current') ? col('current')+col(CUR) : col(CUR);
+}
+function renderCard(){
+  const o=OPTS[CUR];const tag=CUR==='current'?'Current':'Option '+CUR.toUpperCase();
+  let b=`<p>${esc(o.sum)}</p>`;
+  if(o.aligns) b+=`<h5>What lines up</h5><p style="color:var(--ink)">${esc(o.aligns)}</p>`;
+  if(o.a11y) b+=`<h5>Accessibility</h5><ul class="a11y">${o.a11y.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`;
+  if(o.changes) b+=`<h5>Changes</h5><ul>${o.changes.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`;
+  if(o.keeps) b+=`<h5>Keeps</h5><ul>${o.keeps.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`;
+  if(o.trade) b+=`<h5>Trade-off</h5><p>${esc(o.trade)}</p>`;
+  document.getElementById('ocard').innerHTML=`<div class="ocard-top"><span class="badge tone-${o.tone}">${tag}</span>
+    <div><h4>${esc(o.name)}</h4><div style="font-size:11px;color:var(--ink3);font-family:'IBM Plex Mono',monospace">${esc(o.disr)}</div></div></div>
+    <div class="body">${b}</div>`;
+}
+document.getElementById('optseg').addEventListener('click',e=>{const x=e.target.closest('button');if(!x)return;
+  CUR=x.dataset.o;[...e.currentTarget.children].forEach(n=>n.setAttribute('aria-pressed',n===x));renderCard();render();});
+const eb=document.getElementById('editbtn');eb.addEventListener('click',()=>{EDIT=!EDIT;eb.setAttribute('aria-pressed',EDIT);render();});
+const gb=document.getElementById('guidebtn');gb.addEventListener('click',()=>{GUIDES=!GUIDES;gb.setAttribute('aria-pressed',GUIDES);render();});
+const sb=document.getElementById('splitbtn');sb.addEventListener('click',()=>{SPLIT=!SPLIT;sb.setAttribute('aria-pressed',SPLIT);
+  if(SPLIT&&CUR==='current'){CUR='c';[...document.getElementById('optseg').children].forEach(n=>n.setAttribute('aria-pressed',n.dataset.o==='c'));renderCard();}render();});
+renderCard();render();
+</script>
+</body>
+</html>
