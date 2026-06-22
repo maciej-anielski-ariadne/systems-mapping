@@ -14,3 +14,12 @@ Thumbs.db
 
 # Local-only sample data (not shipped with the repo)
 assets/data/sample_uk_border.csv
+
+# Node / build tooling
+node_modules/
+coverage/
+*.tsbuildinfo
+.vite/
+
+# Migration scratch artifacts (symbol map, etc.)
+.migration/

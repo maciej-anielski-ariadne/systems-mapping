@@ -1,12 +1,12 @@
 # Systems Map
 
-Spreadsheet-driven interactive systems map. Single standalone HTML file, no dependencies, no server, no build step required at runtime. Open the HTML, drop in a spreadsheet, get a layered cause-and-effect diagram with live what-if simulation.
+Spreadsheet-driven interactive systems map. Written in TypeScript as ES modules and bundled with Vite; `npm run build` produces a **single standalone HTML file** with no runtime dependencies, server, or network access. Open that file, drop in a spreadsheet, and get a layered cause-and-effect diagram with live what-if simulation.
 
 Domain-agnostic — any system you can express as boxes-with-rows-and-columns plus signed links will render. The default sample spreadsheet is a small neutral worked example (a three-team product company — 12 boxes, 12 links) that exercises every feature of the app while staying small enough to grok at a glance.
 
 ## Quick start
 
-1. Open `index.html` in any modern browser. (Works fully offline — fonts and code are bundled locally.)
+1. **To use the app:** run `npm install` once, then `npm run build`, and open the generated `dist/systems-map.html` in any modern browser. It is a single self-contained file — fully offline, fonts and code bundled in. (**To develop:** `npm run dev` starts a live-reloading server — see [Development & build](#development--build).)
 2. The app boots into an **empty 3×3 starter grid** — three rows, three columns, no boxes yet. From here you have three paths:
    - **Build directly on the map** (recommended for non-technical users). Click any empty cell to add a box, then rename it in the right panel. Drag from the right edge of a box to another box to draw a link. Edit rows / columns / categories from the left sidebar (pencil icon to rename / delete, drag handle to reorder, **+ Add** buttons at the bottom of each section).
    - **Import an existing spreadsheet** — click **Import** in the header, or drag-drop a `.csv` onto the window.
@@ -199,37 +199,37 @@ systems_mapping/
     │                                (flat look = `border: 0` in 02-base.css;
     │                                 state shown via drop-shadow / box-shadow rings)
     ├── js/
-    │   ├── 01-sample-data.js        Embedded SAMPLE_CSV string (sample.csv copy)
-    │   ├── 02-config.js             Pixel sizes (NODE_WIDTH etc.) + shared option lists
-    │   ├── 03-state.js              Shared globals (state, NODES, EDGES, …)
-    │   ├── 04-utils.js              wrapLabel / escapeHtml / formatScalar / clone helpers
-    │   ├── 04a-storage.js           localStorage persistence (CSV, UI, wizard)
-    │   ├── 05-csv-parser.js         Multi-section CSV parser (CSV → data)
-    │   ├── 05a-csv-serializer.js    Multi-section CSV serializer (data → CSV)
-    │   ├── 06-data-loader.js        loadDataFromCsv + rebuildIndexes
-    │   ├── 07-simulation-engine.js  Cobb-Douglas propagation + applySimMultiplier
-    │   ├── 08-layout.js             Node positioning
-    │   ├── 09-graph-selection.js    Ancestor/descendant traversal + selectNode
-    │   ├── 10-filters.js            Stream / category visibility
-    │   ├── 11-rendering.js          Main SVG renderer
-    │   ├── 12-tooltip.js            Hover popup + generic UI-tooltip helper
-    │   ├── 13-sidebar.js            Renders the left filter UI
-    │   ├── 14-simulation-panel.js   Renders the slider + number-input UI
-    │   ├── 15-detail-panel.js       Renders the right-side details
-    │   ├── 16-file-io.js            Drag-drop, file picker, CSV download
-    │   ├── 16a-builder-state.js     Wizard: state seeding, validation, helpers
-    │   ├── 16b-builder-render.js    Wizard: HTML output for the six steps
-    │   ├── 16c-builder-editor.js    Wizard: floating "expand this cell" editor
-    │   ├── 16d-builder-events.js    Wizard: click / typing / drag handlers
-    │   ├── 16e-canvas-edit.js       Canvas gestures: ghost cell, edge drag, delete
-    │   ├── 16f-canvas-mutations.js  Sidebar mutations: add/delete/reorder for
+    │   ├── 01-sample-data.ts        Embedded SAMPLE_CSV string (sample.csv copy)
+    │   ├── 02-config.ts             Pixel sizes (NODE_WIDTH etc.) + shared option lists
+    │   ├── 03-state.ts              Shared globals (state, NODES, EDGES, …)
+    │   ├── 04-utils.ts              wrapLabel / escapeHtml / formatScalar / clone helpers
+    │   ├── 04a-storage.ts           localStorage persistence (CSV, UI, wizard)
+    │   ├── 05-csv-parser.ts         Multi-section CSV parser (CSV → data)
+    │   ├── 05a-csv-serializer.ts    Multi-section CSV serializer (data → CSV)
+    │   ├── 06-data-loader.ts        loadDataFromCsv + rebuildIndexes
+    │   ├── 07-simulation-engine.ts  Cobb-Douglas propagation + applySimMultiplier
+    │   ├── 08-layout.ts             Node positioning
+    │   ├── 09-graph-selection.ts    Ancestor/descendant traversal + selectNode
+    │   ├── 10-filters.ts            Stream / category visibility
+    │   ├── 11-rendering.ts          Main SVG renderer
+    │   ├── 12-tooltip.ts            Hover popup + generic UI-tooltip helper
+    │   ├── 13-sidebar.ts            Renders the left filter UI
+    │   ├── 14-simulation-panel.ts   Renders the slider + number-input UI
+    │   ├── 15-detail-panel.ts       Renders the right-side details
+    │   ├── 16-file-io.ts            Drag-drop, file picker, CSV download
+    │   ├── 16a-builder-state.ts     Wizard: state seeding, validation, helpers
+    │   ├── 16b-builder-render.ts    Wizard: HTML output for the six steps
+    │   ├── 16c-builder-editor.ts    Wizard: floating "expand this cell" editor
+    │   ├── 16d-builder-events.ts    Wizard: click / typing / drag handlers
+    │   ├── 16e-canvas-edit.ts       Canvas gestures: ghost cell, edge drag, delete
+    │   ├── 16f-canvas-mutations.ts  Sidebar mutations: add/delete/reorder for
     │   │                            streams, stages, categories + the single
     │   │                            applyCanvasMutation() chokepoint
-    │   ├── 16g-canvas-undo.js       Undo snapshots + the bottom-of-screen toast
-    │   ├── 17-events.js             Wires up search box, buttons, drag-drop, zoom, pan, pins
-    │   ├── 17a-search.js            Fuzzy search: scoring, dropdown, map highlights
-    │   ├── 19-export.js             Export canvas → image (PNG + SVG) + view-only HTML
-    │   └── 18-main.js               Startup — restores persisted state
+    │   ├── 16g-canvas-undo.ts       Undo snapshots + the bottom-of-screen toast
+    │   ├── 17-events.ts             Wires up search box, buttons, drag-drop, zoom, pan, pins
+    │   ├── 17a-search.ts            Fuzzy search: scoring, dropdown, map highlights
+    │   ├── 19-export.ts             Export canvas → image (PNG + SVG) + view-only HTML
+    │   └── 18-main.ts               Startup — restores persisted state
     └── data/
         ├── sample.csv               Small neutral example (3 rows, 12 boxes, 12 links).
         │                            Powers "Load Sample" + "Download Sample".
@@ -251,14 +251,14 @@ Each file opens with a comment header explaining its job and which other
 file calls into it. Most JS files are under 300 lines. The two biggest
 features are split across multiple files:
 
-- The **Build / Edit wizard** is split across `16a-builder-state.js`,
-  `16b-builder-render.js`, `16c-builder-editor.js`, `16d-builder-events.js`.
-  See the comment header of `16a-builder-state.js` for the overview.
+- The **Build / Edit wizard** is split across `16a-builder-state.ts`,
+  `16b-builder-render.ts`, `16c-builder-editor.ts`, `16d-builder-events.ts`.
+  See the comment header of `16a-builder-state.ts` for the overview.
 - **Canvas direct edit** (the primary editing path — click a cell to add
   a node, drag from a node edge to draw a link) is split across
-  `16e-canvas-edit.js` (the gestures), `16f-canvas-mutations.js` (the
-  sidebar-driven add/delete/reorder helpers), and `16g-canvas-undo.js`
-  (snapshot + toast). See the comment header of `16e-canvas-edit.js`.
+  `16e-canvas-edit.ts` (the gestures), `16f-canvas-mutations.ts` (the
+  sidebar-driven add/delete/reorder helpers), and `16g-canvas-undo.ts`
+  (snapshot + toast). See the comment header of `16e-canvas-edit.ts`.
 
 ## Editing the app
 
@@ -266,24 +266,24 @@ features are split across multiple files:
 |------------|-------|
 | Colours, fonts | `assets/css/01-variables.css` |
 | The sample CSV that comes built-in | `assets/data/sample.csv` (and re-export the JS constant — see note below) |
-| The size of nodes / spacing | `assets/js/02-config.js` |
-| The list of valid edge effects, outcome directions, stream colour palette | `assets/js/02-config.js` |
-| How nodes propagate values | `assets/js/07-simulation-engine.js` |
-| How nodes are positioned | `assets/js/08-layout.js` |
-| How nodes/edges are drawn | `assets/js/11-rendering.js` |
-| The right detail panel | `assets/js/15-detail-panel.js` |
-| Canvas direct-edit gestures (click a cell → node, drag from edge → arrow) | `assets/js/16e-canvas-edit.js` |
-| Sidebar add / delete / reorder for streams, stages, categories | `assets/js/16f-canvas-mutations.js` |
-| The Build / Edit wizard | `assets/js/16a-builder-state.js` (state + validation), `16b-builder-render.js` (UI), `16c-builder-editor.js` (cell editor), `16d-builder-events.js` (events), `assets/css/11-builder.css` (styles), `assets/js/05a-csv-serializer.js` (CSV writer) |
-| Undo snapshot behaviour / toast | `assets/js/16g-canvas-undo.js` |
-| Search behaviour / fuzzy matching | `assets/js/17a-search.js`, `assets/css/13-search.css` |
-| Button behaviour | `assets/js/17-events.js` |
+| The size of nodes / spacing | `assets/js/02-config.ts` |
+| The list of valid edge effects, outcome directions, stream colour palette | `assets/js/02-config.ts` |
+| How nodes propagate values | `assets/js/07-simulation-engine.ts` |
+| How nodes are positioned | `assets/js/08-layout.ts` |
+| How nodes/edges are drawn | `assets/js/11-rendering.ts` |
+| The right detail panel | `assets/js/15-detail-panel.ts` |
+| Canvas direct-edit gestures (click a cell → node, drag from edge → arrow) | `assets/js/16e-canvas-edit.ts` |
+| Sidebar add / delete / reorder for streams, stages, categories | `assets/js/16f-canvas-mutations.ts` |
+| The Build / Edit wizard | `assets/js/16a-builder-state.ts` (state + validation), `16b-builder-render.ts` (UI), `16c-builder-editor.ts` (cell editor), `16d-builder-events.ts` (events), `assets/css/11-builder.css` (styles), `assets/js/05a-csv-serializer.ts` (CSV writer) |
+| Undo snapshot behaviour / toast | `assets/js/16g-canvas-undo.ts` |
+| Search behaviour / fuzzy matching | `assets/js/17a-search.ts`, `assets/css/13-search.css` |
+| Button behaviour | `assets/js/17-events.ts` |
 | Sample data dataset | `assets/data/sample.csv` |
 | Colours, fonts &amp; design tokens (radius / spacing / motion scales) | `assets/css/01-variables.css` |
 | The flat look (no borders) | `border: 0` in `assets/css/02-base.css`; state shown as box-shadow rings in the component files |
 
 > **Note on sample data:** the `SAMPLE_CSV` constant in
-> `assets/js/01-sample-data.js` is a byte-for-byte copy of
+> `assets/js/01-sample-data.ts` is a byte-for-byte copy of
 > `assets/data/sample.csv` so the app works offline without an HTTP server.
 > After editing the CSV, regenerate the JS file — see *Updating the sample
 > CSV* below.
@@ -291,29 +291,46 @@ features are split across multiple files:
 ## Updating the sample CSV
 
 `assets/data/sample.csv` is the source of truth. The `SAMPLE_CSV` constant in
-`assets/js/01-sample-data.js` is a byte-for-byte copy (so the in-page buttons
-work without an HTTP server). After editing the CSV, run this one-liner from
-the project root to regenerate the JS file:
+`assets/js/01-sample-data.ts` is a byte-for-byte copy (so the in-page "Load
+sample" / "Download sample" buttons work without an HTTP server). After editing
+the CSV, run this one-liner from the project root to regenerate the TS file:
 
 ```bash
 python3 -c "
 import pathlib
 def esc(s): return s.replace('\\\\','\\\\\\\\').replace('\\`','\\\\\\`').replace('\${','\\\\\${')
 sample = pathlib.Path('assets/data/sample.csv').read_text()
-header = open('assets/js/01-sample-data.js').read().split('const SAMPLE_CSV')[0]
-out = header + 'const SAMPLE_CSV = \`' + esc(sample) + '\`;\n'
-pathlib.Path('assets/js/01-sample-data.js').write_text(out)
-print('Regenerated assets/js/01-sample-data.js')
+header = open('assets/js/01-sample-data.ts').read().split('export const SAMPLE_CSV')[0]
+out = header + 'export const SAMPLE_CSV = \`' + esc(sample) + '\`;\n'
+pathlib.Path('assets/js/01-sample-data.ts').write_text(out)
+print('Regenerated assets/js/01-sample-data.ts')
 "
 ```
 
 If you only ever drag a .csv onto the app (instead of clicking "Load sample"),
 you don't need to regenerate.
 
-## No build step
+## Development & build
 
-The app is plain HTML, CSS, and JS — open `index.html` and it runs. No npm,
-no bundler, no transpiler.
+The app is **TypeScript** + **ES modules**, bundled with **Vite**. Install the
+toolchain once, then:
+
+```bash
+npm install        # one-time
+npm run dev        # live-reloading dev server (http://localhost:5173)
+npm run build      # -> dist/systems-map.html: one self-contained, offline file
+npm run typecheck  # tsc --noEmit (strict mode)
+npm test           # vitest unit + integration suite
+npm run lint       # eslint
+```
+
+`assets/js/18-main.ts` is the single entry point; it imports every module in
+dependency order, so the page loads one `<script type="module">` instead of 34
+ordered tags. The numbered file layout (and each file's job) is unchanged from
+the original — only the language (TS) and module system (ESM) changed. The build
+inlines all JS, CSS, and fonts into one HTML file, exactly as the old
+`build-dist.py` did (which it replaces). CI runs typecheck + tests + lint +
+build on every push (`.github/workflows/ci.yml`).
 
 ## Limitations
 

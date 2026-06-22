@@ -288,49 +288,14 @@
 <div id="builder-overlay" class="builder-overlay"></div>
 
 <!-- ============================================================================
-     JAVASCRIPT — loaded in strict numeric order
+     JAVASCRIPT — a single ES-module entry point.
      -------------------------------------------------------------------------
-     The files share global variables (declared in 03-state.js) and call each
-     other's functions, so the order matters. New code that doesn't fit cleanly
-     into an existing file should generally go into a NEW numbered file,
-     loaded at the right point in this sequence.
+     The app is TypeScript + ES modules, bundled by Vite. `18-main.ts` imports
+     every module in dependency order (see its header). Develop with
+     `npm run dev`; ship a single self-contained file with `npm run build`
+     (writes dist/systems-map.html).
      ========================================================================== -->
-<script src="assets/js/01-sample-data.js"></script>        <!-- SAMPLE_CSV constants     -->
-<script src="assets/js/02-config.js"></script>             <!-- layout sizing constants  -->
-<script src="assets/js/03-state.js"></script>              <!-- shared global state      -->
-<script src="assets/js/04-utils.js"></script>              <!-- escapeHtml / formatScalar -->
-<script src="assets/js/04a-storage.js"></script>           <!-- localStorage persistence -->
-<script src="assets/js/04b-typeable-dropdown.js"></script> <!-- typable / filterable <select> -->
-
-<script src="assets/js/05-csv-parser.js"></script>         <!-- read .csv string         -->
-<script src="assets/js/05a-csv-serializer.js"></script>    <!-- write .csv string        -->
-<script src="assets/js/06-data-loader.js"></script>        <!-- loadDataFromCsv          -->
-<script src="assets/js/07-simulation-engine.js"></script>  <!-- node value propagation   -->
-<script src="assets/js/08-layout.js"></script>             <!-- computeLayout            -->
-<script src="assets/js/09-graph-selection.js"></script>    <!-- ancestor / descendant    -->
-<script src="assets/js/10-filters.js"></script>            <!-- show/hide streams/stages -->
-<script src="assets/js/10a-collapsed-edges.js"></script>   <!-- reroute through hidden    -->
-<script src="assets/js/11-rendering.js"></script>          <!-- SVG renderer             -->
-<script src="assets/js/12-tooltip.js"></script>            <!-- hover popup              -->
-<script src="assets/js/13-sidebar.js"></script>            <!-- left-side filter UI      -->
-<script src="assets/js/14-simulation-panel.js"></script>   <!-- sliders                  -->
-<script src="assets/js/15-detail-panel.js"></script>       <!-- right-side details       -->
-<script src="assets/js/16-file-io.js"></script>            <!-- drag-drop + download         -->
-<script src="assets/js/16a-builder-state.js"></script>     <!-- wizard: state + validation   -->
-<script src="assets/js/16b-builder-render.js"></script>    <!-- wizard: render functions     -->
-<script src="assets/js/16c-builder-editor.js"></script>    <!-- wizard: floating cell editor -->
-<script src="assets/js/16d-builder-events.js"></script>    <!-- wizard: event wiring         -->
-<script src="assets/js/16e-canvas-edit.js"></script>       <!-- canvas gestures: ghost cell, edge drag, delete -->
-<script src="assets/js/16f-canvas-mutations.js"></script>  <!-- sidebar mutations: add/delete/reorder -->
-<script src="assets/js/16g-canvas-undo.js"></script>       <!-- undo snapshots + toast -->
-<script src="assets/js/16h-canvas-inline-rename.js"></script> <!-- type-on-node rename -->
-<script src="assets/js/16i-canvas-keyboard-nav.js"></script>  <!-- arrows / Tab / Enter -->
-<script src="assets/js/16j-multi-select-bar.js"></script>     <!-- batch action bar for multi-select -->
-
-<script src="assets/js/17-events.js"></script>             <!-- wire up controls         -->
-<script src="assets/js/17a-search.js"></script>            <!-- fuzzy search + dropdown  -->
-<script src="assets/js/19-export.js"></script>             <!-- clipboard PNG copy + HTML publish -->
-<script src="assets/js/18-main.js"></script>               <!-- startup                  -->
+<script type="module" src="assets/js/18-main.ts"></script>
 
 </body>
 </html>
