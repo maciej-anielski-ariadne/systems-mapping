@@ -19,7 +19,7 @@
   align-items: stretch;
   justify-content: center;
   z-index: var(--z-overlay);              /* above the drop zone (z 50) and everything else */
-  padding: 32px;
+  padding: var(--space-4);
   font-family: var(--font-ui);
 }
 
@@ -39,8 +39,8 @@
 .builder-header {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 16px 24px;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--gutter);
   background: var(--bg-mid);
 }
 
@@ -53,7 +53,7 @@
 
 .builder-step-indicator {
   display: flex;
-  gap: 6px;
+  gap: var(--gap-md);
   margin-left: auto;
 }
 
@@ -64,7 +64,7 @@
   text-transform: uppercase;
   background: var(--bg-light);
   color: var(--text-tertiary);
-  padding: 4px 10px;
+  padding: var(--pad-button);
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.15s;
@@ -112,7 +112,7 @@
 }
 
 .builder-step-static {
-  padding: 24px 24px 16px 24px;
+  padding: var(--space-6) var(--gutter) var(--space-4) var(--gutter);
   flex-shrink: 0;
 }
 
@@ -126,7 +126,7 @@
   overflow-y: auto;
   /* No top padding — the sticky table header sits flush against the divider
    * above. Side + bottom padding gives the table breathing room. */
-  padding: 0 24px 24px 24px;
+  padding: 0 var(--gutter) var(--section-gap) var(--gutter);
 }
 
 .builder-step-scroll > .builder-table {
@@ -136,7 +136,7 @@
 /* On step 6 the scroll area has no table — give it a top margin so the
  * review tiles don't butt up against the divider. */
 .builder-step-scroll > .builder-review-grid {
-  margin-top: 20px;
+  margin-top: var(--section-gap);
 }
 
 .builder-step-heading {
@@ -144,14 +144,14 @@
   font-size: 22px;
   font-weight: 500;
   color: var(--text-primary);
-  margin: 0 0 6px 0;
+  margin: 0 0 var(--heading-gap) 0;
 }
 
 .builder-step-blurb {
   font-size: 13px;
   color: var(--text-secondary);
   line-height: 1.5;
-  margin-bottom: 20px;
+  margin-bottom: var(--heading-gap);
   max-width: 760px;
 }
 
@@ -159,8 +159,8 @@
   font-size: 12px;
   color: var(--text-tertiary);
   line-height: 1.5;
-  margin-bottom: 16px;
-  padding: 12px 14px;
+  margin-bottom: var(--section-gap);
+  padding: var(--pad-card);
   background: var(--bg-mid);
   border-radius: 4px;
   max-width: 760px;
@@ -175,7 +175,7 @@
   border-spacing: 0;
   background: var(--bg-mid);
   border-radius: 6px;
-  margin-bottom: 12px;
+  margin-bottom: var(--section-gap);
 }
 
 .builder-table th {
@@ -185,7 +185,7 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-tertiary);
-  padding: 10px 10px;
+  padding: var(--pad-cell);
   background: var(--bg-deep);
   position: sticky;
   top: 0;
@@ -199,7 +199,7 @@
 .builder-sort-ind { color: var(--accent-blue); font-size: 9px; margin-left: 3px; }
 
 .builder-table td {
-  padding: 6px 6px;
+  padding: var(--pad-cell);
   vertical-align: middle;
 }
 
@@ -210,7 +210,7 @@
   background: var(--bg-deep);
   color: var(--text-primary);
   border-radius: 4px;
-  padding: 6px 8px;
+  padding: var(--pad-input);
   font-family: var(--font-mono);
   font-size: 12px;
   outline: none;
@@ -274,7 +274,7 @@
 
 .builder-row-actions {
   display: flex;
-  gap: 4px;
+  gap: var(--gap-sm);
   justify-content: flex-end;
   white-space: nowrap;
 }
@@ -304,7 +304,7 @@
 
 .builder-empty-row td {
   text-align: center;
-  padding: 24px;
+  padding: var(--space-6);
   color: var(--text-tertiary);
   font-size: 13px;
   font-style: italic;
@@ -313,20 +313,20 @@
 /* ───── Action bar above the table (Add row, Start from sample) ──────── */
 .builder-action-bar {
   display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: var(--gap-lg);
+  margin-bottom: var(--section-gap);
   flex-wrap: wrap;
 }
 
 /* The "+ Add row" bar now lives at the BOTTOM of the table (inside the scroll
  * area) to maximise vertical editing space — give it top spacing instead of the
  * bottom margin it carries when it sits above a table. */
-.builder-step-scroll .builder-action-bar { margin-top: 12px; margin-bottom: 0; }
+.builder-step-scroll .builder-action-bar { margin-top: var(--section-gap); margin-bottom: 0; }
 
 .builder-action {
   background: var(--bg-mid);
   color: var(--text-secondary);
-  padding: 7px 12px;
+  padding: var(--pad-button);
   border-radius: 6px;
   font-family: var(--font-mono);
   font-size: 11px;
@@ -366,8 +366,8 @@
 .builder-select-col {
   width: 34px;
   text-align: center;
-  padding-left: 10px;
-  padding-right: 4px;
+  padding-left: var(--space-2);
+  padding-right: var(--space-1);
 }
 
 .builder-select-col input[type="checkbox"] {
@@ -387,10 +387,10 @@
 .builder-bulk-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-lg);
   flex-wrap: wrap;
-  margin-bottom: 12px;
-  padding: 8px 12px;
+  margin-bottom: var(--section-gap);
+  padding: var(--pad-card);
   background: color-mix(in srgb, var(--accent-blue) 8%, transparent);
   border-radius: 6px;
 }
@@ -402,7 +402,7 @@
   text-transform: uppercase;
   color: var(--accent-blue);
   font-weight: 600;
-  margin-right: 4px;
+  margin-right: var(--gap-sm);
   white-space: nowrap;
 }
 
@@ -414,7 +414,7 @@
   background: var(--bg-deep);
   color: var(--text-primary);
   border-radius: 4px;
-  padding: 6px 8px;
+  padding: var(--pad-input);
   font-family: var(--font-mono);
   font-size: 11px;
   outline: none;
@@ -424,7 +424,7 @@
 .builder-bulk-elasticity {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--gap-md);
 }
 
 .builder-bulk-input {
@@ -432,7 +432,7 @@
   background: var(--bg-deep);
   color: var(--text-primary);
   border-radius: 4px;
-  padding: 6px 8px;
+  padding: var(--pad-input);
   font-family: var(--font-mono);
   font-size: 12px;
   outline: none;
@@ -453,10 +453,10 @@
  * they wrap to stacked. No media query — the flex bases do the work. */
 .builder-edges-config {
   display: flex;
-  gap: 16px;
+  gap: var(--space-4);
   align-items: stretch;
   flex-wrap: wrap;
-  margin-bottom: 16px;
+  margin-bottom: var(--section-gap);
 }
 .builder-edges-config .builder-step-help { flex: 1 1 360px; max-width: none; margin-bottom: 0; }
 .builder-edges-config .builder-defaults  { flex: 1 1 320px; margin-bottom: 0; }
@@ -464,10 +464,10 @@
 /* ───── Defaults panel (just 3 elasticity inputs on step 5) ──────────── */
 .builder-defaults {
   display: flex;
-  gap: 16px;
+  gap: var(--space-4);
   flex-wrap: wrap;
-  margin-bottom: 20px;
-  padding: 14px;
+  margin-bottom: var(--section-gap);
+  padding: var(--pad-card);
   background: var(--bg-mid);
   border-radius: 6px;
 }
@@ -475,7 +475,7 @@
 .builder-defaults label {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--gap-sm);
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-tertiary);
@@ -488,7 +488,7 @@
   background: var(--bg-deep);
   color: var(--text-primary);
   border-radius: 4px;
-  padding: 6px 8px;
+  padding: var(--pad-input);
   font-family: var(--font-mono);
   font-size: 13px;
   outline: none;
@@ -498,14 +498,14 @@
 .builder-review-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
-  margin-bottom: 20px;
+  gap: var(--space-3);
+  margin-bottom: var(--section-gap);
 }
 
 .builder-review-tile {
   background: var(--bg-mid);
   border-radius: 6px;
-  padding: 14px 16px;
+  padding: var(--pad-card);
 }
 
 .builder-review-tile-label {
@@ -514,7 +514,7 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-tertiary);
-  margin-bottom: 6px;
+  margin-bottom: var(--heading-gap);
 }
 
 .builder-review-tile-value {
@@ -526,8 +526,8 @@
 .builder-validation {
   background: var(--bg-mid);
   border-radius: 6px;
-  padding: 14px 16px;
-  margin-bottom: 16px;
+  padding: var(--pad-card);
+  margin-bottom: var(--section-gap);
 }
 
 .builder-validation-title {
@@ -535,7 +535,7 @@
   font-size: 11px;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  margin-bottom: 8px;
+  margin-bottom: var(--heading-gap);
   color: var(--text-secondary);
 }
 
@@ -544,20 +544,20 @@
 
 .builder-validation ul {
   margin: 0;
-  padding-left: 18px;
+  padding-left: var(--space-4);
   color: var(--text-secondary);
   font-size: 13px;
   line-height: 1.6;
 }
 
-.builder-validation li { margin-bottom: 2px; }
+.builder-validation li { margin-bottom: var(--space-0_5); }
 
 /* ───── Footer (Back / Next / Apply / Download) ──────────────────────── */
 .builder-footer {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 14px 24px;
+  gap: var(--gap-lg);
+  padding: var(--space-3) var(--gutter);
   background: var(--bg-mid);
 }
 
@@ -567,7 +567,7 @@
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-tertiary);
-  margin-right: 8px;
+  margin-right: var(--gap-lg);
 }
 
 .builder-footer-status.warn { color: var(--accent-amber); }
@@ -577,7 +577,7 @@
   font-size: 11px;
   color: var(--text-tertiary);
   line-height: 1.5;
-  margin: 4px 2px 16px 2px;
+  margin: var(--space-1) var(--space-0_5) var(--section-gap) var(--space-0_5);
 }
 
 /* ───── Cell editor overlay ──────────────────────────────────────────────
@@ -597,7 +597,7 @@
   color: var(--text-primary);
   border-radius: 4px;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 25%, transparent);
-  padding: 6px 8px;                    /* matches .builder-table input */
+  padding: var(--pad-input);           /* matches .builder-table input */
   font-family: var(--font-mono);       /* matches .builder-table input */
   font-size: 12px;                     /* matches .builder-table input */
   line-height: 1.5;

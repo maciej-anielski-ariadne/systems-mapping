@@ -176,7 +176,7 @@ body.panning * {
 
 .node-value {
   font-family: var(--font-mono);
-  font-size: calc(10.5px * var(--map-text-scale, 1));
+  font-size: calc(10px * var(--map-text-scale, 1));
   font-weight: 500;
   pointer-events: none;
   user-select: none;
@@ -185,7 +185,7 @@ body.panning * {
 
 .node-delta {
   font-family: var(--font-mono);
-  font-size: calc(10.5px * var(--map-text-scale, 1));
+  font-size: calc(10px * var(--map-text-scale, 1));
   font-weight: 600;
   pointer-events: none;
   user-select: none;
@@ -379,7 +379,7 @@ body.canvas-shift-edit .ghost-cell text {
   background: var(--bg-deep);
   border-radius: 6px;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.6);
-  padding: 10px 12px;
+  padding: var(--pad-card);
   width: 280px;
   font-family: var(--font-ui);
 }
@@ -389,14 +389,14 @@ body.canvas-shift-edit .ghost-cell text {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-tertiary);
-  margin-bottom: 8px;
+  margin-bottom: var(--heading-gap);
 }
 .canvas-edge-picker .typeable-dropdown-input {
   width: 100%;
   background: var(--bg-deepest);
   color: var(--text-primary);
   border-radius: 4px;
-  padding: 8px 10px;
+  padding: var(--pad-input);
   font-family: var(--font-ui);
   font-size: 13px;
   outline: none;

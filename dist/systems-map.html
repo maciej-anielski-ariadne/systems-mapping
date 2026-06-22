@@ -264,13 +264,34 @@
   --radius-xl:   12px;
   --radius-full: 9999px;
 
-  /* ===== Spacing scale (4px grid) ======================================== */
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
+  /* ===== Spacing scale (4px grid + two legitimate half-steps) ============ */
+  --space-0_5: 2px;    /* hairline / tight-chip half-step */
+  --space-1:   4px;
+  --space-1_5: 6px;    /* dense-row half-step (kept, not snapped to 8) */
+  --space-2:   8px;
+  --space-3:   12px;
+  --space-4:   16px;
+  --space-5:   20px;
+  --space-6:   24px;
+
+  /* ===== Semantic spacing — the app's actual spacing, expressed in the scale.
+   * Set to the COMPACT density (a deliberate, information-dense choice). Change
+   * these few values to re-pace the whole app; components reference them rather
+   * than hand-typed literals. ===== */
+  --gutter:       var(--space-4);   /* 16 — panel side padding (both panels) */
+  --section-gap:  var(--space-3);   /* 12 — between sidebar sections / detail blocks */
+  --heading-gap:  var(--space-2);   /* 8  — section heading → its content */
+  --row-gap:      var(--space-1);   /* 4  — between filter / list rows */
+  --pad-row:      4px 8px;          /* compact list-row padding */
+  --pad-button:   5px 10px;         /* one button padding */
+  --pad-input:    5px 8px;          /* one text-input padding */
+  --pad-card:     var(--space-2);   /* 8  — card / inset block padding */
+  --pad-cell:     4px 8px;          /* builder table th AND td (matched) */
+  --gap-sm:       var(--space-1);   /* 4  */
+  --gap-md:       var(--space-1_5); /* 6  */
+  --gap-lg:       var(--space-2);   /* 8  */
+  --value-col:    88px;             /* shared right-edge width for numeric value columns */
+  --edge-stripe-w: 3px;             /* the coloured left stripe on edge / sim rows */
 
   /* ===== Type scale (target; applied in the typography pass) ============= */
   --fs-2xs:  10px;
@@ -468,7 +489,7 @@ button:focus-visible {
 .app {
   --sidebar-w-full: 240px;
   --detail-w-full:  340px;
-  --panel-strip-w:  44px;
+  --panel-strip-w:  40px;   /* Compact: moves with NODE_HEIGHT (the 44→40 rhyme) */
   --sidebar-w: var(--sidebar-w-full);
   --detail-w:  var(--detail-w-full);
 
@@ -499,13 +520,13 @@ button:focus-visible {
   top: 0;
   z-index: 2;
   flex-shrink: 0;
-  height: 44px;
+  height: 40px;   /* Compact: matches NODE_HEIGHT / --panel-strip-w (the 44→40 rhyme) */
   background: var(--bg-deep);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 4px;
-  margin-bottom: 8px;
+  padding: 0 var(--space-1);
+  margin-bottom: var(--heading-gap);
 }
 
 /* === Collapse / expand handle ===
@@ -517,7 +538,7 @@ button:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 6px;
+  padding: var(--space-1_5);
   background: transparent;
   color: var(--text-tertiary);
   cursor: pointer;
@@ -559,8 +580,8 @@ body.no-data .panel-pin {
   background: var(--bg-deep);
   display: flex;
   align-items: center;
-  padding: 0 24px;
-  gap: 24px;
+  padding: 0 var(--gutter);
+  gap: var(--space-6);
   position: relative;
   z-index: var(--z-header);
 }
@@ -580,7 +601,7 @@ body.no-data .panel-pin {
   color: var(--text-primary);
   font-family: var(--font-mono);
   font-size: 13px;
-  padding: 9px 14px 9px 36px;  /* extra left padding leaves room for the icon */
+  padding: 5px 8px 5px 36px;  /* extra left padding leaves room for the icon */
   border-radius: 6px;
   outline: none;
 }
@@ -598,7 +619,7 @@ body.no-data .panel-pin {
 .header-button {
   background: var(--bg-mid);
   color: var(--text-secondary);
-  padding: 8px 14px;
+  padding: var(--pad-button);
   border-radius: 6px;
   font-family: var(--font-mono);
   font-size: 11px;
@@ -638,14 +659,14 @@ body.no-data .panel-pin {
 }
 .header-menu-list {
   position: absolute;
-  top: calc(100% + 6px);
+  top: calc(100% + var(--space-1_5));
   right: 0;
   z-index: var(--z-header);
   min-width: 168px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 4px;
+  gap: var(--space-0_5);
+  padding: var(--space-1);
   background: var(--bg-deep);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-pop-lg);
@@ -659,7 +680,7 @@ body.no-data .panel-pin {
   font-size: 11px;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  padding: 8px 10px;
+  padding: var(--pad-row);
   border-radius: var(--radius-xs);
   cursor: pointer;
   transition: background var(--dur-fast), color var(--dur-fast);
@@ -675,7 +696,7 @@ body.no-data .panel-pin {
   height: 22px;
   flex: 0 0 1px;
   background: var(--border-subtle);
-  margin: 0 4px;
+  margin: 0 var(--space-1);
 }
 
 /* "Edit", "Save", "Export", and "Publish" all need an existing map to act on;
@@ -761,9 +782,9 @@ body.panel-resizing {
   /* Shared layout tokens so the filter rows and their section headings stay
    * aligned: the heading indents below are derived from these same widths, so
    * tweaking a handle/swatch/delete size keeps title and rows in lockstep. */
-  --row-pad-l: 4px;     /* row padding-left (matches .sidebar-edit-row) */
-  --row-pad-r: 6px;     /* row padding-right */
-  --row-gap: 6px;       /* flex gap between row children */
+  --row-pad-l: var(--space-1);     /* row padding-left (matches .sidebar-edit-row) */
+  --row-pad-r: var(--space-1_5);     /* row padding-right */
+  --row-gap: var(--space-1_5);       /* flex gap between row children */
   --drag-w: 16px;       /* fixed drag-handle width */
   --swatch-w: 16px;     /* colour swatch */
   --delete-w: 22px;     /* hover-reveal delete button */
@@ -777,7 +798,7 @@ body.panel-resizing {
   overflow-y: auto;
   /* No top padding so the sticky .panel-header sits flush against the top.
    * Bottom padding gives whitespace below the last section. */
-  padding: 0 0 20px 0;
+  padding: 0 0 var(--space-5) 0;
   position: relative;
   /* Explicit grid-column so the other grid items don't shift when this one
    * becomes position:absolute (i.e. removed from grid flow). grid-row is
@@ -815,7 +836,7 @@ body.panel-resizing {
 .app.sidebar-unpinned .sidebar:hover {
   width: var(--sidebar-w-full);
   overflow-y: auto;
-  padding: 0 0 20px 0;
+  padding: 0 0 var(--space-5) 0;
   background: var(--bg-deep);
   box-shadow: 4px 0 18px rgba(0, 0, 0, 0.55);
 }
@@ -832,8 +853,8 @@ body.panel-resizing {
 .app.sidebar-unpinned .sidebar:hover > *              { visibility: visible; }
 
 .sidebar-section {
-  padding: 0 20px 24px;
-  margin-bottom: 20px;
+  padding: 0 var(--gutter) var(--section-gap);
+  margin-bottom: var(--section-gap);
 }
 
 /* Small uppercase heading at the top of each sidebar block */
@@ -843,7 +864,7 @@ body.panel-resizing {
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--text-tertiary);
-  margin-bottom: 12px;
+  margin-bottom: var(--heading-gap);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -871,12 +892,12 @@ body.panel-resizing {
 .filter-row {
   display: flex;
   align-items: center;
-  padding: 7px 10px;
+  padding: var(--pad-row);
   border-radius: 5px;
   cursor: pointer;
   transition: background 0.12s;
   user-select: none;
-  margin-bottom: 1px;
+  margin-bottom: 0;
 }
 
 .filter-row:hover {
@@ -913,7 +934,7 @@ body.panel-resizing {
   color: var(--text-tertiary);
   font-size: 10px;
   letter-spacing: 0.02em;
-  padding: 2px 5px;
+  padding: var(--space-0_5) var(--space-1);
   border-radius: 4px;
   cursor: pointer;
   opacity: 0;
@@ -933,11 +954,11 @@ body.panel-resizing {
   display: flex;
   align-items: center;
   gap: var(--row-gap);
-  padding: 5px var(--row-pad-r) 5px var(--row-pad-l);
+  padding: var(--space-1) var(--row-pad-r) var(--space-1) var(--row-pad-l);
   border-radius: 5px;
   transition: background 0.12s;
   user-select: none;
-  margin-bottom: 1px;
+  margin-bottom: 0;
   position: relative;
 }
 
@@ -1065,13 +1086,13 @@ body.panel-resizing {
 .sidebar-short-chip {
   flex: 0 0 auto;
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-tertiary);
   background: var(--bg-deepest);
   border-radius: 3px;
-  padding: 1px 5px;
+  padding: 1px var(--space-1);
   min-width: 18px;
   text-align: center;
 }
@@ -1085,8 +1106,8 @@ body.panel-resizing {
   color: var(--text-primary);
   background: var(--bg-deepest);
   border-radius: 4px;
-  padding: 2px 6px;
-  margin: -2px 0;
+  padding: var(--space-0_5) var(--space-1_5);
+  margin: calc(-1 * var(--space-0_5)) 0;
   outline: none;
   box-shadow: var(--focus-ring);
   text-decoration: none !important;
@@ -1104,7 +1125,7 @@ body.panel-resizing {
  * during drag-over. */
 .sidebar-drop-end {
   height: 6px;
-  margin-top: 2px;
+  margin-top: var(--space-0_5);
   border-radius: 3px;
 }
 .sidebar-drop-end.drop-target {
@@ -1114,12 +1135,12 @@ body.panel-resizing {
 
 /* "+ Add stream" / "+ Add stage" buttons */
 .sidebar-add-btn {
-  margin-top: 8px;
+  margin-top: var(--space-2);
   width: 100%;
   background: transparent;
   color: var(--accent-blue);
   border-radius: 4px;
-  padding: 6px 10px;
+  padding: var(--pad-button);
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.04em;
@@ -1138,7 +1159,7 @@ body.panel-resizing {
   font-size: 12px;
   line-height: 1.5;
   color: var(--text-tertiary);
-  padding: 4px 4px 8px;
+  padding: var(--space-1) var(--space-1) var(--space-2);
   font-style: italic;
 }
 
@@ -1146,21 +1167,21 @@ body.panel-resizing {
 .legend-row {
   display: flex;
   align-items: center;
-  padding: 5px 0;
+  padding: var(--pad-row);
 }
 
 .legend-swatch {
   width: 14px;
   height: 14px;
   border-radius: 3px;
-  margin-right: 10px;
+  margin-right: var(--space-2);
   flex-shrink: 0;
 }
 
 .legend-line {
   width: 24px;
   height: 2px;
-  margin-right: 10px;
+  margin-right: var(--space-2);
   flex-shrink: 0;
 }
 
@@ -1175,14 +1196,14 @@ body.panel-resizing {
 .legend-filter-row {
   display: flex;
   align-items: center;
-  padding: 5px 6px;
+  padding: var(--pad-row);
   border-radius: 5px;
   cursor: pointer;
   transition: background 0.12s;
 }
 .legend-filter-row:hover { background: var(--bg-light); }
 .legend-filter-row .filter-label { flex: 1; font-size: 12px; color: var(--text-secondary); }
-.legend-filter-row .filter-count { margin-left: 8px; }
+.legend-filter-row .filter-count { margin-left: var(--gap-lg); }
 
 /* Neutral line-style swatches (style is orthogonal to the effect colour).
  * Both use `background` rather than a border, since 12-no-borders.css strips
@@ -1202,7 +1223,7 @@ body.panel-resizing {
   justify-content: space-between;
   background: transparent;
   cursor: pointer;
-  padding: 2px 0;
+  padding: var(--space-0_5) 0;
   font-family: var(--font-mono);
   font-size: 10px;
   text-transform: uppercase;
@@ -1216,7 +1237,7 @@ body.panel-resizing {
 .sidebar-accordion-chevron { transition: transform var(--dur-base); }
 .sidebar-accordion.collapsed .sidebar-accordion-chevron { transform: rotate(-90deg); }
 
-.sidebar-accordion-body { margin-top: 12px; }
+.sidebar-accordion-body { margin-top: var(--heading-gap); }
 .sidebar-accordion.collapsed .sidebar-accordion-body { display: none; }
 
 /* T4: cap decorative stream / category swatch saturation so the custom colours
@@ -1408,7 +1429,7 @@ body.panning * {
 
 .node-value {
   font-family: var(--font-mono);
-  font-size: calc(10.5px * var(--map-text-scale, 1));
+  font-size: calc(10px * var(--map-text-scale, 1));
   font-weight: 500;
   pointer-events: none;
   user-select: none;
@@ -1417,7 +1438,7 @@ body.panning * {
 
 .node-delta {
   font-family: var(--font-mono);
-  font-size: calc(10.5px * var(--map-text-scale, 1));
+  font-size: calc(10px * var(--map-text-scale, 1));
   font-weight: 600;
   pointer-events: none;
   user-select: none;
@@ -1611,7 +1632,7 @@ body.canvas-shift-edit .ghost-cell text {
   background: var(--bg-deep);
   border-radius: 6px;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.6);
-  padding: 10px 12px;
+  padding: var(--pad-card);
   width: 280px;
   font-family: var(--font-ui);
 }
@@ -1621,14 +1642,14 @@ body.canvas-shift-edit .ghost-cell text {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-tertiary);
-  margin-bottom: 8px;
+  margin-bottom: var(--heading-gap);
 }
 .canvas-edge-picker .typeable-dropdown-input {
   width: 100%;
   background: var(--bg-deepest);
   color: var(--text-primary);
   border-radius: 4px;
-  padding: 8px 10px;
+  padding: var(--pad-input);
   font-family: var(--font-ui);
   font-size: 13px;
   outline: none;
@@ -1793,7 +1814,7 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   overflow-y: auto;
   /* No top padding so the sticky .panel-header sits flush against the top.
    * Side + bottom padding give the rest of the content breathing room. */
-  padding: 0 24px 24px 24px;
+  padding: 0 var(--gutter) var(--gutter) var(--gutter);
   position: relative;
   grid-column: 3;
 }
@@ -1802,7 +1823,7 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
  * at the very right edge of the panel (= window edge). Negative side margin
  * pulls the header outside the panel's padding so it spans the full width. */
 .detail-panel > .panel-header {
-  margin: 0 -24px 8px -24px;
+  margin: 0 calc(-1 * var(--gutter)) var(--heading-gap) calc(-1 * var(--gutter));
 }
 
 /* Unpinned → strip + hover-expand. Same model as the left sidebar. In strip
@@ -1829,19 +1850,19 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
 /* When unpinned, the strip has no side padding, so the header doesn't
  * need its negative margin compensation. */
 .app.detail-unpinned .detail-panel > .panel-header {
-  margin: 0 0 8px 0;
+  margin: 0 0 var(--heading-gap) 0;
 }
 
 .app.detail-unpinned .detail-panel:hover {
   width: var(--detail-w-full);
   overflow-y: auto;
-  padding: 0 24px 24px 24px;
+  padding: 0 var(--gutter) var(--gutter) var(--gutter);
   background: var(--bg-deep);
   box-shadow: -4px 0 18px rgba(0, 0, 0, 0.55);
 }
 
 .app.detail-unpinned .detail-panel:hover > .panel-header {
-  margin: 0 -24px 8px -24px;
+  margin: 0 calc(-1 * var(--gutter)) var(--heading-gap) calc(-1 * var(--gutter));
   background: var(--bg-deep);
 }
 
@@ -1862,7 +1883,7 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   font-style: italic;
   font-size: 18px;
   color: var(--text-secondary);
-  margin-bottom: 12px;
+  margin-bottom: var(--heading-gap);
   letter-spacing: -0.01em;
 }
 
@@ -1870,12 +1891,12 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   font-size: 13px;
   line-height: 1.6;
   color: var(--text-tertiary);
-  margin-bottom: 10px;
+  margin-bottom: var(--space-2);
 }
 
 .detail-empty .hint {
-  margin-top: 24px;
-  padding: 14px;
+  margin-top: var(--section-gap);
+  padding: var(--pad-card);
   background: var(--bg-mid);
   border-radius: 6px;
   font-family: var(--font-mono);
@@ -1894,7 +1915,7 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
  * mode it sits at the top of the form and reads "Done editing" (filled
  * accent style). Clicking flips between the two modes. */
 .detail-mode-toggle {
-  margin: 14px 0 16px;
+  margin: var(--section-gap) 0 var(--section-gap);
 }
 
 .detail-mode-button {
@@ -1903,9 +1924,9 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   background: var(--bg-mid);
   color: var(--text-primary);
   border-radius: 5px;
-  padding: 9px 12px;
+  padding: var(--pad-button);
   font-family: var(--font-ui);
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-align: center;
@@ -1929,8 +1950,8 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
 /* === Tags row at the top of a selected node's details === */
 .detail-tags {
   display: flex;
-  gap: 6px;
-  margin-bottom: 14px;
+  gap: var(--gap-md);
+  margin-bottom: var(--section-gap);
   flex-wrap: wrap;
 }
 
@@ -1939,7 +1960,7 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   font-size: 10px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  padding: 4px 8px;
+  padding: var(--pad-row);
   border-radius: 3px;
   color: var(--text-secondary);
   background: var(--bg-mid);
@@ -1957,7 +1978,7 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   font-weight: 600;
   font-size: 22px;
   letter-spacing: -0.01em;
-  margin-bottom: 12px;
+  margin-bottom: var(--heading-gap);
   line-height: 1.2;
 }
 
@@ -1965,7 +1986,7 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   font-size: 13px;
   line-height: 1.65;
   color: var(--text-secondary);
-  margin-bottom: 24px;
+  margin-bottom: var(--section-gap);
 }
 
 /* === List title (e.g. "Direct Inputs", "Direct Impacts") === */
@@ -1975,7 +1996,7 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--text-tertiary);
-  margin: 18px 0 8px;
+  margin: var(--section-gap) 0 var(--heading-gap);
   display: flex;
   justify-content: space-between;
 }
@@ -1992,11 +2013,11 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
 .detail-edge-item {
   --edge-color: var(--border-strong);
   display: block;
-  padding: 9px 12px 9px 15px;   /* 12 + 3 on the left so content sits past the stripe */
+  padding: var(--space-1) var(--space-2) var(--space-1) calc(var(--space-2) + 3px);   /* +3 on the left so content sits past the stripe */
   background: var(--bg-mid);
   border-radius: 0 5px 5px 0;
   box-shadow: inset 3px 0 0 var(--edge-color);
-  margin-bottom: 4px;
+  margin-bottom: var(--row-gap);
   cursor: pointer;
   transition: all 0.12s;
 }
@@ -2014,19 +2035,24 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--gap-lg);
 }
 
 .detail-edge-name {
   font-size: 12px;
   font-weight: 500;
   color: var(--text-primary);
-  margin-bottom: 2px;
+  /* Truncate instead of pushing the elasticity value out of alignment. */
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .detail-edge-elasticity {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 10px;
   color: var(--text-tertiary);
   flex-shrink: 0;
   font-weight: 600;
@@ -2048,13 +2074,13 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   font-size: 11px;
   color: var(--text-tertiary);
   line-height: 1.5;
-  margin-top: 4px;
+  margin-top: var(--row-gap);
 }
 
 /* === Quantification block (baseline, current, delta) === */
 .detail-quant-block {
-  margin: 12px 0;
-  padding: 10px 12px;
+  margin: var(--section-gap) 0;
+  padding: var(--pad-card);
   background: var(--bg-deepest);
   border-radius: 6px;
 }
@@ -2063,7 +2089,7 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  padding: 3px 0;
+  padding: var(--space-0_5) 0;
   font-size: 12px;
 }
 
@@ -2085,11 +2111,11 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
  * selected node is a controllable input and sim mode is on. Typed values
  * propagate via applySimMultiplier (assets/js/14-simulation-panel.js). */
 .detail-value-input {
-  width: 110px;
+  width: var(--value-col);
   background: var(--bg-mid);
   color: var(--text-primary);
   border-radius: 3px;
-  padding: 3px 8px;
+  padding: var(--pad-input);
   font-family: var(--font-mono);
   font-size: 12px;
   text-align: right;
@@ -2108,15 +2134,15 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
 /* === Generic detail-panel action buttons === */
 .detail-actions {
   display: flex;
-  gap: 8px;
-  margin-bottom: 20px;
+  gap: var(--gap-lg);
+  margin-bottom: var(--section-gap);
 }
 
 .detail-button {
   flex: 1;
   background: var(--bg-mid);
   color: var(--text-secondary);
-  padding: 8px 12px;
+  padding: var(--pad-button);
   border-radius: 5px;
   font-family: var(--font-mono);
   font-size: 11px;
@@ -2145,8 +2171,8 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
 
 /* === Inline edit block (renders below the quantification block) === */
 .detail-edit-block {
-  margin: 12px 0 6px;
-  padding: 12px;
+  margin: var(--section-gap) 0 var(--space-1_5);
+  padding: var(--pad-card);
   background: var(--bg-mid);
   border-radius: 6px;
 }
@@ -2154,8 +2180,8 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
 .detail-edit-row {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-bottom: 10px;
+  gap: var(--gap-sm);
+  margin-bottom: var(--space-2);
 }
 
 .detail-edit-row:last-child {
@@ -2173,26 +2199,26 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
 .detail-edit-control {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--gap-sm);
 }
 
 /* Multi-select category editor (Primary / Secondary checkbox groups). */
-.detail-cat-group { margin-bottom: 6px; }
+.detail-cat-group { margin-bottom: var(--space-1_5); }
 .detail-cat-group:last-child { margin-bottom: 0; }
 .detail-cat-group-title {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-tertiary);
-  margin: 2px 0 3px;
+  margin: var(--space-0_5) 0 var(--space-0_5);
 }
 .detail-cat-opt {
   display: flex;
   align-items: center;
-  gap: 7px;
-  font-size: 12.5px;
+  gap: var(--gap-md);
+  font-size: 12px;
   color: var(--text-secondary);
-  padding: 2px 0;
+  padding: var(--space-0_5) 0;
   cursor: pointer;
 }
 .detail-cat-opt input { margin: 0; cursor: pointer; }
@@ -2218,9 +2244,9 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   background: var(--bg-deepest);
   color: var(--text-primary);
   border-radius: 4px;
-  padding: 6px 9px;
+  padding: var(--pad-input);
   font-family: var(--font-ui);
-  font-size: 12.5px;
+  font-size: 12px;
   outline: none;
   box-sizing: border-box;
 }
@@ -2265,7 +2291,7 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.04em;
-  padding: 2px 0;
+  padding: var(--space-0_5) 0;
   cursor: pointer;
   text-decoration: underline;
 }
@@ -2279,27 +2305,27 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
  * and delete the edge. The header link at the top of each row jumps to
  * the target node when clicked. */
 .outgoing-edges-block {
-  margin: 14px 0 0;
+  margin: var(--section-gap) 0 0;
 }
 
 .outgoing-edges-empty {
   font-size: 12px;
   color: var(--text-tertiary);
   font-style: italic;
-  padding: 6px 0 8px;
+  padding: var(--space-1_5) 0 var(--space-2);
   line-height: 1.5;
 }
 
 .outgoing-edge-row {
   --edge-color: var(--border-strong);
-  padding: 8px 10px 8px 12px;
+  padding: var(--space-1) var(--space-2) var(--space-1) calc(var(--space-2) + 3px);
   background: var(--bg-mid);
   border-radius: 0 5px 5px 0;
   box-shadow: inset 3px 0 0 var(--edge-color);
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--gap-md);
 }
 .outgoing-edge-row.increases { --edge-color: var(--accent-green);  }
 .outgoing-edge-row.decreases { --edge-color: var(--accent-red);    }
@@ -2320,7 +2346,7 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
 .outgoing-edge-header {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--gap-md);
 }
 
 .outgoing-edge-target-link {
@@ -2328,9 +2354,9 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   background: none;
   color: var(--text-primary);
   text-align: left;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 500;
-  padding: 2px 0;
+  padding: var(--space-0_5) 0;
   cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2359,7 +2385,7 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
 
 .outgoing-edge-controls {
   display: flex;
-  gap: 6px;
+  gap: var(--gap-md);
   align-items: center;
 }
 
@@ -2380,17 +2406,17 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
 }
 
 .outgoing-edge-add-toggle {
-  margin-top: 4px;
+  margin-top: var(--space-1);
 }
 
 .outgoing-edge-add {
-  margin: 6px 0 10px;
-  padding: 10px;
+  margin: var(--space-1_5) 0 var(--space-2);
+  padding: var(--pad-card);
   background: var(--bg-deepest);
   border-radius: 5px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--gap-lg);
 }
 
 .outgoing-edge-add-title {
@@ -2403,7 +2429,7 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
 
 .outgoing-edge-add-row {
   display: flex;
-  gap: 6px;
+  gap: var(--gap-md);
 }
 
 .outgoing-edge-add-row .detail-edit-select {
@@ -2414,12 +2440,12 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  gap: 10px;
+  gap: var(--gap-lg);
 }
 
 .outgoing-edge-add-actions .detail-button {
   flex: 0 0 auto;
-  padding: 6px 14px;
+  padding: var(--pad-button);
 }
 
 /* Inline checkbox + label (used by Controllable). The default
@@ -2428,8 +2454,8 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
 .detail-edit-label-inline {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12.5px;
+  gap: var(--gap-lg);
+  font-size: 12px;
   color: var(--text-secondary);
   cursor: pointer;
 }
@@ -2448,7 +2474,7 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   position: fixed;
   background: var(--bg-light);
   color: var(--text-primary);
-  padding: 8px 12px;
+  padding: var(--pad-card);
   border-radius: 5px;
   font-size: 12px;
   pointer-events: none;
@@ -2465,7 +2491,7 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
 
 .tooltip-title {
   font-weight: 600;
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
   font-size: 12px;
 }
 
@@ -2480,13 +2506,13 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-primary);
-  margin-bottom: 6px;
-  padding: 4px 0;
+  margin-bottom: var(--space-1_5);
+  padding: var(--space-1) 0;
 }
 
 .tooltip-quant-label  { color: var(--text-tertiary); }
 .tooltip-quant-value  { font-weight: 600; }
-.tooltip-quant-delta  { color: var(--text-secondary); margin-left: 4px; }
+.tooltip-quant-delta  { color: var(--text-secondary); margin-left: var(--space-1); }
 
 /* Single-line text tooltip used for buttons / filters / SVG row labels.
  * Sits in the same #tooltip container as the rich node hover; just a
@@ -2512,14 +2538,14 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
  * ========================================================================== */
 
 #simulation-panel {
-  padding: 4px 0;
+  padding: var(--space-1) 0;
 }
 
 .sim-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 6px;
+  margin-bottom: var(--heading-gap);
 }
 
 .sim-title {
@@ -2536,7 +2562,7 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   font-size: 10px;
   background: var(--bg-light);
   color: var(--text-secondary);
-  padding: 3px 8px;
+  padding: var(--pad-button);
   border-radius: 4px;
   cursor: pointer;
   text-transform: uppercase;
@@ -2551,7 +2577,7 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
 .sim-help {
   font-size: 11px;
   color: var(--text-tertiary);
-  margin-bottom: 12px;
+  margin-bottom: var(--section-gap);
   line-height: 1.4;
 }
 
@@ -2563,13 +2589,13 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   color: var(--status-bad);
   background: color-mix(in srgb, var(--status-bad) 12%, transparent);
   border-radius: 6px;
-  padding: 6px 8px;
-  margin-bottom: 12px;
+  padding: var(--pad-card);
+  margin-bottom: var(--section-gap);
 }
 
 /* One block per stream — groups sliders for that stream */
 .sim-stream-block {
-  margin-bottom: 14px;
+  margin-bottom: var(--section-gap);
 }
 
 .sim-stream-header {
@@ -2585,35 +2611,42 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
    * CSS variable set by JS (14-simulation-panel.js); painted via
    * box-shadow:inset because 12-no-borders.css strips real borders. */
   box-shadow: inset 3px 0 0 var(--stream-color, var(--border-strong));
-  margin-bottom: 6px;
+  margin-bottom: var(--heading-gap);
 }
 
 /* === One slider row === */
 .sim-slider-row {
-  margin-bottom: 10px;
+  margin-bottom: var(--space-2);
 }
 
 .sim-slider-label {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 6px;
-  margin-bottom: 2px;
+  gap: var(--gap-md);
+  margin-bottom: var(--space-0_5);
 }
 
 .sim-slider-name {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--text-primary);
-  flex-shrink: 0;
+  /* Truncate instead of pushing the readout out of alignment. */
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sim-slider-readout {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 10px;
   color: var(--text-secondary);
   display: inline-flex;
   align-items: baseline;
-  gap: 4px;
+  gap: var(--gap-sm);
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 /* Editable number alongside the slider — typed values are converted to a
@@ -2623,9 +2656,9 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   background: var(--bg-mid);
   color: var(--text-primary);
   border-radius: 3px;
-  padding: 2px 6px;
+  padding: var(--pad-input);
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 10px;
   text-align: right;
   outline: none;
   /* hide the spinner; users can use the slider or type for fine control */
@@ -2702,7 +2735,7 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   align-items: center;
   justify-content: center;
   z-index: var(--z-chrome);
-  padding: 32px;
+  padding: var(--space-6);
 }
 
 /* When dragging a file over the window, brighten the drop zone */
@@ -2720,13 +2753,13 @@ body.drag-active .drop-zone-inner {
   text-align: center;
   background: var(--bg-deep);
   border-radius: 12px;
-  padding: 40px 32px;
+  padding: var(--space-6) var(--gutter);
   transition: box-shadow 0.2s;
 }
 
 .drop-zone-icon {
   color: var(--accent-blue);
-  margin-bottom: 16px;
+  margin-bottom: var(--space-4);
   display: flex;
   justify-content: center;
 }
@@ -2736,22 +2769,22 @@ body.drag-active .drop-zone-inner {
   font-size: 24px;
   font-weight: 500;
   color: var(--text-primary);
-  margin-bottom: 12px;
+  margin-bottom: var(--heading-gap);
 }
 
 .drop-zone-subtitle {
   font-size: 13px;
   color: var(--text-secondary);
   line-height: 1.5;
-  margin-bottom: 24px;
+  margin-bottom: var(--section-gap);
 }
 
 .drop-zone-buttons {
   display: flex;
-  gap: 8px;
+  gap: var(--gap-lg);
   justify-content: center;
   flex-wrap: wrap;
-  margin-bottom: 20px;
+  margin-bottom: var(--section-gap);
 }
 
 .drop-zone-button {
@@ -2760,7 +2793,7 @@ body.drag-active .drop-zone-inner {
   font-weight: 500;
   background: var(--bg-light);
   color: var(--text-primary);
-  padding: 10px 16px;
+  padding: var(--pad-button);
   border-radius: 6px;
   cursor: pointer;
   transition: background 0.15s;
@@ -2781,10 +2814,10 @@ body.drag-active .drop-zone-inner {
 }
 
 .drop-zone-hint {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--text-tertiary);
   line-height: 1.5;
-  padding-top: 16px;
+  padding-top: var(--space-4);
 }
 
 </style>
@@ -2805,9 +2838,9 @@ body.drag-active .drop-zone-inner {
   right: 16px;
   background: var(--bg-light);
   color: var(--text-primary);
-  padding: 10px 14px;
+  padding: var(--pad-card);
   border-radius: 6px;
-  font-size: 12.5px;
+  font-size: 12px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4), 0 0 0 2px var(--accent-green);
   z-index: var(--z-overlay);
   max-width: 380px;
@@ -2826,12 +2859,12 @@ body.drag-active .drop-zone-inner {
   transform: translateX(-50%);
   background: var(--bg-light);
   color: var(--text-primary);
-  padding: 10px 14px 10px 16px;
+  padding: var(--pad-card);
   border-radius: 8px;
   font-size: 13px;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: var(--space-3);
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--border-strong);
   z-index: 220;
   animation: undo-toast-slide-in 0.22s ease;
@@ -2854,7 +2887,7 @@ body.drag-active .drop-zone-inner {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   cursor: pointer;
-  padding: 4px 8px;
+  padding: var(--pad-row);
   border-radius: 4px;
   transition: background 0.12s, color 0.12s;
 }
@@ -2875,12 +2908,12 @@ body.drag-active .drop-zone-inner {
   transform: translateX(-50%);
   background: var(--bg-light);
   color: var(--text-primary);
-  padding: 8px 12px;
+  padding: var(--pad-card);
   border-radius: 8px;
   font-size: 13px;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2);
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--border-strong);
   z-index: 221;
   animation: undo-toast-slide-in 0.22s ease;
@@ -2900,7 +2933,7 @@ body.drag-active .drop-zone-inner {
   color: var(--text-primary);
   border-radius: 5px;
   font-size: 12px;
-  padding: 5px 6px;
+  padding: var(--pad-input);
   cursor: pointer;
 }
 
@@ -2912,7 +2945,7 @@ body.drag-active .drop-zone-inner {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   cursor: pointer;
-  padding: 5px 10px;
+  padding: var(--pad-button);
   border-radius: 5px;
   transition: background 0.12s, color 0.12s;
 }
@@ -2942,7 +2975,7 @@ body.no-data .detail-panel {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 8px;
+  gap: var(--gap-lg);
 }
 
 @media (min-width: 1024px) {
@@ -2958,11 +2991,11 @@ body.no-data .detail-panel {
 .viz-zoom-controls {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: var(--space-0_5);
   width: 120px;
   background: color-mix(in srgb, var(--bg-deep) 85%, transparent);
   backdrop-filter: blur(8px);
-  padding: 5px 6px;
+  padding: var(--space-1) var(--space-1_5);   /* tight glass control, not a full card */
   border-radius: 6px;
   font-family: var(--font-mono);
 }
@@ -2982,7 +3015,7 @@ body.no-data .detail-panel {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 2px;
+  gap: var(--space-0_5);
 }
 
 .viz-depth-button,
@@ -3095,7 +3128,7 @@ body.no-data .detail-panel {
   align-items: stretch;
   justify-content: center;
   z-index: var(--z-overlay);              /* above the drop zone (z 50) and everything else */
-  padding: 32px;
+  padding: var(--space-4);
   font-family: var(--font-ui);
 }
 
@@ -3115,8 +3148,8 @@ body.no-data .detail-panel {
 .builder-header {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 16px 24px;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--gutter);
   background: var(--bg-mid);
 }
 
@@ -3129,7 +3162,7 @@ body.no-data .detail-panel {
 
 .builder-step-indicator {
   display: flex;
-  gap: 6px;
+  gap: var(--gap-md);
   margin-left: auto;
 }
 
@@ -3140,7 +3173,7 @@ body.no-data .detail-panel {
   text-transform: uppercase;
   background: var(--bg-light);
   color: var(--text-tertiary);
-  padding: 4px 10px;
+  padding: var(--pad-button);
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.15s;
@@ -3188,7 +3221,7 @@ body.no-data .detail-panel {
 }
 
 .builder-step-static {
-  padding: 24px 24px 16px 24px;
+  padding: var(--space-6) var(--gutter) var(--space-4) var(--gutter);
   flex-shrink: 0;
 }
 
@@ -3202,7 +3235,7 @@ body.no-data .detail-panel {
   overflow-y: auto;
   /* No top padding — the sticky table header sits flush against the divider
    * above. Side + bottom padding gives the table breathing room. */
-  padding: 0 24px 24px 24px;
+  padding: 0 var(--gutter) var(--section-gap) var(--gutter);
 }
 
 .builder-step-scroll > .builder-table {
@@ -3212,7 +3245,7 @@ body.no-data .detail-panel {
 /* On step 6 the scroll area has no table — give it a top margin so the
  * review tiles don't butt up against the divider. */
 .builder-step-scroll > .builder-review-grid {
-  margin-top: 20px;
+  margin-top: var(--section-gap);
 }
 
 .builder-step-heading {
@@ -3220,14 +3253,14 @@ body.no-data .detail-panel {
   font-size: 22px;
   font-weight: 500;
   color: var(--text-primary);
-  margin: 0 0 6px 0;
+  margin: 0 0 var(--heading-gap) 0;
 }
 
 .builder-step-blurb {
   font-size: 13px;
   color: var(--text-secondary);
   line-height: 1.5;
-  margin-bottom: 20px;
+  margin-bottom: var(--heading-gap);
   max-width: 760px;
 }
 
@@ -3235,8 +3268,8 @@ body.no-data .detail-panel {
   font-size: 12px;
   color: var(--text-tertiary);
   line-height: 1.5;
-  margin-bottom: 16px;
-  padding: 12px 14px;
+  margin-bottom: var(--section-gap);
+  padding: var(--pad-card);
   background: var(--bg-mid);
   border-radius: 4px;
   max-width: 760px;
@@ -3251,7 +3284,7 @@ body.no-data .detail-panel {
   border-spacing: 0;
   background: var(--bg-mid);
   border-radius: 6px;
-  margin-bottom: 12px;
+  margin-bottom: var(--section-gap);
 }
 
 .builder-table th {
@@ -3261,7 +3294,7 @@ body.no-data .detail-panel {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-tertiary);
-  padding: 10px 10px;
+  padding: var(--pad-cell);
   background: var(--bg-deep);
   position: sticky;
   top: 0;
@@ -3275,7 +3308,7 @@ body.no-data .detail-panel {
 .builder-sort-ind { color: var(--accent-blue); font-size: 9px; margin-left: 3px; }
 
 .builder-table td {
-  padding: 6px 6px;
+  padding: var(--pad-cell);
   vertical-align: middle;
 }
 
@@ -3286,7 +3319,7 @@ body.no-data .detail-panel {
   background: var(--bg-deep);
   color: var(--text-primary);
   border-radius: 4px;
-  padding: 6px 8px;
+  padding: var(--pad-input);
   font-family: var(--font-mono);
   font-size: 12px;
   outline: none;
@@ -3350,7 +3383,7 @@ body.no-data .detail-panel {
 
 .builder-row-actions {
   display: flex;
-  gap: 4px;
+  gap: var(--gap-sm);
   justify-content: flex-end;
   white-space: nowrap;
 }
@@ -3380,7 +3413,7 @@ body.no-data .detail-panel {
 
 .builder-empty-row td {
   text-align: center;
-  padding: 24px;
+  padding: var(--space-6);
   color: var(--text-tertiary);
   font-size: 13px;
   font-style: italic;
@@ -3389,20 +3422,20 @@ body.no-data .detail-panel {
 /* ───── Action bar above the table (Add row, Start from sample) ──────── */
 .builder-action-bar {
   display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: var(--gap-lg);
+  margin-bottom: var(--section-gap);
   flex-wrap: wrap;
 }
 
 /* The "+ Add row" bar now lives at the BOTTOM of the table (inside the scroll
  * area) to maximise vertical editing space — give it top spacing instead of the
  * bottom margin it carries when it sits above a table. */
-.builder-step-scroll .builder-action-bar { margin-top: 12px; margin-bottom: 0; }
+.builder-step-scroll .builder-action-bar { margin-top: var(--section-gap); margin-bottom: 0; }
 
 .builder-action {
   background: var(--bg-mid);
   color: var(--text-secondary);
-  padding: 7px 12px;
+  padding: var(--pad-button);
   border-radius: 6px;
   font-family: var(--font-mono);
   font-size: 11px;
@@ -3442,8 +3475,8 @@ body.no-data .detail-panel {
 .builder-select-col {
   width: 34px;
   text-align: center;
-  padding-left: 10px;
-  padding-right: 4px;
+  padding-left: var(--space-2);
+  padding-right: var(--space-1);
 }
 
 .builder-select-col input[type="checkbox"] {
@@ -3463,10 +3496,10 @@ body.no-data .detail-panel {
 .builder-bulk-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-lg);
   flex-wrap: wrap;
-  margin-bottom: 12px;
-  padding: 8px 12px;
+  margin-bottom: var(--section-gap);
+  padding: var(--pad-card);
   background: color-mix(in srgb, var(--accent-blue) 8%, transparent);
   border-radius: 6px;
 }
@@ -3478,7 +3511,7 @@ body.no-data .detail-panel {
   text-transform: uppercase;
   color: var(--accent-blue);
   font-weight: 600;
-  margin-right: 4px;
+  margin-right: var(--gap-sm);
   white-space: nowrap;
 }
 
@@ -3490,7 +3523,7 @@ body.no-data .detail-panel {
   background: var(--bg-deep);
   color: var(--text-primary);
   border-radius: 4px;
-  padding: 6px 8px;
+  padding: var(--pad-input);
   font-family: var(--font-mono);
   font-size: 11px;
   outline: none;
@@ -3500,7 +3533,7 @@ body.no-data .detail-panel {
 .builder-bulk-elasticity {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--gap-md);
 }
 
 .builder-bulk-input {
@@ -3508,7 +3541,7 @@ body.no-data .detail-panel {
   background: var(--bg-deep);
   color: var(--text-primary);
   border-radius: 4px;
-  padding: 6px 8px;
+  padding: var(--pad-input);
   font-family: var(--font-mono);
   font-size: 12px;
   outline: none;
@@ -3529,10 +3562,10 @@ body.no-data .detail-panel {
  * they wrap to stacked. No media query — the flex bases do the work. */
 .builder-edges-config {
   display: flex;
-  gap: 16px;
+  gap: var(--space-4);
   align-items: stretch;
   flex-wrap: wrap;
-  margin-bottom: 16px;
+  margin-bottom: var(--section-gap);
 }
 .builder-edges-config .builder-step-help { flex: 1 1 360px; max-width: none; margin-bottom: 0; }
 .builder-edges-config .builder-defaults  { flex: 1 1 320px; margin-bottom: 0; }
@@ -3540,10 +3573,10 @@ body.no-data .detail-panel {
 /* ───── Defaults panel (just 3 elasticity inputs on step 5) ──────────── */
 .builder-defaults {
   display: flex;
-  gap: 16px;
+  gap: var(--space-4);
   flex-wrap: wrap;
-  margin-bottom: 20px;
-  padding: 14px;
+  margin-bottom: var(--section-gap);
+  padding: var(--pad-card);
   background: var(--bg-mid);
   border-radius: 6px;
 }
@@ -3551,7 +3584,7 @@ body.no-data .detail-panel {
 .builder-defaults label {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--gap-sm);
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-tertiary);
@@ -3564,7 +3597,7 @@ body.no-data .detail-panel {
   background: var(--bg-deep);
   color: var(--text-primary);
   border-radius: 4px;
-  padding: 6px 8px;
+  padding: var(--pad-input);
   font-family: var(--font-mono);
   font-size: 13px;
   outline: none;
@@ -3574,14 +3607,14 @@ body.no-data .detail-panel {
 .builder-review-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
-  margin-bottom: 20px;
+  gap: var(--space-3);
+  margin-bottom: var(--section-gap);
 }
 
 .builder-review-tile {
   background: var(--bg-mid);
   border-radius: 6px;
-  padding: 14px 16px;
+  padding: var(--pad-card);
 }
 
 .builder-review-tile-label {
@@ -3590,7 +3623,7 @@ body.no-data .detail-panel {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-tertiary);
-  margin-bottom: 6px;
+  margin-bottom: var(--heading-gap);
 }
 
 .builder-review-tile-value {
@@ -3602,8 +3635,8 @@ body.no-data .detail-panel {
 .builder-validation {
   background: var(--bg-mid);
   border-radius: 6px;
-  padding: 14px 16px;
-  margin-bottom: 16px;
+  padding: var(--pad-card);
+  margin-bottom: var(--section-gap);
 }
 
 .builder-validation-title {
@@ -3611,7 +3644,7 @@ body.no-data .detail-panel {
   font-size: 11px;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  margin-bottom: 8px;
+  margin-bottom: var(--heading-gap);
   color: var(--text-secondary);
 }
 
@@ -3620,20 +3653,20 @@ body.no-data .detail-panel {
 
 .builder-validation ul {
   margin: 0;
-  padding-left: 18px;
+  padding-left: var(--space-4);
   color: var(--text-secondary);
   font-size: 13px;
   line-height: 1.6;
 }
 
-.builder-validation li { margin-bottom: 2px; }
+.builder-validation li { margin-bottom: var(--space-0_5); }
 
 /* ───── Footer (Back / Next / Apply / Download) ──────────────────────── */
 .builder-footer {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 14px 24px;
+  gap: var(--gap-lg);
+  padding: var(--space-3) var(--gutter);
   background: var(--bg-mid);
 }
 
@@ -3643,7 +3676,7 @@ body.no-data .detail-panel {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-tertiary);
-  margin-right: 8px;
+  margin-right: var(--gap-lg);
 }
 
 .builder-footer-status.warn { color: var(--accent-amber); }
@@ -3653,7 +3686,7 @@ body.no-data .detail-panel {
   font-size: 11px;
   color: var(--text-tertiary);
   line-height: 1.5;
-  margin: 4px 2px 16px 2px;
+  margin: var(--space-1) var(--space-0_5) var(--section-gap) var(--space-0_5);
 }
 
 /* ───── Cell editor overlay ──────────────────────────────────────────────
@@ -3673,7 +3706,7 @@ body.no-data .detail-panel {
   color: var(--text-primary);
   border-radius: 4px;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 25%, transparent);
-  padding: 6px 8px;                    /* matches .builder-table input */
+  padding: var(--pad-input);           /* matches .builder-table input */
   font-family: var(--font-mono);       /* matches .builder-table input */
   font-size: 12px;                     /* matches .builder-table input */
   line-height: 1.5;
@@ -3746,7 +3779,7 @@ body.no-data .detail-panel {
   background: var(--bg-deep);
   border-radius: 6px;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
-  padding: 4px;
+  padding: var(--pad-card);
 }
 
 .search-results[hidden] { display: none; }
@@ -3755,8 +3788,8 @@ body.no-data .detail-panel {
 .search-result {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 10px;
+  gap: var(--space-3);
+  padding: var(--pad-row);
   border-radius: 4px;
   cursor: pointer;
   font-family: var(--font-ui);
@@ -3764,7 +3797,7 @@ body.no-data .detail-panel {
 }
 
 .search-result + .search-result {
-  margin-top: 2px;
+  margin-top: var(--row-gap);
 }
 
 .search-result.focused,
@@ -3787,7 +3820,7 @@ body.no-data .detail-panel {
 
 .search-result-id {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 10px;
   color: var(--text-tertiary);
   letter-spacing: 0.02em;
   white-space: nowrap;
@@ -3800,7 +3833,7 @@ body.no-data .detail-panel {
   font-family: var(--font-ui);
   font-size: 11px;
   color: var(--text-secondary);
-  margin-top: 2px;
+  margin-top: var(--space-0_5);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3833,7 +3866,7 @@ body.no-data .detail-panel {
 
 /* Empty state when the query has no matches. */
 .search-result-empty {
-  padding: 12px 14px;
+  padding: var(--pad-card);
   font-family: var(--font-ui);
   font-size: 12px;
   color: var(--text-tertiary);
@@ -3908,7 +3941,7 @@ body.no-data .detail-panel {
  * popup. */
 .typeable-dropdown-input {
   cursor: text;
-  padding-right: 26px;                            /* room for the chevron */
+  padding-right: var(--space-6);                  /* room for the chevron */
   background-image:
     linear-gradient(45deg,  transparent 50%, var(--text-secondary) 50%),
     linear-gradient(135deg, var(--text-secondary) 50%, transparent 50%);
@@ -3926,9 +3959,9 @@ body.no-data .detail-panel {
   background: var(--bg-deep);
   border-radius: 4px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
-  padding: 4px 0;
+  padding: var(--space-1) 0;
   font-family: var(--font-ui);
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--text-primary);
   overflow-y: auto;
   overflow-x: hidden;
@@ -3937,7 +3970,7 @@ body.no-data .detail-panel {
 .typeable-dropdown-popup[hidden] { display: none; }
 
 .typeable-dropdown-item {
-  padding: 6px 12px;
+  padding: var(--pad-row);
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
@@ -3956,7 +3989,7 @@ body.no-data .detail-panel {
 }
 
 .typeable-dropdown-empty {
-  padding: 8px 12px;
+  padding: var(--pad-row);
   color: var(--text-tertiary);
   font-style: italic;
   font-size: 12px;
@@ -4335,7 +4368,8 @@ const NODE_WIDTH  = 220;
 // in 08-layout.js), floored at NODE_HEIGHT. A brand-new single-line node, the
 // "type to create" cursor slot, the hover "+ add node" ghost, and empty rows
 // are all exactly this tall.
-const NODE_HEIGHT = 44;
+const NODE_HEIGHT = 40;   // Compact density (was 44; the 44px panel-header /
+                          // strip "rhyme" moves to 40 in 03-app-shell.css too)
 
 // Vertical gap between two stacked nodes in the same cell.
 const NODE_GAP_Y = 8;
@@ -4350,7 +4384,7 @@ const LABEL_INSET    = 14;
 const NODE_LINE_STEP = 13;
 
 // Padding at the top and bottom of every stream row.
-const ROW_PADDING = 16;
+const ROW_PADDING = 12;   // Compact (was 16)
 
 // Height of a stream row when its stream is hidden (collapsed). Just tall
 // enough to fit the short label so the user can click it to expand again.
@@ -4361,19 +4395,20 @@ const COLLAPSED_ROW_HEIGHT = 28;
 const COLLAPSED_COL_WIDTH = 28;
 
 // Horizontal gap between the columns of nodes.
-const COL_GAP = 90;
+const COL_GAP = 64;   // Compact (was 90)
 
 // Width of the row-label strip (e.g. "AIR", "RORO") on the left.
-const ROW_HEADER_WIDTH = 110;
+const ROW_HEADER_WIDTH = 96;   // Compact (was 110)
 
 // Height of the column header band at the top.
 const COL_HEADER_HEIGHT = 40;
 
-// Outer padding around the SVG drawing area.
-const SVG_PADDING_LEFT   = 24;
-const SVG_PADDING_TOP    = 12;
-const SVG_PADDING_RIGHT  = 24;
-const SVG_PADDING_BOTTOM = 24;
+// Outer padding around the SVG drawing area. Symmetric (was asymmetric:
+// top 12 / sides+bottom 24) and tightened for the Compact density.
+const SVG_PADDING_LEFT   = 16;
+const SVG_PADDING_TOP    = 16;
+const SVG_PADDING_RIGHT  = 16;
+const SVG_PADDING_BOTTOM = 16;
 
 // Map-text auto-enlargement when the user zooms out.
 //

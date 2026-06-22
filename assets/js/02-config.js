@@ -13,7 +13,8 @@ const NODE_WIDTH  = 220;
 // in 08-layout.js), floored at NODE_HEIGHT. A brand-new single-line node, the
 // "type to create" cursor slot, the hover "+ add node" ghost, and empty rows
 // are all exactly this tall.
-const NODE_HEIGHT = 44;
+const NODE_HEIGHT = 40;   // Compact density (was 44; the 44px panel-header /
+                          // strip "rhyme" moves to 40 in 03-app-shell.css too)
 
 // Vertical gap between two stacked nodes in the same cell.
 const NODE_GAP_Y = 8;
@@ -28,7 +29,7 @@ const LABEL_INSET    = 14;
 const NODE_LINE_STEP = 13;
 
 // Padding at the top and bottom of every stream row.
-const ROW_PADDING = 16;
+const ROW_PADDING = 12;   // Compact (was 16)
 
 // Height of a stream row when its stream is hidden (collapsed). Just tall
 // enough to fit the short label so the user can click it to expand again.
@@ -39,19 +40,20 @@ const COLLAPSED_ROW_HEIGHT = 28;
 const COLLAPSED_COL_WIDTH = 28;
 
 // Horizontal gap between the columns of nodes.
-const COL_GAP = 90;
+const COL_GAP = 64;   // Compact (was 90)
 
 // Width of the row-label strip (e.g. "AIR", "RORO") on the left.
-const ROW_HEADER_WIDTH = 110;
+const ROW_HEADER_WIDTH = 96;   // Compact (was 110)
 
 // Height of the column header band at the top.
 const COL_HEADER_HEIGHT = 40;
 
-// Outer padding around the SVG drawing area.
-const SVG_PADDING_LEFT   = 24;
-const SVG_PADDING_TOP    = 12;
-const SVG_PADDING_RIGHT  = 24;
-const SVG_PADDING_BOTTOM = 24;
+// Outer padding around the SVG drawing area. Symmetric (was asymmetric:
+// top 12 / sides+bottom 24) and tightened for the Compact density.
+const SVG_PADDING_LEFT   = 16;
+const SVG_PADDING_TOP    = 16;
+const SVG_PADDING_RIGHT  = 16;
+const SVG_PADDING_BOTTOM = 16;
 
 // Map-text auto-enlargement when the user zooms out.
 //

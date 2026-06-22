@@ -9,7 +9,7 @@
   position: fixed;
   background: var(--bg-light);
   color: var(--text-primary);
-  padding: 8px 12px;
+  padding: var(--pad-card);
   border-radius: 5px;
   font-size: 12px;
   pointer-events: none;
@@ -26,7 +26,7 @@
 
 .tooltip-title {
   font-weight: 600;
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
   font-size: 12px;
 }
 
@@ -41,13 +41,13 @@
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-primary);
-  margin-bottom: 6px;
-  padding: 4px 0;
+  margin-bottom: var(--space-1_5);
+  padding: var(--space-1) 0;
 }
 
 .tooltip-quant-label  { color: var(--text-tertiary); }
 .tooltip-quant-value  { font-weight: 600; }
-.tooltip-quant-delta  { color: var(--text-secondary); margin-left: 4px; }
+.tooltip-quant-delta  { color: var(--text-secondary); margin-left: var(--space-1); }
 
 /* Single-line text tooltip used for buttons / filters / SVG row labels.
  * Sits in the same #tooltip container as the rich node hover; just a

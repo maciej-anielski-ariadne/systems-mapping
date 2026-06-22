@@ -9,14 +9,14 @@
  * ========================================================================== */
 
 #simulation-panel {
-  padding: 4px 0;
+  padding: var(--space-1) 0;
 }
 
 .sim-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 6px;
+  margin-bottom: var(--heading-gap);
 }
 
 .sim-title {
@@ -33,7 +33,7 @@
   font-size: 10px;
   background: var(--bg-light);
   color: var(--text-secondary);
-  padding: 3px 8px;
+  padding: var(--pad-button);
   border-radius: 4px;
   cursor: pointer;
   text-transform: uppercase;
@@ -48,7 +48,7 @@
 .sim-help {
   font-size: 11px;
   color: var(--text-tertiary);
-  margin-bottom: 12px;
+  margin-bottom: var(--section-gap);
   line-height: 1.4;
 }
 
@@ -60,13 +60,13 @@
   color: var(--status-bad);
   background: color-mix(in srgb, var(--status-bad) 12%, transparent);
   border-radius: 6px;
-  padding: 6px 8px;
-  margin-bottom: 12px;
+  padding: var(--pad-card);
+  margin-bottom: var(--section-gap);
 }
 
 /* One block per stream — groups sliders for that stream */
 .sim-stream-block {
-  margin-bottom: 14px;
+  margin-bottom: var(--section-gap);
 }
 
 .sim-stream-header {
@@ -82,35 +82,42 @@
    * CSS variable set by JS (14-simulation-panel.js); painted via
    * box-shadow:inset because 12-no-borders.css strips real borders. */
   box-shadow: inset 3px 0 0 var(--stream-color, var(--border-strong));
-  margin-bottom: 6px;
+  margin-bottom: var(--heading-gap);
 }
 
 /* === One slider row === */
 .sim-slider-row {
-  margin-bottom: 10px;
+  margin-bottom: var(--space-2);
 }
 
 .sim-slider-label {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 6px;
-  margin-bottom: 2px;
+  gap: var(--gap-md);
+  margin-bottom: var(--space-0_5);
 }
 
 .sim-slider-name {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--text-primary);
-  flex-shrink: 0;
+  /* Truncate instead of pushing the readout out of alignment. */
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sim-slider-readout {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 10px;
   color: var(--text-secondary);
   display: inline-flex;
   align-items: baseline;
-  gap: 4px;
+  gap: var(--gap-sm);
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 /* Editable number alongside the slider — typed values are converted to a
@@ -120,9 +127,9 @@
   background: var(--bg-mid);
   color: var(--text-primary);
   border-radius: 3px;
-  padding: 2px 6px;
+  padding: var(--pad-input);
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 10px;
   text-align: right;
   outline: none;
   /* hide the spinner; users can use the slider or type for fine control */

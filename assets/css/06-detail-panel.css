@@ -17,7 +17,7 @@
   overflow-y: auto;
   /* No top padding so the sticky .panel-header sits flush against the top.
    * Side + bottom padding give the rest of the content breathing room. */
-  padding: 0 24px 24px 24px;
+  padding: 0 var(--gutter) var(--gutter) var(--gutter);
   position: relative;
   grid-column: 3;
 }
@@ -26,7 +26,7 @@
  * at the very right edge of the panel (= window edge). Negative side margin
  * pulls the header outside the panel's padding so it spans the full width. */
 .detail-panel > .panel-header {
-  margin: 0 -24px 8px -24px;
+  margin: 0 calc(-1 * var(--gutter)) var(--heading-gap) calc(-1 * var(--gutter));
 }
 
 /* Unpinned → strip + hover-expand. Same model as the left sidebar. In strip
@@ -53,19 +53,19 @@
 /* When unpinned, the strip has no side padding, so the header doesn't
  * need its negative margin compensation. */
 .app.detail-unpinned .detail-panel > .panel-header {
-  margin: 0 0 8px 0;
+  margin: 0 0 var(--heading-gap) 0;
 }
 
 .app.detail-unpinned .detail-panel:hover {
   width: var(--detail-w-full);
   overflow-y: auto;
-  padding: 0 24px 24px 24px;
+  padding: 0 var(--gutter) var(--gutter) var(--gutter);
   background: var(--bg-deep);
   box-shadow: -4px 0 18px rgba(0, 0, 0, 0.55);
 }
 
 .app.detail-unpinned .detail-panel:hover > .panel-header {
-  margin: 0 -24px 8px -24px;
+  margin: 0 calc(-1 * var(--gutter)) var(--heading-gap) calc(-1 * var(--gutter));
   background: var(--bg-deep);
 }
 
@@ -86,7 +86,7 @@
   font-style: italic;
   font-size: 18px;
   color: var(--text-secondary);
-  margin-bottom: 12px;
+  margin-bottom: var(--heading-gap);
   letter-spacing: -0.01em;
 }
 
@@ -94,12 +94,12 @@
   font-size: 13px;
   line-height: 1.6;
   color: var(--text-tertiary);
-  margin-bottom: 10px;
+  margin-bottom: var(--space-2);
 }
 
 .detail-empty .hint {
-  margin-top: 24px;
-  padding: 14px;
+  margin-top: var(--section-gap);
+  padding: var(--pad-card);
   background: var(--bg-mid);
   border-radius: 6px;
   font-family: var(--font-mono);
@@ -118,7 +118,7 @@
  * mode it sits at the top of the form and reads "Done editing" (filled
  * accent style). Clicking flips between the two modes. */
 .detail-mode-toggle {
-  margin: 14px 0 16px;
+  margin: var(--section-gap) 0 var(--section-gap);
 }
 
 .detail-mode-button {
@@ -127,9 +127,9 @@
   background: var(--bg-mid);
   color: var(--text-primary);
   border-radius: 5px;
-  padding: 9px 12px;
+  padding: var(--pad-button);
   font-family: var(--font-ui);
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-align: center;
@@ -153,8 +153,8 @@
 /* === Tags row at the top of a selected node's details === */
 .detail-tags {
   display: flex;
-  gap: 6px;
-  margin-bottom: 14px;
+  gap: var(--gap-md);
+  margin-bottom: var(--section-gap);
   flex-wrap: wrap;
 }
 
@@ -163,7 +163,7 @@
   font-size: 10px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  padding: 4px 8px;
+  padding: var(--pad-row);
   border-radius: 3px;
   color: var(--text-secondary);
   background: var(--bg-mid);
@@ -181,7 +181,7 @@
   font-weight: 600;
   font-size: 22px;
   letter-spacing: -0.01em;
-  margin-bottom: 12px;
+  margin-bottom: var(--heading-gap);
   line-height: 1.2;
 }
 
@@ -189,7 +189,7 @@
   font-size: 13px;
   line-height: 1.65;
   color: var(--text-secondary);
-  margin-bottom: 24px;
+  margin-bottom: var(--section-gap);
 }
 
 /* === List title (e.g. "Direct Inputs", "Direct Impacts") === */
@@ -199,7 +199,7 @@
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--text-tertiary);
-  margin: 18px 0 8px;
+  margin: var(--section-gap) 0 var(--heading-gap);
   display: flex;
   justify-content: space-between;
 }
@@ -216,11 +216,11 @@
 .detail-edge-item {
   --edge-color: var(--border-strong);
   display: block;
-  padding: 9px 12px 9px 15px;   /* 12 + 3 on the left so content sits past the stripe */
+  padding: var(--space-1) var(--space-2) var(--space-1) calc(var(--space-2) + 3px);   /* +3 on the left so content sits past the stripe */
   background: var(--bg-mid);
   border-radius: 0 5px 5px 0;
   box-shadow: inset 3px 0 0 var(--edge-color);
-  margin-bottom: 4px;
+  margin-bottom: var(--row-gap);
   cursor: pointer;
   transition: all 0.12s;
 }
@@ -238,19 +238,24 @@
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--gap-lg);
 }
 
 .detail-edge-name {
   font-size: 12px;
   font-weight: 500;
   color: var(--text-primary);
-  margin-bottom: 2px;
+  /* Truncate instead of pushing the elasticity value out of alignment. */
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .detail-edge-elasticity {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 10px;
   color: var(--text-tertiary);
   flex-shrink: 0;
   font-weight: 600;
@@ -272,13 +277,13 @@
   font-size: 11px;
   color: var(--text-tertiary);
   line-height: 1.5;
-  margin-top: 4px;
+  margin-top: var(--row-gap);
 }
 
 /* === Quantification block (baseline, current, delta) === */
 .detail-quant-block {
-  margin: 12px 0;
-  padding: 10px 12px;
+  margin: var(--section-gap) 0;
+  padding: var(--pad-card);
   background: var(--bg-deepest);
   border-radius: 6px;
 }
@@ -287,7 +292,7 @@
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  padding: 3px 0;
+  padding: var(--space-0_5) 0;
   font-size: 12px;
 }
 
@@ -309,11 +314,11 @@
  * selected node is a controllable input and sim mode is on. Typed values
  * propagate via applySimMultiplier (assets/js/14-simulation-panel.js). */
 .detail-value-input {
-  width: 110px;
+  width: var(--value-col);
   background: var(--bg-mid);
   color: var(--text-primary);
   border-radius: 3px;
-  padding: 3px 8px;
+  padding: var(--pad-input);
   font-family: var(--font-mono);
   font-size: 12px;
   text-align: right;
@@ -332,15 +337,15 @@
 /* === Generic detail-panel action buttons === */
 .detail-actions {
   display: flex;
-  gap: 8px;
-  margin-bottom: 20px;
+  gap: var(--gap-lg);
+  margin-bottom: var(--section-gap);
 }
 
 .detail-button {
   flex: 1;
   background: var(--bg-mid);
   color: var(--text-secondary);
-  padding: 8px 12px;
+  padding: var(--pad-button);
   border-radius: 5px;
   font-family: var(--font-mono);
   font-size: 11px;
@@ -369,8 +374,8 @@
 
 /* === Inline edit block (renders below the quantification block) === */
 .detail-edit-block {
-  margin: 12px 0 6px;
-  padding: 12px;
+  margin: var(--section-gap) 0 var(--space-1_5);
+  padding: var(--pad-card);
   background: var(--bg-mid);
   border-radius: 6px;
 }
@@ -378,8 +383,8 @@
 .detail-edit-row {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-bottom: 10px;
+  gap: var(--gap-sm);
+  margin-bottom: var(--space-2);
 }
 
 .detail-edit-row:last-child {
@@ -397,26 +402,26 @@
 .detail-edit-control {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--gap-sm);
 }
 
 /* Multi-select category editor (Primary / Secondary checkbox groups). */
-.detail-cat-group { margin-bottom: 6px; }
+.detail-cat-group { margin-bottom: var(--space-1_5); }
 .detail-cat-group:last-child { margin-bottom: 0; }
 .detail-cat-group-title {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-tertiary);
-  margin: 2px 0 3px;
+  margin: var(--space-0_5) 0 var(--space-0_5);
 }
 .detail-cat-opt {
   display: flex;
   align-items: center;
-  gap: 7px;
-  font-size: 12.5px;
+  gap: var(--gap-md);
+  font-size: 12px;
   color: var(--text-secondary);
-  padding: 2px 0;
+  padding: var(--space-0_5) 0;
   cursor: pointer;
 }
 .detail-cat-opt input { margin: 0; cursor: pointer; }
@@ -442,9 +447,9 @@
   background: var(--bg-deepest);
   color: var(--text-primary);
   border-radius: 4px;
-  padding: 6px 9px;
+  padding: var(--pad-input);
   font-family: var(--font-ui);
-  font-size: 12.5px;
+  font-size: 12px;
   outline: none;
   box-sizing: border-box;
 }
@@ -489,7 +494,7 @@
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.04em;
-  padding: 2px 0;
+  padding: var(--space-0_5) 0;
   cursor: pointer;
   text-decoration: underline;
 }
@@ -503,27 +508,27 @@
  * and delete the edge. The header link at the top of each row jumps to
  * the target node when clicked. */
 .outgoing-edges-block {
-  margin: 14px 0 0;
+  margin: var(--section-gap) 0 0;
 }
 
 .outgoing-edges-empty {
   font-size: 12px;
   color: var(--text-tertiary);
   font-style: italic;
-  padding: 6px 0 8px;
+  padding: var(--space-1_5) 0 var(--space-2);
   line-height: 1.5;
 }
 
 .outgoing-edge-row {
   --edge-color: var(--border-strong);
-  padding: 8px 10px 8px 12px;
+  padding: var(--space-1) var(--space-2) var(--space-1) calc(var(--space-2) + 3px);
   background: var(--bg-mid);
   border-radius: 0 5px 5px 0;
   box-shadow: inset 3px 0 0 var(--edge-color);
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--gap-md);
 }
 .outgoing-edge-row.increases { --edge-color: var(--accent-green);  }
 .outgoing-edge-row.decreases { --edge-color: var(--accent-red);    }
@@ -544,7 +549,7 @@
 .outgoing-edge-header {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--gap-md);
 }
 
 .outgoing-edge-target-link {
@@ -552,9 +557,9 @@
   background: none;
   color: var(--text-primary);
   text-align: left;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 500;
-  padding: 2px 0;
+  padding: var(--space-0_5) 0;
   cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -583,7 +588,7 @@
 
 .outgoing-edge-controls {
   display: flex;
-  gap: 6px;
+  gap: var(--gap-md);
   align-items: center;
 }
 
@@ -604,17 +609,17 @@
 }
 
 .outgoing-edge-add-toggle {
-  margin-top: 4px;
+  margin-top: var(--space-1);
 }
 
 .outgoing-edge-add {
-  margin: 6px 0 10px;
-  padding: 10px;
+  margin: var(--space-1_5) 0 var(--space-2);
+  padding: var(--pad-card);
   background: var(--bg-deepest);
   border-radius: 5px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--gap-lg);
 }
 
 .outgoing-edge-add-title {
@@ -627,7 +632,7 @@
 
 .outgoing-edge-add-row {
   display: flex;
-  gap: 6px;
+  gap: var(--gap-md);
 }
 
 .outgoing-edge-add-row .detail-edit-select {
@@ -638,12 +643,12 @@
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  gap: 10px;
+  gap: var(--gap-lg);
 }
 
 .outgoing-edge-add-actions .detail-button {
   flex: 0 0 auto;
-  padding: 6px 14px;
+  padding: var(--pad-button);
 }
 
 /* Inline checkbox + label (used by Controllable). The default
@@ -652,8 +657,8 @@
 .detail-edit-label-inline {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12.5px;
+  gap: var(--gap-lg);
+  font-size: 12px;
   color: var(--text-secondary);
   cursor: pointer;
 }

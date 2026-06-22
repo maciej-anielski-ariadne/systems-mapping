@@ -94,13 +94,34 @@
   --radius-xl:   12px;
   --radius-full: 9999px;
 
-  /* ===== Spacing scale (4px grid) ======================================== */
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
+  /* ===== Spacing scale (4px grid + two legitimate half-steps) ============ */
+  --space-0_5: 2px;    /* hairline / tight-chip half-step */
+  --space-1:   4px;
+  --space-1_5: 6px;    /* dense-row half-step (kept, not snapped to 8) */
+  --space-2:   8px;
+  --space-3:   12px;
+  --space-4:   16px;
+  --space-5:   20px;
+  --space-6:   24px;
+
+  /* ===== Semantic spacing — the app's actual spacing, expressed in the scale.
+   * Set to the COMPACT density (a deliberate, information-dense choice). Change
+   * these few values to re-pace the whole app; components reference them rather
+   * than hand-typed literals. ===== */
+  --gutter:       var(--space-4);   /* 16 — panel side padding (both panels) */
+  --section-gap:  var(--space-3);   /* 12 — between sidebar sections / detail blocks */
+  --heading-gap:  var(--space-2);   /* 8  — section heading → its content */
+  --row-gap:      var(--space-1);   /* 4  — between filter / list rows */
+  --pad-row:      4px 8px;          /* compact list-row padding */
+  --pad-button:   5px 10px;         /* one button padding */
+  --pad-input:    5px 8px;          /* one text-input padding */
+  --pad-card:     var(--space-2);   /* 8  — card / inset block padding */
+  --pad-cell:     4px 8px;          /* builder table th AND td (matched) */
+  --gap-sm:       var(--space-1);   /* 4  */
+  --gap-md:       var(--space-1_5); /* 6  */
+  --gap-lg:       var(--space-2);   /* 8  */
+  --value-col:    88px;             /* shared right-edge width for numeric value columns */
+  --edge-stripe-w: 3px;             /* the coloured left stripe on edge / sim rows */
 
   /* ===== Type scale (target; applied in the typography pass) ============= */
   --fs-2xs:  10px;

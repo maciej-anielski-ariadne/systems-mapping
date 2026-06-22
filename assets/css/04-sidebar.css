@@ -15,9 +15,9 @@
   /* Shared layout tokens so the filter rows and their section headings stay
    * aligned: the heading indents below are derived from these same widths, so
    * tweaking a handle/swatch/delete size keeps title and rows in lockstep. */
-  --row-pad-l: 4px;     /* row padding-left (matches .sidebar-edit-row) */
-  --row-pad-r: 6px;     /* row padding-right */
-  --row-gap: 6px;       /* flex gap between row children */
+  --row-pad-l: var(--space-1);     /* row padding-left (matches .sidebar-edit-row) */
+  --row-pad-r: var(--space-1_5);     /* row padding-right */
+  --row-gap: var(--space-1_5);       /* flex gap between row children */
   --drag-w: 16px;       /* fixed drag-handle width */
   --swatch-w: 16px;     /* colour swatch */
   --delete-w: 22px;     /* hover-reveal delete button */
@@ -31,7 +31,7 @@
   overflow-y: auto;
   /* No top padding so the sticky .panel-header sits flush against the top.
    * Bottom padding gives whitespace below the last section. */
-  padding: 0 0 20px 0;
+  padding: 0 0 var(--space-5) 0;
   position: relative;
   /* Explicit grid-column so the other grid items don't shift when this one
    * becomes position:absolute (i.e. removed from grid flow). grid-row is
@@ -69,7 +69,7 @@
 .app.sidebar-unpinned .sidebar:hover {
   width: var(--sidebar-w-full);
   overflow-y: auto;
-  padding: 0 0 20px 0;
+  padding: 0 0 var(--space-5) 0;
   background: var(--bg-deep);
   box-shadow: 4px 0 18px rgba(0, 0, 0, 0.55);
 }
@@ -86,8 +86,8 @@
 .app.sidebar-unpinned .sidebar:hover > *              { visibility: visible; }
 
 .sidebar-section {
-  padding: 0 20px 24px;
-  margin-bottom: 20px;
+  padding: 0 var(--gutter) var(--section-gap);
+  margin-bottom: var(--section-gap);
 }
 
 /* Small uppercase heading at the top of each sidebar block */
@@ -97,7 +97,7 @@
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--text-tertiary);
-  margin-bottom: 12px;
+  margin-bottom: var(--heading-gap);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -125,12 +125,12 @@
 .filter-row {
   display: flex;
   align-items: center;
-  padding: 7px 10px;
+  padding: var(--pad-row);
   border-radius: 5px;
   cursor: pointer;
   transition: background 0.12s;
   user-select: none;
-  margin-bottom: 1px;
+  margin-bottom: 0;
 }
 
 .filter-row:hover {
@@ -167,7 +167,7 @@
   color: var(--text-tertiary);
   font-size: 10px;
   letter-spacing: 0.02em;
-  padding: 2px 5px;
+  padding: var(--space-0_5) var(--space-1);
   border-radius: 4px;
   cursor: pointer;
   opacity: 0;
@@ -187,11 +187,11 @@
   display: flex;
   align-items: center;
   gap: var(--row-gap);
-  padding: 5px var(--row-pad-r) 5px var(--row-pad-l);
+  padding: var(--space-1) var(--row-pad-r) var(--space-1) var(--row-pad-l);
   border-radius: 5px;
   transition: background 0.12s;
   user-select: none;
-  margin-bottom: 1px;
+  margin-bottom: 0;
   position: relative;
 }
 
@@ -319,13 +319,13 @@
 .sidebar-short-chip {
   flex: 0 0 auto;
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-tertiary);
   background: var(--bg-deepest);
   border-radius: 3px;
-  padding: 1px 5px;
+  padding: 1px var(--space-1);
   min-width: 18px;
   text-align: center;
 }
@@ -339,8 +339,8 @@
   color: var(--text-primary);
   background: var(--bg-deepest);
   border-radius: 4px;
-  padding: 2px 6px;
-  margin: -2px 0;
+  padding: var(--space-0_5) var(--space-1_5);
+  margin: calc(-1 * var(--space-0_5)) 0;
   outline: none;
   box-shadow: var(--focus-ring);
   text-decoration: none !important;
@@ -358,7 +358,7 @@
  * during drag-over. */
 .sidebar-drop-end {
   height: 6px;
-  margin-top: 2px;
+  margin-top: var(--space-0_5);
   border-radius: 3px;
 }
 .sidebar-drop-end.drop-target {
@@ -368,12 +368,12 @@
 
 /* "+ Add stream" / "+ Add stage" buttons */
 .sidebar-add-btn {
-  margin-top: 8px;
+  margin-top: var(--space-2);
   width: 100%;
   background: transparent;
   color: var(--accent-blue);
   border-radius: 4px;
-  padding: 6px 10px;
+  padding: var(--pad-button);
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.04em;
@@ -392,7 +392,7 @@
   font-size: 12px;
   line-height: 1.5;
   color: var(--text-tertiary);
-  padding: 4px 4px 8px;
+  padding: var(--space-1) var(--space-1) var(--space-2);
   font-style: italic;
 }
 
@@ -400,21 +400,21 @@
 .legend-row {
   display: flex;
   align-items: center;
-  padding: 5px 0;
+  padding: var(--pad-row);
 }
 
 .legend-swatch {
   width: 14px;
   height: 14px;
   border-radius: 3px;
-  margin-right: 10px;
+  margin-right: var(--space-2);
   flex-shrink: 0;
 }
 
 .legend-line {
   width: 24px;
   height: 2px;
-  margin-right: 10px;
+  margin-right: var(--space-2);
   flex-shrink: 0;
 }
 
@@ -429,14 +429,14 @@
 .legend-filter-row {
   display: flex;
   align-items: center;
-  padding: 5px 6px;
+  padding: var(--pad-row);
   border-radius: 5px;
   cursor: pointer;
   transition: background 0.12s;
 }
 .legend-filter-row:hover { background: var(--bg-light); }
 .legend-filter-row .filter-label { flex: 1; font-size: 12px; color: var(--text-secondary); }
-.legend-filter-row .filter-count { margin-left: 8px; }
+.legend-filter-row .filter-count { margin-left: var(--gap-lg); }
 
 /* Neutral line-style swatches (style is orthogonal to the effect colour).
  * Both use `background` rather than a border, since 12-no-borders.css strips
@@ -456,7 +456,7 @@
   justify-content: space-between;
   background: transparent;
   cursor: pointer;
-  padding: 2px 0;
+  padding: var(--space-0_5) 0;
   font-family: var(--font-mono);
   font-size: 10px;
   text-transform: uppercase;
@@ -470,7 +470,7 @@
 .sidebar-accordion-chevron { transition: transform var(--dur-base); }
 .sidebar-accordion.collapsed .sidebar-accordion-chevron { transform: rotate(-90deg); }
 
-.sidebar-accordion-body { margin-top: 12px; }
+.sidebar-accordion-body { margin-top: var(--heading-gap); }
 .sidebar-accordion.collapsed .sidebar-accordion-body { display: none; }
 
 /* T4: cap decorative stream / category swatch saturation so the custom colours
