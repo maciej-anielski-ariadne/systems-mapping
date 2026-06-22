@@ -22,7 +22,7 @@
   grid-column: 3;
 }
 
-/* The detail panel has 24px side padding, but we want the pin button to sit
+/* The detail panel has --gutter (16px) side padding, but we want the pin button to sit
  * at the very right edge of the panel (= window edge). Negative side margin
  * pulls the header outside the panel's padding so it spans the full width. */
 .detail-panel > .panel-header {
@@ -220,7 +220,7 @@
   text-align: left;
   font: inherit;
   color: inherit;
-  padding: var(--space-1) var(--space-2) var(--space-1) calc(var(--space-2) + 3px);   /* +3 on the left so content sits past the stripe */
+  padding: var(--space-1) 0 var(--space-1) calc(var(--edge-stripe-w) + var(--space-0_5));   /* L: just past the 3px stripe (label axis); R: 0 so the elasticity lands on the value rail */
   background: var(--bg-mid);
   border-radius: 0 5px 5px 0;
   box-shadow: inset 3px 0 0 var(--edge-color);
@@ -303,15 +303,20 @@
 /* === Quantification block (baseline, current, delta) === */
 .detail-quant-block {
   margin: var(--section-gap) 0;
-  padding: var(--pad-card);
-  background: var(--bg-deepest);
-  border-radius: 6px;
+  /* Transparent + zero horizontal padding so the labels sit on the panel's
+     label axis (the gutter), level with the section headings — no inset card. */
+  padding: var(--pad-card) 0;
+  background: transparent;
 }
 
+/* Label left, value right. Now that the block reaches the panel content edge,
+ * space-between right-aligns every value on the shared rail without a fixed
+ * column (which would wrap long descriptors like "↑ higher is better"). */
 .detail-quant-row {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
+  gap: var(--gap-lg);
   padding: var(--space-0_5) 0;
   font-size: 12px;
 }
@@ -328,6 +333,8 @@
   font-family: var(--font-mono);
   color: var(--text-primary);
   font-size: 12px;
+  text-align: right;
+  flex-shrink: 0;
 }
 
 /* Editable current-value input shown in the "Current" row when the
@@ -618,7 +625,7 @@
 }
 
 .outgoing-edge-elasticity {
-  flex: 0 0 88px;
+  flex: 0 0 88px;   /* edit-mode control in a 3-up row — not the view rail (would overflow) */
   text-align: right;
 }
 
