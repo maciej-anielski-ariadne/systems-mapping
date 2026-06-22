@@ -54,6 +54,7 @@ function renderStagesList() {
     const tip = (isHidden ? "Click to show " : "Click to hide ") + stage.label + " — " + count + " node" + (count === 1 ? "" : "s") + " on the map. Double-click the name to rename.";
     html += '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="stage" data-id="' + escapeHtml(stage.id) + '" data-index="' + i + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
     html +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
+    html +=   '<span class="sidebar-stage-mark" aria-hidden="true"></span>';
     html +=   '<span class="sidebar-edit-label sidebar-inline-edit" data-field="label" title="Double-click to rename">' + escapeHtml(stage.label) + '</span>';
     html +=   '<span class="sidebar-edit-count">' + count + '</span>';
     html +=   deleteIconButton("Delete stage");
@@ -149,9 +150,9 @@ function renderCategoriesList() {
 
   const split = splitCategoriesByClass(allIds);
   let html = "";
-  html += group("Primary categories · fill",      "primary",   split.primary,   "+ Add primary");
+  html += group("Primary",      "primary",   split.primary,   "+ Add primary");
   html += '<div class="sidebar-cat-group-gap"></div>';
-  html += group("Secondary categories · chips",   "secondary", split.secondary, "+ Add secondary");
+  html += group("Secondary",   "secondary", split.secondary, "+ Add secondary");
   html += '<div class="sidebar-drop-end" data-kind="category" data-target-index="' + allIds.length + '"></div>';
   container.innerHTML = html;
 

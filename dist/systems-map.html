@@ -875,15 +875,11 @@ body.panel-resizing {
   font-size: 9px;
 }
 
-/* Line each list's heading text up with its item names, and the heading
- * counter up with the item counters. Stages render without a colour swatch,
- * so they get a smaller left indent than streams/categories. */
-#stages-section .sidebar-section-title {
-  padding-left: var(--title-indent-l);
-  padding-right: var(--title-indent-r);
-}
-#stream-filters-section .sidebar-section-title,
-#category-filters-section .sidebar-section-title {
+/* Every heading uses ONE indent (the swatch-inclusive axis) so the heading
+ * column stays straight across sections. Stages carry an inert marker in the
+ * swatch slot (.sidebar-stage-mark), so their labels share the axis too — no
+ * more zigzag between Stages and Streams/Categories. */
+.sidebar-section-title {
   padding-left: var(--title-indent-l-swatch);
   padding-right: var(--title-indent-r);
 }
@@ -940,7 +936,8 @@ body.panel-resizing {
   opacity: 0;
   transition: opacity 0.12s, background 0.12s, color 0.12s;
 }
-.sidebar-edit-row:hover .sidebar-cat-reclass { opacity: 1; }
+.sidebar-edit-row:hover .sidebar-cat-reclass,
+.sidebar-edit-row:focus-within .sidebar-cat-reclass { opacity: 1; }
 .sidebar-cat-reclass:hover { color: var(--text-primary); background: var(--bg-lighter); }
 
 /* Gap between the Primary and Secondary category groups. */
@@ -989,6 +986,16 @@ body.panel-resizing {
   cursor: grab;
   padding: 0;
   user-select: none;
+  /* Reorder is a secondary action — hide the grip at rest so the swatch owns
+     the left scan column; reveal it on hover OR keyboard focus within the row
+     (the row stays draggable either way). */
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.sidebar-edit-row:hover .sidebar-edit-drag,
+.sidebar-edit-row:focus-within .sidebar-edit-drag {
+  opacity: 1;
 }
 
 .sidebar-edit-drag:active {
@@ -1039,9 +1046,21 @@ body.panel-resizing {
   width: var(--swatch-w);
   height: 16px;
   border-radius: 3px;
-  /* Faint hairline so a near-background swatch colour still reads as a chip
-     (restored as an inset ring after the flat-look border wipe). */
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+  /* Ring strong enough (~3:1) that even a dark, near-background swatch colour
+     keeps a visible boundary on the dark panel (WCAG 1.4.11). */
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+}
+
+/* Inert spacer in the swatch slot of STAGE rows — stages have no colour, but the
+ * marker keeps their labels on the same left axis as swatched rows. A very faint
+ * hollow square reads as "no colour" rather than an empty gap. */
+.sidebar-stage-mark {
+  flex: 0 0 var(--swatch-w);
+  width: var(--swatch-w);
+  height: 16px;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  pointer-events: none;
 }
 
 /* Inline trash-icon delete button for compact filter rows. Hidden until the
@@ -1061,7 +1080,8 @@ body.panel-resizing {
   transition: background 0.12s, color 0.12s, opacity 0.12s;
 }
 
-.sidebar-edit-row:hover .sidebar-row-delete {
+.sidebar-edit-row:hover .sidebar-row-delete,
+.sidebar-edit-row:focus-within .sidebar-row-delete {
   opacity: 1;
 }
 
@@ -7900,6 +7920,7 @@ function renderStagesList() {
     const tip = (isHidden ? "Click to show " : "Click to hide ") + stage.label + " — " + count + " node" + (count === 1 ? "" : "s") + " on the map. Double-click the name to rename.";
     html += '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="stage" data-id="' + escapeHtml(stage.id) + '" data-index="' + i + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
     html +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
+    html +=   '<span class="sidebar-stage-mark" aria-hidden="true"></span>';
     html +=   '<span class="sidebar-edit-label sidebar-inline-edit" data-field="label" title="Double-click to rename">' + escapeHtml(stage.label) + '</span>';
     html +=   '<span class="sidebar-edit-count">' + count + '</span>';
     html +=   deleteIconButton("Delete stage");
@@ -7995,9 +8016,9 @@ function renderCategoriesList() {
 
   const split = splitCategoriesByClass(allIds);
   let html = "";
-  html += group("Primary categories · fill",      "primary",   split.primary,   "+ Add primary");
+  html += group("Primary",      "primary",   split.primary,   "+ Add primary");
   html += '<div class="sidebar-cat-group-gap"></div>';
-  html += group("Secondary categories · chips",   "secondary", split.secondary, "+ Add secondary");
+  html += group("Secondary",   "secondary", split.secondary, "+ Add secondary");
   html += '<div class="sidebar-drop-end" data-kind="category" data-target-index="' + allIds.length + '"></div>';
   container.innerHTML = html;
 

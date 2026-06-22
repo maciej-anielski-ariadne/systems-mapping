@@ -108,15 +108,11 @@
   font-size: 9px;
 }
 
-/* Line each list's heading text up with its item names, and the heading
- * counter up with the item counters. Stages render without a colour swatch,
- * so they get a smaller left indent than streams/categories. */
-#stages-section .sidebar-section-title {
-  padding-left: var(--title-indent-l);
-  padding-right: var(--title-indent-r);
-}
-#stream-filters-section .sidebar-section-title,
-#category-filters-section .sidebar-section-title {
+/* Every heading uses ONE indent (the swatch-inclusive axis) so the heading
+ * column stays straight across sections. Stages carry an inert marker in the
+ * swatch slot (.sidebar-stage-mark), so their labels share the axis too — no
+ * more zigzag between Stages and Streams/Categories. */
+.sidebar-section-title {
   padding-left: var(--title-indent-l-swatch);
   padding-right: var(--title-indent-r);
 }
@@ -173,7 +169,8 @@
   opacity: 0;
   transition: opacity 0.12s, background 0.12s, color 0.12s;
 }
-.sidebar-edit-row:hover .sidebar-cat-reclass { opacity: 1; }
+.sidebar-edit-row:hover .sidebar-cat-reclass,
+.sidebar-edit-row:focus-within .sidebar-cat-reclass { opacity: 1; }
 .sidebar-cat-reclass:hover { color: var(--text-primary); background: var(--bg-lighter); }
 
 /* Gap between the Primary and Secondary category groups. */
@@ -222,6 +219,16 @@
   cursor: grab;
   padding: 0;
   user-select: none;
+  /* Reorder is a secondary action — hide the grip at rest so the swatch owns
+     the left scan column; reveal it on hover OR keyboard focus within the row
+     (the row stays draggable either way). */
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.sidebar-edit-row:hover .sidebar-edit-drag,
+.sidebar-edit-row:focus-within .sidebar-edit-drag {
+  opacity: 1;
 }
 
 .sidebar-edit-drag:active {
@@ -272,9 +279,21 @@
   width: var(--swatch-w);
   height: 16px;
   border-radius: 3px;
-  /* Faint hairline so a near-background swatch colour still reads as a chip
-     (restored as an inset ring after the flat-look border wipe). */
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+  /* Ring strong enough (~3:1) that even a dark, near-background swatch colour
+     keeps a visible boundary on the dark panel (WCAG 1.4.11). */
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+}
+
+/* Inert spacer in the swatch slot of STAGE rows — stages have no colour, but the
+ * marker keeps their labels on the same left axis as swatched rows. A very faint
+ * hollow square reads as "no colour" rather than an empty gap. */
+.sidebar-stage-mark {
+  flex: 0 0 var(--swatch-w);
+  width: var(--swatch-w);
+  height: 16px;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  pointer-events: none;
 }
 
 /* Inline trash-icon delete button for compact filter rows. Hidden until the
@@ -294,7 +313,8 @@
   transition: background 0.12s, color 0.12s, opacity 0.12s;
 }
 
-.sidebar-edit-row:hover .sidebar-row-delete {
+.sidebar-edit-row:hover .sidebar-row-delete,
+.sidebar-edit-row:focus-within .sidebar-row-delete {
   opacity: 1;
 }
 
