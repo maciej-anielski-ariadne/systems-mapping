@@ -200,27 +200,6 @@
   filter: none;
 }
 
-/* Line-style legend badge: a neutral count box with a solid / dashed mini-line
- * under the count (a line style has no colour of its own). */
-.count-swatch--style {
-  background: var(--bg-deepest);
-  filter: none;
-}
-.count-swatch--style .count-num {
-  inset: 0 0 6px 0;             /* sit the count above the style line */
-  color: var(--text-secondary);
-}
-.count-swatch--style .style-line {
-  position: absolute;
-  left: 6px;
-  right: 6px;
-  bottom: 3px;
-  height: 2px;
-}
-.count-swatch--style .style-line.solid  { background: var(--text-secondary); }
-.count-swatch--style .style-line.dashed {
-  background: repeating-linear-gradient(to right, var(--text-secondary) 0 3px, transparent 3px 6px);
-}
 
 /* Reclassify button ("→ chip" / "→ fill") — moves a category between the
  * Primary and Secondary groups. Hidden until the row is hovered, like the

@@ -196,12 +196,11 @@ const LEGEND_FILTER_GROUPS = [
     countInSwatch: true },
   { kind: "style", containerId: "edge-style-filters", title: "Line style", ctx: "edges on the map",
     items: LINE_STYLE_FILTERS, hiddenSet: () => state.hiddenStyles,
-    swatch: (f, count) => styleCountBadge(f.id, count),
-    count:  (f, counts) => counts.styles[f.id] || 0,
-    countInSwatch: true },
+    swatch: f => '<div class="legend-line ' + f.swatchClass + '"></div>',
+    count:  () => null },
   { kind: "trace", containerId: "trace-filters", title: "Trace", ctx: "when a node is selected",
     items: TRACE_FILTERS, hiddenSet: () => state.hiddenTrace,
-    swatch: () => '<span class="count-swatch count-swatch--plain"></span>',
+    swatch: f => '<div class="legend-swatch" style="box-shadow: inset 0 0 0 2px var(' + f.varName + '), 0 0 4px var(' + f.varName + ');"></div>',
     count:  () => null },
 ];
 
@@ -286,16 +285,6 @@ function countSwatch(color, count) {
 // boxes — only the editable Category / Stream swatches carry colour.
 function edgeCountBadge(effectId, count) {
   return '<span class="count-swatch count-swatch--plain">' + count + '</span>';
-}
-
-// Read-only badge for the line-style legend rows: a neutral count box with a
-// solid / dashed mini-line under the count (a line style has no colour of its own).
-function styleCountBadge(styleId, count) {
-  const cls = styleId === "dashed" ? "dashed" : "solid";
-  return '<span class="count-swatch count-swatch--style">' +
-    '<span class="count-num">' + count + '</span>' +
-    '<span class="style-line ' + cls + '"></span>' +
-    '</span>';
 }
 
 // Small inline trash-icon delete button shared by every sidebar row.
