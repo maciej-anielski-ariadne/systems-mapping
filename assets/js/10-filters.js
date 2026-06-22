@@ -70,7 +70,9 @@ function toggleCategory(categoryId) {
 // visible.
 function isNodeVisible(node) {
   if (state.hiddenStreams.has(node.stream)) return false;
-  if (state.hiddenCategories.has(node.category)) return false;
   if (state.hiddenStages.has(node.stage)) return false;
+  // Hidden if ANY category the node carries (primary or secondary) is hidden.
+  const cats = (node.categoryIds && node.categoryIds.length) ? node.categoryIds : [node.category];
+  for (const c of cats) if (state.hiddenCategories.has(c)) return false;
   return true;
 }

@@ -89,6 +89,7 @@ function seedBuilderFromLiveData() {
     label: CATEGORIES[id].label,
     color: CATEGORIES[id].color,
     textColor: CATEGORIES[id].textColor,
+    class: CATEGORIES[id].class || "primary",
   }));
   state.builder.defaults = {
     enables:   DEFAULT_ELASTICITY_BY_EFFECT.enables,
@@ -98,6 +99,10 @@ function seedBuilderFromLiveData() {
   state.builder.nodes = NODES.map(n => ({
     id: n.id, label: n.label, description: n.description || "",
     stream: n.stream, stage: n.stage, category: n.category,
+    // Preserve the full multi-category list so a wizard round-trip doesn't drop
+    // extra primaries / secondary chips (the node table edits the primary
+    // anchor; the detail panel does the full multi-select).
+    categoryIds: (n.categoryIds && n.categoryIds.length) ? n.categoryIds.slice() : [n.category],
     baseline: n.baseline !== undefined ? n.baseline : "",
     unit: n.unit || "",
     controllable: !!n.controllable,
@@ -137,6 +142,7 @@ function seedBuilderFromSample() {
   state.builder.categories = (sections.categories || []).map(row => ({
     id: row.id || "", label: row.label || "",
     color: row.color || "#a3a3a3", textColor: row.text_color || "#1c1917",
+    class: (row.class || "").trim().toLowerCase() === "secondary" ? "secondary" : "primary",
   })).filter(c => c.id);
 
   // Pull defaults too if present.
@@ -365,13 +371,15 @@ function addBuilderRow(section) {
   } else if (section === "stages") {
     state.builder.stages.push({ id: "", label: "" });
   } else if (section === "categories") {
-    state.builder.categories.push({ id: "", label: "", color: "#a3a3a3", textColor: "#1c1917" });
+    state.builder.categories.push({ id: "", label: "", color: "#a3a3a3", textColor: "#1c1917", class: "primary" });
   } else if (section === "nodes") {
+    const firstPrimary = (state.builder.categories.find(c => (c.class || "primary") !== "secondary") || state.builder.categories[0] || {}).id || "";
     state.builder.nodes.push({
       id: "", label: "", description: "",
       stream: state.builder.streams[0] ? state.builder.streams[0].id : "",
       stage:  state.builder.stages[0]  ? state.builder.stages[0].id  : "",
-      category: state.builder.categories[0] ? state.builder.categories[0].id : "",
+      category: firstPrimary,
+      categoryIds: firstPrimary ? [firstPrimary] : [],
       baseline: "", unit: "", controllable: false, direction: "", sliderMax: "",
     });
   } else if (section === "edges") {
@@ -428,6 +436,13 @@ function applyBuilderBulkField(section, field, value) {
     if (typeof v === "number" && isNaN(v)) continue;
     if (row[field] === v) continue;
     row[field] = v;
+    // Keep the full category list in sync when bulk-setting the primary anchor
+    // (mirrors the per-row reconcile in handleBuilderInput) so secondaries are
+    // preserved and the new primary actually serializes.
+    if (section === "nodes" && field === "category") {
+      const secs = (row.categoryIds || []).filter(id => CATEGORIES[id] && (CATEGORIES[id].class || "primary") === "secondary");
+      row.categoryIds = (v ? [v] : []).concat(secs);
+    }
     changed++;
   }
   return changed;

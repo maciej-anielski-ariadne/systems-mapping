@@ -488,7 +488,9 @@ function createNodeInCell(streamId, stageId, insertIndex) {
   // otherwise the round-trip through loadDataFromCsv on reload would reject
   // the node (unknown category).
   ensureDefaultCategory();
-  const categoryId = Object.keys(CATEGORIES)[0];
+  // A new node starts with one primary (fill) category, no secondaries.
+  const primaryIds = Object.keys(CATEGORIES).filter(id => (CATEGORIES[id].class || "primary") !== "secondary");
+  const categoryId = primaryIds[0] || Object.keys(CATEGORIES)[0];
 
   const newNode = {
     id: generateUniqueNodeId("new_node"),
@@ -497,6 +499,9 @@ function createNodeInCell(streamId, stageId, insertIndex) {
     stream: streamId,
     stage: stageId,
     category: categoryId,
+    categoryIds: [categoryId],
+    primaryCategories: [categoryId],
+    secondaryCategories: [],
   };
   // Translate the cell-relative insert slot into a global NODES index (count
   // target-cell siblings until we've passed insertIndex of them). Layout stacks
@@ -553,6 +558,7 @@ function ensureDefaultCategory() {
     label: "Default",
     color: "#a3a3a3",
     textColor: "#1c1917",
+    class: "primary",
   };
 }
 

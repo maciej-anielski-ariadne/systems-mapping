@@ -32,6 +32,9 @@
 // (its bytes never contain the contiguous closing sequence).
 var EXPORT_CLOSE_SCRIPT = "<" + "/script>";
 
+// Monotonic counter for unique per-node gradient ids in the export SVG.
+let _xnodeGradSeq = 0;
+
 // ───── Resolve the live theme's colours to literal values ──────────────────
 function exportPalette() {
   const root = getComputedStyle(document.documentElement);
@@ -385,14 +388,16 @@ function renderExportSvg(model, opts) {
     const pos = lay.positions[node.id];
     if (!pos) continue;
     const stream   = streamById[node.stream]   || { color: "#94a3b8" };
-    const category = CATEGORIES[node.category]  || { color: "#a3a3a3", textColor: "#1c1917" };
+    const fillInfo = nodePrimaryFill(node, "xgrad_" + (_xnodeGradSeq++));
+    const chips    = nodeSecondaryChips(node, pos);
     const stroke   = exportNodeStroke(node.id, pal);
 
     s += '<g class="xnode" data-node-id="' + escapeHtml(node.id) + '">';
+    s += fillInfo.defs;   // per-node gradient (empty unless multi-primary)
 
     // Background rect.
     s += '<rect x="' + pos.x + '" y="' + pos.y + '" width="' + pos.width + '" height="' + pos.height +
-         '" rx="5" fill="' + category.color + '" stroke="' + stroke.color + '" stroke-width="' + stroke.width + '"></rect>';
+         '" rx="5" fill="' + fillInfo.fill + '" stroke="' + stroke.color + '" stroke-width="' + stroke.width + '"></rect>';
 
     // Left stream-colour stripe (rounded only on the left corners).
     const barRadius = 5, barLeft = pos.x, barRight = pos.x + 6, barTop = pos.y, barBottom = pos.y + pos.height;
@@ -410,7 +415,7 @@ function renderExportSvg(model, opts) {
     const labelLines = pos.labelLines || measureLabelLines(node.label || node.id || "", NODE_WIDTH - LABEL_INSET * 2);
     const lx = pos.x + LABEL_INSET;
     s += '<text class="xn-label" x="' + lx + '" y="' + (pos.y + 16) +
-         '" fill="' + category.textColor + '" dominant-baseline="middle">';
+         '" fill="' + fillInfo.textColor + '" dominant-baseline="middle">';
     for (let i = 0; i < labelLines.length; i++) {
       s += '<tspan x="' + lx + '" dy="' + (i === 0 ? "0" : "1.083em") + '">' + escapeHtml(labelLines[i]) + '</tspan>';
     }
@@ -421,17 +426,21 @@ function renderExportSvg(model, opts) {
     if (valueText) {
       const valueY = pos.y + pos.height - 12;
       s += '<text class="xn-value" x="' + (pos.x + LABEL_INSET) + '" y="' + valueY +
-           '" fill="' + category.textColor + '" dominant-baseline="middle" opacity="0.75">' + escapeHtml(valueText) + '</text>';
+           '" fill="' + fillInfo.textColor + '" dominant-baseline="middle" opacity="0.75">' + escapeHtml(valueText) + '</text>';
       const deltaInfo = formatNodeDelta(node.id);
       if (deltaInfo.text && deltaInfo.text !== "—") {
         let deltaColor;
         if (node.direction === "higher_better")      deltaColor = deltaInfo.pct > 0 ? "#065f46" : "#7f1d1d";
         else if (node.direction === "lower_better")  deltaColor = deltaInfo.pct < 0 ? "#065f46" : "#7f1d1d";
         else                                         deltaColor = deltaInfo.pct > 0 ? "#1e3a8a" : "#7c2d12";
-        s += '<text class="xn-delta" x="' + (pos.x + pos.width - LABEL_INSET) + '" y="' + valueY +
+        const deltaX = chips.svg ? chips.leftEdge - 6 : pos.x + pos.width - LABEL_INSET;
+        s += '<text class="xn-delta" x="' + deltaX + '" y="' + valueY +
              '" fill="' + deltaColor + '" text-anchor="end" dominant-baseline="middle">' + escapeHtml(deltaInfo.text) + '</text>';
       }
     }
+
+    // Secondary category chips (bottom-right).
+    s += chips.svg;
 
     s += '</g>';
 
@@ -442,7 +451,8 @@ function renderExportSvg(model, opts) {
       value:       valueText || "",
       stream:      stream.label || node.stream || "",
       stage:       (stageById[node.stage] && stageById[node.stage].label) || node.stage || "",
-      category:    category.label || node.category || "",
+      category:    (node.categoryIds && node.categoryIds.length ? node.categoryIds : [node.category])
+                     .map(id => (CATEGORIES[id] && CATEGORIES[id].label) || id).filter(Boolean).join(", "),
     };
   }
 

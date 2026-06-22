@@ -767,6 +767,21 @@ body.panel-resizing {
   color: var(--text-tertiary);
 }
 
+/* Primary/secondary "chip" toggle on each category row. */
+.sidebar-cat-class {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+}
+.sidebar-cat-class input { margin: 0; width: 11px; height: 11px; cursor: pointer; }
+
 /* === Sidebar edit rows (Streams, Stages) ===
  * Two states: compact (drag handle + label + count + pencil) and expanded
  * (inline form with label / colour / short / delete). Drag-to-reorder via
@@ -1927,6 +1942,35 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   flex-direction: column;
   gap: 4px;
 }
+
+/* Multi-select category editor (Primary / Secondary checkbox groups). */
+.detail-cat-group { margin-bottom: 6px; }
+.detail-cat-group:last-child { margin-bottom: 0; }
+.detail-cat-group-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+  margin: 2px 0 3px;
+}
+.detail-cat-opt {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  padding: 2px 0;
+  cursor: pointer;
+}
+.detail-cat-opt input { margin: 0; cursor: pointer; }
+.detail-cat-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  border: 1px solid rgba(0, 0, 0, 0.4);
+  flex-shrink: 0;
+}
+.detail-tag.category.secondary { font-size: 10px; opacity: 0.95; }
 
 .detail-edit-input {
   width: 100%;
@@ -4114,12 +4158,15 @@ outputs,Outputs
 outcomes,Outcomes
 
 # SECTION: categories
-# Node types. Each gets its own fill / text colour pair.
-id,label,color,text_color
-resource,Resource,#d4a373,#1c1917
-activity,Activity,#7dd3fc,#082f49
-metric,Metric,#5eead4,#042f2e
-outcome,Outcome,#86efac,#052e16
+# Node types. class = primary (fill; several blend into a gradient) or
+# secondary (a small chip in the node's bottom-right). A node's category cell
+# can list several ids, pipe-separated (e.g. outcome|metric).
+id,label,color,text_color,class
+resource,Resource,#d4a373,#1c1917,primary
+activity,Activity,#7dd3fc,#082f49,primary
+metric,Metric,#5eead4,#042f2e,primary
+outcome,Outcome,#86efac,#052e16,primary
+risk,Risk,#fca5a5,#450a0a,secondary
 
 # SECTION: defaults
 # Used when an edge's \`elasticity\` cell is blank.
@@ -4134,16 +4181,16 @@ elasticity_decreases,-0.25
 # green/red when the value moves materially from baseline.
 id,label,description,stream,stage,category,baseline,unit,controllable,direction,slider_max
 team_size,Team size,People working in the Operations stream.,ops,resources,resource,10,people,true,,3
-marketing_spend,Marketing budget,Monthly spend on paid acquisition campaigns.,sales,resources,resource,5000,£/mo,true,,3
+marketing_spend,Marketing budget,Monthly spend on paid acquisition campaigns.,sales,resources,resource|risk,5000,£/mo,true,,3
 support_staff,Support staff,Customer support headcount.,support,resources,resource,4,people,true,,3
 content_production,Content production,Day-to-day writing and publishing of articles.,ops,activities,activity,,,,,
 campaign_execution,Campaign execution,Running the paid campaigns funded by the marketing budget.,sales,activities,activity,,,,,
 ticket_handling,Ticket handling,Triaging and resolving inbound support tickets.,support,activities,activity,,,,,
 content_published,Content published,Number of articles or assets shipped each month.,ops,outputs,metric,20,pieces/mo,,higher_better,
 leads_generated,Leads generated,New marketing-qualified leads per month.,sales,outputs,metric,100,leads/mo,,higher_better,
-avg_resolution_time,Avg resolution time,Mean hours between ticket open and close.,support,outputs,metric,24,hours,,lower_better,
+avg_resolution_time,Avg resolution time,Mean hours between ticket open and close.,support,outputs,metric|risk,24,hours,,lower_better,
 brand_awareness,Brand awareness,Index score from a monthly survey panel.,ops,outcomes,outcome,50,index,,higher_better,
-monthly_revenue,Monthly revenue,Total billable revenue for the month.,sales,outcomes,outcome,50000,£/mo,,higher_better,
+monthly_revenue,Monthly revenue,Total billable revenue for the month.,sales,outcomes,outcome|metric,50000,£/mo,,higher_better,
 customer_satisfaction,Customer satisfaction,CSAT score (0-100) from post-resolution surveys.,support,outcomes,outcome,85,% CSAT,,higher_better,
 
 # SECTION: edges
@@ -5364,6 +5411,7 @@ function serializeLiveStateToCsv() {
       label: CATEGORIES[id].label,
       color: CATEGORIES[id].color,
       textColor: CATEGORIES[id].textColor,
+      class: CATEGORIES[id].class || "primary",
     })),
     defaults: {
       enables:   DEFAULT_ELASTICITY_BY_EFFECT.enables,
@@ -5417,9 +5465,11 @@ function _serializeShape(data) {
   lines.push("# label      - display name shown in the sidebar legend");
   lines.push("# color      - fill colour for nodes of this category (hex)");
   lines.push("# text_color - label text colour (hex). Pick a high-contrast value.");
-  lines.push("id,label,color,text_color");
+  lines.push("# class      - 'primary' (fill; several blend into a gradient) or");
+  lines.push("#             'secondary' (a small chip in the node's bottom-right). Default primary.");
+  lines.push("id,label,color,text_color,class");
   for (const category of builder.categories || []) {
-    lines.push(csvRow([category.id, category.label, category.color, category.textColor]));
+    lines.push(csvRow([category.id, category.label, category.color, category.textColor, category.class || "primary"]));
   }
   lines.push("");
 
@@ -5437,6 +5487,8 @@ function _serializeShape(data) {
   // ───── nodes ────────────────────────────────────────────────────────────
   lines.push("# SECTION: nodes");
   lines.push("# Required: id, label, stream, stage, category.");
+  lines.push("# category: one or more category ids, pipe-separated (e.g. resource|risk). Each id's");
+  lines.push("#           class decides whether it's a fill (primary) or a corner chip (secondary).");
   lines.push("# Optional (enables simulation): baseline, unit, controllable, direction, slider_max.");
   lines.push("# controllable: 'true' to expose as a slider. direction: higher_better / lower_better / neutral.");
   lines.push("id,label,description,stream,stage,category,baseline,unit,controllable,direction,slider_max");
@@ -5447,7 +5499,7 @@ function _serializeShape(data) {
       node.description || "",
       node.stream,
       node.stage,
-      node.category,
+      (node.categoryIds && node.categoryIds.length) ? node.categoryIds.join("|") : node.category,
       node.baseline === undefined || node.baseline === null || node.baseline === "" ? "" : node.baseline,
       node.unit || "",
       node.controllable ? "true" : "",
@@ -5511,7 +5563,9 @@ function rebuildIndexes() {
     // and any other code that wants "how many nodes in this stream" is an
     // O(1) lookup. Matters once the map grows past a few hundred nodes.
     streamNodeCount[node.stream]     = (streamNodeCount[node.stream]     || 0) + 1;
-    categoryNodeCount[node.category] = (categoryNodeCount[node.category] || 0) + 1;
+    // Count every category a node carries (a node can now hold several).
+    const catList = node.categoryIds && node.categoryIds.length ? node.categoryIds : [node.category];
+    for (const cid of catList) categoryNodeCount[cid] = (categoryNodeCount[cid] || 0) + 1;
   }
 
   outgoingEdges = {};
@@ -5689,6 +5743,9 @@ function loadDataFromCsv(csvText) {
       label: row.label || row.id,
       color: row.color || "#a3a3a3",
       textColor: row.text_color || "#1c1917",
+      // "primary" = fill (default; several primaries blend into a gradient);
+      // "secondary" = a small chip in the node's bottom-right corner.
+      class: (row.class || "").trim().toLowerCase() === "secondary" ? "secondary" : "primary",
     };
   }
 
@@ -5726,8 +5783,19 @@ function loadDataFromCsv(csvText) {
     let hasInvalidRefs = false;
     if (!streamIdSet.has(row.stream))     { errors.push("Node `" + row.id + "` references unknown stream `"   + row.stream   + "`. Skipped."); hasInvalidRefs = true; }
     if (!stageIdSet.has(row.stage))       { errors.push("Node `" + row.id + "` references unknown stage `"    + row.stage    + "`. Skipped."); hasInvalidRefs = true; }
-    if (!categoryIdSet.has(row.category)) { errors.push("Node `" + row.id + "` references unknown category `" + row.category + "`. Skipped."); hasInvalidRefs = true; }
+
+    // `category` is a pipe-separated list of category ids. Each id's class
+    // (primary/secondary) decides how it renders. Unknown ids are dropped with
+    // a warning; a node with no valid category at all is skipped.
+    const rawCatIds = String(row.category == null ? "" : row.category).split("|").map(s => s.trim()).filter(Boolean);
+    const seenCat = new Set();
+    const validCatIds = rawCatIds.filter(id => categoryIdSet.has(id) && !seenCat.has(id) && seenCat.add(id));
+    for (const u of new Set(rawCatIds.filter(id => !categoryIdSet.has(id)))) errors.push("Node `" + row.id + "` references unknown category `" + u + "` (ignored).");
+    if (validCatIds.length === 0) { errors.push("Node `" + row.id + "` has no valid category. Skipped."); hasInvalidRefs = true; }
     if (hasInvalidRefs) continue;
+
+    const primaryCategories   = validCatIds.filter(id => parsedCategories[id].class !== "secondary");
+    const secondaryCategories = validCatIds.filter(id => parsedCategories[id].class === "secondary");
 
     const node = {
       id: row.id,
@@ -5735,7 +5803,15 @@ function loadDataFromCsv(csvText) {
       description: row.description || "",
       stream: row.stream,
       stage: row.stage,
-      category: row.category,
+      // `category` stays a single id (the primary anchor) for the many features
+      // that key off one category (filters, search, detail edit, mutations);
+      // the full multi-select lives in the arrays below.
+      category: primaryCategories[0] || validCatIds[0],
+      // Stored primaries-then-secondaries to match the editors, so a
+      // serialize → reload round-trip is order-stable.
+      categoryIds: primaryCategories.concat(secondaryCategories),
+      primaryCategories: primaryCategories,
+      secondaryCategories: secondaryCategories,
     };
 
     // Optional quantification fields.
@@ -6648,8 +6724,10 @@ function toggleCategory(categoryId) {
 // visible.
 function isNodeVisible(node) {
   if (state.hiddenStreams.has(node.stream)) return false;
-  if (state.hiddenCategories.has(node.category)) return false;
   if (state.hiddenStages.has(node.stage)) return false;
+  // Hidden if ANY category the node carries (primary or secondary) is hidden.
+  const cats = (node.categoryIds && node.categoryIds.length) ? node.categoryIds : [node.category];
+  for (const c of cats) if (state.hiddenCategories.has(c)) return false;
   return true;
 }
 
@@ -6795,6 +6873,65 @@ svg.addEventListener("click", event => {
     deselectAll();
   }
 });
+
+// ───── Category rendering helpers (shared with the export in 19-export.js) ──
+// How many secondary chips to draw before collapsing the rest into a "+N" pill.
+const SECONDARY_CHIP_MAX = 4;
+
+// Monotonic counter for unique gradient ids. Using the node id risked
+// collisions (two ids differing only in punctuation sanitize to the same
+// string); a counter is collision-proof and the SVG is rebuilt every render.
+let _nodeGradSeq = 0;
+
+// Primary fill for a node. One primary → solid; several → a smooth diagonal
+// gradient (↘) blending their colours. Returns { defs, fill, textColor }: defs
+// is an SVG <defs> string (empty unless a gradient is needed) and must be
+// emitted inside the SVG; fill is a colour or url(#gradId). gradId must be
+// unique per node. Colours come straight from CATEGORIES (literal hex), so this
+// is identical between the live map and the self-contained export.
+function nodePrimaryFill(node, gradId) {
+  const ids = (node.primaryCategories && node.primaryCategories.length)
+    ? node.primaryCategories
+    : (node.category ? [node.category] : []);
+  // Only PRIMARY-class categories fill the body. (node.category can be a
+  // secondary anchor when a node has no primary — such nodes get the gray
+  // fallback fill, never a secondary colour painted as both body and chip.)
+  const prim = ids.map(id => CATEGORIES[id]).filter(c => c && (c.class || "primary") !== "secondary");
+  if (prim.length === 0) return { defs: "", fill: "#a3a3a3", textColor: "#1c1917" };
+  if (prim.length === 1) return { defs: "", fill: prim[0].color, textColor: prim[0].textColor };
+  const stops = prim.map((c, i) =>
+    '<stop offset="' + Math.round(i / (prim.length - 1) * 100) + '%" stop-color="' + c.color + '"></stop>'
+  ).join("");
+  const defs = '<defs><linearGradient id="' + gradId + '" x1="0" y1="0" x2="1" y2="1">' + stops + '</linearGradient></defs>';
+  return { defs: defs, fill: "url(#" + gradId + ")", textColor: prim[0].textColor };
+}
+
+// Secondary category chips: small squares in the node's bottom-right, growing
+// leftward, capped at SECONDARY_CHIP_MAX with a "+N" pill. Returns { svg,
+// leftEdge } — leftEdge is the x of the left-most chip/pill so the value-delta
+// can be right-aligned just to its left and never overlap.
+function nodeSecondaryChips(node, pos) {
+  const sec = (node.secondaryCategories || []).map(id => CATEGORIES[id]).filter(Boolean);
+  const rightEdge = pos.x + pos.width;
+  if (sec.length === 0) return { svg: "", leftEdge: rightEdge };
+  const bs = 12, gap = 3, inset = 8;
+  const shown = sec.slice(0, SECONDARY_CHIP_MAX);
+  const overflow = sec.length - shown.length;
+  const y = pos.y + pos.height - inset - bs;
+  let svg = "", minX = rightEdge;
+  shown.forEach((c, i) => {
+    const x = rightEdge - inset - bs - i * (bs + gap);
+    minX = Math.min(minX, x);
+    svg += '<rect x="' + x + '" y="' + y + '" width="' + bs + '" height="' + bs + '" rx="2" fill="' + c.color + '" stroke="rgba(0,0,0,0.4)" stroke-width="1"></rect>';
+  });
+  if (overflow > 0) {
+    const pillW = 22, pillX = minX - gap - pillW;
+    minX = pillX;
+    svg += '<rect x="' + pillX + '" y="' + y + '" width="' + pillW + '" height="' + bs + '" rx="3" fill="rgba(0,0,0,0.3)" stroke="rgba(0,0,0,0.4)" stroke-width="1"></rect>';
+    svg += '<text x="' + (pillX + pillW / 2) + '" y="' + (y + bs / 2) + '" text-anchor="middle" dominant-baseline="central" font-family="Arial,Helvetica,sans-serif" font-size="9" font-weight="700" fill="#ffffff">+' + overflow + '</text>';
+  }
+  return { svg: svg, leftEdge: minX };
+}
 
 function render() {
   // When no CSV is loaded at all, blank the SVG. The empty-state grid path
@@ -7127,7 +7264,9 @@ function render() {
     const pos = layout.positions[node.id];
     if (!pos) continue;
     const stream   = streamById[node.stream];
-    const category = CATEGORIES[node.category];
+    const fillInfo = nodePrimaryFill(node, "ngrad_" + (_nodeGradSeq++));
+    const textColor = fillInfo.textColor;
+    const chips    = nodeSecondaryChips(node, pos);
 
     // Class flags applied to the <g> wrapper — see 05-visualization.css
     // and 12-no-borders.css (state glows) + 13-search.css (search halo).
@@ -7151,6 +7290,7 @@ function render() {
     if (drag && drag.nodeId === node.id) nodeClasses += " dragging-source";
 
     content += '<g class="' + nodeClasses + '" data-node-id="' + node.id + '">';
+    content += fillInfo.defs;   // per-node gradient def (empty unless multi-primary)
 
     // ── Background rect with conditional border ──
     let strokeColor = "rgba(0,0,0,0.4)";
@@ -7172,7 +7312,7 @@ function render() {
       strokeWidth = 2;
     }
 
-    content += '<rect class="node-rect" x="' + pos.x + '" y="' + pos.y + '" width="' + pos.width + '" height="' + pos.height + '" rx="5" fill="' + category.color + '" stroke="' + strokeColor + '" stroke-width="' + strokeWidth + '"></rect>';
+    content += '<rect class="node-rect" x="' + pos.x + '" y="' + pos.y + '" width="' + pos.width + '" height="' + pos.height + '" rx="5" fill="' + fillInfo.fill + '" stroke="' + strokeColor + '" stroke-width="' + strokeWidth + '"></rect>';
 
     // ── Coloured stripe down the left edge (the stream colour) ──
     // We draw it as a path so only the left corners are rounded — the right
@@ -7205,7 +7345,7 @@ function render() {
     const labelLines = pos.labelLines || wrapLabel(node.label, 24);
     const labelX = pos.x + LABEL_INSET;
     const labelBlockTopY = pos.y + 16;
-    content += '<text class="node-label" x="' + labelX + '" y="' + labelBlockTopY + '" fill="' + category.textColor + '" dominant-baseline="middle">';
+    content += '<text class="node-label" x="' + labelX + '" y="' + labelBlockTopY + '" fill="' + textColor + '" dominant-baseline="middle">';
     for (let lineIdx = 0; lineIdx < labelLines.length; lineIdx++) {
       const dy = lineIdx === 0 ? "0" : "1.083em";
       content += '<tspan x="' + labelX + '" dy="' + dy + '">' + escapeHtml(labelLines[lineIdx]) + '</tspan>';
@@ -7217,7 +7357,7 @@ function render() {
     if (valueText) {
       const deltaInfo = formatNodeDelta(node.id);
       const valueY = pos.y + pos.height - 12;
-      content += '<text class="node-value" x="' + (pos.x + LABEL_INSET) + '" y="' + valueY + '" fill="' + category.textColor + '" dominant-baseline="middle" opacity="0.75">' + escapeHtml(valueText) + '</text>';
+      content += '<text class="node-value" x="' + (pos.x + LABEL_INSET) + '" y="' + valueY + '" fill="' + textColor + '" dominant-baseline="middle" opacity="0.75">' + escapeHtml(valueText) + '</text>';
 
       if (deltaInfo.text && deltaInfo.text !== "—") {
         let deltaColor = "#1c1917";
@@ -7228,9 +7368,14 @@ function render() {
         } else {
           deltaColor = deltaInfo.pct > 0 ? "#1e3a8a" : "#7c2d12";
         }
-        content += '<text class="node-delta" x="' + (pos.x + pos.width - LABEL_INSET) + '" y="' + valueY + '" fill="' + deltaColor + '" text-anchor="end" dominant-baseline="middle" font-weight="600">' + escapeHtml(deltaInfo.text) + '</text>';
+        // Sit the delta just left of any secondary chips so they keep the corner.
+        const deltaX = chips.svg ? chips.leftEdge - 6 : pos.x + pos.width - LABEL_INSET;
+        content += '<text class="node-delta" x="' + deltaX + '" y="' + valueY + '" fill="' + deltaColor + '" text-anchor="end" dominant-baseline="middle" font-weight="600">' + escapeHtml(deltaInfo.text) + '</text>';
       }
     }
+
+    // ── Secondary category chips (bottom-right) ──
+    content += chips.svg;
 
     // Edge-drag handle on the right edge of every node. Visible only on hover
     // via CSS. Mousedown starts an edge-drag (see 16e-canvas-edit.js).
@@ -7262,7 +7407,7 @@ function render() {
   // ───── Drag preview (a translucent copy of the dragged node at cursor) ──
   if (drag && drag.active && nodeById[drag.nodeId]) {
     const node = nodeById[drag.nodeId];
-    const category = CATEGORIES[node.category] || { color: "#a3a3a3", textColor: "#ffffff" };
+    const fillInfo = nodePrimaryFill(node, "ndragprev");
     const stream   = streamById[node.stream] || { color: "#94a3b8" };
     const dpos = layout.positions[drag.nodeId];
     const previewH = (dpos && dpos.height) || NODE_HEIGHT;
@@ -7270,9 +7415,10 @@ function render() {
     const px = drag.currentX - NODE_WIDTH / 2;
     const py = drag.currentY - previewH / 2;
     content += '<g class="node-drag-preview">';
-    content += '<rect x="' + px + '" y="' + py + '" width="' + NODE_WIDTH + '" height="' + previewH + '" rx="5" fill="' + category.color + '" stroke="rgba(0,0,0,0.4)" stroke-width="1"></rect>';
+    content += fillInfo.defs;
+    content += '<rect x="' + px + '" y="' + py + '" width="' + NODE_WIDTH + '" height="' + previewH + '" rx="5" fill="' + fillInfo.fill + '" stroke="rgba(0,0,0,0.4)" stroke-width="1"></rect>';
     content += '<rect x="' + px + '" y="' + py + '" width="6" height="' + previewH + '" rx="2" fill="' + stream.color + '"></rect>';
-    content += '<text class="node-label" x="' + (px + LABEL_INSET) + '" y="' + (py + 16) + '" fill="' + category.textColor + '" dominant-baseline="middle">';
+    content += '<text class="node-label" x="' + (px + LABEL_INSET) + '" y="' + (py + 16) + '" fill="' + fillInfo.textColor + '" dominant-baseline="middle">';
     for (let i = 0; i < previewLines.length; i++) {
       const dy = i === 0 ? "0" : "1.083em";
       content += '<tspan x="' + (px + LABEL_INSET) + '" dy="' + dy + '">' + escapeHtml(previewLines[i]) + '</tspan>';
@@ -7606,6 +7752,8 @@ function renderCategoriesList() {
     html +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
     html +=   '<input type="color" class="sidebar-edit-color sidebar-edit-swatch" data-field="color" value="' + escapeHtml(cat.color || "#94a3b8") + '" title="Fill colour (label colour auto-contrasts)" aria-label="Fill colour">';
     html +=   '<div class="filter-label sidebar-inline-edit" data-field="label" title="Double-click to rename">' + escapeHtml(cat.label) + '</div>';
+    html +=   '<label class="sidebar-cat-class" title="Tick = Secondary (a corner chip). Unticked = Primary (fill; several blend into a gradient).">' +
+              '<input type="checkbox" data-field="secondary"' + (cat.class === "secondary" ? " checked" : "") + '>chip</label>';
     html +=   '<div class="filter-count">' + count + '</div>';
     html +=   deleteIconButton("Delete category");
     html += '</div>';
@@ -7838,6 +7986,17 @@ function applySidebarFieldEdit(kind, id, field, input) {
       // Label colour is no longer hand-picked — derive black/white for max
       // contrast against the new fill so node labels stay readable.
       if (typeof pickTextColor === "function") cat.textColor = pickTextColor(cat.color);
+    } else if (field === "secondary") {
+      // Flip this category between fill (primary) and corner-chip (secondary),
+      // then re-split every node's categories by the new classes.
+      cat.class = input.checked ? "secondary" : "primary";
+      for (const n of NODES) {
+        const ids = ((n.categoryIds && n.categoryIds.length) ? n.categoryIds : [n.category]).filter(cid => CATEGORIES[cid]);
+        n.categoryIds = ids;
+        n.primaryCategories   = ids.filter(cid => (CATEGORIES[cid].class || "primary") !== "secondary");
+        n.secondaryCategories = ids.filter(cid => (CATEGORIES[cid].class || "primary") === "secondary");
+        n.category = n.primaryCategories[0] || ids[0] || n.category;
+      }
     }
   }
   // Editing inline keeps the row in place; skip the sidebar re-render so an
@@ -8293,8 +8452,7 @@ function renderNodeEditBlock(node) {
   html += editRow("Stage",
     selectInput("stage", STAGES.map(s => ({ value: s.id, label: s.label })), node.stage));
 
-  const catOptions = Object.keys(CATEGORIES).map(id => ({ value: id, label: CATEGORIES[id].label }));
-  html += editRow("Category", selectInput("category", catOptions, node.category));
+  html += editRow("Categories", categoryEditControl(node));
 
   html += editRow("Baseline",
     '<input type="number" step="any" class="detail-edit-input detail-edit-number" data-field="baseline" value="' + (node.baseline !== undefined && node.baseline !== null ? node.baseline : "") + '" placeholder="(blank = no value)">');
@@ -8317,17 +8475,45 @@ function editRow(label, controlHtml) {
   return '<div class="detail-edit-row"><span class="detail-edit-label">' + escapeHtml(label) + '</span><div class="detail-edit-control">' + controlHtml + '</div></div>';
 }
 
+// Multi-select category editor: a checkbox per category, split into Primary
+// (fill — several blend into a gradient) and Secondary (corner chips) groups by
+// each category's class. Checkboxes carry data-field="categoryToggle" so the
+// existing change-listener routes them to applyNodeFieldEdit.
+function categoryEditControl(node) {
+  const primSet = new Set(node.primaryCategories || (node.category ? [node.category] : []));
+  const secSet  = new Set(node.secondaryCategories || []);
+  const ids     = Object.keys(CATEGORIES);
+  const group = (title, list, checkedSet) => {
+    if (!list.length) return "";
+    let h = '<div class="detail-cat-group"><div class="detail-cat-group-title">' + title + '</div>';
+    for (const id of list) {
+      const c = CATEGORIES[id];
+      h += '<label class="detail-cat-opt"><input type="checkbox" data-field="categoryToggle" data-cat="' + escapeHtml(id) + '"' +
+           (checkedSet.has(id) ? " checked" : "") + '>' +
+           '<span class="detail-cat-swatch" style="background:' + c.color + '"></span>' + escapeHtml(c.label) + '</label>';
+    }
+    return h + '</div>';
+  };
+  return group("Primary · fill",        ids.filter(id => (CATEGORIES[id].class || "primary") !== "secondary"), primSet) +
+         group("Secondary · chips",     ids.filter(id => (CATEGORIES[id].class || "primary") === "secondary"), secSet);
+}
+
 // Category / stream / stage tag chips shown at the top of both view and edit
 // mode. Same markup in both — extracted so changing the chip style (e.g.
 // adding an icon) only happens in one place.
 function renderTagRow(node) {
-  const stream   = streamById[node.stream];
-  const category = CATEGORIES[node.category];
-  const stage    = stageById[node.stage];
+  const stream = streamById[node.stream];
+  const stage  = stageById[node.stage];
+  const catIds = (node.categoryIds && node.categoryIds.length) ? node.categoryIds : (node.category ? [node.category] : []);
 
   let html = '<div class="detail-tags">';
-  if (category) {
-    html += '<span class="detail-tag category" style="background: ' + category.color + '; color: ' + category.textColor + ';">' + escapeHtml(category.label) + '</span>';
+  for (const id of catIds) {
+    const c = CATEGORIES[id];
+    if (!c) continue;
+    // Secondary categories read as the corner chip — show a small leading swatch.
+    const isSecondary = (c.class || "primary") === "secondary";
+    html += '<span class="detail-tag category' + (isSecondary ? " secondary" : "") + '" style="background: ' + c.color + '; color: ' + c.textColor + ';">' +
+            (isSecondary ? '▪ ' : '') + escapeHtml(c.label) + '</span>';
   }
   if (stream) html += '<span class="detail-tag">' + escapeHtml(stream.label) + '</span>';
   if (stage)  html += '<span class="detail-tag">' + escapeHtml(stage.label) + '</span>';
@@ -8582,9 +8768,35 @@ function applyNodeFieldEdit(node, field, input) {
   } else if (field === "stage") {
     if (!stageById[value]) return;
     node.stage = value;
-  } else if (field === "category") {
-    if (!CATEGORIES[value]) return;
-    node.category = value;
+  } else if (field === "categoryToggle") {
+    const catId = input.getAttribute("data-cat");
+    if (!CATEGORIES[catId]) return;
+    // Snapshot so we can fully revert if the edit would empty the node.
+    const prev = {
+      primaryCategories:   (node.primaryCategories   || []).slice(),
+      secondaryCategories: (node.secondaryCategories || []).slice(),
+      categoryIds:         (node.categoryIds         || []).slice(),
+      category:            node.category,
+    };
+    const isSecondary = (CATEGORIES[catId].class || "primary") === "secondary";
+    const listName = isSecondary ? "secondaryCategories" : "primaryCategories";
+    const set = new Set(node[listName] || []);
+    if (value) set.add(catId); else set.delete(catId);
+    const allIds = Object.keys(CATEGORIES);   // re-derive in CATEGORIES order
+    node[listName] = allIds.filter(id => set.has(id));
+    node.primaryCategories   = node.primaryCategories   || [];
+    node.secondaryCategories = node.secondaryCategories || [];
+    node.categoryIds = node.primaryCategories.concat(node.secondaryCategories);
+    // A node must keep at least one category — fully revert if it'd empty.
+    if (node.categoryIds.length === 0) {
+      node.primaryCategories   = prev.primaryCategories;
+      node.secondaryCategories = prev.secondaryCategories;
+      node.categoryIds         = prev.categoryIds;
+      node.category            = prev.category;
+      input.checked = true;
+      return;
+    }
+    node.category = node.primaryCategories[0] || node.categoryIds[0];
   } else if (field === "baseline") {
     if (value === undefined) { delete node.baseline; }
     else if (value === 0)    { delete node.baseline; input.value = ""; }   // simulation divides by baseline
@@ -8845,6 +9057,7 @@ function seedBuilderFromLiveData() {
     label: CATEGORIES[id].label,
     color: CATEGORIES[id].color,
     textColor: CATEGORIES[id].textColor,
+    class: CATEGORIES[id].class || "primary",
   }));
   state.builder.defaults = {
     enables:   DEFAULT_ELASTICITY_BY_EFFECT.enables,
@@ -8854,6 +9067,10 @@ function seedBuilderFromLiveData() {
   state.builder.nodes = NODES.map(n => ({
     id: n.id, label: n.label, description: n.description || "",
     stream: n.stream, stage: n.stage, category: n.category,
+    // Preserve the full multi-category list so a wizard round-trip doesn't drop
+    // extra primaries / secondary chips (the node table edits the primary
+    // anchor; the detail panel does the full multi-select).
+    categoryIds: (n.categoryIds && n.categoryIds.length) ? n.categoryIds.slice() : [n.category],
     baseline: n.baseline !== undefined ? n.baseline : "",
     unit: n.unit || "",
     controllable: !!n.controllable,
@@ -8893,6 +9110,7 @@ function seedBuilderFromSample() {
   state.builder.categories = (sections.categories || []).map(row => ({
     id: row.id || "", label: row.label || "",
     color: row.color || "#a3a3a3", textColor: row.text_color || "#1c1917",
+    class: (row.class || "").trim().toLowerCase() === "secondary" ? "secondary" : "primary",
   })).filter(c => c.id);
 
   // Pull defaults too if present.
@@ -9121,13 +9339,15 @@ function addBuilderRow(section) {
   } else if (section === "stages") {
     state.builder.stages.push({ id: "", label: "" });
   } else if (section === "categories") {
-    state.builder.categories.push({ id: "", label: "", color: "#a3a3a3", textColor: "#1c1917" });
+    state.builder.categories.push({ id: "", label: "", color: "#a3a3a3", textColor: "#1c1917", class: "primary" });
   } else if (section === "nodes") {
+    const firstPrimary = (state.builder.categories.find(c => (c.class || "primary") !== "secondary") || state.builder.categories[0] || {}).id || "";
     state.builder.nodes.push({
       id: "", label: "", description: "",
       stream: state.builder.streams[0] ? state.builder.streams[0].id : "",
       stage:  state.builder.stages[0]  ? state.builder.stages[0].id  : "",
-      category: state.builder.categories[0] ? state.builder.categories[0].id : "",
+      category: firstPrimary,
+      categoryIds: firstPrimary ? [firstPrimary] : [],
       baseline: "", unit: "", controllable: false, direction: "", sliderMax: "",
     });
   } else if (section === "edges") {
@@ -9184,6 +9404,13 @@ function applyBuilderBulkField(section, field, value) {
     if (typeof v === "number" && isNaN(v)) continue;
     if (row[field] === v) continue;
     row[field] = v;
+    // Keep the full category list in sync when bulk-setting the primary anchor
+    // (mirrors the per-row reconcile in handleBuilderInput) so secondaries are
+    // preserved and the new primary actually serializes.
+    if (section === "nodes" && field === "category") {
+      const secs = (row.categoryIds || []).filter(id => CATEGORIES[id] && (CATEGORIES[id].class || "primary") === "secondary");
+      row.categoryIds = (v ? [v] : []).concat(secs);
+    }
     changed++;
   }
   return changed;
@@ -9630,11 +9857,12 @@ function renderBuilderCategoriesStep() {
               '<th>Label</th>' +
               '<th style="width:80px">Fill</th>' +
               '<th style="width:80px">Text</th>' +
+              '<th style="width:130px">Class</th>' +
               '<th style="width:90px"></th>' +
             '</tr></thead><tbody>';
 
   if (state.builder.categories.length === 0) {
-    html += tableEmptyRow(7, 'No categories yet. Click "+ Add category".');
+    html += tableEmptyRow(8, 'No categories yet. Click "+ Add category".');
   } else {
     state.builder.categories.forEach((c, i) => {
       const invalidId = v.dupCategories.has(c.id) || !c.id ? ' invalid' : '';
@@ -9645,6 +9873,10 @@ function renderBuilderCategoriesStep() {
       html +=   '<td><input type="text" data-section="categories" data-field="label" data-index="' + i + '" value="' + escapeHtml(c.label) + '" placeholder="Resource" /></td>';
       html +=   '<td><input type="color" data-section="categories" data-field="color" data-index="' + i + '" value="' + escapeHtml(c.color || "#a3a3a3") + '" /></td>';
       html +=   '<td><input type="color" data-section="categories" data-field="textColor" data-index="' + i + '" value="' + escapeHtml(c.textColor || "#1c1917") + '" /></td>';
+      html +=   '<td><select data-section="categories" data-field="class" data-index="' + i + '">' +
+                  '<option value="primary"'   + ((c.class || "primary") !== "secondary" ? " selected" : "") + '>Primary · fill</option>' +
+                  '<option value="secondary"' + ((c.class || "primary") === "secondary" ? " selected" : "") + '>Secondary · chip</option>' +
+                '</select></td>';
       html +=   rowActionsHtml("categories", i);
       html += '</tr>';
     });
@@ -10840,6 +11072,14 @@ function handleBuilderInput(event) {
 
   row[field] = newValue;
 
+  // The node table edits the single primary anchor; keep the node's full
+  // category list in sync (new primary + any secondary chips it already had).
+  // Full multi-primary editing lives in the detail panel.
+  if (section === "nodes" && field === "category") {
+    const secs = (row.categoryIds || []).filter(id => CATEGORIES[id] && (CATEGORIES[id].class || "primary") === "secondary");
+    row.categoryIds = (newValue ? [newValue] : []).concat(secs);
+  }
+
   // Auto-fill id from the label, and short label for streams — but only the
   // first time, so the user can override either freely afterwards.
   if (field === "label" && !row.id) {
@@ -11365,7 +11605,9 @@ function createNodeInCell(streamId, stageId, insertIndex) {
   // otherwise the round-trip through loadDataFromCsv on reload would reject
   // the node (unknown category).
   ensureDefaultCategory();
-  const categoryId = Object.keys(CATEGORIES)[0];
+  // A new node starts with one primary (fill) category, no secondaries.
+  const primaryIds = Object.keys(CATEGORIES).filter(id => (CATEGORIES[id].class || "primary") !== "secondary");
+  const categoryId = primaryIds[0] || Object.keys(CATEGORIES)[0];
 
   const newNode = {
     id: generateUniqueNodeId("new_node"),
@@ -11374,6 +11616,9 @@ function createNodeInCell(streamId, stageId, insertIndex) {
     stream: streamId,
     stage: stageId,
     category: categoryId,
+    categoryIds: [categoryId],
+    primaryCategories: [categoryId],
+    secondaryCategories: [],
   };
   // Translate the cell-relative insert slot into a global NODES index (count
   // target-cell siblings until we've passed insertIndex of them). Layout stacks
@@ -11430,6 +11675,7 @@ function ensureDefaultCategory() {
     label: "Default",
     color: "#a3a3a3",
     textColor: "#1c1917",
+    class: "primary",
   };
 }
 
@@ -12380,6 +12626,7 @@ function addCategory() {
     color: color,
     // Label colour auto-contrasts against the fill — see pickTextColor (04-utils.js).
     textColor: typeof pickTextColor === "function" ? pickTextColor(color) : "#ffffff",
+    class: "primary",
   };
   applyCanvasMutation();
   // Categories edit fully inline now — drop straight into renaming the new row.
@@ -12458,23 +12705,30 @@ function deleteStageWithCascade(stageId) {
 function deleteCategoryWithCascade(catId) {
   const cat = CATEGORIES[catId];
   if (!cat) return;
-  const nodesToDelete = NODES.filter(n => n.category === catId);
-  const nodeIdSet = new Set(nodesToDelete.map(n => n.id));
+  const catsOf = n => (n.categoryIds && n.categoryIds.length) ? n.categoryIds : [n.category];
+  const usingNodes = NODES.filter(n => catsOf(n).indexOf(catId) >= 0);
+  // A node is removed only if this is its ONLY category; multi-category nodes
+  // are just untagged (the category stripped from their lists).
+  const soleNodes = usingNodes.filter(n => catsOf(n).length <= 1);
+  const untagCount = usingNodes.length - soleNodes.length;
+  const nodeIdSet = new Set(soleNodes.map(n => n.id));
   const edgesToDelete = EDGES.filter(e => nodeIdSet.has(e.from) || nodeIdSet.has(e.to));
-  const msg = nodesToDelete.length === 0
-    ? 'Delete category "' + cat.label + '"?'
-    : 'Delete category "' + cat.label + '"?\n\n' + nodesToDelete.length + ' node(s) and ' + edgesToDelete.length + ' edge(s) will also be removed.';
+
+  let msg = 'Delete category "' + cat.label + '"?';
+  const parts = [];
+  if (soleNodes.length)  parts.push(soleNodes.length + ' node(s) using only this category (and ' + edgesToDelete.length + ' edge(s)) will be removed');
+  if (untagCount)        parts.push(untagCount + ' node(s) will be untagged');
+  if (parts.length)      msg += '\n\n' + parts.join(';\n') + '.';
   if (!confirm(msg)) return;
 
-  const ids = Object.keys(CATEGORIES);
-  const snapshot = {
-    kind: "category",
-    catId: catId,
-    cat: Object.assign({}, cat),
-    catIndex: ids.indexOf(catId),
-    nodes: nodesToDelete.map(cloneNodeForUndo),
-    edges: edgesToDelete.map(cloneEdgeForUndo),
-  };
+  // Untag from the multi-category survivors.
+  for (const n of usingNodes) {
+    if (nodeIdSet.has(n.id)) continue;
+    if (n.categoryIds)         n.categoryIds         = n.categoryIds.filter(id => id !== catId);
+    if (n.primaryCategories)   n.primaryCategories   = n.primaryCategories.filter(id => id !== catId);
+    if (n.secondaryCategories) n.secondaryCategories = n.secondaryCategories.filter(id => id !== catId);
+    n.category = (n.primaryCategories && n.primaryCategories[0]) || (n.categoryIds && n.categoryIds[0]) || n.category;
+  }
   delete CATEGORIES[catId];
   NODES = NODES.filter(n => !nodeIdSet.has(n.id));
   EDGES = EDGES.filter(e => !nodeIdSet.has(e.from) && !nodeIdSet.has(e.to));
@@ -12485,9 +12739,8 @@ function deleteCategoryWithCascade(catId) {
     state.descendantSet = new Set();
     state.highlightedEdgeIds = new Set();
   }
-  pushUndo(snapshot);
   applyCanvasMutation();
-  showUndoToast("Category deleted", () => restoreFromUndo(snapshot));
+  showUndoToast("Category deleted", () => restoreFromUndo(null));
 }
 
 // ───── Reorder (drag-to-reorder from the sidebar) ─────────────────────────
@@ -13489,7 +13742,10 @@ function renderMultiSelectBar() {
     return;
   }
 
-  const categoryOpts = Object.keys(CATEGORIES).map(id => ({ value: id, label: CATEGORIES[id].label || id }));
+  // Bulk-set replaces the PRIMARY (fill) category, so only offer primaries.
+  const categoryOpts = Object.keys(CATEGORIES)
+    .filter(id => (CATEGORIES[id].class || "primary") !== "secondary")
+    .map(id => ({ value: id, label: CATEGORIES[id].label || id }));
   const streamOpts   = STREAMS.map(s => ({ value: s.id, label: s.label || s.id }));
   const stageOpts    = STAGES.map(s => ({ value: s.id, label: s.label || s.id }));
 
@@ -13525,6 +13781,14 @@ function batchSetProperty(field, value) {
     if (!node) continue;
     if (node[field] === value) continue;
     node[field] = value;
+    // Setting the primary category bulk-replaces it while keeping each node's
+    // existing secondary chips.
+    if (field === "category") {
+      const secs = (node.categoryIds || []).filter(cid => CATEGORIES[cid] && (CATEGORIES[cid].class || "primary") === "secondary");
+      node.primaryCategories = [value];
+      node.secondaryCategories = secs;
+      node.categoryIds = [value].concat(secs);
+    }
     changed++;
   }
   if (!changed) {
@@ -14483,6 +14747,9 @@ function handleSearchKeydown(event) {
 // (its bytes never contain the contiguous closing sequence).
 var EXPORT_CLOSE_SCRIPT = "<" + "/script>";
 
+// Monotonic counter for unique per-node gradient ids in the export SVG.
+let _xnodeGradSeq = 0;
+
 // ───── Resolve the live theme's colours to literal values ──────────────────
 function exportPalette() {
   const root = getComputedStyle(document.documentElement);
@@ -14836,14 +15103,16 @@ function renderExportSvg(model, opts) {
     const pos = lay.positions[node.id];
     if (!pos) continue;
     const stream   = streamById[node.stream]   || { color: "#94a3b8" };
-    const category = CATEGORIES[node.category]  || { color: "#a3a3a3", textColor: "#1c1917" };
+    const fillInfo = nodePrimaryFill(node, "xgrad_" + (_xnodeGradSeq++));
+    const chips    = nodeSecondaryChips(node, pos);
     const stroke   = exportNodeStroke(node.id, pal);
 
     s += '<g class="xnode" data-node-id="' + escapeHtml(node.id) + '">';
+    s += fillInfo.defs;   // per-node gradient (empty unless multi-primary)
 
     // Background rect.
     s += '<rect x="' + pos.x + '" y="' + pos.y + '" width="' + pos.width + '" height="' + pos.height +
-         '" rx="5" fill="' + category.color + '" stroke="' + stroke.color + '" stroke-width="' + stroke.width + '"></rect>';
+         '" rx="5" fill="' + fillInfo.fill + '" stroke="' + stroke.color + '" stroke-width="' + stroke.width + '"></rect>';
 
     // Left stream-colour stripe (rounded only on the left corners).
     const barRadius = 5, barLeft = pos.x, barRight = pos.x + 6, barTop = pos.y, barBottom = pos.y + pos.height;
@@ -14861,7 +15130,7 @@ function renderExportSvg(model, opts) {
     const labelLines = pos.labelLines || measureLabelLines(node.label || node.id || "", NODE_WIDTH - LABEL_INSET * 2);
     const lx = pos.x + LABEL_INSET;
     s += '<text class="xn-label" x="' + lx + '" y="' + (pos.y + 16) +
-         '" fill="' + category.textColor + '" dominant-baseline="middle">';
+         '" fill="' + fillInfo.textColor + '" dominant-baseline="middle">';
     for (let i = 0; i < labelLines.length; i++) {
       s += '<tspan x="' + lx + '" dy="' + (i === 0 ? "0" : "1.083em") + '">' + escapeHtml(labelLines[i]) + '</tspan>';
     }
@@ -14872,17 +15141,21 @@ function renderExportSvg(model, opts) {
     if (valueText) {
       const valueY = pos.y + pos.height - 12;
       s += '<text class="xn-value" x="' + (pos.x + LABEL_INSET) + '" y="' + valueY +
-           '" fill="' + category.textColor + '" dominant-baseline="middle" opacity="0.75">' + escapeHtml(valueText) + '</text>';
+           '" fill="' + fillInfo.textColor + '" dominant-baseline="middle" opacity="0.75">' + escapeHtml(valueText) + '</text>';
       const deltaInfo = formatNodeDelta(node.id);
       if (deltaInfo.text && deltaInfo.text !== "—") {
         let deltaColor;
         if (node.direction === "higher_better")      deltaColor = deltaInfo.pct > 0 ? "#065f46" : "#7f1d1d";
         else if (node.direction === "lower_better")  deltaColor = deltaInfo.pct < 0 ? "#065f46" : "#7f1d1d";
         else                                         deltaColor = deltaInfo.pct > 0 ? "#1e3a8a" : "#7c2d12";
-        s += '<text class="xn-delta" x="' + (pos.x + pos.width - LABEL_INSET) + '" y="' + valueY +
+        const deltaX = chips.svg ? chips.leftEdge - 6 : pos.x + pos.width - LABEL_INSET;
+        s += '<text class="xn-delta" x="' + deltaX + '" y="' + valueY +
              '" fill="' + deltaColor + '" text-anchor="end" dominant-baseline="middle">' + escapeHtml(deltaInfo.text) + '</text>';
       }
     }
+
+    // Secondary category chips (bottom-right).
+    s += chips.svg;
 
     s += '</g>';
 
@@ -14893,7 +15166,8 @@ function renderExportSvg(model, opts) {
       value:       valueText || "",
       stream:      stream.label || node.stream || "",
       stage:       (stageById[node.stage] && stageById[node.stage].label) || node.stage || "",
-      category:    category.label || node.category || "",
+      category:    (node.categoryIds && node.categoryIds.length ? node.categoryIds : [node.category])
+                     .map(id => (CATEGORIES[id] && CATEGORIES[id].label) || id).filter(Boolean).join(", "),
     };
   }
 

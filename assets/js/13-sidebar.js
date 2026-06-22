@@ -129,6 +129,8 @@ function renderCategoriesList() {
     html +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
     html +=   '<input type="color" class="sidebar-edit-color sidebar-edit-swatch" data-field="color" value="' + escapeHtml(cat.color || "#94a3b8") + '" title="Fill colour (label colour auto-contrasts)" aria-label="Fill colour">';
     html +=   '<div class="filter-label sidebar-inline-edit" data-field="label" title="Double-click to rename">' + escapeHtml(cat.label) + '</div>';
+    html +=   '<label class="sidebar-cat-class" title="Tick = Secondary (a corner chip). Unticked = Primary (fill; several blend into a gradient).">' +
+              '<input type="checkbox" data-field="secondary"' + (cat.class === "secondary" ? " checked" : "") + '>chip</label>';
     html +=   '<div class="filter-count">' + count + '</div>';
     html +=   deleteIconButton("Delete category");
     html += '</div>';
@@ -361,6 +363,17 @@ function applySidebarFieldEdit(kind, id, field, input) {
       // Label colour is no longer hand-picked — derive black/white for max
       // contrast against the new fill so node labels stay readable.
       if (typeof pickTextColor === "function") cat.textColor = pickTextColor(cat.color);
+    } else if (field === "secondary") {
+      // Flip this category between fill (primary) and corner-chip (secondary),
+      // then re-split every node's categories by the new classes.
+      cat.class = input.checked ? "secondary" : "primary";
+      for (const n of NODES) {
+        const ids = ((n.categoryIds && n.categoryIds.length) ? n.categoryIds : [n.category]).filter(cid => CATEGORIES[cid]);
+        n.categoryIds = ids;
+        n.primaryCategories   = ids.filter(cid => (CATEGORIES[cid].class || "primary") !== "secondary");
+        n.secondaryCategories = ids.filter(cid => (CATEGORIES[cid].class || "primary") === "secondary");
+        n.category = n.primaryCategories[0] || ids[0] || n.category;
+      }
     }
   }
   // Editing inline keeps the row in place; skip the sidebar re-render so an

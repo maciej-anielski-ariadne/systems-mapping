@@ -164,6 +164,21 @@
   color: var(--text-tertiary);
 }
 
+/* Primary/secondary "chip" toggle on each category row. */
+.sidebar-cat-class {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+}
+.sidebar-cat-class input { margin: 0; width: 11px; height: 11px; cursor: pointer; }
+
 /* === Sidebar edit rows (Streams, Stages) ===
  * Two states: compact (drag handle + label + count + pencil) and expanded
  * (inline form with label / colour / short / delete). Drag-to-reorder via
