@@ -59,12 +59,12 @@
 
   /* Two literals that aren't an accent but recur in tints; kept as tokens so
      they stop being raw hex. Both get unified into the accents in a later pass. */
-  --red-tint-base: #ef4444;    /* delete / danger background tints */
-  --flash-green:   #4ade80;    /* undo / redo "what changed" pulse */
+  --red-tint-base: var(--accent-red);     /* T4: danger tints use the one red */
+  --flash-green:   var(--accent-green);   /* T4: undo/redo pulse uses the one green */
 
   /* ===== Outcome-status colours (JS colours deltas good/bad vs baseline) == */
-  --status-good: #10b981;             /* a distinct, deeper green from accent-green */
-  --status-bad:  var(--accent-red);   /* was a byte-identical copy of accent-red */
+  --status-good: var(--accent-green);  /* T4: one green for the whole app */
+  --status-bad:  var(--accent-red);    /* one red */
 
   /* ===== Map arrow colours — semantic aliases of the accents / shades ===== *
    * These were previously hardcoded copies of the hex values above, so editing
@@ -152,11 +152,11 @@
   --z-dropdown:    400;
 
   /* ===== Font families — loaded locally from ../fonts/fonts.css ========== *
-   * Three roles: an editorial serif for titles, a humanist sans for UI, and a
-   * true monospace for numeric readouts / tracked micro-labels (so figures are
-   * tabular and labels read as data). System fallbacks keep things working if a
-   * face fails to load. */
-  --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
+   * Tier 4 = two fonts only: a humanist sans (IBM Plex Sans) for UI AND titles,
+   * and a true monospace (IBM Plex Mono) for numeric readouts / tracked labels.
+   * The editorial serif (Fraunces) is dropped; title hierarchy comes from size
+   * + weight. System fallbacks keep things working if a face fails to load. */
+  --font-display: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-ui:      'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono:    'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 }

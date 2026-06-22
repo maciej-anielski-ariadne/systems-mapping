@@ -472,3 +472,11 @@
 
 .sidebar-accordion-body { margin-top: 12px; }
 .sidebar-accordion.collapsed .sidebar-accordion-body { display: none; }
+
+/* T4: cap decorative stream / category swatch saturation so the custom colours
+   stay quiet next to the semantic accent hues (blue / amber / green / red /
+   purple). Matches the muted map fills. */
+.sidebar-edit-swatch,
+.legend-swatch {
+  filter: saturate(0.65);
+}

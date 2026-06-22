@@ -481,7 +481,7 @@ function render() {
       " L " + barLeft + "," + (barTop + barRadius) +
       " A " + barRadius + "," + barRadius + " 0 0 1 " + (barLeft + barRadius) + "," + barTop +
       " Z";
-    content += '<path d="' + barPath + '" fill="' + stream.color + '"></path>';
+    content += '<path class="node-stripe" d="' + barPath + '" fill="' + stream.color + '"></path>';
 
     // ── Label (wrapped to up to 2 lines) ──
     // One <text> with one or two <tspan> children. Using `dy="1.083em"` (the

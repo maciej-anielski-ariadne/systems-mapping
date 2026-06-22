@@ -76,10 +76,22 @@ body.panning * {
      rectangles never show an outline — only the glow states below. A CSS class
      rule overrides the SVG inline `stroke` attribute without needing !important. */
   stroke: transparent;
+  /* T4 near-monochrome map: fills are desaturated at rest. Full colour returns
+     only for the selected node + its causal trace (rules below), so the map
+     shows at most ~3 colour meanings at once. */
+  filter: saturate(0.32);
 }
 
-.node-group:hover .node-rect {
-  filter: brightness(1.15);
+/* The stream-colour stripe down each node's left edge is muted with the fill. */
+.node-stripe {
+  filter: saturate(0.32);
+  transition: filter 0.15s;
+}
+
+/* Hovering a resting node brightens it slightly but keeps it muted (the
+   :not() guards stop this from overriding an active-trace node's glow). */
+.node-group:hover:not(.selected):not(.ancestor):not(.descendant) .node-rect {
+  filter: saturate(0.32) brightness(1.12);
 }
 
 .node-group.dimmed {
@@ -113,8 +125,15 @@ body.panning * {
     drop-shadow(0 0 14px color-mix(in srgb, var(--accent-amber) 55%, transparent));
 }
 
-.node-group.hovered .node-rect {
-  filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.65));
+.node-group.hovered:not(.selected):not(.ancestor):not(.descendant) .node-rect {
+  filter: saturate(0.32) drop-shadow(0 0 5px rgba(255, 255, 255, 0.5));
+}
+
+/* Active-trace nodes regain their full stream-stripe colour. */
+.node-group.selected .node-stripe,
+.node-group.ancestor .node-stripe,
+.node-group.descendant .node-stripe {
+  filter: saturate(1);
 }
 
 /* === Undo / redo "what changed" pulse ===
