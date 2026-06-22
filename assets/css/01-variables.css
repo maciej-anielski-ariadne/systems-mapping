@@ -43,7 +43,9 @@
   /* ===== Text shades ===================================================== */
   --text-primary:   #e7ecf3;
   --text-secondary: #a1adc4;
-  --text-tertiary:  #6b7691;
+  --text-tertiary:  #8c97ad;   /* lightened for WCAG-AA contrast on the dark
+                                  surfaces (was #6b7691, which failed AA — 3.6:1
+                                  on bg-mid — for the most-used label colour) */
 
   /* ===== Accent / semantic hues ========================================== */
   --accent-blue:    #60a5fa;
@@ -150,9 +152,11 @@
   --z-dropdown:    400;
 
   /* ===== Font families — loaded locally from ../fonts/fonts.css ========== *
-   * Currently all Arial (the loaded Fraunces / IBM Plex faces are switched on
-   * in the typography pass). */
-  --font-display: Arial, Helvetica, sans-serif;
-  --font-ui:      Arial, Helvetica, sans-serif;
-  --font-mono:    Arial, Helvetica, sans-serif;
+   * Three roles: an editorial serif for titles, a humanist sans for UI, and a
+   * true monospace for numeric readouts / tracked micro-labels (so figures are
+   * tabular and labels read as data). System fallbacks keep things working if a
+   * face fails to load. */
+  --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
+  --font-ui:      'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono:    'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 }

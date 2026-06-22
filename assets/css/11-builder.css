@@ -262,7 +262,7 @@
   color: var(--text-tertiary);
   user-select: none;
   font-family: var(--font-mono);
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: -0.1em;
   font-size: 14px;
 }

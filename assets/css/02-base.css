@@ -82,6 +82,20 @@ body::before {
   display: none;
 }
 
+/* === Respect the user's reduced-motion preference ===
+   Globally neutralise animations + transitions (the 1.4s undo/flash pulses,
+   panel hover-expands, focus fades) for users who ask the OS to reduce motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* === Keyboard focus ring on buttons (accessibility) ===
    Native outlines are removed app-wide, so give every <button> a visible focus
    ring when reached by keyboard. :focus-visible only, so mouse clicks stay
