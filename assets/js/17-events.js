@@ -38,12 +38,31 @@ document.querySelectorAll(".import-data-trigger").forEach(button => {
   });
 });
 
-// "Export Data" — downloads the current live state as a CSV.
-document.querySelectorAll(".export-data-trigger").forEach(button => {
+// "Save" — downloads the current live state as a CSV.
+document.querySelectorAll(".save-data-trigger").forEach(button => {
   button.addEventListener("click", () => {
     if (!state.dataLoaded) return;
     if (typeof serializeLiveStateToCsv !== "function" || typeof downloadCsvBlob !== "function") return;
     downloadCsvBlob(serializeLiveStateToCsv(), "systems_map.csv");
+  });
+});
+
+// "Export" — downloads the framed canvas as an image (PNG + SVG). See
+// 19-export.js for what gets framed (visible viewport, or the highlighted
+// subset when a node is selected) and the compaction.
+document.querySelectorAll(".export-image-trigger").forEach(button => {
+  button.addEventListener("click", () => {
+    if (!state.dataLoaded) return;
+    if (typeof exportCanvasImage === "function") exportCanvasImage();
+  });
+});
+
+// "Publish" — downloads a self-contained, view-only HTML page of the same
+// framed canvas (pan / zoom / hover, no editing).
+document.querySelectorAll(".publish-html-trigger").forEach(button => {
+  button.addEventListener("click", () => {
+    if (!state.dataLoaded) return;
+    if (typeof publishCanvasHtml === "function") publishCanvasHtml();
   });
 });
 
