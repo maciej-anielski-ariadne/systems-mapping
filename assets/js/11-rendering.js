@@ -89,6 +89,7 @@ function nodeSecondaryChips(node, pos) {
 }
 
 function render() {
+  _nodeGradSeq = 0;   // restart per render — the SVG is rebuilt wholesale
   // When no CSV is loaded at all, blank the SVG. The empty-state grid path
   // boots via bootEmptyStateGrid() which sets state.dataLoaded = true and
   // seeds 3 streams x 3 stages with no nodes — so an empty NODES array is
@@ -297,23 +298,9 @@ function render() {
     const toPos   = layout.positions[re.to];
     if (!fromPos || !toPos) continue;   // defensive — endpoints should be visible
 
-    // Edge starts at the right side of the source, ends at the left side of the target.
-    const startX = fromPos.x + fromPos.width;
-    const startY = fromPos.y + fromPos.height / 2;
-    const endX   = toPos.x;
-    const endY   = toPos.y + toPos.height / 2;
-
-    // Cubic Bezier with horizontal tangents at both ends — a smooth
-    // left-to-right curve regardless of vertical offset.
-    const deltaX = endX - startX;
-    const ctrlOffset = Math.max(40, Math.abs(deltaX) * 0.5);
-    const ctrl1X = startX + ctrlOffset;
-    const ctrl2X = endX - ctrlOffset;
-    const pathD =
-      "M " + startX + "," + startY +
-      " C " + ctrl1X + "," + startY +
-      " " + ctrl2X + "," + endY +
-      " " + endX + "," + endY;
+    // Smooth left-to-right cubic bezier from source's right side to target's
+    // left side (shared with the export — see edgeBezierPath in 04-utils.js).
+    const pathD = edgeBezierPath(fromPos, toPos);
 
     if (re.synthetic) {
       // Synthetic "through" edge — presentation only: not selectable/editable.
@@ -517,14 +504,7 @@ function render() {
       content += '<text class="node-value" x="' + (pos.x + LABEL_INSET) + '" y="' + valueY + '" fill="' + textColor + '" dominant-baseline="middle" opacity="0.75">' + escapeHtml(valueText) + '</text>';
 
       if (deltaInfo.text && deltaInfo.text !== "—") {
-        let deltaColor = "#1c1917";
-        if (node.direction === "higher_better") {
-          deltaColor = deltaInfo.pct > 0 ? "#065f46" : "#7f1d1d";
-        } else if (node.direction === "lower_better") {
-          deltaColor = deltaInfo.pct < 0 ? "#065f46" : "#7f1d1d";
-        } else {
-          deltaColor = deltaInfo.pct > 0 ? "#1e3a8a" : "#7c2d12";
-        }
+        const deltaColor = deltaColorFor(node, deltaInfo);
         // Sit the delta just left of any secondary chips so they keep the corner.
         const deltaX = chips.svg ? chips.leftEdge - 6 : pos.x + pos.width - LABEL_INSET;
         content += '<text class="node-delta" x="' + deltaX + '" y="' + valueY + '" fill="' + deltaColor + '" text-anchor="end" dominant-baseline="middle" font-weight="600">' + escapeHtml(deltaInfo.text) + '</text>';

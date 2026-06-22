@@ -215,7 +215,7 @@ function editRow(label, controlHtml) {
 function categoryEditControl(node) {
   const primSet = new Set(node.primaryCategories || (node.category ? [node.category] : []));
   const secSet  = new Set(node.secondaryCategories || []);
-  const ids     = Object.keys(CATEGORIES);
+  const byClass = splitCategoriesByClass(Object.keys(CATEGORIES));
   const group = (title, list, checkedSet) => {
     if (!list.length) return "";
     let h = '<div class="detail-cat-group"><div class="detail-cat-group-title">' + title + '</div>';
@@ -227,8 +227,8 @@ function categoryEditControl(node) {
     }
     return h + '</div>';
   };
-  return group("Primary · fill",        ids.filter(id => (CATEGORIES[id].class || "primary") !== "secondary"), primSet) +
-         group("Secondary · chips",     ids.filter(id => (CATEGORIES[id].class || "primary") === "secondary"), secSet);
+  return group("Primary · fill", byClass.primary, primSet) +
+         group("Secondary · chips", byClass.secondary, secSet);
 }
 
 // Category / stream / stage tag chips shown at the top of both view and edit
@@ -237,7 +237,7 @@ function categoryEditControl(node) {
 function renderTagRow(node) {
   const stream = streamById[node.stream];
   const stage  = stageById[node.stage];
-  const catIds = (node.categoryIds && node.categoryIds.length) ? node.categoryIds : (node.category ? [node.category] : []);
+  const catIds = nodeCategoryIds(node);
 
   let html = '<div class="detail-tags">';
   for (const id of catIds) {

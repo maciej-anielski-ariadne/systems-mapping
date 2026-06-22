@@ -29,8 +29,7 @@ function rebuildIndexes() {
     // O(1) lookup. Matters once the map grows past a few hundred nodes.
     streamNodeCount[node.stream]     = (streamNodeCount[node.stream]     || 0) + 1;
     // Count every category a node carries (a node can now hold several).
-    const catList = node.categoryIds && node.categoryIds.length ? node.categoryIds : [node.category];
-    for (const cid of catList) categoryNodeCount[cid] = (categoryNodeCount[cid] || 0) + 1;
+    for (const cid of nodeCategoryIds(node)) categoryNodeCount[cid] = (categoryNodeCount[cid] || 0) + 1;
   }
 
   outgoingEdges = {};
@@ -259,8 +258,8 @@ function loadDataFromCsv(csvText) {
     if (validCatIds.length === 0) { errors.push("Node `" + row.id + "` has no valid category. Skipped."); hasInvalidRefs = true; }
     if (hasInvalidRefs) continue;
 
-    const primaryCategories   = validCatIds.filter(id => parsedCategories[id].class !== "secondary");
-    const secondaryCategories = validCatIds.filter(id => parsedCategories[id].class === "secondary");
+    const catSplit = splitCategoriesByClass(validCatIds, parsedCategories);
+    const primaryCategories = catSplit.primary, secondaryCategories = catSplit.secondary;
 
     const node = {
       id: row.id,

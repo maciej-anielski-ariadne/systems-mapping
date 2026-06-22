@@ -278,18 +278,6 @@ function buildExportModel() {
   };
 }
 
-// ───── Bezier path between two node boxes (matches the live renderer) ──────
-function exportEdgePath(fromPos, toPos) {
-  const startX = fromPos.x + fromPos.width;
-  const startY = fromPos.y + fromPos.height / 2;
-  const endX   = toPos.x;
-  const endY   = toPos.y + toPos.height / 2;
-  const ctrlOffset = Math.max(40, Math.abs(endX - startX) * 0.5);
-  return "M " + startX + "," + startY +
-         " C " + (startX + ctrlOffset) + "," + startY +
-         " " + (endX - ctrlOffset) + "," + endY +
-         " " + endX + "," + endY;
-}
 
 // Outcome-status border colour (good/bad vs baseline) → literal palette value,
 // or null. This is part of the map's normal resting appearance, not a
@@ -314,6 +302,7 @@ function exportNodeStroke(nodeId, pal) {
 // Returns { svg, width, height, nodeInfo } where nodeInfo maps node id →
 // metadata used by the published HTML viewer's hover tooltips.
 function renderExportSvg(model, opts) {
+  _xnodeGradSeq = 0;   // restart per export
   opts = opts || {};
   const pal = opts.pal || exportPalette();
   const lay = model.layout;
@@ -379,7 +368,7 @@ function renderExportSvg(model, opts) {
     const fromPos = lay.positions[edge.from], toPos = lay.positions[edge.to];
     if (!fromPos || !toPos) continue;
     const dashAttr = edge.style === "dashed" ? ' stroke-dasharray="6 5"' : '';
-    s += '<path d="' + exportEdgePath(fromPos, toPos) + '" fill="none" stroke="' + pal.edgeDefault +
+    s += '<path d="' + edgeBezierPath(fromPos, toPos) + '" fill="none" stroke="' + pal.edgeDefault +
          '" stroke-width="1" stroke-opacity="0.45"' + dashAttr + '></path>';
   }
 
@@ -430,10 +419,7 @@ function renderExportSvg(model, opts) {
            '" fill="' + fillInfo.textColor + '" dominant-baseline="middle" opacity="0.75">' + escapeHtml(valueText) + '</text>';
       const deltaInfo = formatNodeDelta(node.id);
       if (deltaInfo.text && deltaInfo.text !== "—") {
-        let deltaColor;
-        if (node.direction === "higher_better")      deltaColor = deltaInfo.pct > 0 ? "#065f46" : "#7f1d1d";
-        else if (node.direction === "lower_better")  deltaColor = deltaInfo.pct < 0 ? "#065f46" : "#7f1d1d";
-        else                                         deltaColor = deltaInfo.pct > 0 ? "#1e3a8a" : "#7c2d12";
+        const deltaColor = deltaColorFor(node, deltaInfo);
         const deltaX = chips.svg ? chips.leftEdge - 6 : pos.x + pos.width - LABEL_INSET;
         s += '<text class="xn-delta" x="' + deltaX + '" y="' + valueY +
              '" fill="' + deltaColor + '" text-anchor="end" dominant-baseline="middle">' + escapeHtml(deltaInfo.text) + '</text>';
@@ -452,8 +438,7 @@ function renderExportSvg(model, opts) {
       value:       valueText || "",
       stream:      stream.label || node.stream || "",
       stage:       (stageById[node.stage] && stageById[node.stage].label) || node.stage || "",
-      category:    (node.categoryIds && node.categoryIds.length ? node.categoryIds : [node.category])
-                     .map(id => (CATEGORIES[id] && CATEGORIES[id].label) || id).filter(Boolean).join(", "),
+      category:    nodeCategoryIds(node).map(id => (CATEGORIES[id] && CATEGORIES[id].label) || id).filter(Boolean).join(", "),
     };
   }
 

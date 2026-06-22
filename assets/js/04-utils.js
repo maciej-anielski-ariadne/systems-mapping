@@ -109,6 +109,49 @@ function formatScalar(value) {
   return value.toFixed(3);
 }
 
+// ───── Category / edge helpers (shared by loader, renderer, export, editors) ─
+// A node's full ordered category-id list, with the legacy single-id fallback.
+function nodeCategoryIds(node) {
+  return (node.categoryIds && node.categoryIds.length) ? node.categoryIds : (node.category ? [node.category] : []);
+}
+
+// Split a list of category ids into { primary, secondary } by each category's
+// class. `cats` defaults to the live CATEGORIES map; the loader passes its
+// not-yet-committed parsedCategories instead.
+function splitCategoriesByClass(ids, cats) {
+  cats = cats || CATEGORIES;
+  const primary = [], secondary = [];
+  for (const id of ids) {
+    const c = cats[id];
+    if (!c) continue;
+    ((c.class || "primary") === "secondary" ? secondary : primary).push(id);
+  }
+  return { primary: primary, secondary: secondary };
+}
+
+// The cubic-bezier "M…C…" path for an edge from one node box to another
+// (right side of source → left side of target, horizontal tangents). Shared by
+// the live renderer and the export so the curve math lives in one place.
+function edgeBezierPath(fromPos, toPos) {
+  const startX = fromPos.x + fromPos.width;
+  const startY = fromPos.y + fromPos.height / 2;
+  const endX   = toPos.x;
+  const endY   = toPos.y + toPos.height / 2;
+  const ctrlOffset = Math.max(40, Math.abs(endX - startX) * 0.5);
+  return "M " + startX + "," + startY +
+         " C " + (startX + ctrlOffset) + "," + startY +
+         " " + (endX - ctrlOffset) + "," + endY +
+         " " + endX + "," + endY;
+}
+
+// Colour for a node's value-delta given its direction-of-merit and % change.
+// Green = "good" move, red = "bad" move, blue/orange when no direction is set.
+function deltaColorFor(node, deltaInfo) {
+  if (node.direction === "higher_better") return deltaInfo.pct > 0 ? "#065f46" : "#7f1d1d";
+  if (node.direction === "lower_better")  return deltaInfo.pct < 0 ? "#065f46" : "#7f1d1d";
+  return deltaInfo.pct > 0 ? "#1e3a8a" : "#7c2d12";
+}
+
 // Map text-scale multiplier given the current zoom level. As the user zooms
 // out below TEXT_SCALE_RATIO, SVG font-sizes grow inversely with zoom so
 // on-screen text stays roughly readable, capped at TEXT_SCALE_MAX so labels

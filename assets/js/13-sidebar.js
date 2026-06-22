@@ -368,10 +368,11 @@ function applySidebarFieldEdit(kind, id, field, input) {
       // then re-split every node's categories by the new classes.
       cat.class = input.checked ? "secondary" : "primary";
       for (const n of NODES) {
-        const ids = ((n.categoryIds && n.categoryIds.length) ? n.categoryIds : [n.category]).filter(cid => CATEGORIES[cid]);
+        const ids = nodeCategoryIds(n).filter(cid => CATEGORIES[cid]);
+        const split = splitCategoriesByClass(ids);
         n.categoryIds = ids;
-        n.primaryCategories   = ids.filter(cid => (CATEGORIES[cid].class || "primary") !== "secondary");
-        n.secondaryCategories = ids.filter(cid => (CATEGORIES[cid].class || "primary") === "secondary");
+        n.primaryCategories = split.primary;
+        n.secondaryCategories = split.secondary;
         n.category = n.primaryCategories[0] || ids[0] || n.category;
       }
     }

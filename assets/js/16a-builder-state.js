@@ -420,6 +420,14 @@ function deleteBuilderSelectedRows(section) {
   return indices.length;
 }
 
+// A builder node row's `category` cell edits the single primary anchor; this
+// keeps its full `categoryIds` list in sync (new primary + the secondary chips
+// it already had). Shared by the bulk setter and the per-row input handler.
+function reconcileBuilderNodeCategories(row, newPrimaryId) {
+  const secs = splitCategoriesByClass(row.categoryIds || []).secondary;
+  row.categoryIds = (newPrimaryId ? [newPrimaryId] : []).concat(secs);
+}
+
 // Set one field on every selected row in `section`. Coercion mirrors
 // handleBuilderInput: number for numeric fields, boolean for controllable.
 // Selection indices are left intact (a field write doesn't shift rows), so the
@@ -437,13 +445,8 @@ function applyBuilderBulkField(section, field, value) {
     if (typeof v === "number" && isNaN(v)) continue;
     if (row[field] === v) continue;
     row[field] = v;
-    // Keep the full category list in sync when bulk-setting the primary anchor
-    // (mirrors the per-row reconcile in handleBuilderInput) so secondaries are
-    // preserved and the new primary actually serializes.
-    if (section === "nodes" && field === "category") {
-      const secs = (row.categoryIds || []).filter(id => CATEGORIES[id] && (CATEGORIES[id].class || "primary") === "secondary");
-      row.categoryIds = (v ? [v] : []).concat(secs);
-    }
+    // Keep the full category list in sync when bulk-setting the primary anchor.
+    if (section === "nodes" && field === "category") reconcileBuilderNodeCategories(row, v);
     changed++;
   }
   return changed;
