@@ -42,7 +42,7 @@ function renderStagesList() {
   if (countEl) countEl.textContent = STAGES.filter(s => !state.hiddenStages.has(s.id)).length + " / " + STAGES.length;
 
   if (STAGES.length === 0) {
-    container.innerHTML = '<div class="sidebar-empty">No stages yet. Click "+ Add stage" to create one.</div>';
+    container.innerHTML = '<div class="sidebar-empty">No columns yet. Click "+ Add column" to create one.</div>';
     return;
   }
 
@@ -51,12 +51,12 @@ function renderStagesList() {
     const stage = STAGES[i];
     const count = NODES.reduce((acc, n) => n.stage === stage.id ? acc + 1 : acc, 0);
     const isHidden = state.hiddenStages.has(stage.id);
-    const tip = (isHidden ? "Click to show " : "Click to hide ") + stage.label + " — " + count + " node" + (count === 1 ? "" : "s") + " on the map. Double-click the name to rename.";
+    const tip = (isHidden ? "Click to show " : "Click to hide ") + stage.label + " — " + count + " box" + (count === 1 ? "" : "es") + " on the map. Double-click the name to rename.";
     html += '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="stage" data-id="' + escapeHtml(stage.id) + '" data-index="' + i + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
     html +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
     html +=   '<span class="sidebar-edit-label sidebar-inline-edit" data-field="label" title="Double-click to rename">' + escapeHtml(stage.label) + '</span>';
     html +=   '<span class="count-swatch count-swatch--plain">' + count + '</span>';
-    html +=   deleteIconButton("Delete stage");
+    html +=   deleteIconButton("Delete column");
     html += '</div>';
   }
   html += '<div class="sidebar-drop-end" data-kind="stage" data-target-index="' + STAGES.length + '"></div>';
@@ -71,7 +71,7 @@ function renderStreamsList() {
   if (!container) return;
 
   if (STREAMS.length === 0) {
-    container.innerHTML = '<div class="sidebar-empty">No streams yet. Click "+ Add stream" to create one.</div>';
+    container.innerHTML = '<div class="sidebar-empty">No rows yet. Click "+ Add row" to create one.</div>';
     const visEl = document.getElementById("visible-streams-count");
     if (visEl) visEl.textContent = "0 / 0";
     return;
@@ -84,13 +84,13 @@ function renderStreamsList() {
     const count = streamNodeCount[stream.id] || 0;
     const short = stream.short || (typeof deriveShortLabel === "function" ? deriveShortLabel(stream.label) : "");
 
-    const tip = (isHidden ? "Click to show " : "Click to hide ") + stream.label + " — " + count + " node" + (count === 1 ? "" : "s") + " on the map. Double-click the name to rename.";
+    const tip = (isHidden ? "Click to show " : "Click to hide ") + stream.label + " — " + count + " box" + (count === 1 ? "" : "es") + " on the map. Double-click the name to rename.";
     html += '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="stream" data-id="' + escapeHtml(stream.id) + '" data-index="' + i + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
     html +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
     html +=   '<div class="filter-label sidebar-inline-edit" data-field="label" title="Double-click to rename">' + escapeHtml(stream.label) + '</div>';
     html +=   '<span class="sidebar-short-chip sidebar-inline-edit" data-field="short" title="Double-click to edit short label">' + escapeHtml(short) + '</span>';
     html +=   countSwatch(stream.color, count);
-    html +=   deleteIconButton("Delete stream");
+    html +=   deleteIconButton("Delete row");
     html += '</div>';
   }
   html += '<div class="sidebar-drop-end" data-kind="stream" data-target-index="' + STREAMS.length + '"></div>';
@@ -123,11 +123,11 @@ function renderCategoriesList() {
     const isHidden = state.hiddenCategories.has(catId);
     const count = categoryNodeCount[catId] || 0;
     const isSecondary = (cat.class || "primary") === "secondary";
-    const reclassLabel = isSecondary ? "→ fill" : "→ chip";
+    const reclassLabel = isSecondary ? "→ fill" : "→ corner tag";
     const reclassTitle = isSecondary
-      ? "Make this a Primary category (fill; several blend into a gradient)"
-      : "Make this a Secondary category (a corner chip)";
-    const tip = (isHidden ? "Click to show " : "Click to hide ") + cat.label + " — " + count + " node" + (count === 1 ? "" : "s") + " on the map. Double-click the name to rename.";
+      ? "Make this a Main category (fill; several blend into a gradient)"
+      : "Make this a Corner tag category (a corner tag)";
+    const tip = (isHidden ? "Click to show " : "Click to hide ") + cat.label + " — " + count + " box" + (count === 1 ? "" : "es") + " on the map. Double-click the name to rename.";
     let h = '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="category" data-id="' + escapeHtml(catId) + '" data-index="' + indexOf[catId] + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
     h +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
     h +=   '<div class="filter-label sidebar-inline-edit" data-field="label" title="Double-click to rename">' + escapeHtml(cat.label) + '</div>';
@@ -148,9 +148,9 @@ function renderCategoriesList() {
 
   const split = splitCategoriesByClass(allIds);
   let html = "";
-  html += group("Primary",      "primary",   split.primary,   "+ Add primary");
+  html += group("Main",      "primary",   split.primary,   "+ Add main");
   html += '<div class="sidebar-cat-group-gap"></div>';
-  html += group("Secondary",   "secondary", split.secondary, "+ Add secondary");
+  html += group("Corner tag",   "secondary", split.secondary, "+ Add corner tag");
   html += '<div class="sidebar-drop-end" data-kind="category" data-target-index="' + allIds.length + '"></div>';
   container.innerHTML = html;
 
@@ -176,8 +176,8 @@ const EDGE_TYPE_FILTERS = [
   { id: "decreases", label: "Decreases" },
 ];
 const TRACE_FILTERS = [
-  { id: "ancestors",   label: "Upstream sources",   varName: "--edge-ancestor"   },
-  { id: "descendants", label: "Downstream impacts", varName: "--edge-descendant" },
+  { id: "ancestors",   label: "What affects it",   varName: "--edge-ancestor"   },
+  { id: "descendants", label: "What it affects", varName: "--edge-descendant" },
 ];
 const LINE_STYLE_FILTERS = [
   { id: "solid",  label: "Solid",  swatchClass: "legend-line-solid"  },
@@ -189,16 +189,16 @@ const LINE_STYLE_FILTERS = [
 // no count, for the trace group). renderLegendFilters loops over these so the
 // three groups share one render path.
 const LEGEND_FILTER_GROUPS = [
-  { kind: "effect", containerId: "edge-type-filters",  title: "Edge types", ctx: "edges on the map",
+  { kind: "effect", containerId: "edge-type-filters",  title: "Link types", ctx: "links on the map",
     items: EDGE_TYPE_FILTERS,  hiddenSet: () => state.hiddenEffects,
     swatch: (f, count) => edgeCountBadge(f.id, count),
     count:  (f, counts) => counts.effects[f.id] || 0,
     countInSwatch: true },
-  { kind: "style", containerId: "edge-style-filters", title: "Line style", ctx: "edges on the map",
+  { kind: "style", containerId: "edge-style-filters", title: "Line style", ctx: "links on the map",
     items: LINE_STYLE_FILTERS, hiddenSet: () => state.hiddenStyles,
     swatch: f => '<div class="legend-line ' + f.swatchClass + '"></div>',
     count:  () => null },
-  { kind: "trace", containerId: "trace-filters", title: "Trace", ctx: "when a node is selected",
+  { kind: "trace", containerId: "trace-filters", title: "Highlighting", ctx: "when a box is selected",
     items: TRACE_FILTERS, hiddenSet: () => state.hiddenTrace,
     swatch: f => '<div class="legend-swatch" style="box-shadow: inset 0 0 0 2px var(' + f.varName + '), 0 0 4px var(' + f.varName + ');"></div>',
     count:  () => null },

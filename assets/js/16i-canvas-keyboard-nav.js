@@ -303,11 +303,11 @@ function openCanvasEdgePicker(fromNodeId) {
   overlay.className = "canvas-edge-picker";
   if (candidates.length === 0) {
     overlay.innerHTML =
-      '<div class="canvas-edge-picker-label">All other nodes are already connected.</div>';
+      '<div class="canvas-edge-picker-label">All other boxes are already connected.</div>';
   } else {
     overlay.innerHTML =
-      '<div class="canvas-edge-picker-label">Add outgoing edge to…</div>' +
-      '<select aria-label="Choose target node">' +
+      '<div class="canvas-edge-picker-label">Add a link to…</div>' +
+      '<select aria-label="Choose the box to link to">' +
         candidates.map(n =>
           '<option value="' + escapeHtml(n.id) + '">' + escapeHtml(n.label) + '</option>'
         ).join("") +

@@ -236,7 +236,7 @@ function loadDataFromCsv(csvText) {
   for (const row of sections.nodes) {
     if (!row.id) continue;
     if (seenNodeIds.has(row.id)) {
-      errors.push("Duplicate node id: " + row.id);
+      errors.push("Duplicate box id: " + row.id);
       continue;
     }
     seenNodeIds.add(row.id);
@@ -245,8 +245,8 @@ function loadDataFromCsv(csvText) {
     // them would crash the renderer when it dereferences streamById[…]
     // or CATEGORIES[…]. We still log a warning so the user can fix the CSV.
     let hasInvalidRefs = false;
-    if (!streamIdSet.has(row.stream))     { errors.push("Node `" + row.id + "` references unknown stream `"   + row.stream   + "`. Skipped."); hasInvalidRefs = true; }
-    if (!stageIdSet.has(row.stage))       { errors.push("Node `" + row.id + "` references unknown stage `"    + row.stage    + "`. Skipped."); hasInvalidRefs = true; }
+    if (!streamIdSet.has(row.stream))     { errors.push("Box `" + row.id + "` refers to a row that does not exist: `"   + row.stream   + "`. Skipped."); hasInvalidRefs = true; }
+    if (!stageIdSet.has(row.stage))       { errors.push("Box `" + row.id + "` refers to a column that does not exist: `"    + row.stage    + "`. Skipped."); hasInvalidRefs = true; }
 
     // `category` is a pipe-separated list of category ids. Each id's class
     // (primary/secondary) decides how it renders. Unknown ids are dropped with
@@ -254,8 +254,8 @@ function loadDataFromCsv(csvText) {
     const rawCatIds = String(row.category == null ? "" : row.category).split("|").map(s => s.trim()).filter(Boolean);
     const seenCat = new Set();
     const validCatIds = rawCatIds.filter(id => categoryIdSet.has(id) && !seenCat.has(id) && seenCat.add(id));
-    for (const u of new Set(rawCatIds.filter(id => !categoryIdSet.has(id)))) errors.push("Node `" + row.id + "` references unknown category `" + u + "` (ignored).");
-    if (validCatIds.length === 0) { errors.push("Node `" + row.id + "` has no valid category. Skipped."); hasInvalidRefs = true; }
+    for (const u of new Set(rawCatIds.filter(id => !categoryIdSet.has(id)))) errors.push("Box `" + row.id + "` refers to a category that does not exist: `" + u + "` (ignored).");
+    if (validCatIds.length === 0) { errors.push("Box `" + row.id + "` has no valid category. Skipped."); hasInvalidRefs = true; }
     if (hasInvalidRefs) continue;
 
     const catSplit = splitCategoriesByClass(validCatIds, parsedCategories);
@@ -285,7 +285,7 @@ function loadDataFromCsv(csvText) {
     const baselineValue = parseNumericCell(row.baseline);
     if (baselineValue !== undefined) {
       if (baselineValue === 0) {
-        errors.push("Node `" + row.id + "` has baseline 0 — must be positive (simulation divides by baseline). Baseline ignored.");
+        errors.push("Box `" + row.id + "` has starting value 0 — must be positive (the what-if maths divides by the starting value). Starting value ignored.");
       } else {
         node.baseline = baselineValue;
       }
@@ -306,12 +306,12 @@ function loadDataFromCsv(csvText) {
   if (sections.edges) {
     for (const row of sections.edges) {
       if (!row.from || !row.to) continue;
-      if (!nodeIdSet.has(row.from)) { errors.push("Edge from unknown node: " + row.from); continue; }
-      if (!nodeIdSet.has(row.to))   { errors.push("Edge to unknown node: "   + row.to);   continue; }
+      if (!nodeIdSet.has(row.from)) { errors.push("Link from a box that does not exist: " + row.from); continue; }
+      if (!nodeIdSet.has(row.to))   { errors.push("Link to a box that does not exist: "   + row.to);   continue; }
 
       const effect = (row.effect || "enables").toLowerCase();
       if (!EFFECT_OPTIONS.includes(effect)) {
-        errors.push("Edge " + row.from + "→" + row.to + " has invalid effect `" + row.effect + "`.");
+        errors.push("Link " + row.from + "→" + row.to + " has invalid effect `" + row.effect + "`.");
         continue;
       }
 
@@ -366,7 +366,7 @@ function loadDataFromCsv(csvText) {
   // visually obvious (the map renders); the count is also visible in the
   // sidebar filter counts, so we don't need an extra notification.
   if (errors.length > 0) {
-    const summary = NODES.length + " nodes, " + EDGES.length + " edges, " + STREAMS.length + " streams";
+    const summary = NODES.length + " boxes, " + EDGES.length + " links, " + STREAMS.length + " rows";
     const loopNote = state.solverStatus.feedbackLoopCount > 0
       ? " " + state.solverStatus.feedbackLoopCount + " feedback loop(s)."
       : "";
@@ -379,7 +379,7 @@ function loadDataFromCsv(csvText) {
   // user that the loop needs taming rather than letting them trust the numbers.
   if (!state.solverStatus.converged) {
     showLoadFeedback(
-      "Feedback loop didn't stabilise (gain ≥ 1) — values clamped. Reduce elasticities on the highlighted loop.",
+      "Feedback loop didn't stabilise (gain ≥ 1) — values clamped. Reduce the strength values on the highlighted loop.",
       true,
     );
   }

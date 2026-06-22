@@ -34,10 +34,10 @@ function renderSimulationPanel() {
   // ───── Build the HTML ─────────────────────────────────────────────────
   let html = "";
   html += '<div class="sim-header">';
-  html +=   '<div class="sim-title">Input Sliders</div>';
+  html +=   '<div class="sim-title">Adjustable inputs</div>';
   html +=   '<button class="sim-reset" id="sim-reset-button">Reset</button>';
   html += '</div>';
-  html += '<div class="sim-help">Drag the slider or type a value. Downstream nodes recompute live.</div>';
+  html += '<div class="sim-help">Drag a slider or type a value. Everything it affects updates live.</div>';
   // Placeholder for the feedback-loop non-convergence warning. Kept in the DOM
   // (toggled via updateSimSolverBadge) so slider drags can update it inline
   // without re-rendering the whole panel and stealing focus.
@@ -141,7 +141,7 @@ function updateSimSolverBadge() {
   const badge = document.getElementById("sim-solver-badge");
   if (!badge) return;
   if (state.solverStatus && !state.solverStatus.converged) {
-    badge.textContent = "⚠ Feedback loop didn't stabilise — values clamped. Lower the loop's elasticities.";
+    badge.textContent = "⚠ A feedback loop did not settle — values capped. Lower the strength on the loop's links.";
     badge.style.display = "block";
   } else {
     badge.style.display = "none";

@@ -203,7 +203,7 @@ function render() {
       const y = slotTopY(cursorCell.streamId, cursorCell.stageId, slot);
       content += '<g class="cursor-cell">';
       content +=   '<rect x="' + x + '" y="' + y + '" width="' + NODE_WIDTH + '" height="' + NODE_HEIGHT + '" rx="5"></rect>';
-      content +=   '<text x="' + (x + NODE_WIDTH / 2) + '" y="' + (y + NODE_HEIGHT / 2) + '" text-anchor="middle" dominant-baseline="central">Type to create a node</text>';
+      content +=   '<text x="' + (x + NODE_WIDTH / 2) + '" y="' + (y + NODE_HEIGHT / 2) + '" text-anchor="middle" dominant-baseline="central">Type to create a box</text>';
       content += '</g>';
     }
   }
@@ -225,7 +225,7 @@ function render() {
     const ghostX = layout.colX[hoverCell.stageId];
     // Cumulative top of the gap computeLayout opened for this insert slot.
     const ghostY = slotTopY(hoverCell.streamId, hoverCell.stageId, insertSlot);
-    const ghostLabel = "+ add node";
+    const ghostLabel = "+ add box";
     content += '<g class="ghost-cell" data-stream-id="' + escapeHtml(hoverCell.streamId) + '" data-stage-id="' + escapeHtml(hoverCell.stageId) + '" data-insert-index="' + insertSlot + '">';
     content +=   '<rect x="' + ghostX + '" y="' + ghostY + '" width="' + NODE_WIDTH + '" height="' + NODE_HEIGHT + '" rx="5"></rect>';
     content +=   '<text x="' + (ghostX + NODE_WIDTH / 2) + '" y="' + (ghostY + NODE_HEIGHT / 2) + '" text-anchor="middle" dominant-baseline="central">' + ghostLabel + '</text>';
@@ -592,8 +592,8 @@ function render() {
     const cx = (ROW_HEADER_WIDTH + layout.totalWidth) / 2;
     const cy = (SVG_PADDING_TOP + COL_HEADER_HEIGHT + layout.totalHeight) / 2;
     content += '<text class="empty-state-hint" x="' + cx + '" y="' + cy + '" text-anchor="middle" dominant-baseline="middle">';
-    content +=   '<tspan x="' + cx + '" dy="0">Click any cell to add your first node.</tspan>';
-    content +=   '<tspan x="' + cx + '" dy="1.5em" class="empty-state-hint-sub">Drag from a node\'s right edge to draw an edge. Press Delete to remove. Need bulk import? Use Build map.</tspan>';
+    content +=   '<tspan x="' + cx + '" dy="0">Click any cell to add your first box.</tspan>';
+    content +=   '<tspan x="' + cx + '" dy="1.5em" class="empty-state-hint-sub">Drag from a box\'s right edge to draw a link. Press Delete to remove. Need bulk import? Use Build map.</tspan>';
     content += '</text>';
   }
 

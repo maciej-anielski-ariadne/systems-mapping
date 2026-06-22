@@ -299,14 +299,14 @@ function initCanvasEdit() {
 // cells to add nodes — no drop-zone overlay, no wizard needed.
 function bootEmptyStateGrid() {
   STREAMS = [
-    { id: "row_1", label: "Stream 1", short: "S1", color: STREAM_COLOR_PALETTE[0] },
-    { id: "row_2", label: "Stream 2", short: "S2", color: STREAM_COLOR_PALETTE[1] },
-    { id: "row_3", label: "Stream 3", short: "S3", color: STREAM_COLOR_PALETTE[2] },
+    { id: "row_1", label: "Row 1", short: "R1", color: STREAM_COLOR_PALETTE[0] },
+    { id: "row_2", label: "Row 2", short: "R2", color: STREAM_COLOR_PALETTE[1] },
+    { id: "row_3", label: "Row 3", short: "R3", color: STREAM_COLOR_PALETTE[2] },
   ];
   STAGES = [
-    { id: "stage_1", label: "Stage 1" },
-    { id: "stage_2", label: "Stage 2" },
-    { id: "stage_3", label: "Stage 3" },
+    { id: "stage_1", label: "Column 1" },
+    { id: "stage_2", label: "Column 2" },
+    { id: "stage_3", label: "Column 3" },
   ];
   CATEGORIES = {};
   NODES = [];
@@ -494,7 +494,7 @@ function createNodeInCell(streamId, stageId, insertIndex) {
 
   const newNode = {
     id: generateUniqueNodeId("new_node"),
-    label: "New node",
+    label: "New box",
     description: "",
     stream: streamId,
     stage: stageId,
@@ -1384,7 +1384,7 @@ function deleteSelection() {
     state.descendantSet = new Set();
     state.highlightedEdgeIds = new Set();
     applyCanvasMutation();   // auto-captures the pre-mutation snapshot → one undo step
-    showUndoToast(idSet.size === 1 ? "Node deleted" : idSet.size + " nodes deleted", () => historyUndo());
+    showUndoToast(idSet.size === 1 ? "Box deleted" : idSet.size + " boxes deleted", () => historyUndo());
     return true;
   }
   return false;
@@ -1402,5 +1402,5 @@ function deleteEdgeById(edgeId) {
   EDGES = EDGES.filter(e => e.id !== edgeId);
   pushUndo(snapshot);
   applyCanvasMutation();
-  showUndoToast("Edge deleted", () => restoreFromUndo(snapshot));
+  showUndoToast("Link deleted", () => restoreFromUndo(snapshot));
 }

@@ -525,7 +525,7 @@ function renderExportPngBlob(svg, width, height, pal) {
 // ───── PUBLIC: copy the canvas to the clipboard as a PNG image ─────────────
 function exportCanvasImage() {
   const model = buildExportModel();
-  if (!model) { showLoadFeedback("Nothing to export — load a map or zoom to some nodes.", true); return; }
+  if (!model) { showLoadFeedback("Nothing to export — load a map or zoom to some boxes.", true); return; }
 
   if (!navigator.clipboard || typeof ClipboardItem === "undefined" || !navigator.clipboard.write) {
     showLoadFeedback("Clipboard image copy isn't available in this browser. Try opening the app over http/localhost.", true);
@@ -549,7 +549,7 @@ function exportCanvasImage() {
 // ───── PUBLIC: publish as a view-only HTML page ────────────────────────────
 function publishCanvasHtml() {
   const model = buildExportModel();
-  if (!model) { showLoadFeedback("Nothing to publish — load a map or zoom to some nodes.", true); return; }
+  if (!model) { showLoadFeedback("Nothing to publish — load a map or zoom to some boxes.", true); return; }
   const pal = exportPalette();
   const { svg, width, height, nodeInfo } = renderExportSvg(model, { pal });
   const html = buildPublishHtml(svg, width, height, nodeInfo, pal);
@@ -649,7 +649,7 @@ function buildPublishHtml(svg, width, height, nodeInfo, pal) {
       '</div>' +
       '<button id="mv-fit" title="Fit to screen">Fit</button>' +
     '</div>' +
-    '<div id="mv-hint">Drag to pan · Ctrl/⌘ + scroll to zoom · hover a node for details</div>' +
+    '<div id="mv-hint">Drag to pan · Ctrl/⌘ + scroll to zoom · hover a box for details</div>' +
     '<script>' + viewerJs + EXPORT_CLOSE_SCRIPT +
     '</body></html>';
 }

@@ -1,61 +1,61 @@
 # Systems Map
 
-CSV-driven interactive systems map. Single standalone HTML file, no dependencies, no server, no build step required at runtime. Open the HTML, drop in a CSV, get a layered causal diagram with live what-if simulation.
+Spreadsheet-driven interactive systems map. Single standalone HTML file, no dependencies, no server, no build step required at runtime. Open the HTML, drop in a spreadsheet, get a layered cause-and-effect diagram with live what-if simulation.
 
-Domain-agnostic — any system you can express as nodes-with-streams-and-stages plus signed edges will render. The default sample CSV is a small neutral worked example (a three-team product company — 12 nodes, 12 edges) that exercises every feature of the app while staying small enough to grok at a glance.
+Domain-agnostic — any system you can express as boxes-with-rows-and-columns plus signed links will render. The default sample spreadsheet is a small neutral worked example (a three-team product company — 12 boxes, 12 links) that exercises every feature of the app while staying small enough to grok at a glance.
 
 ## Quick start
 
 1. Open `index.html` in any modern browser. (Works fully offline — fonts and code are bundled locally.)
-2. The app boots into an **empty 3×3 starter grid** — three streams (rows), three stages (columns), no nodes yet. From here you have three paths:
-   - **Build directly on the canvas** (recommended for non-technical users). Click any empty cell to add a node, then rename it in the right panel. Drag from the right edge of a node to another node to draw an edge. Edit streams / stages / categories from the left sidebar (pencil icon to rename / delete, drag handle to reorder, **+ Add** buttons at the bottom of each section).
-   - **Import an existing CSV** — click **Import** in the header, or drag-drop a `.csv` onto the window.
-   - **Bulk edit via the wizard** — click **Edit** in the header to open a six-step form (streams → stages → categories → nodes → edges → review). Useful for big edits where the canvas is too fiddly. Hit **Apply to map** to re-render, or **Download CSV** to save a snapshot.
-3. Iterate freely. Every canvas edit auto-saves to your browser, so a page refresh restores everything. Click **Save** in the header to download the current map as a CSV.
+2. The app boots into an **empty 3×3 starter grid** — three rows, three columns, no boxes yet. From here you have three paths:
+   - **Build directly on the map** (recommended for non-technical users). Click any empty cell to add a box, then rename it in the right panel. Drag from the right edge of a box to another box to draw a link. Edit rows / columns / categories from the left sidebar (pencil icon to rename / delete, drag handle to reorder, **+ Add** buttons at the bottom of each section).
+   - **Import an existing spreadsheet** — click **Import** in the header, or drag-drop a `.csv` onto the window.
+   - **Bulk edit via the wizard** — click **Edit** in the header to open a six-step form (rows → columns → categories → boxes → links → review). Useful for big edits where the map is too fiddly. Hit **Apply to map** to re-render, or **Download CSV** to save a snapshot.
+3. Iterate freely. Every map edit auto-saves to your browser, so a page refresh restores everything. Click **Save** in the header to download the current map as a spreadsheet.
 
 The header has seven buttons left-to-right: **Create · Edit · Save · Import · Export · Publish · Simulate**.
-- **Create** clears the canvas and starts a fresh empty grid, asking for confirmation if a map is loaded.
+- **Create** clears the map and starts a fresh empty grid, asking for confirmation if a map is loaded.
 - **Edit** opens the bulk-edit wizard (dimmed until a map exists).
-- **Save** downloads the current map as a CSV (re-importable).
-- **Import** loads a CSV from disk.
-- **Export** copies the canvas to your clipboard as a high-resolution PNG (rendered vector-sharp at up to 3× pixel density, automatically scaled down to stay within the browser's canvas limits for very large maps) and shows a "copied" toast — paste it straight into a doc, slide, or chat. It captures what's on screen, so zoom / pan to frame the part you want. If a node is selected, only its highlighted nodes and edges (out to the current **highlight depth**) are copied — rendered in the map's normal, un-highlighted style (the highlight only selects what to include). Either way the export is reflowed: empty stage columns and stream rows are dropped and the surviving streams reordered so connected nodes sit closer together. (Clipboard image copy needs a secure context — works over http/localhost or https.)
-- **Publish** downloads `systems-map.html` — a self-contained, view-only page of the same framed canvas with pan / zoom / hover-for-details (no editing, importing, or simulating).
-- **Simulate** toggles simulation mode (sliders on controllable inputs).
+- **Save** downloads the current map as a spreadsheet (re-importable).
+- **Import** loads a spreadsheet from disk.
+- **Export** copies the map to your clipboard as a high-resolution PNG (rendered vector-sharp at up to 3× pixel density, automatically scaled down to stay within the browser's limits for very large maps) and shows a "copied" toast — paste it straight into a doc, slide, or chat. It captures what's on screen, so zoom / pan to frame the part you want. If a box is selected, only its highlighted boxes and links (out to the current **highlight reach**) are copied — rendered in the map's normal, un-highlighted style (the highlight only selects what to include). Either way the export is reflowed: empty columns and rows are dropped and the surviving rows reordered so connected boxes sit closer together. (Clipboard image copy needs a secure context — works over http/localhost or https.)
+- **Publish** downloads `systems-map.html` — a self-contained, view-only page of the same framed map with pan / zoom / hover-for-details (no editing, importing, or simulating).
+- **Simulate** toggles simulation mode (sliders on adjustable inputs).
 
 ## What you get
 
-- Layered layout: streams (rows) × stages (columns), nodes placed in grid cells, edges as bezier curves.
-- Click a node → highlights its direct inputs (blue) and direct impacts (amber), dims everything else.
-- Click a stream label (sidebar or row header) → collapse / expand the whole stream.
-- **Smart search** → fuzzy match across every node field — name, description, stream, stage, category, ID, and unit — ranked in that priority order (handles typos like "brder" → "Border" and word-initials like "bff" → "Border Force FTE"). So searching a stream/stage/category name surfaces every node in it. Top results show as a dropdown below the search box, with the matched text highlighted; matching nodes get an amber halo on the map. Press `/` from anywhere on the page to jump to the search box.
-- Detail panel → category, stream, stage, baseline + current values, all direct inputs/impacts with per-edge elasticities, click-through navigation. **Edit Node** toggle turns the panel into an edit form (every field as an input, per-row outgoing-edge editor, delete button).
-- **Canvas direct edit** → click an empty grid cell to add a node, drag from a node's right edge to another node to draw an edge, press Delete on a selected node to remove it (with a 6-second undo toast). Streams / stages / categories are edited from the left sidebar (pencil to rename / re-colour, drag handle to reorder, **+ Add** at the bottom of each section).
-- **Build / Edit wizard** → optional six-step in-app form (streams → stages → categories → nodes → edges → review) with dropdowns for every cross-reference, live validation, and round-trip with the current map. Click **Edit Data** in the header. Useful for bulk edits where the canvas is too fiddly.
-- **Simulation mode** → sliders **and** typeable number inputs on every controllable node, grouped by stream. Downstream values recompute live (Cobb-Douglas propagation). The selected node's `Current` value is also editable from the detail panel.
-- Outcome nodes get green / red halo colouring when their direction-of-merit metric moves materially from baseline.
+- Layered layout: rows × columns, boxes placed in grid cells, links as bezier curves.
+- Click a box → highlights what affects it (blue) and what it affects (amber), dims everything else.
+- Click a row label (sidebar or row header) → collapse / expand the whole row.
+- **Smart search** → fuzzy match across every box field — name, description, row, column, category, ID, and unit — ranked in that priority order (handles typos like "brder" → "Border" and word-initials like "bff" → "Border Force FTE"). So searching a row/column/category name surfaces every box in it. Top results show as a dropdown below the search box, with the matched text highlighted; matching boxes get an amber glow on the map. Press `/` from anywhere on the page to jump to the search box.
+- Detail panel → category, row, column, starting value + current values, all direct inputs/impacts with per-link strengths, click-through navigation. **Edit Box** toggle turns the panel into an edit form (every field as an input, per-row outgoing-link editor, delete button).
+- **Map direct edit** → click an empty grid cell to add a box, drag from a box's right edge to another box to draw a link, press Delete on a selected box to remove it (with a 6-second undo toast). Rows / columns / categories are edited from the left sidebar (pencil to rename / re-colour, drag handle to reorder, **+ Add** at the bottom of each section).
+- **Build / Edit wizard** → optional six-step in-app form (rows → columns → categories → boxes → links → review) with dropdowns for every cross-reference, live validation, and round-trip with the current map. Click **Edit Data** in the header. Useful for bulk edits where the map is too fiddly.
+- **Simulation mode** → sliders **and** typeable number inputs on every adjustable box, grouped by row. The values they affect recompute live (Cobb-Douglas propagation). The selected box's `Current` value is also editable from the detail panel.
+- Outcome boxes get green / red glow colouring when their direction-of-merit metric moves materially from its starting value.
 - **Collapsible side panels** → click the pin icon in either panel header to collapse it to a thin strip; hover the strip to peek the contents, click the pin again to re-pin.
 - **Zoom** → bottom-right `−` / `+` buttons, `Ctrl/Cmd` + scroll-wheel (or trackpad pinch), or `Ctrl/Cmd + =/-/0` to zoom in / out / reset. Pinching anchors on the cursor.
 - **Pan** → click-and-drag any empty area of the map to pan around it. Plain scroll-wheel and trackpad two-finger scroll also pan.
-- **Survives a refresh** → the loaded CSV, hidden filters, simulation mode + slider positions, selected node, zoom level, panel pin state, and any unsaved wizard work are all persisted in `localStorage`. Close the tab, reopen, keep going. (Loading a different CSV via **Import Data** / applying the wizard replaces what's stored.)
+- **Survives a refresh** → the loaded spreadsheet, hidden filters, simulation mode + slider positions, selected box, zoom level, panel pin state, and any unsaved wizard work are all persisted in `localStorage`. Close the tab, reopen, keep going. (Loading a different spreadsheet via **Import Data** / applying the wizard replaces what's stored.)
 
-## CSV format
+## Spreadsheet format
 
 Single file. Six sections delimited by `# SECTION: <name>` lines. Each section has its own column headers on the first non-comment row. Lines starting with `#` are comments, empty lines are ignored. Order doesn't matter to the parser but sections are typically written in build order: structure first, then content.
 
 Edit in any spreadsheet app — each section appears as its own distinct table block. Quote cells with embedded commas; use `""` to escape literal quotes.
 
-### `streams`
+### `streams` (rows)
 
 Map rows.
 
 | Column | Meaning |
 |--------|---------|
-| `id`    | Unique identifier. Lowercase, no spaces. Referenced from nodes. |
+| `id`    | Unique identifier. Lowercase, no spaces. Referenced from boxes. |
 | `label` | Display name (sidebar + detail panel). |
 | `short` | Short label on the row header (uppercase, ~6 chars). |
-| `color` | Hex colour for the left bar on each node in this stream. |
+| `color` | Hex colour for the left bar on each box in this row. |
 
-### `stages`
+### `stages` (columns)
 
 Map columns. Rendered left-to-right in the order they appear in this section.
 
@@ -66,73 +66,73 @@ Map columns. Rendered left-to-right in the order they appear in this section.
 
 ### `categories`
 
-Node types — visual differentiation by colour.
+Box types — visual differentiation by colour.
 
 | Column | Meaning |
 |--------|---------|
 | `id`         | Unique identifier. |
 | `label`      | Sidebar legend label. |
-| `color`      | Node fill colour (hex). |
+| `color`      | Box fill colour (hex). |
 | `text_color` | Label colour over the fill. Pick high contrast. |
 
 ### `defaults`
 
-Key-value rows. Three keys used when an edge's `elasticity` cell is blank:
+Key-value rows. Three keys used when a link's `elasticity` cell is blank:
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `elasticity_enables`   |  0.30 | Default for `enables` edges (structural prerequisite). |
-| `elasticity_increases` |  0.25 | Default for `increases` edges. |
-| `elasticity_decreases` | -0.25 | Default for `decreases` edges (negative). |
+| `elasticity_enables`   |  0.30 | Default for `enables` links (structural prerequisite). |
+| `elasticity_increases` |  0.25 | Default for `increases` links. |
+| `elasticity_decreases` | -0.25 | Default for `decreases` links (negative). |
 
-### `nodes`
+### `nodes` (boxes)
 
 | Column | Required | Meaning |
 |--------|----------|---------|
-| `id`           | yes | Unique identifier. Referenced from edges. |
-| `label`        | yes | Display name on the node. |
+| `id`           | yes | Unique identifier. Referenced from links. |
+| `label`        | yes | Display name on the box. |
 | `description`  | no  | Tooltip + detail panel description. |
 | `stream`       | yes | Must match an id from `streams`. |
 | `stage`        | yes | Must match an id from `stages`. |
 | `category`     | yes | Must match an id from `categories`. |
-| `baseline`     | no* | Numeric baseline value (e.g. 100, 9000, 25). |
+| `baseline`     | no* | Numeric starting value (e.g. 100, 9000, 25). |
 | `unit`         | no  | Unit string shown after the value (e.g. `units`, `staff`, `min`, `£bn/yr`, `%`, `index`). |
-| `controllable` | no  | `true` to expose this node as a slider in Simulation mode. Use only for exogenous inputs. |
+| `controllable` | no  | `true` to expose this box as a slider in Simulation mode. Use only for external inputs. |
 | `direction`    | no  | `higher_better` / `lower_better` / `neutral`. Drives outcome colouring. |
-| `slider_max`   | no  | Maximum slider multiplier (e.g. `2.0` = up to 200% of baseline). Default 2.0. |
+| `slider_max`   | no  | Maximum slider multiplier (e.g. `2.0` = up to 200% of the starting value). Default 2.0. |
 
-*Without `baseline` + `unit` a node renders structurally but shows no value and doesn't participate in simulation.
+*Without `baseline` + `unit` a box renders structurally but shows no value and doesn't participate in simulation.
 
-### `edges`
+### `edges` (links)
 
 | Column | Required | Meaning |
 |--------|----------|---------|
-| `from`        | yes | Source node id. |
-| `to`          | yes | Target node id. |
-| `effect`      | yes | `enables` / `increases` / `decreases`. Determines arrow colour and default elasticity sign. |
-| `elasticity`  | no  | Per-edge override (signed number). Blank = use the default for the effect type. |
+| `from`        | yes | Source box id. |
+| `to`          | yes | Target box id. |
+| `effect`      | yes | `enables` / `increases` / `decreases`. Determines arrow colour and default strength sign. |
+| `elasticity`  | no  | Per-link override (signed number). Blank = use the default for the effect type. |
 | `description` | no  | Shown in detail panel. |
 
 ## Build / Edit wizard
 
-Click **Edit Data** in the header (or **Create Map** first if you want a fresh start) to open a full-screen wizard that constructs the same CSV without you typing any CSV syntax. The canvas direct-edit flow is usually faster for small tweaks; the wizard shines when you're doing bulk edits or want to see all fields for a row at once.
+Click **Edit Data** in the header (or **Create Map** first if you want a fresh start) to open a full-screen wizard that constructs the same spreadsheet without you typing any spreadsheet syntax. The map direct-edit flow is usually faster for small tweaks; the wizard shines when you're doing bulk edits or want to see all fields for a row at once.
 
 Six steps in build order:
 
-1. **Streams** — rows of the map. Each gets a colour picker. A **Start from sample** shortcut pre-fills the taxonomy from the bundled sample if you want a scaffold rather than a blank canvas.
-2. **Stages** — columns, left-to-right.
-3. **Categories** — node types, with fill + label colour pickers.
-4. **Nodes** — table view. The stream / stage / category columns are dropdowns sourced from steps 1–3, so cross-reference typos are structurally impossible. Optional simulation fields (baseline, unit, controllable, direction, slider_max) sit alongside the required ones.
-5. **Edges** — table view. The **from** / **to** columns are dropdowns sourced from step 4. The three default elasticities sit above the table for quick tuning.
+1. **Rows** — rows of the map. Each gets a colour picker. A **Start from sample** shortcut pre-fills the taxonomy from the bundled sample if you want a scaffold rather than a blank map.
+2. **Columns** — left-to-right.
+3. **Categories** — box types, with fill + label colour pickers.
+4. **Boxes** — table view. The row / column / category columns are dropdowns sourced from steps 1–3, so cross-reference typos are structurally impossible. Optional simulation fields (baseline, unit, controllable, direction, slider_max) sit alongside the required ones.
+5. **Links** — table view. The **from** / **to** columns are dropdowns sourced from step 4. The three default strengths sit above the table for quick tuning.
 6. **Review** — counts of everything, all validation issues in one place, and the two CTAs:
-   - **Apply to map** — round-trips through the same CSV loader as a drag-drop, so all validation runs.
+   - **Apply to map** — round-trips through the same spreadsheet loader as a drag-drop, so all validation runs.
    - **Download CSV** — saves a `.csv` with comments + section headers (drag back in later, or share with colleagues).
 
 Other niceties:
 
 - **Round-trip editing** — opening the wizard while a map is loaded pre-populates every field from the live data. Tweak anything, hit Apply, the map updates.
 - **ID auto-fill** — typing a label fills the id (`Air Passenger` → `air_passenger`) on first edit, then leaves it alone so you can override.
-- **Duplicate row** — useful for entering many similar nodes that differ only in a field or two. The id is wiped on the duplicate so you don't end up with a duplicate.
+- **Duplicate row** — useful for entering many similar boxes that differ only in a field or two. The id is wiped on the duplicate so you don't end up with a duplicate.
 - **Live validation** — duplicate ids, unresolved cross-references, blank required fields are flagged on the row and counted in the footer. Apply is disabled until the count is zero.
 - **Escape** closes the wizard without applying.
 
@@ -144,33 +144,33 @@ Cobb-Douglas propagation, solved iteratively:
 value_target = baseline_target × ∏ (current_source / baseline_source) ^ elasticity_edge
 ```
 
-- Controllable nodes (sliders): `value = baseline × user_multiplier`.
-- Every other node: value computed from its incoming edges.
-- The solver sweeps nodes in topological order and iterates to a fixed point. On an acyclic map a single sweep resolves every node, so results are exact. On a map with **feedback loops** it keeps sweeping — each pass feeds the loop's values back into itself — until they converge (or a 100-iteration safety cap is hit).
-- Output is always positive, smooth, handles compounding inputs naturally, degrades gracefully at extremes (a source ratio of 0 collapses targets through any positive elasticity).
-- The `effect` label sets the default elasticity sign; a per-edge `elasticity` override always wins.
+- Adjustable boxes (sliders): `value = baseline × user_multiplier`.
+- Every other box: value computed from its incoming links.
+- The solver sweeps boxes in topological order and iterates to a fixed point. On an acyclic map a single sweep resolves every box, so results are exact. On a map with **feedback loops** it keeps sweeping — each pass feeds the loop's values back into itself — until they converge (or a 100-iteration safety cap is hit).
+- Output is always positive, smooth, handles compounding inputs naturally, degrades gracefully at extremes (a source ratio of 0 collapses targets through any positive strength).
+- The `effect` label sets the default strength sign; a per-link `elasticity` override always wins.
 
 ### Feedback loops
 
-Edges may form loops — an output feeding back to affect an upstream input. Negative-feedback loops settle quickly; a runaway positive loop (gain ≥ 1) can't settle, so its values are clamped to something finite and a warning is shown (at load and on the simulation panel). Lower the elasticities on the loop to bring it back into a stable range.
+Links may form loops — an output feeding back to affect a box that affects it. Negative-feedback loops settle quickly; a runaway positive loop (gain ≥ 1) can't settle, so its values are clamped to something finite and a warning is shown (at load and on the simulation panel). Lower the strengths on the loop to bring it back into a stable range.
 
 ### A note on directional semantics
 
-The structural `effect` label describes the **causal role** ("X is the upstream cause of Y"). The `elasticity` describes the **direction and magnitude in simulation**. These can disagree.
+The structural `effect` label describes the **cause-and-effect role** ("X is the cause of Y"). The strength describes the **direction and magnitude in simulation**. These can disagree.
 
-Example: in the UK border sample, `pcp_inspection → passenger_wait_time` is labelled `increases` because PCP processing is structurally the cause of wait time at the border, but the elasticity is **-0.55** because in the simulation `pcp_inspection` represents PCP throughput capacity — more capacity = less wait. The detail panel always shows the elasticity explicitly so this is auditable.
+Example: in the UK border sample, `pcp_inspection → passenger_wait_time` is labelled `increases` because PCP processing is structurally the cause of wait time at the border, but the strength is **-0.55** because in the simulation `pcp_inspection` represents PCP throughput capacity — more capacity = less wait. The detail panel always shows the strength explicitly so this is auditable.
 
-This pattern recurs anywhere an upstream is a capacity/intensity and the downstream is a delay. Reasonable people will model the same edge differently. Override the elasticity if you disagree with the included values.
+This pattern recurs anywhere the cause is a capacity/intensity and the effect is a delay. Reasonable people will model the same link differently. Override the strength if you disagree with the included values.
 
 ## Validation
 
 Loader checks every load and reports findings in a toast (top-right) and the console:
 
 - Required sections present and non-empty: `streams`, `stages`, `categories`, `nodes`. Missing any → fatal, nothing loads.
-- Every node's `stream` / `stage` / `category` references resolve. Unresolved → warning, node still loads.
-- Every edge's `from` / `to` references a known node. Unresolved → warning, edge dropped.
-- No duplicate node IDs. Duplicate → warning, second occurrence dropped.
-- Edge `effect` is one of `enables` / `increases` / `decreases`. Invalid → warning, edge dropped.
+- Every box's `stream` / `stage` / `category` references resolve. Unresolved → warning, box still loads.
+- Every link's `from` / `to` references a known box. Unresolved → warning, link dropped.
+- No duplicate box IDs. Duplicate → warning, second occurrence dropped.
+- Link `effect` is one of `enables` / `increases` / `decreases`. Invalid → warning, link dropped.
 
 ## Files
 
@@ -231,7 +231,7 @@ systems_mapping/
     │   ├── 19-export.js             Export canvas → image (PNG + SVG) + view-only HTML
     │   └── 18-main.js               Startup — restores persisted state
     └── data/
-        ├── sample.csv               Small neutral example (3 streams, 12 nodes, 12 edges).
+        ├── sample.csv               Small neutral example (3 rows, 12 boxes, 12 links).
         │                            Powers "Load Sample" + "Download Sample".
         └── empty_template.csv       Empty starter with structure + inline comments.
                                      Reference only — no button loads it.
@@ -317,11 +317,11 @@ no bundler, no transpiler.
 
 ## Limitations
 
-- **Elasticities in the sample are illustrative, not calibrated.** Plausible round figures, not regression coefficients. Defensible for direction-of-effect analysis, not policy costings. To calibrate: substitute real numbers and fit elasticities on time-series data.
+- **Strengths in the sample are illustrative, not calibrated.** Plausible round figures, not regression coefficients. Defensible for direction-of-effect analysis, not policy costings. To calibrate: substitute real numbers and fit strengths on time-series data.
 - **No threshold non-linearities.** Cobb-Douglas is smooth and monotone. Real-world bottlenecks have kinks (queues blow up non-linearly near capacity); not captured.
 - **No confidence intervals.** Point estimates only.
-- **No cost / budget side.** Sliders move physical inputs without cost constraints. Easy to add: an additional `unit_cost` node field summed to a budget readout in the simulation panel.
+- **No cost / budget side.** Sliders move physical inputs without cost constraints. Easy to add: an additional `unit_cost` box field summed to a budget readout in the simulation panel.
 - **Feedback loops settle, they don't oscillate dynamically.** The iterative solver finds the steady state of a loop, not its time-path. A runaway positive loop (gain ≥ 1) has no steady state; its values are clamped and flagged rather than simulated over time.
-- **CSV only.** No JSON or API ingestion. Both would be straightforward to add to the loader.
-- **Wizard row reordering** is supported for streams, stages, and categories (grab the `⋮⋮` handle on the left of any row to drag it up or down). Node and edge order doesn't affect rendering, so the wizard doesn't expose handles there.
+- **Spreadsheet only.** No JSON or API ingestion. Both would be straightforward to add to the loader.
+- **Wizard row reordering** is supported for rows, columns, and categories (grab the `⋮⋮` handle on the left of any row to drag it up or down). Box and link order doesn't affect rendering, so the wizard doesn't expose handles there.
 - **`localStorage` only.** State persists in the browser, not in the cloud. Different browsers / private windows / incognito tabs all see their own independent state. Use **Download CSV** in the wizard to share a snapshot.

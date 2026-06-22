@@ -13,13 +13,13 @@
                      start with 01-variables.css to change colours or fonts.
    assets/js/        JavaScript. Files are numbered in the order they load —
                      each one has a comment header explaining its job.
-   assets/data/      The sample CSV and the empty CSV template, openable in
+   assets/data/      The sample spreadsheet and the empty template, openable in
                      Excel or Google Sheets.
 
  ─── To edit the systems map ──────────────────────────────────────────────
    1. Open assets/data/sample.csv (or empty_template.csv) in Excel.
    2. Edit the rows.
-   3. Save as a .csv file.
+   3. Save as a spreadsheet (.csv) file.
    4. Drag-and-drop it onto the app.
 
  ─── To change colours / fonts ────────────────────────────────────────────
@@ -78,7 +78,7 @@
         <circle cx="11" cy="11" r="8"></circle>
         <path d="m21 21-4.3-4.3"></path>
       </svg>
-      <input id="search-input" class="search-input" placeholder="Search nodes  (press /  ·  ↑↓ to step  ·  Esc to clear)">
+      <input id="search-input" class="search-input" placeholder="Search boxes  (press /  ·  ↑↓ to move  ·  Esc to clear)">
       <div id="search-results" class="search-results" hidden></div>
     </div>
 
@@ -87,21 +87,21 @@
          Export ▾ menu, then the Simulate mode toggle past a divider. The
          trigger classes / ids are unchanged, so the handlers in 17-events.js
          still bind; 17-events.js also wires the Export-menu open/close. -->
-    <button class="header-button header-button--primary create-map-trigger" data-tooltip="Clear the canvas and start a fresh map from an empty 3×3 starter grid. Asks for confirmation if a map is loaded.">Create</button>
-    <button class="header-button edit-data-trigger"   data-tooltip="Open the form-based wizard pre-populated with the current map. Useful for bulk edits.">Edit</button>
-    <button class="header-button import-data-trigger" data-tooltip="Import a CSV map file from your computer. Same as drag-dropping a .csv onto the window.">Import</button>
+    <button class="header-button header-button--primary create-map-trigger" data-tooltip="Clear the map and start fresh from an empty 3×3 starter grid. Asks you to confirm if a map is loaded.">Create</button>
+    <button class="header-button edit-data-trigger"   data-tooltip="Open the form-based helper filled in with the current map. Handy for many edits at once.">Edit</button>
+    <button class="header-button import-data-trigger" data-tooltip="Open a map spreadsheet from your computer. Same as dragging a spreadsheet onto the window.">Import</button>
 
     <div class="header-menu" id="export-menu">
-      <button class="header-button header-menu-trigger" aria-haspopup="true" aria-expanded="false" data-tooltip="Get the map out — save as CSV, copy as a PNG image, or publish a view-only HTML page.">Export&nbsp;▾</button>
+      <button class="header-button header-menu-trigger" aria-haspopup="true" aria-expanded="false" data-tooltip="Get the map out — save as a spreadsheet, copy as a PNG image, or publish a view-only web page.">Export&nbsp;▾</button>
       <div class="header-menu-list" id="export-menu-list" hidden>
-        <button class="header-menu-item save-data-trigger"    data-tooltip="Save the current map as a CSV (openable in Excel / Sheets, or re-importable here).">Save CSV</button>
-        <button class="header-menu-item export-image-trigger" data-tooltip="Copy the canvas to the clipboard as a PNG image. Captures what's on screen. If a node is selected, only its highlighted nodes and edges are copied.">Export PNG</button>
-        <button class="header-menu-item publish-html-trigger" data-tooltip="Publish a self-contained, view-only HTML page of the canvas (pan / zoom / hover).">Publish HTML</button>
+        <button class="header-menu-item save-data-trigger"    data-tooltip="Save the current map as a spreadsheet (openable in Excel / Sheets, or load it back here).">Save CSV</button>
+        <button class="header-menu-item export-image-trigger" data-tooltip="Copy the map to the clipboard as a PNG image. Captures what's on screen. If a box is selected, only its highlighted boxes and links are copied.">Export PNG</button>
+        <button class="header-menu-item publish-html-trigger" data-tooltip="Publish a self-contained, view-only web page of the map (pan / zoom / hover).">Publish HTML</button>
       </div>
     </div>
 
     <span class="header-divider" aria-hidden="true"></span>
-    <button id="sim-toggle-button" class="header-button" data-tooltip="Toggle simulation mode — sliders on every controllable input, downstream values recompute live.">Simulate</button>
+    <button id="sim-toggle-button" class="header-button" data-tooltip="Turn on what-if mode — sliders on every adjustable input, and the values it affects update live.">Simulate</button>
   </header>
 
   <!-- Hidden file picker. Clicking any .import-data-trigger button triggers it. -->
@@ -133,21 +133,21 @@
          is just a label + drag handle + pencil. -->
     <div class="sidebar-section" id="stages-section">
       <div class="sidebar-section-title">
-        <span>Stages</span>
+        <span>Columns</span>
         <span class="count" id="stages-count"></span>
       </div>
       <div id="stages-list"></div>
-      <button class="sidebar-add-btn" data-add="stage">+ Add stage</button>
+      <button class="sidebar-add-btn" data-add="stage">+ Add column</button>
     </div>
 
     <!-- Stream filters + editing — JS fills the list in 13-sidebar.js -->
     <div class="sidebar-section" id="stream-filters-section">
       <div class="sidebar-section-title">
-        <span>Streams</span>
+        <span>Rows</span>
         <span class="count" id="visible-streams-count"></span>
       </div>
       <div id="stream-filters"></div>
-      <button class="sidebar-add-btn" data-add="stream">+ Add stream</button>
+      <button class="sidebar-add-btn" data-add="stream">+ Add row</button>
     </div>
 
     <!-- Category filters + editing — JS fills the list in 13-sidebar.js.
@@ -199,12 +199,12 @@
       <!-- Highlight-depth: how many connected levels light up when a node is
            selected. -->
       <div class="viz-depth-controls" id="viz-depth-controls"
-           title="How many connected levels to highlight when a node is selected">
-        <span class="viz-control-title">Highlight Depth</span>
+           title="How many connected levels to highlight when a box is selected">
+        <span class="viz-control-title">Highlight reach</span>
         <div class="viz-control-row">
-          <button class="viz-depth-button" id="viz-depth-down" aria-label="Decrease highlight depth">−</button>
+          <button class="viz-depth-button" id="viz-depth-down" aria-label="Decrease highlight reach">−</button>
           <span class="viz-depth-readout" id="viz-depth-readout">1</span>
-          <button class="viz-depth-button" id="viz-depth-up" aria-label="Increase highlight depth">+</button>
+          <button class="viz-depth-button" id="viz-depth-up" aria-label="Increase highlight reach">+</button>
         </div>
       </div>
 
@@ -221,7 +221,7 @@
 
       <!-- "More" toggle reveals the advanced Highlight-Depth card, tucked away
            by default so Zoom is the only resting control. JS in 17-events.js. -->
-      <button class="viz-more-toggle" id="viz-more-toggle" title="More map controls (highlight depth)" aria-label="More map controls" aria-expanded="false">⋯</button>
+      <button class="viz-more-toggle" id="viz-more-toggle" title="More map controls (highlight reach)" aria-label="More map controls" aria-expanded="false">⋯</button>
 
     </div>
 
@@ -238,14 +238,14 @@
             <line x1="12" y1="3" x2="12" y2="15"></line>
           </svg>
         </div>
-        <div class="drop-zone-title">Drop a CSV here to load a systems map</div>
+        <div class="drop-zone-title">Drop a spreadsheet here to load a systems map</div>
         <div class="drop-zone-subtitle">
-          Drop a CSV here, or use the buttons below. The map is driven by a CSV
-          defining streams, stages, categories, nodes, and edges — build it
-          directly on the canvas, or hand-edit in Excel / Google Sheets.
+          Drop a spreadsheet here, or use the buttons below. The map is driven by a spreadsheet
+          defining rows, columns, categories, boxes, and links — build it
+          directly on the map, or edit by hand in Excel / Google Sheets.
         </div>
         <div class="drop-zone-buttons">
-          <button class="drop-zone-button primary import-data-trigger">Choose CSV file</button>
+          <button class="drop-zone-button primary import-data-trigger">Choose spreadsheet file</button>
           <button class="drop-zone-button create-map-trigger">Start from empty grid</button>
         </div>
       </div>
@@ -266,12 +266,12 @@
 
     <!-- Shown when no node is selected -->
     <div class="detail-empty" id="detail-empty">
-      <h3>Causal trace.</h3>
-      <p>Click any node to see what feeds into it and what it impacts downstream — recursively, across the whole map.</p>
-      <p>Click again to deselect. Use the streams in the left panel to hide branches.</p>
+      <h3>Cause and effect.</h3>
+      <p>Click any box to see what feeds into it and what it affects — step by step, across the whole map.</p>
+      <p>Click again to deselect. Use the rows in the left panel to hide branches.</p>
       <div class="hint">
-        <b>DATA</b> — All structure and quantification is loaded from a CSV. Use <b>Create</b> / <b>Edit</b> in the header for the form-based wizard, or hand-edit the CSV in Excel / Sheets and drag it back in.<br><br>
-        <b>EDGES</b> — Each link is annotated as <i>enables</i>, <i>increases</i>, or <i>decreases</i>, with an elasticity that drives simulation propagation.
+        <b>DATA</b> — All structure and numbers are loaded from a spreadsheet. Use <b>Create</b> / <b>Edit</b> in the header for the form-based helper, or edit the spreadsheet by hand in Excel / Sheets and drag it back in.<br><br>
+        <b>LINKS</b> — Each link is marked as <i>enables</i>, <i>increases</i>, or <i>decreases</i>, with a strength that drives the what-if results.
       </div>
     </div>
     <!-- Filled by JS in 15-detail-panel.js when a node is selected -->

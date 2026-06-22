@@ -13,13 +13,13 @@
                      start with 01-variables.css to change colours or fonts.
    assets/js/        JavaScript. Files are numbered in the order they load —
                      each one has a comment header explaining its job.
-   assets/data/      The sample CSV and the empty CSV template, openable in
+   assets/data/      The sample spreadsheet and the empty template, openable in
                      Excel or Google Sheets.
 
  ─── To edit the systems map ──────────────────────────────────────────────
    1. Open assets/data/sample.csv (or empty_template.csv) in Excel.
    2. Edit the rows.
-   3. Save as a .csv file.
+   3. Save as a spreadsheet (.csv) file.
    4. Drag-and-drop it onto the app.
 
  ─── To change colours / fonts ────────────────────────────────────────────
@@ -4194,7 +4194,7 @@ body.no-data .detail-panel {
         <circle cx="11" cy="11" r="8"></circle>
         <path d="m21 21-4.3-4.3"></path>
       </svg>
-      <input id="search-input" class="search-input" placeholder="Search nodes  (press /  ·  ↑↓ to step  ·  Esc to clear)">
+      <input id="search-input" class="search-input" placeholder="Search boxes  (press /  ·  ↑↓ to move  ·  Esc to clear)">
       <div id="search-results" class="search-results" hidden></div>
     </div>
 
@@ -4203,21 +4203,21 @@ body.no-data .detail-panel {
          Export ▾ menu, then the Simulate mode toggle past a divider. The
          trigger classes / ids are unchanged, so the handlers in 17-events.js
          still bind; 17-events.js also wires the Export-menu open/close. -->
-    <button class="header-button header-button--primary create-map-trigger" data-tooltip="Clear the canvas and start a fresh map from an empty 3×3 starter grid. Asks for confirmation if a map is loaded.">Create</button>
-    <button class="header-button edit-data-trigger"   data-tooltip="Open the form-based wizard pre-populated with the current map. Useful for bulk edits.">Edit</button>
-    <button class="header-button import-data-trigger" data-tooltip="Import a CSV map file from your computer. Same as drag-dropping a .csv onto the window.">Import</button>
+    <button class="header-button header-button--primary create-map-trigger" data-tooltip="Clear the map and start fresh from an empty 3×3 starter grid. Asks you to confirm if a map is loaded.">Create</button>
+    <button class="header-button edit-data-trigger"   data-tooltip="Open the form-based helper filled in with the current map. Handy for many edits at once.">Edit</button>
+    <button class="header-button import-data-trigger" data-tooltip="Open a map spreadsheet from your computer. Same as dragging a spreadsheet onto the window.">Import</button>
 
     <div class="header-menu" id="export-menu">
-      <button class="header-button header-menu-trigger" aria-haspopup="true" aria-expanded="false" data-tooltip="Get the map out — save as CSV, copy as a PNG image, or publish a view-only HTML page.">Export&nbsp;▾</button>
+      <button class="header-button header-menu-trigger" aria-haspopup="true" aria-expanded="false" data-tooltip="Get the map out — save as a spreadsheet, copy as a PNG image, or publish a view-only web page.">Export&nbsp;▾</button>
       <div class="header-menu-list" id="export-menu-list" hidden>
-        <button class="header-menu-item save-data-trigger"    data-tooltip="Save the current map as a CSV (openable in Excel / Sheets, or re-importable here).">Save CSV</button>
-        <button class="header-menu-item export-image-trigger" data-tooltip="Copy the canvas to the clipboard as a PNG image. Captures what's on screen. If a node is selected, only its highlighted nodes and edges are copied.">Export PNG</button>
-        <button class="header-menu-item publish-html-trigger" data-tooltip="Publish a self-contained, view-only HTML page of the canvas (pan / zoom / hover).">Publish HTML</button>
+        <button class="header-menu-item save-data-trigger"    data-tooltip="Save the current map as a spreadsheet (openable in Excel / Sheets, or load it back here).">Save CSV</button>
+        <button class="header-menu-item export-image-trigger" data-tooltip="Copy the map to the clipboard as a PNG image. Captures what's on screen. If a box is selected, only its highlighted boxes and links are copied.">Export PNG</button>
+        <button class="header-menu-item publish-html-trigger" data-tooltip="Publish a self-contained, view-only web page of the map (pan / zoom / hover).">Publish HTML</button>
       </div>
     </div>
 
     <span class="header-divider" aria-hidden="true"></span>
-    <button id="sim-toggle-button" class="header-button" data-tooltip="Toggle simulation mode — sliders on every controllable input, downstream values recompute live.">Simulate</button>
+    <button id="sim-toggle-button" class="header-button" data-tooltip="Turn on what-if mode — sliders on every adjustable input, and the values it affects update live.">Simulate</button>
   </header>
 
   <!-- Hidden file picker. Clicking any .import-data-trigger button triggers it. -->
@@ -4249,21 +4249,21 @@ body.no-data .detail-panel {
          is just a label + drag handle + pencil. -->
     <div class="sidebar-section" id="stages-section">
       <div class="sidebar-section-title">
-        <span>Stages</span>
+        <span>Columns</span>
         <span class="count" id="stages-count"></span>
       </div>
       <div id="stages-list"></div>
-      <button class="sidebar-add-btn" data-add="stage">+ Add stage</button>
+      <button class="sidebar-add-btn" data-add="stage">+ Add column</button>
     </div>
 
     <!-- Stream filters + editing — JS fills the list in 13-sidebar.js -->
     <div class="sidebar-section" id="stream-filters-section">
       <div class="sidebar-section-title">
-        <span>Streams</span>
+        <span>Rows</span>
         <span class="count" id="visible-streams-count"></span>
       </div>
       <div id="stream-filters"></div>
-      <button class="sidebar-add-btn" data-add="stream">+ Add stream</button>
+      <button class="sidebar-add-btn" data-add="stream">+ Add row</button>
     </div>
 
     <!-- Category filters + editing — JS fills the list in 13-sidebar.js.
@@ -4315,12 +4315,12 @@ body.no-data .detail-panel {
       <!-- Highlight-depth: how many connected levels light up when a node is
            selected. -->
       <div class="viz-depth-controls" id="viz-depth-controls"
-           title="How many connected levels to highlight when a node is selected">
-        <span class="viz-control-title">Highlight Depth</span>
+           title="How many connected levels to highlight when a box is selected">
+        <span class="viz-control-title">Highlight reach</span>
         <div class="viz-control-row">
-          <button class="viz-depth-button" id="viz-depth-down" aria-label="Decrease highlight depth">−</button>
+          <button class="viz-depth-button" id="viz-depth-down" aria-label="Decrease highlight reach">−</button>
           <span class="viz-depth-readout" id="viz-depth-readout">1</span>
-          <button class="viz-depth-button" id="viz-depth-up" aria-label="Increase highlight depth">+</button>
+          <button class="viz-depth-button" id="viz-depth-up" aria-label="Increase highlight reach">+</button>
         </div>
       </div>
 
@@ -4337,7 +4337,7 @@ body.no-data .detail-panel {
 
       <!-- "More" toggle reveals the advanced Highlight-Depth card, tucked away
            by default so Zoom is the only resting control. JS in 17-events.js. -->
-      <button class="viz-more-toggle" id="viz-more-toggle" title="More map controls (highlight depth)" aria-label="More map controls" aria-expanded="false">⋯</button>
+      <button class="viz-more-toggle" id="viz-more-toggle" title="More map controls (highlight reach)" aria-label="More map controls" aria-expanded="false">⋯</button>
 
     </div>
 
@@ -4354,14 +4354,14 @@ body.no-data .detail-panel {
             <line x1="12" y1="3" x2="12" y2="15"></line>
           </svg>
         </div>
-        <div class="drop-zone-title">Drop a CSV here to load a systems map</div>
+        <div class="drop-zone-title">Drop a spreadsheet here to load a systems map</div>
         <div class="drop-zone-subtitle">
-          Drop a CSV here, or use the buttons below. The map is driven by a CSV
-          defining streams, stages, categories, nodes, and edges — build it
-          directly on the canvas, or hand-edit in Excel / Google Sheets.
+          Drop a spreadsheet here, or use the buttons below. The map is driven by a spreadsheet
+          defining rows, columns, categories, boxes, and links — build it
+          directly on the map, or edit by hand in Excel / Google Sheets.
         </div>
         <div class="drop-zone-buttons">
-          <button class="drop-zone-button primary import-data-trigger">Choose CSV file</button>
+          <button class="drop-zone-button primary import-data-trigger">Choose spreadsheet file</button>
           <button class="drop-zone-button create-map-trigger">Start from empty grid</button>
         </div>
       </div>
@@ -4382,12 +4382,12 @@ body.no-data .detail-panel {
 
     <!-- Shown when no node is selected -->
     <div class="detail-empty" id="detail-empty">
-      <h3>Causal trace.</h3>
-      <p>Click any node to see what feeds into it and what it impacts downstream — recursively, across the whole map.</p>
-      <p>Click again to deselect. Use the streams in the left panel to hide branches.</p>
+      <h3>Cause and effect.</h3>
+      <p>Click any box to see what feeds into it and what it affects — step by step, across the whole map.</p>
+      <p>Click again to deselect. Use the rows in the left panel to hide branches.</p>
       <div class="hint">
-        <b>DATA</b> — All structure and quantification is loaded from a CSV. Use <b>Create</b> / <b>Edit</b> in the header for the form-based wizard, or hand-edit the CSV in Excel / Sheets and drag it back in.<br><br>
-        <b>EDGES</b> — Each link is annotated as <i>enables</i>, <i>increases</i>, or <i>decreases</i>, with an elasticity that drives simulation propagation.
+        <b>DATA</b> — All structure and numbers are loaded from a spreadsheet. Use <b>Create</b> / <b>Edit</b> in the header for the form-based helper, or edit the spreadsheet by hand in Excel / Sheets and drag it back in.<br><br>
+        <b>LINKS</b> — Each link is marked as <i>enables</i>, <i>increases</i>, or <i>decreases</i>, with a strength that drives the what-if results.
       </div>
     </div>
     <!-- Filled by JS in 15-detail-panel.js when a node is selected -->
@@ -4433,27 +4433,27 @@ const SAMPLE_CSV = `# Systems Map — Simple sample
 # A small, neutral worked example you can use as a placeholder while learning
 # the schema. Models a three-team product company (Operations, Sales,
 # Support) so most readers can follow the cause-and-effect chains without
-# any domain background. 12 nodes, 12 edges — small enough to grok at a
+# any domain background. 12 boxes, 12 links — small enough to grok at a
 # glance, big enough to exercise every feature of the app.
 #
 # Drag this file onto the app to load it. Edit in Excel, Sheets, or a plain
 # text editor. The "Build / Edit" wizard in the header is the no-spreadsheet
 # alternative.
 #
-# Sections (in order): streams, stages, categories, defaults, nodes, edges.
+# Sections (in order): streams (rows), stages (columns), categories, defaults, nodes (boxes), edges (links).
 
 # SECTION: streams
-# id    - unique stream identifier (referenced from nodes)
+# id    - unique row identifier (referenced from boxes)
 # label - display name
 # short - short label on the row header (uppercase, ~6 chars)
-# color - hex colour for the stream's left bar
+# color - hex colour for the row's left bar
 id,label,short,color
 ops,Operations,OPS,#60a5fa
 sales,Sales,SALES,#34d399
 support,Support,SUPPORT,#fbbf24
 
 # SECTION: stages
-# Columns of the map, rendered left-to-right in CSV order.
+# Columns of the map, shown left-to-right in CSV order.
 id,label
 resources,Resources
 activities,Activities
@@ -4461,8 +4461,8 @@ outputs,Outputs
 outcomes,Outcomes
 
 # SECTION: categories
-# Node types. class = primary (fill; several blend into a gradient) or
-# secondary (a small chip in the node's bottom-right). A node's category cell
+# Box types. class = primary (fill; several blend into a gradient) or
+# secondary (a small chip in the box's bottom-right). A box's category cell
 # can list several ids, pipe-separated (e.g. outcome|metric).
 id,label,color,text_color,class
 resource,Resource,#d4a373,#1c1917,primary
@@ -4472,18 +4472,18 @@ outcome,Outcome,#86efac,#052e16,primary
 risk,Risk,#fca5a5,#450a0a,secondary
 
 # SECTION: defaults
-# Used when an edge's \`elasticity\` cell is blank.
+# Used when a link's \`elasticity\` cell is blank.
 key,value
 elasticity_enables,0.3
 elasticity_increases,0.25
 elasticity_decreases,-0.25
 
 # SECTION: nodes
-# controllable=true exposes the node as a slider in Simulation mode.
-# direction (higher_better / lower_better) colours an outcome's halo
-# green/red when the value moves materially from baseline.
+# controllable=true exposes the box as a slider in Simulation mode.
+# direction (higher_better / lower_better) colours an outcome's glow
+# green/red when the value moves materially from its starting value.
 id,label,description,stream,stage,category,baseline,unit,controllable,direction,slider_max
-team_size,Team size,People working in the Operations stream.,ops,resources,resource,10,people,true,,3
+team_size,Team size,People working in Operations.,ops,resources,resource,10,people,true,,3
 marketing_spend,Marketing budget,Monthly spend on paid acquisition campaigns.,sales,resources,resource|risk,5000,£/mo,true,,3
 support_staff,Support staff,Customer support headcount.,support,resources,resource,4,people,true,,3
 content_production,Content production,Day-to-day writing and publishing of articles.,ops,activities,activity,,,,,
@@ -4497,9 +4497,9 @@ monthly_revenue,Monthly revenue,Total billable revenue for the month.,sales,outc
 customer_satisfaction,Customer satisfaction,CSAT score (0-100) from post-resolution surveys.,support,outcomes,outcome,85,% CSAT,,higher_better,
 
 # SECTION: edges
-# \`effect\` describes the causal role (enables / increases / decreases);
+# \`effect\` describes the cause-and-effect role (enables / increases / decreases);
 # \`elasticity\` is the % change in target per % change in source — leave
-# blank to fall back to the default for the effect type. \`decreases\` edges
+# blank to fall back to the default for the effect type. \`decreases\` links
 # should use a NEGATIVE elasticity number.
 from,to,effect,elasticity,description
 team_size,content_production,enables,,More people = more content output.
@@ -5789,17 +5789,17 @@ function _serializeShape(data) {
   lines.push("# Systems Map — generated by the in-app Build / Edit wizard");
   lines.push("# Drag this file back onto the app to reload it, or edit in Excel / Sheets.");
   lines.push("#");
-  lines.push("# Sections (in order): streams, stages, categories, defaults, nodes, edges.");
+  lines.push("# Sections (in order): streams (rows), stages (columns), categories, defaults, nodes (boxes), edges (links).");
   lines.push("# Lines starting with # are comments. The first non-comment row of each");
   lines.push("# section is the column header — do NOT change the column names.");
   lines.push("");
 
   // ───── streams ──────────────────────────────────────────────────────────
   lines.push("# SECTION: streams");
-  lines.push("# id    - unique stream identifier (referenced from nodes)");
+  lines.push("# id    - unique row identifier (used by the boxes below)");
   lines.push("# label - display name");
-  lines.push("# short - short label shown on the map row header (uppercase, ~6 chars)");
-  lines.push("# color - hex colour for the stream (e.g. #60a5fa)");
+  lines.push("# short - short label on the row header (uppercase, ~6 chars)");
+  lines.push("# color - hex colour for the row's left bar (e.g. #60a5fa)");
   lines.push("id,label,short,color");
   for (const stream of builder.streams || []) {
     lines.push(csvRow([stream.id, stream.label, stream.short, stream.color]));
@@ -5808,8 +5808,8 @@ function _serializeShape(data) {
 
   // ───── stages ───────────────────────────────────────────────────────────
   lines.push("# SECTION: stages");
-  lines.push("# id    - stage identifier (referenced from nodes)");
-  lines.push("# label - column header text on the map. Stages render left-to-right in CSV order.");
+  lines.push("# id    - column identifier (used by the boxes below)");
+  lines.push("# label - column header text on the map. Columns show left-to-right in CSV order.");
   lines.push("id,label");
   for (const stage of builder.stages || []) {
     lines.push(csvRow([stage.id, stage.label]));
@@ -5818,12 +5818,12 @@ function _serializeShape(data) {
 
   // ───── categories ───────────────────────────────────────────────────────
   lines.push("# SECTION: categories");
-  lines.push("# id         - category identifier (referenced from nodes)");
+  lines.push("# id         - category identifier (used by the boxes below)");
   lines.push("# label      - display name shown in the sidebar legend");
-  lines.push("# color      - fill colour for nodes of this category (hex)");
+  lines.push("# color      - fill colour for boxes of this category (hex)");
   lines.push("# text_color - label text colour (hex). Pick a high-contrast value.");
   lines.push("# class      - 'primary' (fill; several blend into a gradient) or");
-  lines.push("#             'secondary' (a small chip in the node's bottom-right). Default primary.");
+  lines.push("#             'secondary' (a small chip in the box's bottom-right). Default primary.");
   lines.push("id,label,color,text_color,class");
   for (const category of builder.categories || []) {
     lines.push(csvRow([category.id, category.label, category.color, category.textColor, category.class || "primary"]));
@@ -5832,8 +5832,8 @@ function _serializeShape(data) {
 
   // ───── defaults ─────────────────────────────────────────────────────────
   lines.push("# SECTION: defaults");
-  lines.push("# Default elasticities used when an edge's `elasticity` cell is blank.");
-  lines.push("# Elasticity = percent change in target value per percent change in source value.");
+  lines.push("# Default strengths used when a link's `elasticity` cell is blank.");
+  lines.push("# Strength = percent change in the target's value per percent change in the source's value.");
   lines.push("key,value");
   const defaults = builder.defaults || { enables: 0.30, increases: 0.25, decreases: -0.25 };
   lines.push(csvRow([ELASTICITY_KEYS.enables,   defaults.enables]));
@@ -5847,7 +5847,7 @@ function _serializeShape(data) {
   lines.push("# category: one or more category ids, pipe-separated (e.g. resource|risk). Each id's");
   lines.push("#           class decides whether it's a fill (primary) or a corner chip (secondary).");
   lines.push("# Optional (enables simulation): baseline, unit, controllable, direction, slider_max.");
-  lines.push("# controllable: 'true' to expose as a slider. direction: higher_better / lower_better / neutral.");
+  lines.push("# controllable: 'true' to show as a slider. direction: higher_better / lower_better / neutral.");
   lines.push("id,label,description,stream,stage,category,baseline,unit,controllable,direction,slider_max");
   for (const node of builder.nodes || []) {
     lines.push(csvRow([
@@ -5868,9 +5868,9 @@ function _serializeShape(data) {
 
   // ───── edges ────────────────────────────────────────────────────────────
   lines.push("# SECTION: edges");
-  lines.push("# from / to    - source and target node ids");
+  lines.push("# from / to    - source and target box ids");
   lines.push("# effect       - enables / increases / decreases");
-  lines.push("# elasticity   - OPTIONAL per-edge override. Blank = use default for the effect.");
+  lines.push("# elasticity   - OPTIONAL per-link override (strength). Blank = use the default for the effect.");
   lines.push("# style        - OPTIONAL line style: 'dashed', or blank for solid (default).");
   lines.push("# description  - explanation shown in the detail panel");
   lines.push("from,to,effect,elasticity,style,description");
@@ -6130,7 +6130,7 @@ function loadDataFromCsv(csvText) {
   for (const row of sections.nodes) {
     if (!row.id) continue;
     if (seenNodeIds.has(row.id)) {
-      errors.push("Duplicate node id: " + row.id);
+      errors.push("Duplicate box id: " + row.id);
       continue;
     }
     seenNodeIds.add(row.id);
@@ -6139,8 +6139,8 @@ function loadDataFromCsv(csvText) {
     // them would crash the renderer when it dereferences streamById[…]
     // or CATEGORIES[…]. We still log a warning so the user can fix the CSV.
     let hasInvalidRefs = false;
-    if (!streamIdSet.has(row.stream))     { errors.push("Node `" + row.id + "` references unknown stream `"   + row.stream   + "`. Skipped."); hasInvalidRefs = true; }
-    if (!stageIdSet.has(row.stage))       { errors.push("Node `" + row.id + "` references unknown stage `"    + row.stage    + "`. Skipped."); hasInvalidRefs = true; }
+    if (!streamIdSet.has(row.stream))     { errors.push("Box `" + row.id + "` refers to a row that does not exist: `"   + row.stream   + "`. Skipped."); hasInvalidRefs = true; }
+    if (!stageIdSet.has(row.stage))       { errors.push("Box `" + row.id + "` refers to a column that does not exist: `"    + row.stage    + "`. Skipped."); hasInvalidRefs = true; }
 
     // `category` is a pipe-separated list of category ids. Each id's class
     // (primary/secondary) decides how it renders. Unknown ids are dropped with
@@ -6148,8 +6148,8 @@ function loadDataFromCsv(csvText) {
     const rawCatIds = String(row.category == null ? "" : row.category).split("|").map(s => s.trim()).filter(Boolean);
     const seenCat = new Set();
     const validCatIds = rawCatIds.filter(id => categoryIdSet.has(id) && !seenCat.has(id) && seenCat.add(id));
-    for (const u of new Set(rawCatIds.filter(id => !categoryIdSet.has(id)))) errors.push("Node `" + row.id + "` references unknown category `" + u + "` (ignored).");
-    if (validCatIds.length === 0) { errors.push("Node `" + row.id + "` has no valid category. Skipped."); hasInvalidRefs = true; }
+    for (const u of new Set(rawCatIds.filter(id => !categoryIdSet.has(id)))) errors.push("Box `" + row.id + "` refers to a category that does not exist: `" + u + "` (ignored).");
+    if (validCatIds.length === 0) { errors.push("Box `" + row.id + "` has no valid category. Skipped."); hasInvalidRefs = true; }
     if (hasInvalidRefs) continue;
 
     const catSplit = splitCategoriesByClass(validCatIds, parsedCategories);
@@ -6179,7 +6179,7 @@ function loadDataFromCsv(csvText) {
     const baselineValue = parseNumericCell(row.baseline);
     if (baselineValue !== undefined) {
       if (baselineValue === 0) {
-        errors.push("Node `" + row.id + "` has baseline 0 — must be positive (simulation divides by baseline). Baseline ignored.");
+        errors.push("Box `" + row.id + "` has starting value 0 — must be positive (the what-if maths divides by the starting value). Starting value ignored.");
       } else {
         node.baseline = baselineValue;
       }
@@ -6200,12 +6200,12 @@ function loadDataFromCsv(csvText) {
   if (sections.edges) {
     for (const row of sections.edges) {
       if (!row.from || !row.to) continue;
-      if (!nodeIdSet.has(row.from)) { errors.push("Edge from unknown node: " + row.from); continue; }
-      if (!nodeIdSet.has(row.to))   { errors.push("Edge to unknown node: "   + row.to);   continue; }
+      if (!nodeIdSet.has(row.from)) { errors.push("Link from a box that does not exist: " + row.from); continue; }
+      if (!nodeIdSet.has(row.to))   { errors.push("Link to a box that does not exist: "   + row.to);   continue; }
 
       const effect = (row.effect || "enables").toLowerCase();
       if (!EFFECT_OPTIONS.includes(effect)) {
-        errors.push("Edge " + row.from + "→" + row.to + " has invalid effect `" + row.effect + "`.");
+        errors.push("Link " + row.from + "→" + row.to + " has invalid effect `" + row.effect + "`.");
         continue;
       }
 
@@ -6260,7 +6260,7 @@ function loadDataFromCsv(csvText) {
   // visually obvious (the map renders); the count is also visible in the
   // sidebar filter counts, so we don't need an extra notification.
   if (errors.length > 0) {
-    const summary = NODES.length + " nodes, " + EDGES.length + " edges, " + STREAMS.length + " streams";
+    const summary = NODES.length + " boxes, " + EDGES.length + " links, " + STREAMS.length + " rows";
     const loopNote = state.solverStatus.feedbackLoopCount > 0
       ? " " + state.solverStatus.feedbackLoopCount + " feedback loop(s)."
       : "";
@@ -6273,7 +6273,7 @@ function loadDataFromCsv(csvText) {
   // user that the loop needs taming rather than letting them trust the numbers.
   if (!state.solverStatus.converged) {
     showLoadFeedback(
-      "Feedback loop didn't stabilise (gain ≥ 1) — values clamped. Reduce elasticities on the highlighted loop.",
+      "Feedback loop didn't stabilise (gain ≥ 1) — values clamped. Reduce the strength values on the highlighted loop.",
       true,
     );
   }
@@ -7450,7 +7450,7 @@ function render() {
       const y = slotTopY(cursorCell.streamId, cursorCell.stageId, slot);
       content += '<g class="cursor-cell">';
       content +=   '<rect x="' + x + '" y="' + y + '" width="' + NODE_WIDTH + '" height="' + NODE_HEIGHT + '" rx="5"></rect>';
-      content +=   '<text x="' + (x + NODE_WIDTH / 2) + '" y="' + (y + NODE_HEIGHT / 2) + '" text-anchor="middle" dominant-baseline="central">Type to create a node</text>';
+      content +=   '<text x="' + (x + NODE_WIDTH / 2) + '" y="' + (y + NODE_HEIGHT / 2) + '" text-anchor="middle" dominant-baseline="central">Type to create a box</text>';
       content += '</g>';
     }
   }
@@ -7472,7 +7472,7 @@ function render() {
     const ghostX = layout.colX[hoverCell.stageId];
     // Cumulative top of the gap computeLayout opened for this insert slot.
     const ghostY = slotTopY(hoverCell.streamId, hoverCell.stageId, insertSlot);
-    const ghostLabel = "+ add node";
+    const ghostLabel = "+ add box";
     content += '<g class="ghost-cell" data-stream-id="' + escapeHtml(hoverCell.streamId) + '" data-stage-id="' + escapeHtml(hoverCell.stageId) + '" data-insert-index="' + insertSlot + '">';
     content +=   '<rect x="' + ghostX + '" y="' + ghostY + '" width="' + NODE_WIDTH + '" height="' + NODE_HEIGHT + '" rx="5"></rect>';
     content +=   '<text x="' + (ghostX + NODE_WIDTH / 2) + '" y="' + (ghostY + NODE_HEIGHT / 2) + '" text-anchor="middle" dominant-baseline="central">' + ghostLabel + '</text>';
@@ -7839,8 +7839,8 @@ function render() {
     const cx = (ROW_HEADER_WIDTH + layout.totalWidth) / 2;
     const cy = (SVG_PADDING_TOP + COL_HEADER_HEIGHT + layout.totalHeight) / 2;
     content += '<text class="empty-state-hint" x="' + cx + '" y="' + cy + '" text-anchor="middle" dominant-baseline="middle">';
-    content +=   '<tspan x="' + cx + '" dy="0">Click any cell to add your first node.</tspan>';
-    content +=   '<tspan x="' + cx + '" dy="1.5em" class="empty-state-hint-sub">Drag from a node\'s right edge to draw an edge. Press Delete to remove. Need bulk import? Use Build map.</tspan>';
+    content +=   '<tspan x="' + cx + '" dy="0">Click any cell to add your first box.</tspan>';
+    content +=   '<tspan x="' + cx + '" dy="1.5em" class="empty-state-hint-sub">Drag from a box\'s right edge to draw a link. Press Delete to remove. Need bulk import? Use Build map.</tspan>';
     content += '</text>';
   }
 
@@ -7942,8 +7942,8 @@ function showTooltip(node, event) {
         '<span class="tooltip-quant-label">Current:</span> ' +
         '<span class="tooltip-quant-value">' + escapeHtml(valueStr) + '</span>' +
         (deltaInfo.text && deltaInfo.text !== "—"
-          ? ' <span class="tooltip-quant-delta">(' + escapeHtml(deltaInfo.text) + ' vs ' + escapeHtml(baselineStr) + ')</span>'
-          : ' <span class="tooltip-quant-delta">baseline ' + escapeHtml(baselineStr) + '</span>') +
+          ? ' <span class="tooltip-quant-delta">(' + escapeHtml(deltaInfo.text) + ' vs starting value ' + escapeHtml(baselineStr) + ')</span>'
+          : ' <span class="tooltip-quant-delta">starting value ' + escapeHtml(baselineStr) + '</span>') +
       '</div>';
   }
 
@@ -8054,7 +8054,7 @@ function renderStagesList() {
   if (countEl) countEl.textContent = STAGES.filter(s => !state.hiddenStages.has(s.id)).length + " / " + STAGES.length;
 
   if (STAGES.length === 0) {
-    container.innerHTML = '<div class="sidebar-empty">No stages yet. Click "+ Add stage" to create one.</div>';
+    container.innerHTML = '<div class="sidebar-empty">No columns yet. Click "+ Add column" to create one.</div>';
     return;
   }
 
@@ -8063,12 +8063,12 @@ function renderStagesList() {
     const stage = STAGES[i];
     const count = NODES.reduce((acc, n) => n.stage === stage.id ? acc + 1 : acc, 0);
     const isHidden = state.hiddenStages.has(stage.id);
-    const tip = (isHidden ? "Click to show " : "Click to hide ") + stage.label + " — " + count + " node" + (count === 1 ? "" : "s") + " on the map. Double-click the name to rename.";
+    const tip = (isHidden ? "Click to show " : "Click to hide ") + stage.label + " — " + count + " box" + (count === 1 ? "" : "es") + " on the map. Double-click the name to rename.";
     html += '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="stage" data-id="' + escapeHtml(stage.id) + '" data-index="' + i + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
     html +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
     html +=   '<span class="sidebar-edit-label sidebar-inline-edit" data-field="label" title="Double-click to rename">' + escapeHtml(stage.label) + '</span>';
     html +=   '<span class="count-swatch count-swatch--plain">' + count + '</span>';
-    html +=   deleteIconButton("Delete stage");
+    html +=   deleteIconButton("Delete column");
     html += '</div>';
   }
   html += '<div class="sidebar-drop-end" data-kind="stage" data-target-index="' + STAGES.length + '"></div>';
@@ -8083,7 +8083,7 @@ function renderStreamsList() {
   if (!container) return;
 
   if (STREAMS.length === 0) {
-    container.innerHTML = '<div class="sidebar-empty">No streams yet. Click "+ Add stream" to create one.</div>';
+    container.innerHTML = '<div class="sidebar-empty">No rows yet. Click "+ Add row" to create one.</div>';
     const visEl = document.getElementById("visible-streams-count");
     if (visEl) visEl.textContent = "0 / 0";
     return;
@@ -8096,13 +8096,13 @@ function renderStreamsList() {
     const count = streamNodeCount[stream.id] || 0;
     const short = stream.short || (typeof deriveShortLabel === "function" ? deriveShortLabel(stream.label) : "");
 
-    const tip = (isHidden ? "Click to show " : "Click to hide ") + stream.label + " — " + count + " node" + (count === 1 ? "" : "s") + " on the map. Double-click the name to rename.";
+    const tip = (isHidden ? "Click to show " : "Click to hide ") + stream.label + " — " + count + " box" + (count === 1 ? "" : "es") + " on the map. Double-click the name to rename.";
     html += '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="stream" data-id="' + escapeHtml(stream.id) + '" data-index="' + i + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
     html +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
     html +=   '<div class="filter-label sidebar-inline-edit" data-field="label" title="Double-click to rename">' + escapeHtml(stream.label) + '</div>';
     html +=   '<span class="sidebar-short-chip sidebar-inline-edit" data-field="short" title="Double-click to edit short label">' + escapeHtml(short) + '</span>';
     html +=   countSwatch(stream.color, count);
-    html +=   deleteIconButton("Delete stream");
+    html +=   deleteIconButton("Delete row");
     html += '</div>';
   }
   html += '<div class="sidebar-drop-end" data-kind="stream" data-target-index="' + STREAMS.length + '"></div>';
@@ -8135,11 +8135,11 @@ function renderCategoriesList() {
     const isHidden = state.hiddenCategories.has(catId);
     const count = categoryNodeCount[catId] || 0;
     const isSecondary = (cat.class || "primary") === "secondary";
-    const reclassLabel = isSecondary ? "→ fill" : "→ chip";
+    const reclassLabel = isSecondary ? "→ fill" : "→ corner tag";
     const reclassTitle = isSecondary
-      ? "Make this a Primary category (fill; several blend into a gradient)"
-      : "Make this a Secondary category (a corner chip)";
-    const tip = (isHidden ? "Click to show " : "Click to hide ") + cat.label + " — " + count + " node" + (count === 1 ? "" : "s") + " on the map. Double-click the name to rename.";
+      ? "Make this a Main category (fill; several blend into a gradient)"
+      : "Make this a Corner tag category (a corner tag)";
+    const tip = (isHidden ? "Click to show " : "Click to hide ") + cat.label + " — " + count + " box" + (count === 1 ? "" : "es") + " on the map. Double-click the name to rename.";
     let h = '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="category" data-id="' + escapeHtml(catId) + '" data-index="' + indexOf[catId] + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
     h +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
     h +=   '<div class="filter-label sidebar-inline-edit" data-field="label" title="Double-click to rename">' + escapeHtml(cat.label) + '</div>';
@@ -8160,9 +8160,9 @@ function renderCategoriesList() {
 
   const split = splitCategoriesByClass(allIds);
   let html = "";
-  html += group("Primary",      "primary",   split.primary,   "+ Add primary");
+  html += group("Main",      "primary",   split.primary,   "+ Add main");
   html += '<div class="sidebar-cat-group-gap"></div>';
-  html += group("Secondary",   "secondary", split.secondary, "+ Add secondary");
+  html += group("Corner tag",   "secondary", split.secondary, "+ Add corner tag");
   html += '<div class="sidebar-drop-end" data-kind="category" data-target-index="' + allIds.length + '"></div>';
   container.innerHTML = html;
 
@@ -8188,8 +8188,8 @@ const EDGE_TYPE_FILTERS = [
   { id: "decreases", label: "Decreases" },
 ];
 const TRACE_FILTERS = [
-  { id: "ancestors",   label: "Upstream sources",   varName: "--edge-ancestor"   },
-  { id: "descendants", label: "Downstream impacts", varName: "--edge-descendant" },
+  { id: "ancestors",   label: "What affects it",   varName: "--edge-ancestor"   },
+  { id: "descendants", label: "What it affects", varName: "--edge-descendant" },
 ];
 const LINE_STYLE_FILTERS = [
   { id: "solid",  label: "Solid",  swatchClass: "legend-line-solid"  },
@@ -8201,16 +8201,16 @@ const LINE_STYLE_FILTERS = [
 // no count, for the trace group). renderLegendFilters loops over these so the
 // three groups share one render path.
 const LEGEND_FILTER_GROUPS = [
-  { kind: "effect", containerId: "edge-type-filters",  title: "Edge types", ctx: "edges on the map",
+  { kind: "effect", containerId: "edge-type-filters",  title: "Link types", ctx: "links on the map",
     items: EDGE_TYPE_FILTERS,  hiddenSet: () => state.hiddenEffects,
     swatch: (f, count) => edgeCountBadge(f.id, count),
     count:  (f, counts) => counts.effects[f.id] || 0,
     countInSwatch: true },
-  { kind: "style", containerId: "edge-style-filters", title: "Line style", ctx: "edges on the map",
+  { kind: "style", containerId: "edge-style-filters", title: "Line style", ctx: "links on the map",
     items: LINE_STYLE_FILTERS, hiddenSet: () => state.hiddenStyles,
     swatch: f => '<div class="legend-line ' + f.swatchClass + '"></div>',
     count:  () => null },
-  { kind: "trace", containerId: "trace-filters", title: "Trace", ctx: "when a node is selected",
+  { kind: "trace", containerId: "trace-filters", title: "Highlighting", ctx: "when a box is selected",
     items: TRACE_FILTERS, hiddenSet: () => state.hiddenTrace,
     swatch: f => '<div class="legend-swatch" style="box-shadow: inset 0 0 0 2px var(' + f.varName + '), 0 0 4px var(' + f.varName + ');"></div>',
     count:  () => null },
@@ -8599,10 +8599,10 @@ function renderSimulationPanel() {
   // ───── Build the HTML ─────────────────────────────────────────────────
   let html = "";
   html += '<div class="sim-header">';
-  html +=   '<div class="sim-title">Input Sliders</div>';
+  html +=   '<div class="sim-title">Adjustable inputs</div>';
   html +=   '<button class="sim-reset" id="sim-reset-button">Reset</button>';
   html += '</div>';
-  html += '<div class="sim-help">Drag the slider or type a value. Downstream nodes recompute live.</div>';
+  html += '<div class="sim-help">Drag a slider or type a value. Everything it affects updates live.</div>';
   // Placeholder for the feedback-loop non-convergence warning. Kept in the DOM
   // (toggled via updateSimSolverBadge) so slider drags can update it inline
   // without re-rendering the whole panel and stealing focus.
@@ -8706,7 +8706,7 @@ function updateSimSolverBadge() {
   const badge = document.getElementById("sim-solver-badge");
   if (!badge) return;
   if (state.solverStatus && !state.solverStatus.converged) {
-    badge.textContent = "⚠ Feedback loop didn't stabilise — values clamped. Lower the loop's elasticities.";
+    badge.textContent = "⚠ A feedback loop did not settle — values capped. Lower the strength on the loop's links.";
     badge.style.display = "block";
   } else {
     badge.style.display = "none";
@@ -8910,7 +8910,7 @@ function renderNodeSkeleton(node, editMode) {
 
   // ── Name: display ↔ display-styled input, in the same slot ───────────
   if (editMode) {
-    html += '<input type="text" class="detail-edit-input detail-name-input" data-field="label" value="' + escapeHtml(node.label || "") + '" aria-label="Node name">';
+    html += '<input type="text" class="detail-edit-input detail-name-input" data-field="label" value="' + escapeHtml(node.label || "") + '" aria-label="Box name">';
   } else {
     html += '<div class="detail-name">' + escapeHtml(node.label) + '</div>';
   }
@@ -8926,14 +8926,14 @@ function renderNodeSkeleton(node, editMode) {
   html += '<div class="detail-mode-toggle">';
   html += editMode
     ? '<button class="detail-mode-button active" data-action="toggle-edit-mode" aria-pressed="true">Done editing</button>'
-    : '<button class="detail-mode-button" data-action="toggle-edit-mode" aria-pressed="false">Edit Node</button>';
+    : '<button class="detail-mode-button" data-action="toggle-edit-mode" aria-pressed="false">Edit box</button>';
   html += '</div>';
 
   // ── Identity edit controls (edit only): the chips' source fields ─────
   if (editMode) {
     html += '<div class="detail-edit-block">';
-    html += editRow("Stream", selectInput("stream", STREAMS.map(s => ({ value: s.id, label: s.label })), node.stream));
-    html += editRow("Stage",  selectInput("stage",  STAGES.map(s => ({ value: s.id, label: s.label })),  node.stage));
+    html += editRow("Row", selectInput("stream", STREAMS.map(s => ({ value: s.id, label: s.label })), node.stream));
+    html += editRow("Column",  selectInput("stage",  STAGES.map(s => ({ value: s.id, label: s.label })),  node.stage));
     html += editRow("Categories", categoryEditControl(node));
     html += '</div>';
   }
@@ -8943,22 +8943,22 @@ function renderNodeSkeleton(node, editMode) {
 
   // ── Direct inputs — read-only stripes in BOTH modes (incoming edges
   //    are edited from the source node; clicking jumps there) ───────────
-  html += renderEdgeList("Direct Inputs", directInputs, "from", "No direct inputs (root cause / exogenous resource)");
+  html += renderEdgeList("What feeds in", directInputs, "from", "Nothing feeds into this box — it is a starting input.");
   if (editMode && directInputs.length) {
-    html += '<div class="detail-edge-hint">Edit an input from its source node →</div>';
+    html += '<div class="detail-edge-hint">Edit a link from the box it starts at →</div>';
   }
 
   // ── Direct impacts — read-only stripes (view) ↔ editable editors (edit) ─
   if (editMode) {
     html += renderOutgoingEdgesBlock(node);
   } else {
-    html += renderEdgeList("Direct Impacts", directImpacts, "to", "No direct impacts (terminal outcome)");
+    html += renderEdgeList("What it affects", directImpacts, "to", "This box does not affect anything else — it is a final result.");
   }
 
   // ── Delete node (edit only) ──────────────────────────────────────────
   if (editMode) {
     html += '<div class="detail-actions">';
-    html += '<button class="detail-button detail-delete-btn" data-action="delete-node">Delete node</button>';
+    html += '<button class="detail-button detail-delete-btn" data-action="delete-node">Delete box</button>';
     html += '</div>';
   }
 
@@ -8995,13 +8995,13 @@ function renderQuantFrame(node, editMode) {
   let html = '<div class="detail-quant-block">';
 
   // Baseline — display value ↔ number input on the rail
-  html += row("Baseline", editMode
+  html += row("Starting value", editMode
     ? '<input type="number" step="any" class="detail-edit-input detail-edit-number detail-quant-input" data-field="baseline" value="' + (hasBaseline ? node.baseline : "") + '" placeholder="—">'
     : '<span class="detail-quant-value">' + escapeHtml(formatScalar(node.baseline)) + ' ' + escapeHtml(unit) + '</span>');
 
   // Unit — edit only (folded into the value displays in view)
   if (editMode) {
-    html += row("Unit", '<input type="text" class="detail-edit-input detail-quant-input detail-quant-input-text" data-field="unit" value="' + escapeHtml(unit) + '" placeholder="FTE, %, …">');
+    html += row("Unit", '<input type="text" class="detail-edit-input detail-quant-input detail-quant-input-text" data-field="unit" value="' + escapeHtml(unit) + '" placeholder="%, people, £, …">');
   }
 
   // Current — computed; read-only in edit, an input only in view + sim mode
@@ -9012,13 +9012,13 @@ function renderQuantFrame(node, editMode) {
   }
 
   // Δ vs baseline — computed (read-only in both)
-  html += row("Δ vs baseline", '<span class="detail-quant-value' + (editMode ? ' detail-quant-derived' : '') + '" style="color:' + deltaColor + '; font-weight:600;">' + escapeHtml(deltaInfo.text || '—') + '</span>');
+  html += row("Change vs start", '<span class="detail-quant-value' + (editMode ? ' detail-quant-derived' : '') + '" style="color:' + deltaColor + '; font-weight:600;">' + escapeHtml(deltaInfo.text || '—') + '</span>');
 
   // Controllable (edit checkbox) / Type (view descriptor)
   if (editMode) {
-    html += row("Controllable", '<label class="detail-quant-check"><input type="checkbox" data-field="controllable"' + (node.controllable ? " checked" : "") + '> sliderable</label>');
+    html += row("Adjustable", '<label class="detail-quant-check"><input type="checkbox" data-field="controllable"' + (node.controllable ? " checked" : "") + '> has a slider</label>');
   } else if (node.controllable) {
-    html += row("Type", '<span class="detail-quant-value" style="color: var(--text-tertiary);">Exogenous (sliderable)</span>');
+    html += row("Type", '<span class="detail-quant-value" style="color: var(--text-tertiary);">External input (adjustable)</span>');
   }
 
   // Outcome direction — descriptor ↔ select
@@ -9064,8 +9064,8 @@ function categoryEditControl(node) {
     }
     return h + '</div>';
   };
-  return group("Primary · fill", byClass.primary, primSet) +
-         group("Secondary · chips", byClass.secondary, secSet);
+  return group("Main · fills the box", byClass.primary, primSet) +
+         group("Corner tag", byClass.secondary, secSet);
 }
 
 // Category / stream / stage tag chips shown at the top of both view and edit
@@ -9108,10 +9108,10 @@ function renderOutgoingEdgesBlock(node) {
   const adding = state.canvasEdit && state.canvasEdit.addingEdgeFromNodeId === node.id;
 
   let html = '<div class="outgoing-edges-block">';
-  html +=   '<div class="detail-list-title"><span>Direct Impacts</span><span class="count">' + outgoing.length + '</span></div>';
+  html +=   '<div class="detail-list-title"><span>What it affects</span><span class="count">' + outgoing.length + '</span></div>';
 
   if (outgoing.length === 0) {
-    html += '<div class="outgoing-edges-empty">No outgoing edges yet. Drag from the right edge of this node on the canvas, or add one below.</div>';
+    html += '<div class="outgoing-edges-empty">No links out yet. Drag from the right edge of this box on the map, or add one below.</div>';
   } else {
     for (const edge of outgoing) {
       const target = nodeById[edge.to];
@@ -9119,8 +9119,8 @@ function renderOutgoingEdgesBlock(node) {
       const flashClass = (edge.id === flashedId) ? " flash" : "";
       html += '<div class="edge-stripe edge-stripe--edit ' + edge.effect + flashClass + '" data-edge-row-id="' + escapeHtml(edge.id) + '">';
       html +=   '<div class="outgoing-edge-header">';
-      html +=     '<button class="outgoing-edge-target-link" data-jump-node="' + escapeHtml(edge.to) + '" title="Jump to target node">→ ' + escapeHtml(target ? target.label : edge.to) + '</button>';
-      html +=     '<button class="outgoing-edge-delete" data-edge-action="delete" data-edge-id="' + escapeHtml(edge.id) + '" title="Delete this edge">×</button>';
+      html +=     '<button class="outgoing-edge-target-link" data-jump-node="' + escapeHtml(edge.to) + '" title="Jump to the box this affects">→ ' + escapeHtml(target ? target.label : edge.to) + '</button>';
+      html +=     '<button class="outgoing-edge-delete" data-edge-action="delete" data-edge-id="' + escapeHtml(edge.id) + '" title="Delete this link">×</button>';
       html +=   '</div>';
       html +=   '<div class="outgoing-edge-controls">';
       html +=     '<select class="detail-edit-input detail-edit-select" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="effect">';
@@ -9128,7 +9128,7 @@ function renderOutgoingEdgesBlock(node) {
         html +=     '<option value="' + eff + '"' + (edge.effect === eff ? " selected" : "") + '>' + eff + '</option>';
       }
       html +=     '</select>';
-      html +=     '<input type="number" step="any" class="detail-edit-input detail-edit-number outgoing-edge-elasticity" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="elasticity" value="' + (edge.elasticity !== undefined && edge.elasticity !== null ? edge.elasticity : "") + '" placeholder="ε = ' + defaultElasticity + '" title="Elasticity (blank = default for this effect)">';
+      html +=     '<input type="number" step="any" class="detail-edit-input detail-edit-number outgoing-edge-elasticity" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="elasticity" value="' + (edge.elasticity !== undefined && edge.elasticity !== null ? edge.elasticity : "") + '" placeholder="default ' + defaultElasticity + '" title="Strength (leave blank for the default for this link type)">';
       html +=     '<select class="detail-edit-input detail-edit-select outgoing-edge-style" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="style" title="Line style">';
       html +=       '<option value="solid"'  + (edge.style === "dashed" ? "" : " selected") + '>Solid</option>';
       html +=       '<option value="dashed"' + (edge.style === "dashed" ? " selected" : "") + '>Dashed</option>';
@@ -9153,12 +9153,12 @@ function renderOutgoingEdgesBlock(node) {
     html += '<div class="outgoing-edge-add">';
     if (otherNodes.length === 0) {
       const emptyMsg = hasAnyOtherNode
-        ? "All other nodes are already connected."
-        : "Add at least one other node before connecting edges.";
+        ? "Every other box is already linked."
+        : "Add at least one more box before drawing links.";
       html +=   '<div class="outgoing-edges-empty">' + emptyMsg + '</div>';
       html +=   '<button class="detail-edit-link" data-action="cancel-add-edge">Cancel</button>';
     } else {
-      html +=   '<div class="outgoing-edge-add-title">Add outgoing edge</div>';
+      html +=   '<div class="outgoing-edge-add-title">Add a link out</div>';
       html +=   '<div class="outgoing-edge-add-row">';
       html +=     '<select class="detail-edit-input detail-edit-select" data-action="pick-add-target">';
       for (const n of otherNodes) {
@@ -9173,12 +9173,12 @@ function renderOutgoingEdgesBlock(node) {
       html +=   '</div>';
       html +=   '<div class="outgoing-edge-add-actions">';
       html +=     '<button class="detail-edit-link" data-action="cancel-add-edge">Cancel</button>';
-      html +=     '<button class="detail-button" data-action="confirm-add-edge">Add edge</button>';
+      html +=     '<button class="detail-button" data-action="confirm-add-edge">Add link</button>';
       html +=   '</div>';
     }
     html += '</div>';
   } else {
-    html += '<button class="detail-edit-link outgoing-edge-add-toggle" data-action="show-add-edge">+ Add outgoing edge</button>';
+    html += '<button class="detail-edit-link outgoing-edge-add-toggle" data-action="show-add-edge">+ Add a link out</button>';
   }
 
   html += '</div>';
@@ -9445,13 +9445,13 @@ function renderEdgeItem(otherNode, edge, direction) {
   const arrow = direction === "from" ? "←" : "→";
   const elasticity = resolveEdgeElasticity(edge);
   const elasticitySign = elasticity > 0 ? "+" : "";
-  const elasticityText = elasticity !== 0 ? "ε = " + elasticitySign + elasticity.toFixed(2) : "ε = 0";
+  const elasticityText = elasticity !== 0 ? "Strength " + elasticitySign + elasticity.toFixed(2) : "Strength 0";
 
   // A real <button> so the "jump to the connected node" action is Tab-reachable
   // and Enter/Space-activatable (the click handler in wireViewModeHandlers works
   // unchanged). aria-label names the otherwise-implicit navigate action.
-  const jumpDir = direction === "from" ? "upstream" : "downstream";
-  let html = '<button type="button" class="edge-stripe edge-stripe--nav ' + effectClass + '" data-target-node="' + escapeHtml(otherNode.id) + '" aria-label="Jump to ' + jumpDir + ' node: ' + escapeHtml(otherNode.label) + '">';
+  const jumpDir = direction === "from" ? "(affects this)" : "(this affects)";
+  let html = '<button type="button" class="edge-stripe edge-stripe--nav ' + effectClass + '" data-target-node="' + escapeHtml(otherNode.id) + '" aria-label="Jump to ' + escapeHtml(otherNode.label) + ' ' + jumpDir + '">';
   html +=   '<div class="detail-edge-header">';
   html +=     '<div class="detail-edge-name">' + arrow + ' ' + escapeHtml(otherNode.label) + '</div>';
   html +=     '<div class="detail-edge-elasticity">' + escapeHtml(elasticityText) + '</div>';
@@ -9575,11 +9575,11 @@ function loadEmbeddedSample() {
 
 // ───── Constants ──────────────────────────────────────────────────────────
 const BUILDER_STEPS = [
-  { num: 1, key: "streams",    label: "Streams" },
-  { num: 2, key: "stages",     label: "Stages" },
+  { num: 1, key: "streams",    label: "Rows" },
+  { num: 2, key: "stages",     label: "Columns" },
   { num: 3, key: "categories", label: "Categories" },
-  { num: 4, key: "nodes",      label: "Nodes" },
-  { num: 5, key: "edges",      label: "Edges" },
+  { num: 4, key: "nodes",      label: "Boxes" },
+  { num: 5, key: "edges",      label: "Links" },
   { num: 6, key: "review",     label: "Review" },
 ];
 
@@ -9836,20 +9836,20 @@ function validateBuilder() {
   const b = state.builder;
   const errors = [];
 
-  if (b.streams.length === 0)    errors.push("Add at least one stream (Step 1).");
-  if (b.stages.length === 0)     errors.push("Add at least one stage (Step 2).");
+  if (b.streams.length === 0)    errors.push("Add at least one row (Step 1).");
+  if (b.stages.length === 0)     errors.push("Add at least one column (Step 2).");
   if (b.categories.length === 0) errors.push("Add at least one category (Step 3).");
-  if (b.nodes.length === 0)      errors.push("Add at least one node (Step 4).");
+  if (b.nodes.length === 0)      errors.push("Add at least one box (Step 4).");
 
   const dupStreams    = findDuplicateIds(b.streams);
   const dupStages     = findDuplicateIds(b.stages);
   const dupCategories = findDuplicateIds(b.categories);
   const dupNodes      = findDuplicateIds(b.nodes);
 
-  dupStreams.forEach(id    => errors.push("Duplicate stream id: " + id));
-  dupStages.forEach(id     => errors.push("Duplicate stage id: " + id));
+  dupStreams.forEach(id    => errors.push("Duplicate row id: " + id));
+  dupStages.forEach(id     => errors.push("Duplicate column id: " + id));
   dupCategories.forEach(id => errors.push("Duplicate category id: " + id));
-  dupNodes.forEach(id      => errors.push("Duplicate node id: " + id));
+  dupNodes.forEach(id      => errors.push("Duplicate box id: " + id));
 
   // Coalesced "missing required fields" messages: blank rows just produce
   // one "row N needs id and label" instead of two separate errors, so a
@@ -9861,8 +9861,8 @@ function validateBuilder() {
       else if (!row.label)       errors.push(kind + " `" + row.id + "` is missing a label.");
     });
   };
-  checkRequiredIdAndLabel(b.streams,    "Stream");
-  checkRequiredIdAndLabel(b.stages,     "Stage");
+  checkRequiredIdAndLabel(b.streams,    "Row");
+  checkRequiredIdAndLabel(b.stages,     "Column");
   checkRequiredIdAndLabel(b.categories, "Category");
 
   const streamIds   = new Set(b.streams.map(s => s.id).filter(Boolean));
@@ -9871,31 +9871,31 @@ function validateBuilder() {
 
   b.nodes.forEach((n, i) => {
     if (!n.id && !n.label) {
-      errors.push("Node row " + (i + 1) + " needs an id and label.");
+      errors.push("Box row " + (i + 1) + " needs an id and label.");
     } else {
-      if (!n.id)    errors.push("Node `" + n.label + "` is missing an id.");
-      if (!n.label) errors.push("Node `" + n.id + "` is missing a label.");
+      if (!n.id)    errors.push("Box `" + n.label + "` is missing an id.");
+      if (!n.label) errors.push("Box `" + n.id + "` is missing a label.");
     }
     const ref = (kind, value, knownSet) => {
-      if (!value)               errors.push("Node `" + (n.id || n.label || ("row " + (i + 1))) + "` has no " + kind + ".");
-      else if (!knownSet.has(value)) errors.push("Node `" + (n.id || n.label) + "` references unknown " + kind + " `" + value + "`.");
+      if (!value)               errors.push("Box `" + (n.id || n.label || ("row " + (i + 1))) + "` has no " + kind + ".");
+      else if (!knownSet.has(value)) errors.push("Box `" + (n.id || n.label) + "` references unknown " + kind + " `" + value + "`.");
     };
-    ref("stream",   n.stream,   streamIds);
-    ref("stage",    n.stage,    stageIds);
+    ref("row",      n.stream,   streamIds);
+    ref("column",   n.stage,    stageIds);
     ref("category", n.category, categoryIds);
     // baseline must be either blank or > 0 (simulation divides by it).
     if (n.baseline !== "" && n.baseline !== undefined && Number(n.baseline) === 0) {
-      errors.push("Node `" + (n.id || n.label || ("row " + (i + 1))) + "` has baseline 0 — must be positive or blank.");
+      errors.push("Box `" + (n.id || n.label || ("row " + (i + 1))) + "` has starting value 0 — must be positive or blank.");
     }
   });
 
   const nodeIds = new Set(b.nodes.map(n => n.id).filter(Boolean));
   b.edges.forEach((e, i) => {
-    const tag = "Edge row " + (i + 1);
-    if (!e.from)                  errors.push(tag + " has no source node.");
-    else if (!nodeIds.has(e.from)) errors.push(tag + " references unknown source node `" + e.from + "`.");
-    if (!e.to)                    errors.push(tag + " has no target node.");
-    else if (!nodeIds.has(e.to))   errors.push(tag + " references unknown target node `" + e.to + "`.");
+    const tag = "Link row " + (i + 1);
+    if (!e.from)                  errors.push(tag + " has no source box.");
+    else if (!nodeIds.has(e.from)) errors.push(tag + " references unknown source box `" + e.from + "`.");
+    if (!e.to)                    errors.push(tag + " has no target box.");
+    else if (!nodeIds.has(e.to))   errors.push(tag + " references unknown target box `" + e.to + "`.");
     if (!EFFECT_OPTIONS.includes(e.effect)) errors.push(tag + " has invalid effect `" + e.effect + "`.");
   });
 
@@ -10174,7 +10174,7 @@ function renderBuilderFooter() {
   if (hasErrors) {
     status = '<span class="builder-footer-status warn">' + v.errors.length + ' issue' + (v.errors.length === 1 ? '' : 's') + ' to resolve</span>';
   } else if (state.builder.nodes.length > 0) {
-    status = '<span class="builder-footer-status">' + state.builder.nodes.length + ' nodes · ' + state.builder.edges.length + ' edges · ready</span>';
+    status = '<span class="builder-footer-status">' + state.builder.nodes.length + ' boxes · ' + state.builder.edges.length + ' links · ready</span>';
   }
 
   const backDisabled  = step === 1 ? ' disabled' : '';
@@ -10259,8 +10259,8 @@ function renderBuilderBulkBar(section) {
     const stageOpts  = state.builder.stages.filter(s => s.id).map(s => ({ value: s.id, label: s.label || s.id }));
     const catOpts    = state.builder.categories.filter(c => c.id).map(c => ({ value: c.id, label: c.label || c.id }));
     const dirOpts    = DIRECTION_OPTIONS.filter(o => o !== "").map(o => ({ value: o, label: o }));
-    fields += builderBulkFieldMarkup(section, "stream",       "Set stream…",   streamOpts);
-    fields += builderBulkFieldMarkup(section, "stage",        "Set stage…",    stageOpts);
+    fields += builderBulkFieldMarkup(section, "stream",       "Set row…",   streamOpts);
+    fields += builderBulkFieldMarkup(section, "stage",        "Set column…",    stageOpts);
     fields += builderBulkFieldMarkup(section, "category",     "Set category…", catOpts);
     fields += builderBulkFieldMarkup(section, "direction",    "Set direction…", dirOpts);
     fields += builderBulkFieldMarkup(section, "controllable", "Set slider…",
@@ -10269,7 +10269,7 @@ function renderBuilderBulkBar(section) {
     const effectOpts = EFFECT_OPTIONS.map(o => ({ value: o, label: o }));
     fields += builderBulkFieldMarkup(section, "effect", "Set effect…", effectOpts);
     fields += '<span class="builder-bulk-elasticity">' +
-                '<input type="number" step="any" class="builder-bulk-input" data-bulkinput="elasticity" placeholder="Elasticity" />' +
+                '<input type="number" step="any" class="builder-bulk-input" data-bulkinput="elasticity" placeholder="Strength" />' +
                 '<button class="builder-action" data-bulkapply="elasticity" data-bulksection="edges">Apply</button>' +
               '</span>';
   }
@@ -10324,14 +10324,14 @@ function refreshBuilderBulkBar() {
 function renderBuilderStreamsStep() {
   const v = validateBuilder();
   let html = "";
-  html += '<h2 class="builder-step-heading">Streams — the rows of the map</h2>';
-  html += '<p class="builder-step-blurb">Streams are the functional flows or domains running across your map. ' +
-          'Each stream becomes a horizontal row. Examples: <i>Operations, Sales, Support</i>, or any grouping that makes sense for your system.</p>';
+  html += '<h2 class="builder-step-heading">Rows of the map</h2>';
+  html += '<p class="builder-step-blurb">Rows are the functional flows or domains running across your map. ' +
+          'Each row becomes a horizontal row. Examples: <i>Operations, Sales, Support</i>, or any grouping that makes sense for your system.</p>';
   html += '<div class="builder-step-help">' +
           '<b>id</b> — short, lowercase, no spaces (e.g. <code>ops</code>). Auto-filled from the label. ' +
           '<b>label</b> — what users see in the sidebar. ' +
           '<b>short</b> — ~6-char uppercase tag on the row header. ' +
-          '<b>color</b> — left bar colour on every node in this stream. ' +
+          '<b>color</b> — left bar colour on every box in this row. ' +
           'Drag a row by its <code>⋮⋮</code> handle to reorder.' +
           '</div>';
 
@@ -10350,7 +10350,7 @@ function renderBuilderStreamsStep() {
             '</tr></thead><tbody>';
 
   if (state.builder.streams.length === 0) {
-    html += tableEmptyRow(7, 'No streams yet. Click "+ Add stream" to start.');
+    html += tableEmptyRow(7, 'No rows yet. Click "+ Add row" to start.');
   } else {
     state.builder.streams.forEach((s, i) => {
       const invalidId = v.dupStreams.has(s.id) || !s.id ? ' invalid' : '';
@@ -10368,7 +10368,7 @@ function renderBuilderStreamsStep() {
 
   html += '</tbody></table>';
   html += '<div class="builder-action-bar">';
-  html +=   '<button class="builder-action" data-add="streams">+ Add stream</button>';
+  html +=   '<button class="builder-action" data-add="streams">+ Add row</button>';
   if (state.builder.streams.length === 0) {
     html += '<button class="builder-action" id="builder-start-from-sample">Start from sample</button>';
   }
@@ -10380,8 +10380,8 @@ function renderBuilderStreamsStep() {
 function renderBuilderStagesStep() {
   const v = validateBuilder();
   let html = "";
-  html += '<h2 class="builder-step-heading">Stages — the columns of the map</h2>';
-  html += '<p class="builder-step-blurb">Stages represent the lifecycle from inputs to outcomes, left-to-right. ' +
+  html += '<h2 class="builder-step-heading">Columns of the map</h2>';
+  html += '<p class="builder-step-blurb">Columns represent the lifecycle from inputs to outcomes, left-to-right. ' +
           'Examples: <i>Resources, Inputs, Processes, Outcomes</i>. The order you list them is the order ' +
           'they render.</p>';
   html += '<div class="builder-step-help">' +
@@ -10403,7 +10403,7 @@ function renderBuilderStagesStep() {
             '</tr></thead><tbody>';
 
   if (state.builder.stages.length === 0) {
-    html += tableEmptyRow(5, 'No stages yet. Click "+ Add stage".');
+    html += tableEmptyRow(5, 'No columns yet. Click "+ Add column".');
   } else {
     state.builder.stages.forEach((s, i) => {
       const invalidId = v.dupStages.has(s.id) || !s.id ? ' invalid' : '';
@@ -10417,7 +10417,7 @@ function renderBuilderStagesStep() {
     });
   }
   html += '</tbody></table>';
-  html += '<div class="builder-action-bar"><button class="builder-action" data-add="stages">+ Add stage</button></div>';
+  html += '<div class="builder-action-bar"><button class="builder-action" data-add="stages">+ Add column</button></div>';
   return html;
 }
 
@@ -10425,14 +10425,14 @@ function renderBuilderStagesStep() {
 function renderBuilderCategoriesStep() {
   const v = validateBuilder();
   let html = "";
-  html += '<h2 class="builder-step-heading">Categories — types of node</h2>';
-  html += '<p class="builder-step-blurb">Categories visually distinguish what each node represents. ' +
+  html += '<h2 class="builder-step-heading">Categories — types of box</h2>';
+  html += '<p class="builder-step-blurb">Categories visually distinguish what each box represents. ' +
           'Examples: <i>Resource, Process, Metric, Outcome</i>. Each category has its own colour.</p>';
   html += '<div class="builder-step-help">' +
           '<b>id</b> — lowercase, no spaces. Auto-filled. ' +
           '<b>label</b> — sidebar legend label. ' +
-          '<b>color</b> — node fill. ' +
-          '<b>text colour</b> — node label colour, pick a high-contrast value vs. the fill. ' +
+          '<b>color</b> — box fill. ' +
+          '<b>text colour</b> — box label colour, pick a high-contrast value vs. the fill. ' +
           'Drag a row by its <code>⋮⋮</code> handle to reorder.' +
           '</div>';
 
@@ -10484,22 +10484,22 @@ function renderBuilderNodesStep() {
   const categoryOptions = optionList(state.builder.categories.map(c => c.id));
 
   let html = "";
-  html += '<h2 class="builder-step-heading">Nodes — the boxes on the map</h2>';
-  html += '<p class="builder-step-blurb">Each node sits at the intersection of one stream (row) and one stage (column), ' +
+  html += '<h2 class="builder-step-heading">Boxes on the map</h2>';
+  html += '<p class="builder-step-blurb">Each box sits at the intersection of one row and one column, ' +
           'and has one category (colour). The optional fields on the right enable the live Simulation feature.</p>';
   html += '<div class="builder-step-help">' +
-          '<b>Required:</b> id, label, stream, stage, category. ' +
-          '<b>For simulation</b> add a <b>baseline</b> (e.g. 100) and <b>unit</b> (e.g. <i>units</i>, <i>%</i>, <i>£</i>, or whatever fits). ' +
-          'Tick <b>controllable</b> to expose a slider in Simulation mode. ' +
-          '<b>direction</b> sets outcome colouring on metric nodes (higher_better / lower_better).' +
+          '<b>Required:</b> id, label, row, column, category. ' +
+          '<b>For simulation</b> add a <b>starting value</b> (e.g. 100) and <b>unit</b> (e.g. <i>units</i>, <i>%</i>, <i>£</i>, or whatever fits). ' +
+          'Tick <b>adjustable</b> to expose a slider in Simulation mode. ' +
+          '<b>direction</b> sets outcome colouring on metric boxes (higher_better / lower_better).' +
           '</div>';
 
   if (state.builder.streams.length === 0 || state.builder.stages.length === 0 || state.builder.categories.length === 0) {
     html += '<div class="builder-validation errors">' +
               '<div class="builder-validation-title">Setup needed</div>' +
               '<ul>' +
-                (state.builder.streams.length    === 0 ? '<li>Go back to Step 1 and add at least one stream.</li>' : '') +
-                (state.builder.stages.length     === 0 ? '<li>Go back to Step 2 and add at least one stage.</li>' : '') +
+                (state.builder.streams.length    === 0 ? '<li>Go back to Step 1 and add at least one row.</li>' : '') +
+                (state.builder.stages.length     === 0 ? '<li>Go back to Step 2 and add at least one column.</li>' : '') +
                 (state.builder.categories.length === 0 ? '<li>Go back to Step 3 and add at least one category.</li>' : '') +
               '</ul>' +
             '</div>';
@@ -10514,10 +10514,10 @@ function renderBuilderNodesStep() {
               sortableTh("nodes", "id",           "ID",         ' style="width:160px"') +
               sortableTh("nodes", "label",        "Label",      ' style="width:180px"') +
               sortableTh("nodes", "description",  "Description", "") +
-              sortableTh("nodes", "stream",       "Stream",     ' style="width:110px"') +
-              sortableTh("nodes", "stage",        "Stage",      ' style="width:110px"') +
+              sortableTh("nodes", "stream",       "Row",        ' style="width:110px"') +
+              sortableTh("nodes", "stage",        "Column",     ' style="width:110px"') +
               sortableTh("nodes", "category",     "Category",   ' style="width:110px"') +
-              sortableTh("nodes", "baseline",     "Baseline",   ' style="width:90px"') +
+              sortableTh("nodes", "baseline",     "Starting value", ' style="width:90px"') +
               sortableTh("nodes", "unit",         "Unit",       ' style="width:90px"') +
               sortableTh("nodes", "controllable", "Slider",     ' style="width:50px"') +
               sortableTh("nodes", "direction",    "Direction",  ' style="width:120px"') +
@@ -10526,7 +10526,7 @@ function renderBuilderNodesStep() {
             '</tr></thead><tbody>';
 
   if (state.builder.nodes.length === 0) {
-    html += tableEmptyRow(13, 'No nodes yet. Click "+ Add node".');
+    html += tableEmptyRow(13, 'No boxes yet. Click "+ Add box".');
   } else {
     sortedBuilderIndices("nodes").forEach((i) => {
       const n = state.builder.nodes[i];
@@ -10539,7 +10539,7 @@ function renderBuilderNodesStep() {
       html +=   rowSelectTd("nodes", i);
       html +=   '<td><input type="text" data-section="nodes" data-field="id" data-index="' + i + '" value="' + escapeHtml(n.id) + '" class="' + idInvalid + '" placeholder="team_size" /></td>';
       html +=   '<td><input type="text" data-section="nodes" data-field="label" data-index="' + i + '" value="' + escapeHtml(n.label) + '" placeholder="Team size" /></td>';
-      html +=   '<td><input type="text" data-section="nodes" data-field="description" data-index="' + i + '" value="' + escapeHtml(n.description) + '" placeholder="What this node represents" /></td>';
+      html +=   '<td><input type="text" data-section="nodes" data-field="description" data-index="' + i + '" value="' + escapeHtml(n.description) + '" placeholder="What this box represents" /></td>';
       html +=   '<td><select data-section="nodes" data-field="stream" data-index="' + i + '" class="' + streamInvalid + '"><option value=""></option>' + streamOptions(n.stream) + '</select></td>';
       html +=   '<td><select data-section="nodes" data-field="stage" data-index="' + i + '" class="' + stageInvalid + '"><option value=""></option>' + stageOptions(n.stage) + '</select></td>';
       html +=   '<td><select data-section="nodes" data-field="category" data-index="' + i + '" class="' + categoryInvalid + '"><option value=""></option>' + categoryOptions(n.category) + '</select></td>';
@@ -10557,7 +10557,7 @@ function renderBuilderNodesStep() {
     });
   }
   html += '</tbody></table>';
-  html += '<div class="builder-action-bar"><button class="builder-action" data-add="nodes">+ Add node</button></div>';
+  html += '<div class="builder-action-bar"><button class="builder-action" data-add="nodes">+ Add box</button></div>';
   return html;
 }
 
@@ -10567,17 +10567,17 @@ function renderBuilderEdgesStep() {
   const nodeOptions = optionList(state.builder.nodes.map(n => n.id), state.builder.nodes);
 
   let html = "";
-  html += '<h2 class="builder-step-heading">Edges — causal links between nodes</h2>';
-  html += '<p class="builder-step-blurb">Each edge goes <b>from</b> a cause <b>to</b> an effect. ' +
+  html += '<h2 class="builder-step-heading">Links between boxes</h2>';
+  html += '<p class="builder-step-blurb">Each link goes <b>from</b> a cause <b>to</b> an effect. ' +
           'Pick the effect type — <i>enables</i> (prerequisite), <i>increases</i> (push up), or <i>decreases</i> (push down) — ' +
-          'and (optionally) override the elasticity for simulation.</p>';
+          'and (optionally) override the strength for simulation.</p>';
   // Help text + the default-elasticity inputs sit side-by-side on a wide card
   // (and stack on a narrow one) so the table gets more vertical room — see
   // .builder-edges-config in 11-builder.css.
   html += '<div class="builder-edges-config">';
   html +=   '<div class="builder-step-help">' +
-              '<b>Defaults below</b> — used when the elasticity column is left blank. ' +
-              'Elasticity = % change in target value per % change in source value. ' +
+              '<b>Defaults below</b> — used when the strength column is left blank. ' +
+              'Strength = % change in target value per % change in source value. ' +
               'For <i>decreases</i> effects the default is negative.' +
             '</div>';
   html +=   '<div class="builder-defaults">' +
@@ -10590,7 +10590,7 @@ function renderBuilderEdgesStep() {
   if (state.builder.nodes.length === 0) {
     html += '<div class="builder-validation errors">' +
               '<div class="builder-validation-title">Setup needed</div>' +
-              '<ul><li>Go back to Step 4 and add at least one node before defining edges.</li></ul>' +
+              '<ul><li>Go back to Step 4 and add at least one box before defining links.</li></ul>' +
             '</div>';
   }
 
@@ -10603,14 +10603,14 @@ function renderBuilderEdgesStep() {
               sortableTh("edges", "from",        "From",        ' style="width:200px"') +
               sortableTh("edges", "to",          "To",          ' style="width:200px"') +
               sortableTh("edges", "effect",      "Effect",      ' style="width:130px"') +
-              sortableTh("edges", "elasticity",  "Elasticity",  ' style="width:110px"') +
+              sortableTh("edges", "elasticity",  "Strength",  ' style="width:110px"') +
               '<th style="width:96px">Style</th>' +
               sortableTh("edges", "description", "Description", "") +
               '<th style="width:90px"></th>' +
             '</tr></thead><tbody>';
 
   if (state.builder.edges.length === 0) {
-    html += tableEmptyRow(8, 'No edges yet. Click "+ Add edge".');
+    html += tableEmptyRow(8, 'No links yet. Click "+ Add link".');
   } else {
     sortedBuilderIndices("edges").forEach((i) => {
       const e = state.builder.edges[i];
@@ -10637,7 +10637,7 @@ function renderBuilderEdgesStep() {
     });
   }
   html += '</tbody></table>';
-  html += '<div class="builder-action-bar"><button class="builder-action" data-add="edges">+ Add edge</button></div>';
+  html += '<div class="builder-action-bar"><button class="builder-action" data-add="edges">+ Add link</button></div>';
   return html;
 }
 
@@ -10654,11 +10654,11 @@ function renderBuilderReviewStep() {
 
   html += BUILDER_SPLIT;
   html += '<div class="builder-review-grid">' +
-            reviewTile("Streams",    b.streams.length) +
-            reviewTile("Stages",     b.stages.length) +
+            reviewTile("Rows",       b.streams.length) +
+            reviewTile("Columns",    b.stages.length) +
             reviewTile("Categories", b.categories.length) +
-            reviewTile("Nodes",      b.nodes.length) +
-            reviewTile("Edges",      b.edges.length) +
+            reviewTile("Boxes",      b.nodes.length) +
+            reviewTile("Links",      b.edges.length) +
           '</div>';
 
   if (v.errors.length === 0) {
@@ -12007,14 +12007,14 @@ function initCanvasEdit() {
 // cells to add nodes — no drop-zone overlay, no wizard needed.
 function bootEmptyStateGrid() {
   STREAMS = [
-    { id: "row_1", label: "Stream 1", short: "S1", color: STREAM_COLOR_PALETTE[0] },
-    { id: "row_2", label: "Stream 2", short: "S2", color: STREAM_COLOR_PALETTE[1] },
-    { id: "row_3", label: "Stream 3", short: "S3", color: STREAM_COLOR_PALETTE[2] },
+    { id: "row_1", label: "Row 1", short: "R1", color: STREAM_COLOR_PALETTE[0] },
+    { id: "row_2", label: "Row 2", short: "R2", color: STREAM_COLOR_PALETTE[1] },
+    { id: "row_3", label: "Row 3", short: "R3", color: STREAM_COLOR_PALETTE[2] },
   ];
   STAGES = [
-    { id: "stage_1", label: "Stage 1" },
-    { id: "stage_2", label: "Stage 2" },
-    { id: "stage_3", label: "Stage 3" },
+    { id: "stage_1", label: "Column 1" },
+    { id: "stage_2", label: "Column 2" },
+    { id: "stage_3", label: "Column 3" },
   ];
   CATEGORIES = {};
   NODES = [];
@@ -12202,7 +12202,7 @@ function createNodeInCell(streamId, stageId, insertIndex) {
 
   const newNode = {
     id: generateUniqueNodeId("new_node"),
-    label: "New node",
+    label: "New box",
     description: "",
     stream: streamId,
     stage: stageId,
@@ -13092,7 +13092,7 @@ function deleteSelection() {
     state.descendantSet = new Set();
     state.highlightedEdgeIds = new Set();
     applyCanvasMutation();   // auto-captures the pre-mutation snapshot → one undo step
-    showUndoToast(idSet.size === 1 ? "Node deleted" : idSet.size + " nodes deleted", () => historyUndo());
+    showUndoToast(idSet.size === 1 ? "Box deleted" : idSet.size + " boxes deleted", () => historyUndo());
     return true;
   }
   return false;
@@ -13110,7 +13110,7 @@ function deleteEdgeById(edgeId) {
   EDGES = EDGES.filter(e => e.id !== edgeId);
   pushUndo(snapshot);
   applyCanvasMutation();
-  showUndoToast("Edge deleted", () => restoreFromUndo(snapshot));
+  showUndoToast("Link deleted", () => restoreFromUndo(snapshot));
 }
 
 </script>       <!-- canvas gestures: ghost cell, edge drag, delete -->
@@ -13187,7 +13187,7 @@ function addStream() {
   let n = counter;
   while (streamById[id]) { n++; id = "row_" + n; }
   const color = STREAM_COLOR_PALETTE[STREAMS.length % STREAM_COLOR_PALETTE.length];
-  const label = "Stream " + counter;
+  const label = "Row " + counter;
   STREAMS.push({ id: id, label: label, short: deriveShortLabel(label), color: color });
   applyCanvasMutation();
   // Drop straight into renaming the new row inline.
@@ -13199,7 +13199,7 @@ function addStage() {
   let id = "stage_" + counter;
   let n = counter;
   while (stageById[id]) { n++; id = "stage_" + n; }
-  STAGES.push({ id: id, label: "Stage " + counter });
+  STAGES.push({ id: id, label: "Column " + counter });
   applyCanvasMutation();
   if (typeof focusSidebarInlineLabel === "function") focusSidebarInlineLabel("stage", id);
 }
@@ -13235,8 +13235,8 @@ function deleteStreamWithCascade(streamId) {
   const nodeIdSet = new Set(nodesToDelete.map(n => n.id));
   const edgesToDelete = EDGES.filter(e => nodeIdSet.has(e.from) || nodeIdSet.has(e.to));
   const msg = nodesToDelete.length === 0
-    ? 'Delete stream "' + stream.label + '"?'
-    : 'Delete stream "' + stream.label + '"?\n\n' + nodesToDelete.length + ' node(s) and ' + edgesToDelete.length + ' edge(s) will also be removed.';
+    ? 'Delete row "' + stream.label + '"?'
+    : 'Delete row "' + stream.label + '"?\n\n' + nodesToDelete.length + ' box(es) and ' + edgesToDelete.length + ' link(s) will also be removed.';
   if (!confirm(msg)) return;
 
   const snapshot = {
@@ -13257,7 +13257,7 @@ function deleteStreamWithCascade(streamId) {
   }
   pushUndo(snapshot);
   applyCanvasMutation();
-  showUndoToast("Stream deleted", () => restoreFromUndo(snapshot));
+  showUndoToast("Row deleted", () => restoreFromUndo(snapshot));
 }
 
 function deleteStageWithCascade(stageId) {
@@ -13267,8 +13267,8 @@ function deleteStageWithCascade(stageId) {
   const nodeIdSet = new Set(nodesToDelete.map(n => n.id));
   const edgesToDelete = EDGES.filter(e => nodeIdSet.has(e.from) || nodeIdSet.has(e.to));
   const msg = nodesToDelete.length === 0
-    ? 'Delete stage "' + stage.label + '"?'
-    : 'Delete stage "' + stage.label + '"?\n\n' + nodesToDelete.length + ' node(s) and ' + edgesToDelete.length + ' edge(s) will also be removed.';
+    ? 'Delete column "' + stage.label + '"?'
+    : 'Delete column "' + stage.label + '"?\n\n' + nodesToDelete.length + ' box(es) and ' + edgesToDelete.length + ' link(s) will also be removed.';
   if (!confirm(msg)) return;
 
   const snapshot = {
@@ -13290,7 +13290,7 @@ function deleteStageWithCascade(stageId) {
   }
   pushUndo(snapshot);
   applyCanvasMutation();
-  showUndoToast("Stage deleted", () => restoreFromUndo(snapshot));
+  showUndoToast("Column deleted", () => restoreFromUndo(snapshot));
 }
 
 function deleteCategoryWithCascade(catId) {
@@ -13307,8 +13307,8 @@ function deleteCategoryWithCascade(catId) {
 
   let msg = 'Delete category "' + cat.label + '"?';
   const parts = [];
-  if (soleNodes.length)  parts.push(soleNodes.length + ' node(s) using only this category (and ' + edgesToDelete.length + ' edge(s)) will be removed');
-  if (untagCount)        parts.push(untagCount + ' node(s) will be untagged');
+  if (soleNodes.length)  parts.push(soleNodes.length + ' box(es) using only this category (and ' + edgesToDelete.length + ' link(s)) will be removed');
+  if (untagCount)        parts.push(untagCount + ' box(es) will be untagged');
   if (parts.length)      msg += '\n\n' + parts.join(';\n') + '.';
   if (!confirm(msg)) return;
 
@@ -14150,11 +14150,11 @@ function openCanvasEdgePicker(fromNodeId) {
   overlay.className = "canvas-edge-picker";
   if (candidates.length === 0) {
     overlay.innerHTML =
-      '<div class="canvas-edge-picker-label">All other nodes are already connected.</div>';
+      '<div class="canvas-edge-picker-label">All other boxes are already connected.</div>';
   } else {
     overlay.innerHTML =
-      '<div class="canvas-edge-picker-label">Add outgoing edge to…</div>' +
-      '<select aria-label="Choose target node">' +
+      '<div class="canvas-edge-picker-label">Add a link to…</div>' +
+      '<select aria-label="Choose the box to link to">' +
         candidates.map(n =>
           '<option value="' + escapeHtml(n.id) + '">' + escapeHtml(n.label) + '</option>'
         ).join("") +
@@ -14342,8 +14342,8 @@ function renderMultiSelectBar() {
 
   let html = '<span class="msb-count">' + n + ' selected</span>';
   html += multiSelectFieldMarkup("category", "Set category…", categoryOpts);
-  html += multiSelectFieldMarkup("stream",   "Move to stream…", streamOpts);
-  html += multiSelectFieldMarkup("stage",    "Move to stage…", stageOpts);
+  html += multiSelectFieldMarkup("stream",   "Move to row…", streamOpts);
+  html += multiSelectFieldMarkup("stage",    "Move to column…", stageOpts);
   html += '<button class="msb-delete" type="button">Delete</button>';
   el.innerHTML = html;
   el.style.display = "flex";
@@ -14389,7 +14389,7 @@ function batchSetProperty(field, value) {
     return;
   }
   applyCanvasMutation();   // auto-captures the pre-mutation snapshot → one undo step
-  showUndoToast(changed === 1 ? "1 node updated" : changed + " nodes updated", () => historyUndo());
+  showUndoToast(changed === 1 ? "1 box updated" : changed + " boxes updated", () => historyUndo());
 }
 
 </script>     <!-- batch action bar for multi-select -->
@@ -14472,7 +14472,7 @@ document.querySelectorAll(".publish-html-trigger").forEach(button => {
 document.querySelectorAll(".create-map-trigger").forEach(button => {
   button.addEventListener("click", () => {
     const hasData = state.dataLoaded && (NODES.length > 0 || EDGES.length > 0);
-    if (hasData && !confirm("Clear the current map and start with an empty grid? This cannot be undone.")) return;
+    if (hasData && !confirm("Clear the current map and start with an empty grid? This can't be undone.")) return;
     if (typeof clearCsvFromStorage === "function") clearCsvFromStorage();
     if (typeof bootEmptyStateGrid === "function") bootEmptyStateGrid();
   });
@@ -15880,7 +15880,7 @@ function renderExportPngBlob(svg, width, height, pal) {
 // ───── PUBLIC: copy the canvas to the clipboard as a PNG image ─────────────
 function exportCanvasImage() {
   const model = buildExportModel();
-  if (!model) { showLoadFeedback("Nothing to export — load a map or zoom to some nodes.", true); return; }
+  if (!model) { showLoadFeedback("Nothing to export — load a map or zoom to some boxes.", true); return; }
 
   if (!navigator.clipboard || typeof ClipboardItem === "undefined" || !navigator.clipboard.write) {
     showLoadFeedback("Clipboard image copy isn't available in this browser. Try opening the app over http/localhost.", true);
@@ -15904,7 +15904,7 @@ function exportCanvasImage() {
 // ───── PUBLIC: publish as a view-only HTML page ────────────────────────────
 function publishCanvasHtml() {
   const model = buildExportModel();
-  if (!model) { showLoadFeedback("Nothing to publish — load a map or zoom to some nodes.", true); return; }
+  if (!model) { showLoadFeedback("Nothing to publish — load a map or zoom to some boxes.", true); return; }
   const pal = exportPalette();
   const { svg, width, height, nodeInfo } = renderExportSvg(model, { pal });
   const html = buildPublishHtml(svg, width, height, nodeInfo, pal);
@@ -16004,7 +16004,7 @@ function buildPublishHtml(svg, width, height, nodeInfo, pal) {
       '</div>' +
       '<button id="mv-fit" title="Fit to screen">Fit</button>' +
     '</div>' +
-    '<div id="mv-hint">Drag to pan · Ctrl/⌘ + scroll to zoom · hover a node for details</div>' +
+    '<div id="mv-hint">Drag to pan · Ctrl/⌘ + scroll to zoom · hover a box for details</div>' +
     '<script>' + viewerJs + EXPORT_CLOSE_SCRIPT +
     '</body></html>';
 }

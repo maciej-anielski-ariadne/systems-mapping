@@ -25,8 +25,8 @@ function showTooltip(node, event) {
         '<span class="tooltip-quant-label">Current:</span> ' +
         '<span class="tooltip-quant-value">' + escapeHtml(valueStr) + '</span>' +
         (deltaInfo.text && deltaInfo.text !== "—"
-          ? ' <span class="tooltip-quant-delta">(' + escapeHtml(deltaInfo.text) + ' vs ' + escapeHtml(baselineStr) + ')</span>'
-          : ' <span class="tooltip-quant-delta">baseline ' + escapeHtml(baselineStr) + '</span>') +
+          ? ' <span class="tooltip-quant-delta">(' + escapeHtml(deltaInfo.text) + ' vs starting value ' + escapeHtml(baselineStr) + ')</span>'
+          : ' <span class="tooltip-quant-delta">starting value ' + escapeHtml(baselineStr) + '</span>') +
       '</div>';
   }
 

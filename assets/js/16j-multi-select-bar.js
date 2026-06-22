@@ -57,8 +57,8 @@ function renderMultiSelectBar() {
 
   let html = '<span class="msb-count">' + n + ' selected</span>';
   html += multiSelectFieldMarkup("category", "Set category…", categoryOpts);
-  html += multiSelectFieldMarkup("stream",   "Move to stream…", streamOpts);
-  html += multiSelectFieldMarkup("stage",    "Move to stage…", stageOpts);
+  html += multiSelectFieldMarkup("stream",   "Move to row…", streamOpts);
+  html += multiSelectFieldMarkup("stage",    "Move to column…", stageOpts);
   html += '<button class="msb-delete" type="button">Delete</button>';
   el.innerHTML = html;
   el.style.display = "flex";
@@ -104,5 +104,5 @@ function batchSetProperty(field, value) {
     return;
   }
   applyCanvasMutation();   // auto-captures the pre-mutation snapshot → one undo step
-  showUndoToast(changed === 1 ? "1 node updated" : changed + " nodes updated", () => historyUndo());
+  showUndoToast(changed === 1 ? "1 box updated" : changed + " boxes updated", () => historyUndo());
 }

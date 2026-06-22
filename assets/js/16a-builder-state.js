@@ -21,11 +21,11 @@
 
 // ───── Constants ──────────────────────────────────────────────────────────
 const BUILDER_STEPS = [
-  { num: 1, key: "streams",    label: "Streams" },
-  { num: 2, key: "stages",     label: "Stages" },
+  { num: 1, key: "streams",    label: "Rows" },
+  { num: 2, key: "stages",     label: "Columns" },
   { num: 3, key: "categories", label: "Categories" },
-  { num: 4, key: "nodes",      label: "Nodes" },
-  { num: 5, key: "edges",      label: "Edges" },
+  { num: 4, key: "nodes",      label: "Boxes" },
+  { num: 5, key: "edges",      label: "Links" },
   { num: 6, key: "review",     label: "Review" },
 ];
 
@@ -282,20 +282,20 @@ function validateBuilder() {
   const b = state.builder;
   const errors = [];
 
-  if (b.streams.length === 0)    errors.push("Add at least one stream (Step 1).");
-  if (b.stages.length === 0)     errors.push("Add at least one stage (Step 2).");
+  if (b.streams.length === 0)    errors.push("Add at least one row (Step 1).");
+  if (b.stages.length === 0)     errors.push("Add at least one column (Step 2).");
   if (b.categories.length === 0) errors.push("Add at least one category (Step 3).");
-  if (b.nodes.length === 0)      errors.push("Add at least one node (Step 4).");
+  if (b.nodes.length === 0)      errors.push("Add at least one box (Step 4).");
 
   const dupStreams    = findDuplicateIds(b.streams);
   const dupStages     = findDuplicateIds(b.stages);
   const dupCategories = findDuplicateIds(b.categories);
   const dupNodes      = findDuplicateIds(b.nodes);
 
-  dupStreams.forEach(id    => errors.push("Duplicate stream id: " + id));
-  dupStages.forEach(id     => errors.push("Duplicate stage id: " + id));
+  dupStreams.forEach(id    => errors.push("Duplicate row id: " + id));
+  dupStages.forEach(id     => errors.push("Duplicate column id: " + id));
   dupCategories.forEach(id => errors.push("Duplicate category id: " + id));
-  dupNodes.forEach(id      => errors.push("Duplicate node id: " + id));
+  dupNodes.forEach(id      => errors.push("Duplicate box id: " + id));
 
   // Coalesced "missing required fields" messages: blank rows just produce
   // one "row N needs id and label" instead of two separate errors, so a
@@ -307,8 +307,8 @@ function validateBuilder() {
       else if (!row.label)       errors.push(kind + " `" + row.id + "` is missing a label.");
     });
   };
-  checkRequiredIdAndLabel(b.streams,    "Stream");
-  checkRequiredIdAndLabel(b.stages,     "Stage");
+  checkRequiredIdAndLabel(b.streams,    "Row");
+  checkRequiredIdAndLabel(b.stages,     "Column");
   checkRequiredIdAndLabel(b.categories, "Category");
 
   const streamIds   = new Set(b.streams.map(s => s.id).filter(Boolean));
@@ -317,31 +317,31 @@ function validateBuilder() {
 
   b.nodes.forEach((n, i) => {
     if (!n.id && !n.label) {
-      errors.push("Node row " + (i + 1) + " needs an id and label.");
+      errors.push("Box row " + (i + 1) + " needs an id and label.");
     } else {
-      if (!n.id)    errors.push("Node `" + n.label + "` is missing an id.");
-      if (!n.label) errors.push("Node `" + n.id + "` is missing a label.");
+      if (!n.id)    errors.push("Box `" + n.label + "` is missing an id.");
+      if (!n.label) errors.push("Box `" + n.id + "` is missing a label.");
     }
     const ref = (kind, value, knownSet) => {
-      if (!value)               errors.push("Node `" + (n.id || n.label || ("row " + (i + 1))) + "` has no " + kind + ".");
-      else if (!knownSet.has(value)) errors.push("Node `" + (n.id || n.label) + "` references unknown " + kind + " `" + value + "`.");
+      if (!value)               errors.push("Box `" + (n.id || n.label || ("row " + (i + 1))) + "` has no " + kind + ".");
+      else if (!knownSet.has(value)) errors.push("Box `" + (n.id || n.label) + "` references unknown " + kind + " `" + value + "`.");
     };
-    ref("stream",   n.stream,   streamIds);
-    ref("stage",    n.stage,    stageIds);
+    ref("row",      n.stream,   streamIds);
+    ref("column",   n.stage,    stageIds);
     ref("category", n.category, categoryIds);
     // baseline must be either blank or > 0 (simulation divides by it).
     if (n.baseline !== "" && n.baseline !== undefined && Number(n.baseline) === 0) {
-      errors.push("Node `" + (n.id || n.label || ("row " + (i + 1))) + "` has baseline 0 — must be positive or blank.");
+      errors.push("Box `" + (n.id || n.label || ("row " + (i + 1))) + "` has starting value 0 — must be positive or blank.");
     }
   });
 
   const nodeIds = new Set(b.nodes.map(n => n.id).filter(Boolean));
   b.edges.forEach((e, i) => {
-    const tag = "Edge row " + (i + 1);
-    if (!e.from)                  errors.push(tag + " has no source node.");
-    else if (!nodeIds.has(e.from)) errors.push(tag + " references unknown source node `" + e.from + "`.");
-    if (!e.to)                    errors.push(tag + " has no target node.");
-    else if (!nodeIds.has(e.to))   errors.push(tag + " references unknown target node `" + e.to + "`.");
+    const tag = "Link row " + (i + 1);
+    if (!e.from)                  errors.push(tag + " has no source box.");
+    else if (!nodeIds.has(e.from)) errors.push(tag + " references unknown source box `" + e.from + "`.");
+    if (!e.to)                    errors.push(tag + " has no target box.");
+    else if (!nodeIds.has(e.to))   errors.push(tag + " references unknown target box `" + e.to + "`.");
     if (!EFFECT_OPTIONS.includes(e.effect)) errors.push(tag + " has invalid effect `" + e.effect + "`.");
   });
 

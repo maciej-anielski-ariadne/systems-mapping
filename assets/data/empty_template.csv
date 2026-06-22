@@ -6,36 +6,36 @@
 # Lines starting with # are comments and are ignored.
 # Empty rows are ignored.
 #
-# Build order recommendation:
-#   1. Decide your streams (rows) - functional flows or domains.
-#   2. Decide your stages (columns) - the lifecycle from inputs to outcomes, left-to-right.
-#   3. Decide your categories - node types (resource, process, metric, outcome, etc).
-#   4. Add nodes - one per cell of the stream x stage grid you want to populate.
-#   5. Add edges - causal links between nodes (from -> to).
-#   6. (Optional) Set baselines + elasticities to enable the Simulation feature.
+# Suggested build order:
+#   1. Decide your rows - functional flows or domains.
+#   2. Decide your columns - the lifecycle from inputs to outcomes, left-to-right.
+#   3. Decide your categories - box types (resource, process, metric, outcome, etc).
+#   4. Add boxes - one per cell of the row x column grid you want to fill in.
+#   5. Add links - cause-and-effect links between boxes (from -> to).
+#   6. (Optional) Set starting values + strengths to turn on the Simulation feature.
 
 # SECTION: streams
-# id        - unique stream identifier (referenced from nodes). Lowercase, no spaces.
+# id        - unique row identifier (used by boxes). Lowercase, no spaces.
 # label     - display name shown in the sidebar and detail panel.
 # short     - short label shown on the map row header (uppercase, ~6 chars).
-# color     - hex colour for the stream (e.g. #60a5fa). Used for the left bar on each node.
+# color     - hex colour for the row (e.g. #60a5fa). Used for the left bar on each box.
 id,label,short,color
 
 # SECTION: stages
-# id    - stage identifier (referenced from nodes). Lowercase, no spaces.
-# label - column header shown on the map. Stages appear left-to-right in the order listed here.
+# id    - column identifier (used by boxes). Lowercase, no spaces.
+# label - column header shown on the map. Columns appear left-to-right in the order listed here.
 id,label
 
 # SECTION: categories
-# id          - category identifier (referenced from nodes). Lowercase, no spaces.
+# id          - category identifier (used by boxes). Lowercase, no spaces.
 # label       - display name shown in the sidebar legend.
-# color       - fill colour for nodes of this category (hex).
+# color       - fill colour for boxes of this category (hex).
 # text_color  - label text colour (hex). Pick a high-contrast value relative to the fill.
 id,label,color,text_color
 
 # SECTION: defaults
-# Default elasticities used when an edge's `elasticity` cell is left blank.
-# Elasticity = percent change in target value per percent change in source value.
+# Default strengths used when a link's `elasticity` cell is left blank.
+# Strength = percent change in the target value per percent change in the source value.
 # For `decreases` effects, the default is negative.
 # These three rows are pre-filled with sensible starting values. Tune later if needed.
 key,value
@@ -44,29 +44,29 @@ elasticity_increases,0.25
 elasticity_decreases,-0.25
 
 # SECTION: nodes
-# id           - unique node identifier (referenced from edges). Lowercase, underscores, no spaces.
-# label        - display name shown on the node.
+# id           - unique box identifier (used by links). Lowercase, underscores, no spaces.
+# label        - display name shown on the box.
 # description  - tooltip text and detail panel description. Wrap in quotes if it contains commas.
-# stream       - which stream this node belongs to (must match an id from the `streams` section).
-# stage        - which stage column this node sits in (must match an id from the `stages` section).
-# category     - node category (must match an id from the `categories` section).
+# stream       - which row this box belongs to (must match an id from the `streams` section).
+# stage        - which column this box sits in (must match an id from the `stages` section).
+# category     - box category (must match an id from the `categories` section).
 #
-# The fields below are OPTIONAL. Fill them in to enable the Simulation feature for this node:
+# The fields below are OPTIONAL. Fill them in to turn on the Simulation feature for this box:
 #
-# baseline     - baseline numeric value (e.g. 9000 for FTE, 25 for wait time in minutes).
+# baseline     - starting numeric value (e.g. 9000 for FTE, 25 for wait time in minutes).
 # unit         - unit string shown after the value (e.g. FTE, min avg, £bn/yr, %, index).
-# controllable - 'true' to expose this node as a slider in Simulation mode. Use for exogenous inputs only.
+# controllable - 'true' to show this box as a slider in Simulation mode. Use for external inputs only.
 # direction    - 'higher_better', 'lower_better', or 'neutral'. Set on outcome metrics to drive status colouring.
-# slider_max   - maximum multiplier for the slider in Simulation mode (e.g. 2.0 = up to 200% of baseline). Default 2.0.
+# slider_max   - largest multiplier for the slider in Simulation mode (e.g. 2.0 = up to 200% of the starting value). Default 2.0.
 id,label,description,stream,stage,category,baseline,unit,controllable,direction,slider_max
 
 # SECTION: edges
-# from        - source node id.
-# to          - target node id.
-# effect      - 'enables', 'increases', or 'decreases'. Determines arrow colour and default elasticity sign.
-#                 enables   = structural prerequisite (X must exist for Y to happen)
+# from        - source box id.
+# to          - target box id.
+# effect      - 'enables', 'increases', or 'decreases'. Sets the arrow colour and the default strength sign.
+#                 enables   = needed first (X must exist for Y to happen)
 #                 increases = X going up tends to push Y up
 #                 decreases = X going up tends to push Y down
-# elasticity  - OPTIONAL. Per-edge elasticity override (signed number). Leave blank to use the default for the effect type.
+# elasticity  - OPTIONAL. Per-link strength override (signed number). Leave blank to use the default for the effect type.
 # description - explanation shown in the detail panel.
 from,to,effect,elasticity,description

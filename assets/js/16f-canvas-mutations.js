@@ -69,7 +69,7 @@ function addStream() {
   let n = counter;
   while (streamById[id]) { n++; id = "row_" + n; }
   const color = STREAM_COLOR_PALETTE[STREAMS.length % STREAM_COLOR_PALETTE.length];
-  const label = "Stream " + counter;
+  const label = "Row " + counter;
   STREAMS.push({ id: id, label: label, short: deriveShortLabel(label), color: color });
   applyCanvasMutation();
   // Drop straight into renaming the new row inline.
@@ -81,7 +81,7 @@ function addStage() {
   let id = "stage_" + counter;
   let n = counter;
   while (stageById[id]) { n++; id = "stage_" + n; }
-  STAGES.push({ id: id, label: "Stage " + counter });
+  STAGES.push({ id: id, label: "Column " + counter });
   applyCanvasMutation();
   if (typeof focusSidebarInlineLabel === "function") focusSidebarInlineLabel("stage", id);
 }
@@ -117,8 +117,8 @@ function deleteStreamWithCascade(streamId) {
   const nodeIdSet = new Set(nodesToDelete.map(n => n.id));
   const edgesToDelete = EDGES.filter(e => nodeIdSet.has(e.from) || nodeIdSet.has(e.to));
   const msg = nodesToDelete.length === 0
-    ? 'Delete stream "' + stream.label + '"?'
-    : 'Delete stream "' + stream.label + '"?\n\n' + nodesToDelete.length + ' node(s) and ' + edgesToDelete.length + ' edge(s) will also be removed.';
+    ? 'Delete row "' + stream.label + '"?'
+    : 'Delete row "' + stream.label + '"?\n\n' + nodesToDelete.length + ' box(es) and ' + edgesToDelete.length + ' link(s) will also be removed.';
   if (!confirm(msg)) return;
 
   const snapshot = {
@@ -139,7 +139,7 @@ function deleteStreamWithCascade(streamId) {
   }
   pushUndo(snapshot);
   applyCanvasMutation();
-  showUndoToast("Stream deleted", () => restoreFromUndo(snapshot));
+  showUndoToast("Row deleted", () => restoreFromUndo(snapshot));
 }
 
 function deleteStageWithCascade(stageId) {
@@ -149,8 +149,8 @@ function deleteStageWithCascade(stageId) {
   const nodeIdSet = new Set(nodesToDelete.map(n => n.id));
   const edgesToDelete = EDGES.filter(e => nodeIdSet.has(e.from) || nodeIdSet.has(e.to));
   const msg = nodesToDelete.length === 0
-    ? 'Delete stage "' + stage.label + '"?'
-    : 'Delete stage "' + stage.label + '"?\n\n' + nodesToDelete.length + ' node(s) and ' + edgesToDelete.length + ' edge(s) will also be removed.';
+    ? 'Delete column "' + stage.label + '"?'
+    : 'Delete column "' + stage.label + '"?\n\n' + nodesToDelete.length + ' box(es) and ' + edgesToDelete.length + ' link(s) will also be removed.';
   if (!confirm(msg)) return;
 
   const snapshot = {
@@ -172,7 +172,7 @@ function deleteStageWithCascade(stageId) {
   }
   pushUndo(snapshot);
   applyCanvasMutation();
-  showUndoToast("Stage deleted", () => restoreFromUndo(snapshot));
+  showUndoToast("Column deleted", () => restoreFromUndo(snapshot));
 }
 
 function deleteCategoryWithCascade(catId) {
@@ -189,8 +189,8 @@ function deleteCategoryWithCascade(catId) {
 
   let msg = 'Delete category "' + cat.label + '"?';
   const parts = [];
-  if (soleNodes.length)  parts.push(soleNodes.length + ' node(s) using only this category (and ' + edgesToDelete.length + ' edge(s)) will be removed');
-  if (untagCount)        parts.push(untagCount + ' node(s) will be untagged');
+  if (soleNodes.length)  parts.push(soleNodes.length + ' box(es) using only this category (and ' + edgesToDelete.length + ' link(s)) will be removed');
+  if (untagCount)        parts.push(untagCount + ' box(es) will be untagged');
   if (parts.length)      msg += '\n\n' + parts.join(';\n') + '.';
   if (!confirm(msg)) return;
 

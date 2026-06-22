@@ -74,7 +74,7 @@ document.querySelectorAll(".publish-html-trigger").forEach(button => {
 document.querySelectorAll(".create-map-trigger").forEach(button => {
   button.addEventListener("click", () => {
     const hasData = state.dataLoaded && (NODES.length > 0 || EDGES.length > 0);
-    if (hasData && !confirm("Clear the current map and start with an empty grid? This cannot be undone.")) return;
+    if (hasData && !confirm("Clear the current map and start with an empty grid? This can't be undone.")) return;
     if (typeof clearCsvFromStorage === "function") clearCsvFromStorage();
     if (typeof bootEmptyStateGrid === "function") bootEmptyStateGrid();
   });

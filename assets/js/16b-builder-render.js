@@ -163,7 +163,7 @@ function renderBuilderFooter() {
   if (hasErrors) {
     status = '<span class="builder-footer-status warn">' + v.errors.length + ' issue' + (v.errors.length === 1 ? '' : 's') + ' to resolve</span>';
   } else if (state.builder.nodes.length > 0) {
-    status = '<span class="builder-footer-status">' + state.builder.nodes.length + ' nodes · ' + state.builder.edges.length + ' edges · ready</span>';
+    status = '<span class="builder-footer-status">' + state.builder.nodes.length + ' boxes · ' + state.builder.edges.length + ' links · ready</span>';
   }
 
   const backDisabled  = step === 1 ? ' disabled' : '';
@@ -248,8 +248,8 @@ function renderBuilderBulkBar(section) {
     const stageOpts  = state.builder.stages.filter(s => s.id).map(s => ({ value: s.id, label: s.label || s.id }));
     const catOpts    = state.builder.categories.filter(c => c.id).map(c => ({ value: c.id, label: c.label || c.id }));
     const dirOpts    = DIRECTION_OPTIONS.filter(o => o !== "").map(o => ({ value: o, label: o }));
-    fields += builderBulkFieldMarkup(section, "stream",       "Set stream…",   streamOpts);
-    fields += builderBulkFieldMarkup(section, "stage",        "Set stage…",    stageOpts);
+    fields += builderBulkFieldMarkup(section, "stream",       "Set row…",   streamOpts);
+    fields += builderBulkFieldMarkup(section, "stage",        "Set column…",    stageOpts);
     fields += builderBulkFieldMarkup(section, "category",     "Set category…", catOpts);
     fields += builderBulkFieldMarkup(section, "direction",    "Set direction…", dirOpts);
     fields += builderBulkFieldMarkup(section, "controllable", "Set slider…",
@@ -258,7 +258,7 @@ function renderBuilderBulkBar(section) {
     const effectOpts = EFFECT_OPTIONS.map(o => ({ value: o, label: o }));
     fields += builderBulkFieldMarkup(section, "effect", "Set effect…", effectOpts);
     fields += '<span class="builder-bulk-elasticity">' +
-                '<input type="number" step="any" class="builder-bulk-input" data-bulkinput="elasticity" placeholder="Elasticity" />' +
+                '<input type="number" step="any" class="builder-bulk-input" data-bulkinput="elasticity" placeholder="Strength" />' +
                 '<button class="builder-action" data-bulkapply="elasticity" data-bulksection="edges">Apply</button>' +
               '</span>';
   }
@@ -313,14 +313,14 @@ function refreshBuilderBulkBar() {
 function renderBuilderStreamsStep() {
   const v = validateBuilder();
   let html = "";
-  html += '<h2 class="builder-step-heading">Streams — the rows of the map</h2>';
-  html += '<p class="builder-step-blurb">Streams are the functional flows or domains running across your map. ' +
-          'Each stream becomes a horizontal row. Examples: <i>Operations, Sales, Support</i>, or any grouping that makes sense for your system.</p>';
+  html += '<h2 class="builder-step-heading">Rows of the map</h2>';
+  html += '<p class="builder-step-blurb">Rows are the functional flows or domains running across your map. ' +
+          'Each row becomes a horizontal row. Examples: <i>Operations, Sales, Support</i>, or any grouping that makes sense for your system.</p>';
   html += '<div class="builder-step-help">' +
           '<b>id</b> — short, lowercase, no spaces (e.g. <code>ops</code>). Auto-filled from the label. ' +
           '<b>label</b> — what users see in the sidebar. ' +
           '<b>short</b> — ~6-char uppercase tag on the row header. ' +
-          '<b>color</b> — left bar colour on every node in this stream. ' +
+          '<b>color</b> — left bar colour on every box in this row. ' +
           'Drag a row by its <code>⋮⋮</code> handle to reorder.' +
           '</div>';
 
@@ -339,7 +339,7 @@ function renderBuilderStreamsStep() {
             '</tr></thead><tbody>';
 
   if (state.builder.streams.length === 0) {
-    html += tableEmptyRow(7, 'No streams yet. Click "+ Add stream" to start.');
+    html += tableEmptyRow(7, 'No rows yet. Click "+ Add row" to start.');
   } else {
     state.builder.streams.forEach((s, i) => {
       const invalidId = v.dupStreams.has(s.id) || !s.id ? ' invalid' : '';
@@ -357,7 +357,7 @@ function renderBuilderStreamsStep() {
 
   html += '</tbody></table>';
   html += '<div class="builder-action-bar">';
-  html +=   '<button class="builder-action" data-add="streams">+ Add stream</button>';
+  html +=   '<button class="builder-action" data-add="streams">+ Add row</button>';
   if (state.builder.streams.length === 0) {
     html += '<button class="builder-action" id="builder-start-from-sample">Start from sample</button>';
   }
@@ -369,8 +369,8 @@ function renderBuilderStreamsStep() {
 function renderBuilderStagesStep() {
   const v = validateBuilder();
   let html = "";
-  html += '<h2 class="builder-step-heading">Stages — the columns of the map</h2>';
-  html += '<p class="builder-step-blurb">Stages represent the lifecycle from inputs to outcomes, left-to-right. ' +
+  html += '<h2 class="builder-step-heading">Columns of the map</h2>';
+  html += '<p class="builder-step-blurb">Columns represent the lifecycle from inputs to outcomes, left-to-right. ' +
           'Examples: <i>Resources, Inputs, Processes, Outcomes</i>. The order you list them is the order ' +
           'they render.</p>';
   html += '<div class="builder-step-help">' +
@@ -392,7 +392,7 @@ function renderBuilderStagesStep() {
             '</tr></thead><tbody>';
 
   if (state.builder.stages.length === 0) {
-    html += tableEmptyRow(5, 'No stages yet. Click "+ Add stage".');
+    html += tableEmptyRow(5, 'No columns yet. Click "+ Add column".');
   } else {
     state.builder.stages.forEach((s, i) => {
       const invalidId = v.dupStages.has(s.id) || !s.id ? ' invalid' : '';
@@ -406,7 +406,7 @@ function renderBuilderStagesStep() {
     });
   }
   html += '</tbody></table>';
-  html += '<div class="builder-action-bar"><button class="builder-action" data-add="stages">+ Add stage</button></div>';
+  html += '<div class="builder-action-bar"><button class="builder-action" data-add="stages">+ Add column</button></div>';
   return html;
 }
 
@@ -414,14 +414,14 @@ function renderBuilderStagesStep() {
 function renderBuilderCategoriesStep() {
   const v = validateBuilder();
   let html = "";
-  html += '<h2 class="builder-step-heading">Categories — types of node</h2>';
-  html += '<p class="builder-step-blurb">Categories visually distinguish what each node represents. ' +
+  html += '<h2 class="builder-step-heading">Categories — types of box</h2>';
+  html += '<p class="builder-step-blurb">Categories visually distinguish what each box represents. ' +
           'Examples: <i>Resource, Process, Metric, Outcome</i>. Each category has its own colour.</p>';
   html += '<div class="builder-step-help">' +
           '<b>id</b> — lowercase, no spaces. Auto-filled. ' +
           '<b>label</b> — sidebar legend label. ' +
-          '<b>color</b> — node fill. ' +
-          '<b>text colour</b> — node label colour, pick a high-contrast value vs. the fill. ' +
+          '<b>color</b> — box fill. ' +
+          '<b>text colour</b> — box label colour, pick a high-contrast value vs. the fill. ' +
           'Drag a row by its <code>⋮⋮</code> handle to reorder.' +
           '</div>';
 
@@ -473,22 +473,22 @@ function renderBuilderNodesStep() {
   const categoryOptions = optionList(state.builder.categories.map(c => c.id));
 
   let html = "";
-  html += '<h2 class="builder-step-heading">Nodes — the boxes on the map</h2>';
-  html += '<p class="builder-step-blurb">Each node sits at the intersection of one stream (row) and one stage (column), ' +
+  html += '<h2 class="builder-step-heading">Boxes on the map</h2>';
+  html += '<p class="builder-step-blurb">Each box sits at the intersection of one row and one column, ' +
           'and has one category (colour). The optional fields on the right enable the live Simulation feature.</p>';
   html += '<div class="builder-step-help">' +
-          '<b>Required:</b> id, label, stream, stage, category. ' +
-          '<b>For simulation</b> add a <b>baseline</b> (e.g. 100) and <b>unit</b> (e.g. <i>units</i>, <i>%</i>, <i>£</i>, or whatever fits). ' +
-          'Tick <b>controllable</b> to expose a slider in Simulation mode. ' +
-          '<b>direction</b> sets outcome colouring on metric nodes (higher_better / lower_better).' +
+          '<b>Required:</b> id, label, row, column, category. ' +
+          '<b>For simulation</b> add a <b>starting value</b> (e.g. 100) and <b>unit</b> (e.g. <i>units</i>, <i>%</i>, <i>£</i>, or whatever fits). ' +
+          'Tick <b>adjustable</b> to expose a slider in Simulation mode. ' +
+          '<b>direction</b> sets outcome colouring on metric boxes (higher_better / lower_better).' +
           '</div>';
 
   if (state.builder.streams.length === 0 || state.builder.stages.length === 0 || state.builder.categories.length === 0) {
     html += '<div class="builder-validation errors">' +
               '<div class="builder-validation-title">Setup needed</div>' +
               '<ul>' +
-                (state.builder.streams.length    === 0 ? '<li>Go back to Step 1 and add at least one stream.</li>' : '') +
-                (state.builder.stages.length     === 0 ? '<li>Go back to Step 2 and add at least one stage.</li>' : '') +
+                (state.builder.streams.length    === 0 ? '<li>Go back to Step 1 and add at least one row.</li>' : '') +
+                (state.builder.stages.length     === 0 ? '<li>Go back to Step 2 and add at least one column.</li>' : '') +
                 (state.builder.categories.length === 0 ? '<li>Go back to Step 3 and add at least one category.</li>' : '') +
               '</ul>' +
             '</div>';
@@ -503,10 +503,10 @@ function renderBuilderNodesStep() {
               sortableTh("nodes", "id",           "ID",         ' style="width:160px"') +
               sortableTh("nodes", "label",        "Label",      ' style="width:180px"') +
               sortableTh("nodes", "description",  "Description", "") +
-              sortableTh("nodes", "stream",       "Stream",     ' style="width:110px"') +
-              sortableTh("nodes", "stage",        "Stage",      ' style="width:110px"') +
+              sortableTh("nodes", "stream",       "Row",        ' style="width:110px"') +
+              sortableTh("nodes", "stage",        "Column",     ' style="width:110px"') +
               sortableTh("nodes", "category",     "Category",   ' style="width:110px"') +
-              sortableTh("nodes", "baseline",     "Baseline",   ' style="width:90px"') +
+              sortableTh("nodes", "baseline",     "Starting value", ' style="width:90px"') +
               sortableTh("nodes", "unit",         "Unit",       ' style="width:90px"') +
               sortableTh("nodes", "controllable", "Slider",     ' style="width:50px"') +
               sortableTh("nodes", "direction",    "Direction",  ' style="width:120px"') +
@@ -515,7 +515,7 @@ function renderBuilderNodesStep() {
             '</tr></thead><tbody>';
 
   if (state.builder.nodes.length === 0) {
-    html += tableEmptyRow(13, 'No nodes yet. Click "+ Add node".');
+    html += tableEmptyRow(13, 'No boxes yet. Click "+ Add box".');
   } else {
     sortedBuilderIndices("nodes").forEach((i) => {
       const n = state.builder.nodes[i];
@@ -528,7 +528,7 @@ function renderBuilderNodesStep() {
       html +=   rowSelectTd("nodes", i);
       html +=   '<td><input type="text" data-section="nodes" data-field="id" data-index="' + i + '" value="' + escapeHtml(n.id) + '" class="' + idInvalid + '" placeholder="team_size" /></td>';
       html +=   '<td><input type="text" data-section="nodes" data-field="label" data-index="' + i + '" value="' + escapeHtml(n.label) + '" placeholder="Team size" /></td>';
-      html +=   '<td><input type="text" data-section="nodes" data-field="description" data-index="' + i + '" value="' + escapeHtml(n.description) + '" placeholder="What this node represents" /></td>';
+      html +=   '<td><input type="text" data-section="nodes" data-field="description" data-index="' + i + '" value="' + escapeHtml(n.description) + '" placeholder="What this box represents" /></td>';
       html +=   '<td><select data-section="nodes" data-field="stream" data-index="' + i + '" class="' + streamInvalid + '"><option value=""></option>' + streamOptions(n.stream) + '</select></td>';
       html +=   '<td><select data-section="nodes" data-field="stage" data-index="' + i + '" class="' + stageInvalid + '"><option value=""></option>' + stageOptions(n.stage) + '</select></td>';
       html +=   '<td><select data-section="nodes" data-field="category" data-index="' + i + '" class="' + categoryInvalid + '"><option value=""></option>' + categoryOptions(n.category) + '</select></td>';
@@ -546,7 +546,7 @@ function renderBuilderNodesStep() {
     });
   }
   html += '</tbody></table>';
-  html += '<div class="builder-action-bar"><button class="builder-action" data-add="nodes">+ Add node</button></div>';
+  html += '<div class="builder-action-bar"><button class="builder-action" data-add="nodes">+ Add box</button></div>';
   return html;
 }
 
@@ -556,17 +556,17 @@ function renderBuilderEdgesStep() {
   const nodeOptions = optionList(state.builder.nodes.map(n => n.id), state.builder.nodes);
 
   let html = "";
-  html += '<h2 class="builder-step-heading">Edges — causal links between nodes</h2>';
-  html += '<p class="builder-step-blurb">Each edge goes <b>from</b> a cause <b>to</b> an effect. ' +
+  html += '<h2 class="builder-step-heading">Links between boxes</h2>';
+  html += '<p class="builder-step-blurb">Each link goes <b>from</b> a cause <b>to</b> an effect. ' +
           'Pick the effect type — <i>enables</i> (prerequisite), <i>increases</i> (push up), or <i>decreases</i> (push down) — ' +
-          'and (optionally) override the elasticity for simulation.</p>';
+          'and (optionally) override the strength for simulation.</p>';
   // Help text + the default-elasticity inputs sit side-by-side on a wide card
   // (and stack on a narrow one) so the table gets more vertical room — see
   // .builder-edges-config in 11-builder.css.
   html += '<div class="builder-edges-config">';
   html +=   '<div class="builder-step-help">' +
-              '<b>Defaults below</b> — used when the elasticity column is left blank. ' +
-              'Elasticity = % change in target value per % change in source value. ' +
+              '<b>Defaults below</b> — used when the strength column is left blank. ' +
+              'Strength = % change in target value per % change in source value. ' +
               'For <i>decreases</i> effects the default is negative.' +
             '</div>';
   html +=   '<div class="builder-defaults">' +
@@ -579,7 +579,7 @@ function renderBuilderEdgesStep() {
   if (state.builder.nodes.length === 0) {
     html += '<div class="builder-validation errors">' +
               '<div class="builder-validation-title">Setup needed</div>' +
-              '<ul><li>Go back to Step 4 and add at least one node before defining edges.</li></ul>' +
+              '<ul><li>Go back to Step 4 and add at least one box before defining links.</li></ul>' +
             '</div>';
   }
 
@@ -592,14 +592,14 @@ function renderBuilderEdgesStep() {
               sortableTh("edges", "from",        "From",        ' style="width:200px"') +
               sortableTh("edges", "to",          "To",          ' style="width:200px"') +
               sortableTh("edges", "effect",      "Effect",      ' style="width:130px"') +
-              sortableTh("edges", "elasticity",  "Elasticity",  ' style="width:110px"') +
+              sortableTh("edges", "elasticity",  "Strength",  ' style="width:110px"') +
               '<th style="width:96px">Style</th>' +
               sortableTh("edges", "description", "Description", "") +
               '<th style="width:90px"></th>' +
             '</tr></thead><tbody>';
 
   if (state.builder.edges.length === 0) {
-    html += tableEmptyRow(8, 'No edges yet. Click "+ Add edge".');
+    html += tableEmptyRow(8, 'No links yet. Click "+ Add link".');
   } else {
     sortedBuilderIndices("edges").forEach((i) => {
       const e = state.builder.edges[i];
@@ -626,7 +626,7 @@ function renderBuilderEdgesStep() {
     });
   }
   html += '</tbody></table>';
-  html += '<div class="builder-action-bar"><button class="builder-action" data-add="edges">+ Add edge</button></div>';
+  html += '<div class="builder-action-bar"><button class="builder-action" data-add="edges">+ Add link</button></div>';
   return html;
 }
 
@@ -643,11 +643,11 @@ function renderBuilderReviewStep() {
 
   html += BUILDER_SPLIT;
   html += '<div class="builder-review-grid">' +
-            reviewTile("Streams",    b.streams.length) +
-            reviewTile("Stages",     b.stages.length) +
+            reviewTile("Rows",       b.streams.length) +
+            reviewTile("Columns",    b.stages.length) +
             reviewTile("Categories", b.categories.length) +
-            reviewTile("Nodes",      b.nodes.length) +
-            reviewTile("Edges",      b.edges.length) +
+            reviewTile("Boxes",      b.nodes.length) +
+            reviewTile("Links",      b.edges.length) +
           '</div>';
 
   if (v.errors.length === 0) {

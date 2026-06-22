@@ -88,7 +88,7 @@ function renderNodeSkeleton(node, editMode) {
 
   // ── Name: display ↔ display-styled input, in the same slot ───────────
   if (editMode) {
-    html += '<input type="text" class="detail-edit-input detail-name-input" data-field="label" value="' + escapeHtml(node.label || "") + '" aria-label="Node name">';
+    html += '<input type="text" class="detail-edit-input detail-name-input" data-field="label" value="' + escapeHtml(node.label || "") + '" aria-label="Box name">';
   } else {
     html += '<div class="detail-name">' + escapeHtml(node.label) + '</div>';
   }
@@ -104,14 +104,14 @@ function renderNodeSkeleton(node, editMode) {
   html += '<div class="detail-mode-toggle">';
   html += editMode
     ? '<button class="detail-mode-button active" data-action="toggle-edit-mode" aria-pressed="true">Done editing</button>'
-    : '<button class="detail-mode-button" data-action="toggle-edit-mode" aria-pressed="false">Edit Node</button>';
+    : '<button class="detail-mode-button" data-action="toggle-edit-mode" aria-pressed="false">Edit box</button>';
   html += '</div>';
 
   // ── Identity edit controls (edit only): the chips' source fields ─────
   if (editMode) {
     html += '<div class="detail-edit-block">';
-    html += editRow("Stream", selectInput("stream", STREAMS.map(s => ({ value: s.id, label: s.label })), node.stream));
-    html += editRow("Stage",  selectInput("stage",  STAGES.map(s => ({ value: s.id, label: s.label })),  node.stage));
+    html += editRow("Row", selectInput("stream", STREAMS.map(s => ({ value: s.id, label: s.label })), node.stream));
+    html += editRow("Column",  selectInput("stage",  STAGES.map(s => ({ value: s.id, label: s.label })),  node.stage));
     html += editRow("Categories", categoryEditControl(node));
     html += '</div>';
   }
@@ -121,22 +121,22 @@ function renderNodeSkeleton(node, editMode) {
 
   // ── Direct inputs — read-only stripes in BOTH modes (incoming edges
   //    are edited from the source node; clicking jumps there) ───────────
-  html += renderEdgeList("Direct Inputs", directInputs, "from", "No direct inputs (root cause / exogenous resource)");
+  html += renderEdgeList("What feeds in", directInputs, "from", "Nothing feeds into this box — it is a starting input.");
   if (editMode && directInputs.length) {
-    html += '<div class="detail-edge-hint">Edit an input from its source node →</div>';
+    html += '<div class="detail-edge-hint">Edit a link from the box it starts at →</div>';
   }
 
   // ── Direct impacts — read-only stripes (view) ↔ editable editors (edit) ─
   if (editMode) {
     html += renderOutgoingEdgesBlock(node);
   } else {
-    html += renderEdgeList("Direct Impacts", directImpacts, "to", "No direct impacts (terminal outcome)");
+    html += renderEdgeList("What it affects", directImpacts, "to", "This box does not affect anything else — it is a final result.");
   }
 
   // ── Delete node (edit only) ──────────────────────────────────────────
   if (editMode) {
     html += '<div class="detail-actions">';
-    html += '<button class="detail-button detail-delete-btn" data-action="delete-node">Delete node</button>';
+    html += '<button class="detail-button detail-delete-btn" data-action="delete-node">Delete box</button>';
     html += '</div>';
   }
 
@@ -173,13 +173,13 @@ function renderQuantFrame(node, editMode) {
   let html = '<div class="detail-quant-block">';
 
   // Baseline — display value ↔ number input on the rail
-  html += row("Baseline", editMode
+  html += row("Starting value", editMode
     ? '<input type="number" step="any" class="detail-edit-input detail-edit-number detail-quant-input" data-field="baseline" value="' + (hasBaseline ? node.baseline : "") + '" placeholder="—">'
     : '<span class="detail-quant-value">' + escapeHtml(formatScalar(node.baseline)) + ' ' + escapeHtml(unit) + '</span>');
 
   // Unit — edit only (folded into the value displays in view)
   if (editMode) {
-    html += row("Unit", '<input type="text" class="detail-edit-input detail-quant-input detail-quant-input-text" data-field="unit" value="' + escapeHtml(unit) + '" placeholder="FTE, %, …">');
+    html += row("Unit", '<input type="text" class="detail-edit-input detail-quant-input detail-quant-input-text" data-field="unit" value="' + escapeHtml(unit) + '" placeholder="%, people, £, …">');
   }
 
   // Current — computed; read-only in edit, an input only in view + sim mode
@@ -190,13 +190,13 @@ function renderQuantFrame(node, editMode) {
   }
 
   // Δ vs baseline — computed (read-only in both)
-  html += row("Δ vs baseline", '<span class="detail-quant-value' + (editMode ? ' detail-quant-derived' : '') + '" style="color:' + deltaColor + '; font-weight:600;">' + escapeHtml(deltaInfo.text || '—') + '</span>');
+  html += row("Change vs start", '<span class="detail-quant-value' + (editMode ? ' detail-quant-derived' : '') + '" style="color:' + deltaColor + '; font-weight:600;">' + escapeHtml(deltaInfo.text || '—') + '</span>');
 
   // Controllable (edit checkbox) / Type (view descriptor)
   if (editMode) {
-    html += row("Controllable", '<label class="detail-quant-check"><input type="checkbox" data-field="controllable"' + (node.controllable ? " checked" : "") + '> sliderable</label>');
+    html += row("Adjustable", '<label class="detail-quant-check"><input type="checkbox" data-field="controllable"' + (node.controllable ? " checked" : "") + '> has a slider</label>');
   } else if (node.controllable) {
-    html += row("Type", '<span class="detail-quant-value" style="color: var(--text-tertiary);">Exogenous (sliderable)</span>');
+    html += row("Type", '<span class="detail-quant-value" style="color: var(--text-tertiary);">External input (adjustable)</span>');
   }
 
   // Outcome direction — descriptor ↔ select
@@ -242,8 +242,8 @@ function categoryEditControl(node) {
     }
     return h + '</div>';
   };
-  return group("Primary · fill", byClass.primary, primSet) +
-         group("Secondary · chips", byClass.secondary, secSet);
+  return group("Main · fills the box", byClass.primary, primSet) +
+         group("Corner tag", byClass.secondary, secSet);
 }
 
 // Category / stream / stage tag chips shown at the top of both view and edit
@@ -286,10 +286,10 @@ function renderOutgoingEdgesBlock(node) {
   const adding = state.canvasEdit && state.canvasEdit.addingEdgeFromNodeId === node.id;
 
   let html = '<div class="outgoing-edges-block">';
-  html +=   '<div class="detail-list-title"><span>Direct Impacts</span><span class="count">' + outgoing.length + '</span></div>';
+  html +=   '<div class="detail-list-title"><span>What it affects</span><span class="count">' + outgoing.length + '</span></div>';
 
   if (outgoing.length === 0) {
-    html += '<div class="outgoing-edges-empty">No outgoing edges yet. Drag from the right edge of this node on the canvas, or add one below.</div>';
+    html += '<div class="outgoing-edges-empty">No links out yet. Drag from the right edge of this box on the map, or add one below.</div>';
   } else {
     for (const edge of outgoing) {
       const target = nodeById[edge.to];
@@ -297,8 +297,8 @@ function renderOutgoingEdgesBlock(node) {
       const flashClass = (edge.id === flashedId) ? " flash" : "";
       html += '<div class="edge-stripe edge-stripe--edit ' + edge.effect + flashClass + '" data-edge-row-id="' + escapeHtml(edge.id) + '">';
       html +=   '<div class="outgoing-edge-header">';
-      html +=     '<button class="outgoing-edge-target-link" data-jump-node="' + escapeHtml(edge.to) + '" title="Jump to target node">→ ' + escapeHtml(target ? target.label : edge.to) + '</button>';
-      html +=     '<button class="outgoing-edge-delete" data-edge-action="delete" data-edge-id="' + escapeHtml(edge.id) + '" title="Delete this edge">×</button>';
+      html +=     '<button class="outgoing-edge-target-link" data-jump-node="' + escapeHtml(edge.to) + '" title="Jump to the box this affects">→ ' + escapeHtml(target ? target.label : edge.to) + '</button>';
+      html +=     '<button class="outgoing-edge-delete" data-edge-action="delete" data-edge-id="' + escapeHtml(edge.id) + '" title="Delete this link">×</button>';
       html +=   '</div>';
       html +=   '<div class="outgoing-edge-controls">';
       html +=     '<select class="detail-edit-input detail-edit-select" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="effect">';
@@ -306,7 +306,7 @@ function renderOutgoingEdgesBlock(node) {
         html +=     '<option value="' + eff + '"' + (edge.effect === eff ? " selected" : "") + '>' + eff + '</option>';
       }
       html +=     '</select>';
-      html +=     '<input type="number" step="any" class="detail-edit-input detail-edit-number outgoing-edge-elasticity" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="elasticity" value="' + (edge.elasticity !== undefined && edge.elasticity !== null ? edge.elasticity : "") + '" placeholder="ε = ' + defaultElasticity + '" title="Elasticity (blank = default for this effect)">';
+      html +=     '<input type="number" step="any" class="detail-edit-input detail-edit-number outgoing-edge-elasticity" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="elasticity" value="' + (edge.elasticity !== undefined && edge.elasticity !== null ? edge.elasticity : "") + '" placeholder="default ' + defaultElasticity + '" title="Strength (leave blank for the default for this link type)">';
       html +=     '<select class="detail-edit-input detail-edit-select outgoing-edge-style" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="style" title="Line style">';
       html +=       '<option value="solid"'  + (edge.style === "dashed" ? "" : " selected") + '>Solid</option>';
       html +=       '<option value="dashed"' + (edge.style === "dashed" ? " selected" : "") + '>Dashed</option>';
@@ -331,12 +331,12 @@ function renderOutgoingEdgesBlock(node) {
     html += '<div class="outgoing-edge-add">';
     if (otherNodes.length === 0) {
       const emptyMsg = hasAnyOtherNode
-        ? "All other nodes are already connected."
-        : "Add at least one other node before connecting edges.";
+        ? "Every other box is already linked."
+        : "Add at least one more box before drawing links.";
       html +=   '<div class="outgoing-edges-empty">' + emptyMsg + '</div>';
       html +=   '<button class="detail-edit-link" data-action="cancel-add-edge">Cancel</button>';
     } else {
-      html +=   '<div class="outgoing-edge-add-title">Add outgoing edge</div>';
+      html +=   '<div class="outgoing-edge-add-title">Add a link out</div>';
       html +=   '<div class="outgoing-edge-add-row">';
       html +=     '<select class="detail-edit-input detail-edit-select" data-action="pick-add-target">';
       for (const n of otherNodes) {
@@ -351,12 +351,12 @@ function renderOutgoingEdgesBlock(node) {
       html +=   '</div>';
       html +=   '<div class="outgoing-edge-add-actions">';
       html +=     '<button class="detail-edit-link" data-action="cancel-add-edge">Cancel</button>';
-      html +=     '<button class="detail-button" data-action="confirm-add-edge">Add edge</button>';
+      html +=     '<button class="detail-button" data-action="confirm-add-edge">Add link</button>';
       html +=   '</div>';
     }
     html += '</div>';
   } else {
-    html += '<button class="detail-edit-link outgoing-edge-add-toggle" data-action="show-add-edge">+ Add outgoing edge</button>';
+    html += '<button class="detail-edit-link outgoing-edge-add-toggle" data-action="show-add-edge">+ Add a link out</button>';
   }
 
   html += '</div>';
@@ -623,13 +623,13 @@ function renderEdgeItem(otherNode, edge, direction) {
   const arrow = direction === "from" ? "←" : "→";
   const elasticity = resolveEdgeElasticity(edge);
   const elasticitySign = elasticity > 0 ? "+" : "";
-  const elasticityText = elasticity !== 0 ? "ε = " + elasticitySign + elasticity.toFixed(2) : "ε = 0";
+  const elasticityText = elasticity !== 0 ? "Strength " + elasticitySign + elasticity.toFixed(2) : "Strength 0";
 
   // A real <button> so the "jump to the connected node" action is Tab-reachable
   // and Enter/Space-activatable (the click handler in wireViewModeHandlers works
   // unchanged). aria-label names the otherwise-implicit navigate action.
-  const jumpDir = direction === "from" ? "upstream" : "downstream";
-  let html = '<button type="button" class="edge-stripe edge-stripe--nav ' + effectClass + '" data-target-node="' + escapeHtml(otherNode.id) + '" aria-label="Jump to ' + jumpDir + ' node: ' + escapeHtml(otherNode.label) + '">';
+  const jumpDir = direction === "from" ? "(affects this)" : "(this affects)";
+  let html = '<button type="button" class="edge-stripe edge-stripe--nav ' + effectClass + '" data-target-node="' + escapeHtml(otherNode.id) + '" aria-label="Jump to ' + escapeHtml(otherNode.label) + ' ' + jumpDir + '">';
   html +=   '<div class="detail-edge-header">';
   html +=     '<div class="detail-edge-name">' + arrow + ' ' + escapeHtml(otherNode.label) + '</div>';
   html +=     '<div class="detail-edge-elasticity">' + escapeHtml(elasticityText) + '</div>';
