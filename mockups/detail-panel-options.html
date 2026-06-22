@@ -196,8 +196,11 @@ h3.sec .n{color:var(--ink3);font-size:14px;font-family:'IBM Plex Mono',monospace
     </tbody>
   </table></div>
 
-  <div class="foot">Mockup only — nothing in the app is changed. Built before any change, per the standing instruction.
-    Recommended path: <b>A → B → C</b>, shipped in stages, with C (converge) as the target you chose.</div>
+  <div class="foot"><b style="color:var(--good)">Status: implemented A → B → C</b> on the
+    <code>detail-panel-converge</code> branch, staged: B (edge rows → keyboard-operable buttons + focus ring, white
+    swatch ring, aria-pressed), A (one label axis + one value rail), then C (one <code>renderNodeSkeleton</code> —
+    view &amp; edit share the structure; toggling Edit unlocks each field in place; verified 0px name jump, all edits
+    write, no console errors). Built before the change, per the standing instruction.</div>
 </div>
 
 <script>
