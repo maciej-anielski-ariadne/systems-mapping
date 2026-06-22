@@ -42,7 +42,8 @@ function renderDetailPanel() {
   contentState.style.display = "block";
 
   const editMode = !!(state.canvasEdit && state.canvasEdit.editMode);
-  contentState.innerHTML = editMode ? renderEditMode(node) : renderViewMode(node);
+  contentState.classList.toggle("is-editing", editMode);
+  contentState.innerHTML = renderNodeSkeleton(node, editMode);
 
   // Upgrade every freshly-rendered <select> into a typable filterable dropdown.
   // Safe to call before the change handlers below are wired: picking an option
@@ -60,145 +61,151 @@ function renderDetailPanel() {
 }
 
 // =============================================================================
-// VIEW MODE
+// UNIFIED NODE SKELETON — view + edit share ONE structure; toggling Edit just
+// swaps each field's leaf (display span ↔ input/select). The same sections sit
+// in the same positions in both modes, so the toggle reads as fields unlocking
+// in place rather than a layout swap. Leaf elements keep their classes /
+// data-attributes, so the existing view / edit handlers + field-write logic
+// are unchanged.
 // =============================================================================
 
-function renderViewMode(node) {
-  const directInputs = incomingEdges[node.id].map(edge => ({
-    edge: edge,
-    otherNode: nodeById[edge.from],
-  }));
-  const directImpacts = outgoingEdges[node.id].map(edge => ({
-    edge: edge,
-    otherNode: nodeById[edge.to],
-  }));
+function renderNodeSkeleton(node, editMode) {
+  const directInputs  = incomingEdges[node.id].map(edge => ({ edge: edge, otherNode: nodeById[edge.from] }));
+  const directImpacts = outgoingEdges[node.id].map(edge => ({ edge: edge, otherNode: nodeById[edge.to] }));
 
   let html = "";
 
-  // ───── Tags row ──────────────────────────────────────────────────────
+  // ── Identity: tags (both modes) ──────────────────────────────────────
   html += renderTagRow(node);
 
-  // ───── Name + description ────────────────────────────────────────────
-  html += '<div class="detail-name">' + escapeHtml(node.label) + '</div>';
-  if (node.description) {
+  // ── Name: display ↔ display-styled input, in the same slot ───────────
+  if (editMode) {
+    html += '<input type="text" class="detail-edit-input detail-name-input" data-field="label" value="' + escapeHtml(node.label || "") + '" aria-label="Node name">';
+  } else {
+    html += '<div class="detail-name">' + escapeHtml(node.label) + '</div>';
+  }
+
+  // ── Description: text ↔ textarea, in the same slot ───────────────────
+  if (editMode) {
+    html += '<textarea class="detail-edit-input detail-edit-textarea detail-desc-input" data-field="description" rows="2" placeholder="Description…" aria-label="Description">' + escapeHtml(node.description || "") + '</textarea>';
+  } else if (node.description) {
     html += '<div class="detail-description">' + escapeHtml(node.description) + '</div>';
   }
 
-  // ───── Quantification block ──────────────────────────────────────────
-  if (node.baseline !== undefined && node.baseline !== null) {
-    html += renderQuantBlock(node);
-  }
-
-  // ───── Edit Node button (full-width, centred, above Direct Inputs) ──
+  // ── Mode toggle: the stable anchor between identity and the data ──────
   html += '<div class="detail-mode-toggle">';
-  html +=   '<button class="detail-mode-button" data-action="toggle-edit-mode" aria-pressed="false">Edit Node</button>';
+  html += editMode
+    ? '<button class="detail-mode-button active" data-action="toggle-edit-mode" aria-pressed="true">Done editing</button>'
+    : '<button class="detail-mode-button" data-action="toggle-edit-mode" aria-pressed="false">Edit Node</button>';
   html += '</div>';
 
-  // ───── Direct inputs + impacts ──────────────────────────────────────
-  html += renderEdgeList("Direct Inputs",  directInputs,  "from", "No direct inputs (root cause / exogenous resource)");
-  html += renderEdgeList("Direct Impacts", directImpacts, "to",   "No direct impacts (terminal outcome)");
+  // ── Identity edit controls (edit only): the chips' source fields ─────
+  if (editMode) {
+    html += '<div class="detail-edit-block">';
+    html += editRow("Stream", selectInput("stream", STREAMS.map(s => ({ value: s.id, label: s.label })), node.stream));
+    html += editRow("Stage",  selectInput("stage",  STAGES.map(s => ({ value: s.id, label: s.label })),  node.stage));
+    html += editRow("Categories", categoryEditControl(node));
+    html += '</div>';
+  }
+
+  // ── Quantification: values ↔ inputs, on the same rail ────────────────
+  html += renderQuantFrame(node, editMode);
+
+  // ── Direct inputs — read-only stripes in BOTH modes (incoming edges
+  //    are edited from the source node; clicking jumps there) ───────────
+  html += renderEdgeList("Direct Inputs", directInputs, "from", "No direct inputs (root cause / exogenous resource)");
+  if (editMode && directInputs.length) {
+    html += '<div class="detail-edge-hint">Edit an input from its source node →</div>';
+  }
+
+  // ── Direct impacts — read-only stripes (view) ↔ editable editors (edit) ─
+  if (editMode) {
+    html += renderOutgoingEdgesBlock(node);
+  } else {
+    html += renderEdgeList("Direct Impacts", directImpacts, "to", "No direct impacts (terminal outcome)");
+  }
+
+  // ── Delete node (edit only) ──────────────────────────────────────────
+  if (editMode) {
+    html += '<div class="detail-actions">';
+    html += '<button class="detail-button detail-delete-btn" data-action="delete-node">Delete node</button>';
+    html += '</div>';
+  }
 
   return html;
 }
 
-function renderQuantBlock(node) {
-  const currentValue = state.computedValues[node.id];
-  const deltaInfo = formatNodeDelta(node.id);
-  const unit = node.unit || "";
+// One quantification block, shared by both modes. View shows display values on
+// the rail; edit swaps each editable value for an input on the SAME rail and
+// reveals the edit-only rows (Unit, Controllable, Slider max). Current + Δ are
+// computed, so they stay read-only in edit (marked .detail-quant-derived).
+function renderQuantFrame(node, editMode) {
+  const hasBaseline = node.baseline !== undefined && node.baseline !== null;
+  // View shows the block only when there's a baseline (as before); edit always
+  // shows it so baseline / unit / direction / etc. can be set.
+  if (!editMode && !hasBaseline) return "";
 
+  const unit         = node.unit || "";
+  const currentValue = state.computedValues[node.id];
+  const deltaInfo    = formatNodeDelta(node.id);
   let deltaColor = "var(--text-secondary)";
   if (Math.abs(deltaInfo.pct) >= 0.5) {
     if      (node.direction === "higher_better") deltaColor = deltaInfo.pct > 0 ? "var(--status-good)" : "var(--status-bad)";
     else if (node.direction === "lower_better")  deltaColor = deltaInfo.pct < 0 ? "var(--status-good)" : "var(--status-bad)";
     else                                         deltaColor = deltaInfo.pct > 0 ? "var(--accent-blue)" : "var(--accent-orange)";
   }
-
-  let html = '<div class="detail-quant-block">';
-  html +=   '<div class="detail-quant-row"><span class="detail-quant-label">Baseline</span><span class="detail-quant-value">' + escapeHtml(formatScalar(node.baseline)) + ' ' + escapeHtml(unit) + '</span></div>';
-
-  if (state.simulationMode && node.controllable) {
-    html += '<div class="detail-quant-row"><span class="detail-quant-label">Current</span><span class="detail-quant-value" style="font-weight:600;">' +
-              '<input type="number" class="detail-value-input" step="any" value="' + (currentValue !== undefined ? formatScalar(currentValue) : node.baseline) + '" data-node-id="' + escapeHtml(node.id) + '" aria-label="Current value of ' + escapeHtml(node.label) + '" />' +
-              (unit ? ' ' + escapeHtml(unit) : '') +
-            '</span></div>';
-  } else {
-    html += '<div class="detail-quant-row"><span class="detail-quant-label">Current</span><span class="detail-quant-value" style="font-weight:600;">' + escapeHtml(currentValue !== undefined ? formatScalar(currentValue) + ' ' + unit : '—') + '</span></div>';
-  }
-
-  html +=   '<div class="detail-quant-row"><span class="detail-quant-label">Δ vs baseline</span><span class="detail-quant-value" style="color:' + deltaColor + '; font-weight:600;">' + escapeHtml(deltaInfo.text || '—') + '</span></div>';
-  if (node.controllable) {
-    html += '<div class="detail-quant-row"><span class="detail-quant-label">Type</span><span class="detail-quant-value" style="color: var(--text-tertiary);">Exogenous input (sliderable)</span></div>';
-  }
-  if      (node.direction === "higher_better") html += '<div class="detail-quant-row"><span class="detail-quant-label">Outcome</span><span class="detail-quant-value" style="color: var(--status-good);">↑ higher is better</span></div>';
-  else if (node.direction === "lower_better")  html += '<div class="detail-quant-row"><span class="detail-quant-label">Outcome</span><span class="detail-quant-value" style="color: var(--status-good);">↓ lower is better</span></div>';
-  else if (node.direction === "neutral")       html += '<div class="detail-quant-row"><span class="detail-quant-label">Outcome</span><span class="detail-quant-value" style="color: var(--text-tertiary);">context-dependent</span></div>';
-  html += '</div>';
-  return html;
-}
-
-// =============================================================================
-// EDIT MODE
-// =============================================================================
-
-function renderEditMode(node) {
-  let html = "";
-
-  // ───── Tags row (kept for at-a-glance context) ───────────────────────
-  html += renderTagRow(node);
-
-  // ───── Done editing button (full-width, top of edit mode) ────────────
-  html += '<div class="detail-mode-toggle">';
-  html +=   '<button class="detail-mode-button active" data-action="toggle-edit-mode" aria-pressed="true">Done editing</button>';
-  html += '</div>';
-
-  // ───── Edit form ─────────────────────────────────────────────────────
-  html += renderNodeEditBlock(node);
-
-  // ───── Outgoing edges ───────────────────────────────────────────────
-  html += renderOutgoingEdgesBlock(node);
-
-  // ───── Delete node ───────────────────────────────────────────────────
-  html += '<div class="detail-actions">';
-  html +=   '<button class="detail-button detail-delete-btn" data-action="delete-node">Delete node</button>';
-  html += '</div>';
-
-  return html;
-}
-
-// ───── Edit form ──────────────────────────────────────────────────────
-function renderNodeEditBlock(node) {
   const directionOptions = [
     { value: "",              label: "— none —" },
     { value: "higher_better", label: "Higher is better" },
     { value: "lower_better",  label: "Lower is better" },
     { value: "neutral",       label: "Neutral / context" },
   ];
-  let html = '<div class="detail-edit-block">';
-  html +=   '<div class="detail-list-title"><span>Node fields</span></div>';
+  const row = (label, leaf) => '<div class="detail-quant-row"><span class="detail-quant-label">' + escapeHtml(label) + '</span>' + leaf + '</div>';
 
-  html += editRow("Label",
-    '<input type="text" class="detail-edit-input" data-field="label" value="' + escapeHtml(node.label || "") + '">');
-  html += editRow("Description",
-    '<textarea class="detail-edit-input detail-edit-textarea" data-field="description" rows="2">' + escapeHtml(node.description || "") + '</textarea>');
-  html += editRow("Stream",
-    selectInput("stream", STREAMS.map(s => ({ value: s.id, label: s.label })), node.stream));
-  html += editRow("Stage",
-    selectInput("stage", STAGES.map(s => ({ value: s.id, label: s.label })), node.stage));
+  let html = '<div class="detail-quant-block">';
 
-  html += editRow("Categories", categoryEditControl(node));
+  // Baseline — display value ↔ number input on the rail
+  html += row("Baseline", editMode
+    ? '<input type="number" step="any" class="detail-edit-input detail-edit-number detail-quant-input" data-field="baseline" value="' + (hasBaseline ? node.baseline : "") + '" placeholder="—">'
+    : '<span class="detail-quant-value">' + escapeHtml(formatScalar(node.baseline)) + ' ' + escapeHtml(unit) + '</span>');
 
-  html += editRow("Baseline",
-    '<input type="number" step="any" class="detail-edit-input detail-edit-number" data-field="baseline" value="' + (node.baseline !== undefined && node.baseline !== null ? node.baseline : "") + '" placeholder="(blank = no value)">');
-  html += editRow("Unit",
-    '<input type="text" class="detail-edit-input" data-field="unit" value="' + escapeHtml(node.unit || "") + '" placeholder="e.g. FTE, %, hours">');
+  // Unit — edit only (folded into the value displays in view)
+  if (editMode) {
+    html += row("Unit", '<input type="text" class="detail-edit-input detail-quant-input detail-quant-input-text" data-field="unit" value="' + escapeHtml(unit) + '" placeholder="FTE, %, …">');
+  }
 
-  html += '<div class="detail-edit-row">';
-  html +=   '<label class="detail-edit-label-inline"><input type="checkbox" data-field="controllable"' + (node.controllable ? " checked" : "") + '> Controllable (sliderable)</label>';
-  html += '</div>';
+  // Current — computed; read-only in edit, an input only in view + sim mode
+  if (!editMode && state.simulationMode && node.controllable) {
+    html += row("Current", '<span class="detail-quant-value" style="font-weight:600;"><input type="number" class="detail-value-input" step="any" value="' + (currentValue !== undefined ? formatScalar(currentValue) : node.baseline) + '" data-node-id="' + escapeHtml(node.id) + '" aria-label="Current value of ' + escapeHtml(node.label) + '" />' + (unit ? ' ' + escapeHtml(unit) : '') + '</span>');
+  } else {
+    html += row("Current", '<span class="detail-quant-value' + (editMode ? ' detail-quant-derived' : '') + '" style="font-weight:600;">' + escapeHtml(currentValue !== undefined ? formatScalar(currentValue) + ' ' + unit : '—') + '</span>');
+  }
 
-  html += editRow("Outcome direction", selectInput("direction", directionOptions, node.direction || ""));
-  html += editRow("Slider max",
-    '<input type="number" step="any" class="detail-edit-input detail-edit-number" data-field="sliderMax" value="' + (node.sliderMax !== undefined && node.sliderMax !== null ? node.sliderMax : "") + '" placeholder="default = 2 × baseline">');
+  // Δ vs baseline — computed (read-only in both)
+  html += row("Δ vs baseline", '<span class="detail-quant-value' + (editMode ? ' detail-quant-derived' : '') + '" style="color:' + deltaColor + '; font-weight:600;">' + escapeHtml(deltaInfo.text || '—') + '</span>');
+
+  // Controllable (edit checkbox) / Type (view descriptor)
+  if (editMode) {
+    html += row("Controllable", '<label class="detail-quant-check"><input type="checkbox" data-field="controllable"' + (node.controllable ? " checked" : "") + '> sliderable</label>');
+  } else if (node.controllable) {
+    html += row("Type", '<span class="detail-quant-value" style="color: var(--text-tertiary);">Exogenous (sliderable)</span>');
+  }
+
+  // Outcome direction — descriptor ↔ select
+  if (editMode) {
+    html += row("Outcome", '<span class="detail-quant-control">' + selectInput("direction", directionOptions, node.direction || "") + '</span>');
+  } else {
+    let d = "";
+    if      (node.direction === "higher_better") d = '<span class="detail-quant-value" style="color: var(--status-good);">↑ higher is better</span>';
+    else if (node.direction === "lower_better")  d = '<span class="detail-quant-value" style="color: var(--status-good);">↓ lower is better</span>';
+    else if (node.direction === "neutral")       d = '<span class="detail-quant-value" style="color: var(--text-tertiary);">context-dependent</span>';
+    if (d) html += row("Outcome", d);
+  }
+
+  // Slider max — edit only
+  if (editMode) {
+    html += row("Slider max", '<input type="number" step="any" class="detail-edit-input detail-edit-number detail-quant-input" data-field="sliderMax" value="' + (node.sliderMax !== undefined && node.sliderMax !== null ? node.sliderMax : "") + '" placeholder="2 × base">');
+  }
 
   html += '</div>';
   return html;
@@ -271,7 +278,7 @@ function renderOutgoingEdgesBlock(node) {
   const adding = state.canvasEdit && state.canvasEdit.addingEdgeFromNodeId === node.id;
 
   let html = '<div class="outgoing-edges-block">';
-  html +=   '<div class="detail-list-title"><span>Outgoing edges</span><span class="count">' + outgoing.length + '</span></div>';
+  html +=   '<div class="detail-list-title"><span>Direct Impacts</span><span class="count">' + outgoing.length + '</span></div>';
 
   if (outgoing.length === 0) {
     html += '<div class="outgoing-edges-empty">No outgoing edges yet. Drag from the right edge of this node on the canvas, or add one below.</div>';
@@ -365,10 +372,9 @@ function wireSharedHandlers(node, contentState) {
       renderDetailPanel();
     });
   }
-}
 
-function wireViewModeHandlers(node, contentState) {
-  // Clicking an edge item navigates to that node.
+  // Edge stripes navigate to the connected node — in BOTH modes. In edit, the
+  // Direct Inputs are read-only links to the source node where they're edited.
   contentState.querySelectorAll(".detail-edge-item").forEach(item => {
     item.addEventListener("click", () => {
       const targetNodeId = item.getAttribute("data-target-node");
@@ -376,7 +382,9 @@ function wireViewModeHandlers(node, contentState) {
       scrollNodeIntoView(targetNodeId);
     });
   });
+}
 
+function wireViewModeHandlers(node, contentState) {
   // Editable "Current" input in sim mode for controllable nodes.
   contentState.querySelectorAll(".detail-value-input").forEach(input => {
     input.addEventListener("input", event => {

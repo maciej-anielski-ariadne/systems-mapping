@@ -185,6 +185,28 @@
   line-height: 1.2;
 }
 
+/* Edit-mode name: an input styled like the display name, so toggling Edit
+ * swaps it in place without changing the row height or position (converged
+ * skeleton). */
+/* Compound selector (.detail-edit-input.detail-name-input) so it beats the
+ * later, equal-specificity .detail-edit-input font-size. */
+.detail-edit-input.detail-name-input {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  padding: 2px var(--space-2);
+  margin-bottom: var(--heading-gap);
+}
+
+/* Edit-mode description textarea occupies the same slot as the display text. */
+.detail-edit-input.detail-desc-input {
+  font-size: 13px;
+  line-height: 1.65;
+  margin-bottom: var(--section-gap);
+}
+
 .detail-description {
   font-size: 13px;
   line-height: 1.65;
@@ -300,6 +322,16 @@
   margin-top: var(--row-gap);
 }
 
+/* Hint under Direct Inputs in edit mode: incoming edges are edited from the
+ * source node, not here (the Inputs / Impacts asymmetry, made obvious). */
+.detail-edge-hint {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-style: italic;
+  margin: calc(-1 * var(--row-gap)) 0 var(--space-2);
+  padding-left: calc(var(--edge-stripe-w) + var(--space-0_5));
+}
+
 /* === Quantification block (baseline, current, delta) === */
 .detail-quant-block {
   margin: var(--section-gap) 0;
@@ -336,6 +368,32 @@
   text-align: right;
   flex-shrink: 0;
 }
+
+/* Edit-mode quant leaves. Numeric / unit inputs sit on the value rail
+ * (right-aligned, fixed width) so a display value "unlocks" into an input in
+ * the same spot; the direction select and controllable checkbox share that
+ * right edge. */
+.detail-quant-row .detail-quant-input {
+  flex: 0 0 124px;
+  width: 124px;
+  text-align: right;
+  padding: var(--space-0_5) var(--space-1_5);
+}
+.detail-quant-input-text { font-family: var(--font-ui); }
+.detail-quant-control { flex: 0 0 150px; }
+.detail-quant-control .detail-edit-input { width: 100%; }
+.detail-quant-check {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-md);
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.detail-quant-check input { margin: 0; cursor: pointer; }
+/* Current + Δ are computed, so they stay read-only inside the otherwise-editable
+ * block — mark them so the mixed lock state reads as intentional. */
+.detail-quant-derived { font-style: italic; opacity: 0.75; }
 
 /* Editable current-value input shown in the "Current" row when the
  * selected node is a controllable input and sim mode is on. Typed values
