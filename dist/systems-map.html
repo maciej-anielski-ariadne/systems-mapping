@@ -960,7 +960,7 @@ body.panel-resizing {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: transparent;   /* blends with the sidebar at rest AND on hover — no box */
+  background: var(--bg-deepest);   /* visible neutral box, but no border */
   color: var(--text-secondary);
   font-family: var(--font-mono);
   font-size: 10px;
@@ -970,7 +970,7 @@ body.panel-resizing {
 /* Line-style legend badge: a neutral count box with a solid / dashed mini-line
  * under the count (a line style has no colour of its own). */
 .count-swatch--style {
-  background: transparent;
+  background: var(--bg-deepest);
   filter: none;
 }
 .count-swatch--style .count-num {
