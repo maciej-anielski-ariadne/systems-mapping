@@ -921,6 +921,51 @@ body.panel-resizing {
   color: var(--text-tertiary);
 }
 
+/* Right-side colour box that doubles as the node-count badge (see countSwatch
+ * in 13-sidebar.js). The colour input fills it; the count sits on top in an
+ * auto-contrasting colour. Replaces the old left-edge swatch + separate count. */
+.count-swatch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 18px;
+  border-radius: 4px;
+  overflow: hidden;
+  filter: saturate(0.65);   /* match the muted map fills */
+}
+.count-swatch .sidebar-edit-color {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.count-swatch .count-num {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  pointer-events: none;   /* clicks fall through to the colour input behind it */
+}
+/* Plain variant for stages (no colour) — a neutral count badge, same size. */
+.count-swatch--plain {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-deepest);
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  filter: none;
+}
+
 /* Reclassify button ("→ chip" / "→ fill") — moves a category between the
  * Primary and Secondary groups. Hidden until the row is hovered, like the
  * row's trash icon, so the compact row stays clean. */
@@ -1189,14 +1234,14 @@ body.panel-resizing {
   width: 14px;
   height: 14px;
   border-radius: 3px;
-  margin-right: var(--space-2);
+  margin-left: var(--space-2);   /* indicator now sits on the RIGHT, like the count badges */
   flex-shrink: 0;
 }
 
 .legend-line {
   width: 24px;
   height: 2px;
-  margin-right: var(--space-2);
+  margin-left: var(--space-2);   /* indicator now sits on the RIGHT */
   flex-shrink: 0;
 }
 
@@ -4226,17 +4271,11 @@ body.no-data .detail-panel {
          renderEdgeStyleFilters / renderTraceFilters in 13-sidebar.js). Each row
          toggles like Streams: click to hide that edge effect / line style on the
          map (or suppress a trace direction); click again to show it. -->
-    <div class="sidebar-section sidebar-accordion collapsed" id="map-appearance">
-      <button class="sidebar-accordion-header" id="map-appearance-toggle" aria-expanded="false" aria-controls="map-appearance-body">
-        <span>Map appearance</span>
-        <span class="sidebar-accordion-chevron" aria-hidden="true">▾</span>
-      </button>
-      <div class="sidebar-accordion-body" id="map-appearance-body">
-        <div id="edge-type-filters"></div>
-        <div id="edge-style-filters"></div>
-        <div id="trace-filters"></div>
-      </div>
-    </div>
+    <!-- Edge / trace filters — formerly the "Map appearance" accordion, now plain
+         sections styled like Stages / Streams. JS fills these in 13-sidebar.js. -->
+    <div class="sidebar-section"><div id="edge-type-filters"></div></div>
+    <div class="sidebar-section"><div id="edge-style-filters"></div></div>
+    <div class="sidebar-section"><div id="trace-filters"></div></div>
   </aside>
 
   <!-- ============== PANEL RESIZE HANDLES ==============
@@ -8017,9 +8056,8 @@ function renderStagesList() {
     const tip = (isHidden ? "Click to show " : "Click to hide ") + stage.label + " — " + count + " node" + (count === 1 ? "" : "s") + " on the map. Double-click the name to rename.";
     html += '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="stage" data-id="' + escapeHtml(stage.id) + '" data-index="' + i + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
     html +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
-    html +=   '<span class="sidebar-stage-mark" aria-hidden="true"></span>';
     html +=   '<span class="sidebar-edit-label sidebar-inline-edit" data-field="label" title="Double-click to rename">' + escapeHtml(stage.label) + '</span>';
-    html +=   '<span class="sidebar-edit-count">' + count + '</span>';
+    html +=   '<span class="count-swatch count-swatch--plain">' + count + '</span>';
     html +=   deleteIconButton("Delete stage");
     html += '</div>';
   }
@@ -8051,10 +8089,9 @@ function renderStreamsList() {
     const tip = (isHidden ? "Click to show " : "Click to hide ") + stream.label + " — " + count + " node" + (count === 1 ? "" : "s") + " on the map. Double-click the name to rename.";
     html += '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="stream" data-id="' + escapeHtml(stream.id) + '" data-index="' + i + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
     html +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
-    html +=   '<input type="color" class="sidebar-edit-color sidebar-edit-swatch" data-field="color" value="' + escapeHtml(stream.color || "#94a3b8") + '" title="Stream colour" aria-label="Stream colour">';
     html +=   '<div class="filter-label sidebar-inline-edit" data-field="label" title="Double-click to rename">' + escapeHtml(stream.label) + '</div>';
     html +=   '<span class="sidebar-short-chip sidebar-inline-edit" data-field="short" title="Double-click to edit short label">' + escapeHtml(short) + '</span>';
-    html +=   '<div class="filter-count">' + count + '</div>';
+    html +=   countSwatch(stream.color, count);
     html +=   deleteIconButton("Delete stream");
     html += '</div>';
   }
@@ -8095,10 +8132,9 @@ function renderCategoriesList() {
     const tip = (isHidden ? "Click to show " : "Click to hide ") + cat.label + " — " + count + " node" + (count === 1 ? "" : "s") + " on the map. Double-click the name to rename.";
     let h = '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="category" data-id="' + escapeHtml(catId) + '" data-index="' + indexOf[catId] + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
     h +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
-    h +=   '<input type="color" class="sidebar-edit-color sidebar-edit-swatch" data-field="color" value="' + escapeHtml(cat.color || "#94a3b8") + '" title="Fill colour (label colour auto-contrasts)" aria-label="Fill colour">';
     h +=   '<div class="filter-label sidebar-inline-edit" data-field="label" title="Double-click to rename">' + escapeHtml(cat.label) + '</div>';
     h +=   '<button class="sidebar-cat-reclass" data-action="reclass" title="' + escapeHtml(reclassTitle) + '">' + reclassLabel + '</button>';
-    h +=   '<div class="filter-count">' + count + '</div>';
+    h +=   countSwatch(cat.color, count);
     h +=   deleteIconButton("Delete category");
     h += '</div>';
     return h;
@@ -8182,9 +8218,9 @@ function edgeFilterCounts() {
 // One filter row. `count` is omitted (null) for trace rows, which aren't counts.
 function legendFilterRow(kind, id, swatch, label, count, isOff, tip) {
   return '<div class="legend-filter-row filter-row ' + (isOff ? "disabled" : "") + '" data-legend-kind="' + kind + '" data-legend-id="' + escapeHtml(id) + '" data-tooltip="' + escapeHtml(tip) + '">' +
-    swatch +
     '<div class="filter-label">' + escapeHtml(label) + '</div>' +
     (count != null ? '<div class="filter-count">' + count + '</div>' : '') +
+    swatch +
     '</div>';
 }
 
@@ -8228,6 +8264,18 @@ function wireLegendFilters(container) {
       else if (kind === "trace"  && typeof toggleTrace  === "function") toggleTrace(id);
     });
   });
+}
+
+// Right-side colour box that doubles as the node-count badge: the colour input
+// fills it (click to recolour), with the count on top in an auto-contrasting
+// colour so it stays legible on any user-chosen fill.
+function countSwatch(color, count) {
+  const c = color || "#94a3b8";
+  const tc = (typeof pickTextColor === "function") ? pickTextColor(c) : "#0a0e1a";
+  return '<span class="count-swatch">' +
+    '<input type="color" class="sidebar-edit-color" data-field="color" value="' + escapeHtml(c) + '" title="Colour" aria-label="Colour">' +
+    '<span class="count-num" style="color:' + tc + '">' + count + '</span>' +
+    '</span>';
 }
 
 // Small inline trash-icon delete button shared by every sidebar row.

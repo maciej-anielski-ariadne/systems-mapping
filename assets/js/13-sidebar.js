@@ -54,9 +54,8 @@ function renderStagesList() {
     const tip = (isHidden ? "Click to show " : "Click to hide ") + stage.label + " — " + count + " node" + (count === 1 ? "" : "s") + " on the map. Double-click the name to rename.";
     html += '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="stage" data-id="' + escapeHtml(stage.id) + '" data-index="' + i + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
     html +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
-    html +=   '<span class="sidebar-stage-mark" aria-hidden="true"></span>';
     html +=   '<span class="sidebar-edit-label sidebar-inline-edit" data-field="label" title="Double-click to rename">' + escapeHtml(stage.label) + '</span>';
-    html +=   '<span class="sidebar-edit-count">' + count + '</span>';
+    html +=   '<span class="count-swatch count-swatch--plain">' + count + '</span>';
     html +=   deleteIconButton("Delete stage");
     html += '</div>';
   }
@@ -88,10 +87,9 @@ function renderStreamsList() {
     const tip = (isHidden ? "Click to show " : "Click to hide ") + stream.label + " — " + count + " node" + (count === 1 ? "" : "s") + " on the map. Double-click the name to rename.";
     html += '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="stream" data-id="' + escapeHtml(stream.id) + '" data-index="' + i + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
     html +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
-    html +=   '<input type="color" class="sidebar-edit-color sidebar-edit-swatch" data-field="color" value="' + escapeHtml(stream.color || "#94a3b8") + '" title="Stream colour" aria-label="Stream colour">';
     html +=   '<div class="filter-label sidebar-inline-edit" data-field="label" title="Double-click to rename">' + escapeHtml(stream.label) + '</div>';
     html +=   '<span class="sidebar-short-chip sidebar-inline-edit" data-field="short" title="Double-click to edit short label">' + escapeHtml(short) + '</span>';
-    html +=   '<div class="filter-count">' + count + '</div>';
+    html +=   countSwatch(stream.color, count);
     html +=   deleteIconButton("Delete stream");
     html += '</div>';
   }
@@ -132,10 +130,9 @@ function renderCategoriesList() {
     const tip = (isHidden ? "Click to show " : "Click to hide ") + cat.label + " — " + count + " node" + (count === 1 ? "" : "s") + " on the map. Double-click the name to rename.";
     let h = '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="category" data-id="' + escapeHtml(catId) + '" data-index="' + indexOf[catId] + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
     h +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
-    h +=   '<input type="color" class="sidebar-edit-color sidebar-edit-swatch" data-field="color" value="' + escapeHtml(cat.color || "#94a3b8") + '" title="Fill colour (label colour auto-contrasts)" aria-label="Fill colour">';
     h +=   '<div class="filter-label sidebar-inline-edit" data-field="label" title="Double-click to rename">' + escapeHtml(cat.label) + '</div>';
     h +=   '<button class="sidebar-cat-reclass" data-action="reclass" title="' + escapeHtml(reclassTitle) + '">' + reclassLabel + '</button>';
-    h +=   '<div class="filter-count">' + count + '</div>';
+    h +=   countSwatch(cat.color, count);
     h +=   deleteIconButton("Delete category");
     h += '</div>';
     return h;
@@ -219,9 +216,9 @@ function edgeFilterCounts() {
 // One filter row. `count` is omitted (null) for trace rows, which aren't counts.
 function legendFilterRow(kind, id, swatch, label, count, isOff, tip) {
   return '<div class="legend-filter-row filter-row ' + (isOff ? "disabled" : "") + '" data-legend-kind="' + kind + '" data-legend-id="' + escapeHtml(id) + '" data-tooltip="' + escapeHtml(tip) + '">' +
-    swatch +
     '<div class="filter-label">' + escapeHtml(label) + '</div>' +
     (count != null ? '<div class="filter-count">' + count + '</div>' : '') +
+    swatch +
     '</div>';
 }
 
@@ -265,6 +262,18 @@ function wireLegendFilters(container) {
       else if (kind === "trace"  && typeof toggleTrace  === "function") toggleTrace(id);
     });
   });
+}
+
+// Right-side colour box that doubles as the node-count badge: the colour input
+// fills it (click to recolour), with the count on top in an auto-contrasting
+// colour so it stays legible on any user-chosen fill.
+function countSwatch(color, count) {
+  const c = color || "#94a3b8";
+  const tc = (typeof pickTextColor === "function") ? pickTextColor(c) : "#0a0e1a";
+  return '<span class="count-swatch">' +
+    '<input type="color" class="sidebar-edit-color" data-field="color" value="' + escapeHtml(c) + '" title="Colour" aria-label="Colour">' +
+    '<span class="count-num" style="color:' + tc + '">' + count + '</span>' +
+    '</span>';
 }
 
 // Small inline trash-icon delete button shared by every sidebar row.

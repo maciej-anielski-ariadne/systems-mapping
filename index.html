@@ -165,17 +165,11 @@
          renderEdgeStyleFilters / renderTraceFilters in 13-sidebar.js). Each row
          toggles like Streams: click to hide that edge effect / line style on the
          map (or suppress a trace direction); click again to show it. -->
-    <div class="sidebar-section sidebar-accordion collapsed" id="map-appearance">
-      <button class="sidebar-accordion-header" id="map-appearance-toggle" aria-expanded="false" aria-controls="map-appearance-body">
-        <span>Map appearance</span>
-        <span class="sidebar-accordion-chevron" aria-hidden="true">▾</span>
-      </button>
-      <div class="sidebar-accordion-body" id="map-appearance-body">
-        <div id="edge-type-filters"></div>
-        <div id="edge-style-filters"></div>
-        <div id="trace-filters"></div>
-      </div>
-    </div>
+    <!-- Edge / trace filters — formerly the "Map appearance" accordion, now plain
+         sections styled like Stages / Streams. JS fills these in 13-sidebar.js. -->
+    <div class="sidebar-section"><div id="edge-type-filters"></div></div>
+    <div class="sidebar-section"><div id="edge-style-filters"></div></div>
+    <div class="sidebar-section"><div id="trace-filters"></div></div>
   </aside>
 
   <!-- ============== PANEL RESIZE HANDLES ==============
