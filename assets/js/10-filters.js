@@ -56,15 +56,25 @@ function toggleStage(stageId) {
   setDimensionVisibility(state.hiddenStages, stageId, "stage");
 }
 
-// Categories don't affect layout and don't clear the selection, so they keep
-// their own minimal toggle.
-function toggleCategory(categoryId) {
-  if (state.hiddenCategories.has(categoryId)) state.hiddenCategories.delete(categoryId);
-  else state.hiddenCategories.add(categoryId);
+// Flip an id in a non-layout "hidden" filter set, then re-render + persist.
+// Categories, edge effects, line styles, and trace directions all toggle this
+// way (they don't change layout or the selection, unlike the stream/stage
+// dimensions, which go through setDimensionVisibility). `beforeRender` runs
+// after the flip but before re-rendering — the trace filter uses it to
+// recompute the current selection's highlight.
+function toggleHiddenFilter(hiddenSet, id, beforeRender) {
+  if (hiddenSet.has(id)) hiddenSet.delete(id);
+  else hiddenSet.add(id);
+  if (beforeRender) beforeRender();
   render();
   renderSidebar();
   saveUiStateToStorage();
 }
+
+function toggleCategory(categoryId) { toggleHiddenFilter(state.hiddenCategories, categoryId); }
+function toggleEffect(effect)       { toggleHiddenFilter(state.hiddenEffects, effect); }
+function toggleStyle(style)         { toggleHiddenFilter(state.hiddenStyles, style); }
+function toggleTrace(dir)           { toggleHiddenFilter(state.hiddenTrace, dir, refreshTraceForSelection); }
 
 // A node is visible only if its stream, its category, AND its stage are all
 // visible.
@@ -83,33 +93,4 @@ function isEdgeVisible(edge) {
   if (state.hiddenEffects.has(edge.effect)) return false;
   if (state.hiddenStyles.has(edge.style || "solid")) return false;
   return true;
-}
-
-// ───── Edge / trace filters (toggle the sidebar legend rows) ──────────────
-// Edge effect + line-style filters are purely visual, so they only re-render.
-function toggleEffect(effect) {
-  if (state.hiddenEffects.has(effect)) state.hiddenEffects.delete(effect);
-  else state.hiddenEffects.add(effect);
-  render();
-  renderSidebar();
-  saveUiStateToStorage();
-}
-
-function toggleStyle(style) {
-  if (state.hiddenStyles.has(style)) state.hiddenStyles.delete(style);
-  else state.hiddenStyles.add(style);
-  render();
-  renderSidebar();
-  saveUiStateToStorage();
-}
-
-// Trace direction filter changes which side of the causal trace is highlighted,
-// so recompute the current selection's highlight sets before re-rendering.
-function toggleTrace(dir) {
-  if (state.hiddenTrace.has(dir)) state.hiddenTrace.delete(dir);
-  else state.hiddenTrace.add(dir);
-  if (typeof refreshTraceForSelection === "function") refreshTraceForSelection();
-  render();
-  renderSidebar();
-  saveUiStateToStorage();
 }

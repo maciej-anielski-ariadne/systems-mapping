@@ -23,9 +23,7 @@ function renderSidebar() {
   renderStagesList();
   renderStreamsList();
   renderCategoriesList();
-  renderEdgeTypeFilters();
-  renderEdgeStyleFilters();
-  renderTraceFilters();
+  renderLegendFilters();
 
   // Newly-rendered rows have data-tooltip; wire them up to the tooltip system.
   if (typeof wireDataTooltips === "function") wireDataTooltips(sidebarEl);
@@ -182,6 +180,40 @@ const TRACE_FILTERS = [
   { id: "ancestors",   label: "Upstream sources",   varName: "--edge-ancestor"   },
   { id: "descendants", label: "Downstream impacts", varName: "--edge-descendant" },
 ];
+const LINE_STYLE_FILTERS = [
+  { id: "solid",  label: "Solid",  swatchClass: "legend-line-solid"  },
+  { id: "dashed", label: "Dashed", swatchClass: "legend-line-dashed" },
+];
+
+// One descriptor per filter group: where it renders, its items, the hidden-set
+// it reads, how to draw each item's swatch, and how to count its edges (null =
+// no count, for the trace group). renderLegendFilters loops over these so the
+// three groups share one render path.
+const LEGEND_FILTER_GROUPS = [
+  { kind: "effect", containerId: "edge-type-filters",  title: "Edge types", ctx: "edges on the map",
+    items: EDGE_TYPE_FILTERS,  hiddenSet: () => state.hiddenEffects,
+    swatch: f => '<div class="legend-line" style="background: var(--edge-' + f.id + ');"></div>',
+    count:  (f, counts) => counts.effects[f.id] || 0 },
+  { kind: "style", containerId: "edge-style-filters", title: "Line style", ctx: "edges on the map",
+    items: LINE_STYLE_FILTERS, hiddenSet: () => state.hiddenStyles,
+    swatch: f => '<div class="legend-line ' + f.swatchClass + '"></div>',
+    count:  (f, counts) => counts.styles[f.id] || 0 },
+  { kind: "trace", containerId: "trace-filters", title: "Trace", ctx: "when a node is selected",
+    items: TRACE_FILTERS, hiddenSet: () => state.hiddenTrace,
+    swatch: f => '<div class="legend-swatch" style="box-shadow: inset 0 0 0 2px var(' + f.varName + '), 0 0 4px var(' + f.varName + ');"></div>',
+    count:  () => null },
+];
+
+// Every edge count the filters need, in one pass over EDGES (instead of a
+// separate scan per row).
+function edgeFilterCounts() {
+  const effects = {}, styles = { solid: 0, dashed: 0 };
+  for (const e of EDGES) {
+    effects[e.effect] = (effects[e.effect] || 0) + 1;
+    styles[(e.style || "solid") === "dashed" ? "dashed" : "solid"]++;
+  }
+  return { effects, styles };
+}
 
 // One filter row. `count` is omitted (null) for trace rows, which aren't counts.
 function legendFilterRow(kind, id, swatch, label, count, isOff, tip) {
@@ -196,54 +228,24 @@ function sectionTitleHtml(label, shown, total) {
   return '<div class="sidebar-section-title"><span>' + label + '</span><span class="count">' + shown + ' / ' + total + '</span></div>';
 }
 
-function renderEdgeTypeFilters() {
-  const c = document.getElementById("edge-type-filters");
-  if (!c) return;
-  const shown = EDGE_TYPE_FILTERS.filter(f => !state.hiddenEffects.has(f.id)).length;
-  let html = sectionTitleHtml("Edge types", shown, EDGE_TYPE_FILTERS.length);
-  for (const f of EDGE_TYPE_FILTERS) {
-    const isOff = state.hiddenEffects.has(f.id);
-    const count = EDGES.reduce((a, e) => e.effect === f.id ? a + 1 : a, 0);
-    const swatch = '<div class="legend-line" style="background: var(--edge-' + f.id + ');"></div>';
-    html += legendFilterRow("effect", f.id, swatch, f.label, count, isOff,
-      (isOff ? "Click to show " : "Click to hide ") + f.label + " edges on the map.");
+// Render all three filter groups (edge types / line style / trace) from
+// LEGEND_FILTER_GROUPS — one render path, counts computed once.
+function renderLegendFilters() {
+  const counts = edgeFilterCounts();
+  for (const g of LEGEND_FILTER_GROUPS) {
+    const c = document.getElementById(g.containerId);
+    if (!c) continue;
+    const hidden = g.hiddenSet();
+    const shown = g.items.filter(f => !hidden.has(f.id)).length;
+    let html = sectionTitleHtml(g.title, shown, g.items.length);
+    for (const f of g.items) {
+      const isOff = hidden.has(f.id);
+      html += legendFilterRow(g.kind, f.id, g.swatch(f), f.label, g.count(f, counts), isOff,
+        "Click to " + (isOff ? "show " : "hide ") + f.label.toLowerCase() + " " + g.ctx + ".");
+    }
+    c.innerHTML = html;
+    wireLegendFilters(c);
   }
-  c.innerHTML = html;
-  wireLegendFilters(c);
-}
-
-function renderEdgeStyleFilters() {
-  const c = document.getElementById("edge-style-filters");
-  if (!c) return;
-  const styles = [
-    { id: "solid",  label: "Solid",  swatchClass: "legend-line-solid",  count: EDGES.reduce((a, e) => (e.style || "solid") !== "dashed" ? a + 1 : a, 0) },
-    { id: "dashed", label: "Dashed", swatchClass: "legend-line-dashed", count: EDGES.reduce((a, e) => e.style === "dashed" ? a + 1 : a, 0) },
-  ];
-  const shown = styles.filter(s => !state.hiddenStyles.has(s.id)).length;
-  let html = sectionTitleHtml("Line style", shown, styles.length);
-  for (const s of styles) {
-    const isOff = state.hiddenStyles.has(s.id);
-    const swatch = '<div class="legend-line ' + s.swatchClass + '"></div>';
-    html += legendFilterRow("style", s.id, swatch, s.label, s.count, isOff,
-      (isOff ? "Click to show " : "Click to hide ") + s.label.toLowerCase() + " edges on the map.");
-  }
-  c.innerHTML = html;
-  wireLegendFilters(c);
-}
-
-function renderTraceFilters() {
-  const c = document.getElementById("trace-filters");
-  if (!c) return;
-  const shown = TRACE_FILTERS.filter(f => !state.hiddenTrace.has(f.id)).length;
-  let html = sectionTitleHtml("Trace", shown, TRACE_FILTERS.length);
-  for (const f of TRACE_FILTERS) {
-    const isOff = state.hiddenTrace.has(f.id);
-    const swatch = '<div class="legend-swatch" style="box-shadow: inset 0 0 0 2px var(' + f.varName + '), 0 0 4px var(' + f.varName + ');"></div>';
-    html += legendFilterRow("trace", f.id, swatch, f.label, null, isOff,
-      (isOff ? "Click to show " : "Click to hide ") + f.label.toLowerCase() + " when a node is selected.");
-  }
-  c.innerHTML = html;
-  wireLegendFilters(c);
 }
 
 // Wire each filter row to its toggle. Re-rendered each call on fresh DOM, so
@@ -365,10 +367,7 @@ function wireRowHandlers(container, kind) {
     if (reclassBtn && kind === "category") {
       reclassBtn.addEventListener("click", event => {
         event.stopPropagation();
-        const cat = CATEGORIES[id];
-        if (!cat) return;
-        applySidebarFieldEdit("category", id, "secondary", { checked: (cat.class || "primary") !== "secondary" });
-        renderSidebar();
+        reclassifyCategory(id);
       });
     }
 
@@ -496,22 +495,30 @@ function applySidebarFieldEdit(kind, id, field, input) {
       // Label colour is no longer hand-picked — derive black/white for max
       // contrast against the new fill so node labels stay readable.
       if (typeof pickTextColor === "function") cat.textColor = pickTextColor(cat.color);
-    } else if (field === "secondary") {
-      // Flip this category between fill (primary) and corner-chip (secondary),
-      // then re-split every node's categories by the new classes.
-      cat.class = input.checked ? "secondary" : "primary";
-      for (const n of NODES) {
-        const ids = nodeCategoryIds(n).filter(cid => CATEGORIES[cid]);
-        const split = splitCategoriesByClass(ids);
-        n.categoryIds = ids;
-        n.primaryCategories = split.primary;
-        n.secondaryCategories = split.secondary;
-        n.category = n.primaryCategories[0] || ids[0] || n.category;
-      }
     }
   }
   // Editing inline keeps the row in place; skip the sidebar re-render so an
   // in-progress edit isn't torn down (callers that need a rebuild — e.g. the
   // inline-edit commit — call renderSidebar themselves afterwards).
   if (typeof applyCanvasMutation === "function") applyCanvasMutation({ skipDetailRender: true, skipSidebarRender: true });
+}
+
+// Flip a category between Primary (fill) and Secondary (chip), then re-split
+// every node's category membership by the new classes. A structural mutation
+// (not a field edit), invoked by the sidebar reclassify button — re-renders the
+// sidebar so the row jumps to the other group.
+function reclassifyCategory(catId) {
+  const cat = CATEGORIES[catId];
+  if (!cat) return;
+  cat.class = (cat.class || "primary") === "secondary" ? "primary" : "secondary";
+  for (const n of NODES) {
+    const ids = nodeCategoryIds(n).filter(cid => CATEGORIES[cid]);
+    const split = splitCategoriesByClass(ids);
+    n.categoryIds = ids;
+    n.primaryCategories = split.primary;
+    n.secondaryCategories = split.secondary;
+    n.category = n.primaryCategories[0] || ids[0] || n.category;
+  }
+  if (typeof applyCanvasMutation === "function") applyCanvasMutation({ skipDetailRender: true, skipSidebarRender: true });
+  renderSidebar();
 }
