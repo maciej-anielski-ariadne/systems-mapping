@@ -14,9 +14,9 @@
 // =============================================================================
 
 import type { Category, GraphNode, NodePosition } from "./types";
-import { CATEGORIES, NODES, STAGES, STREAMS, layout, nodeById, stageById, state, streamById } from "./03-state";
+import { CATEGORIES, EDGES, NODES, STAGES, STREAMS, layout, nodeById, stageById, state, streamById } from "./03-state";
 import { deselectAll, selectNode } from "./09-graph-selection";
-import { computeEdgeAnchorOffsets, deltaColorFor, edgeBezierPath, effectMarkerName, escapeHtml, getMapTextScale, wrapLabel } from "./04-utils";
+import { computeEdgeAnchorOffsets, deltaColorFor, edgeBezierPath, effectMarkerName, escapeHtml, getMapTextScale, wrapLabel, type AnchorOffset } from "./04-utils";
 import { COL_GAP, COL_HEADER_HEIGHT, LABEL_INSET, NODE_GAP_Y, NODE_HEIGHT, NODE_WIDTH, ROW_HEADER_WIDTH, ROW_PADDING, SVG_PADDING_TOP } from "./02-config";
 import { slotTopY } from "./08-layout";
 import { computeRenderEdges, type RenderEdge } from "./10a-collapsed-edges";
@@ -148,6 +148,48 @@ export function nodeSecondaryChips(node: GraphNode, pos: NodePosition): { svg: s
     svg += '<text x="' + (pillX + pillW / 2) + '" y="' + (y + bs / 2) + '" text-anchor="middle" dominant-baseline="central" font-family="Arial,Helvetica,sans-serif" font-size="9" font-weight="700" fill="#ffffff">+' + overflow + '</text>';
   }
   return { svg: svg, leftEdge: minX };
+}
+
+// ───── Edge geometry cache ────────────────────────────────────────────────
+// computeRenderEdges() (synthetic re-routing DFS) and computeEdgeAnchorOffsets()
+// (per-face fan bucketing + sort) depend ONLY on topology, node-visibility, and
+// node positions — never on what's selected / hovered / simulated. Selection and
+// simulation renders re-run them for nothing, which is wasteful on dense maps
+// (E ≫ N). Cache the geometry and reuse it until one of its real inputs changes:
+//   • NODES / EDGES array identity — reassigned on every data load / mutation.
+//   • layout identity — reassigned by setLayout (geometry + stream/stage hide).
+//   • the node-visibility hidden sets — hiddenCategories toggles change
+//     isNodeVisible WITHOUT a setLayout, so they're keyed explicitly.
+// Selection/hover/sim renders don't touch any of these, so they hit the cache.
+interface EdgeGeometry { renderEdges: RenderEdge[]; anchorOffsets: AnchorOffset[]; }
+let _edgeGeomCache: (EdgeGeometry & {
+  nodes: typeof NODES; edges: typeof EDGES; layout: typeof layout; hiddenKey: string;
+}) | null = null;
+
+const _edgeStyleOf = (re: RenderEdge): string =>
+  re.synthetic ? (re.dashed ? "dashed" : "solid")
+               : (re.edge.style === "dashed" ? "dashed" : "solid");
+
+function edgeGeometry(): EdgeGeometry {
+  const hiddenKey =
+    [...state.hiddenStreams].sort().join(",") + "|" +
+    [...state.hiddenStages].sort().join(",") + "|" +
+    [...state.hiddenCategories].sort().join(",");
+  const c = _edgeGeomCache;
+  if (c && c.nodes === NODES && c.edges === EDGES && c.layout === layout && c.hiddenKey === hiddenKey) {
+    return c;
+  }
+  const renderEdges = computeRenderEdges();
+  const anchorOffsets = computeEdgeAnchorOffsets(
+    renderEdges,
+    layout.positions,
+    (re) => re.from,
+    (re) => re.to,
+    (re) => re.effect,
+    _edgeStyleOf,
+  );
+  _edgeGeomCache = { renderEdges, anchorOffsets, nodes: NODES, edges: EDGES, layout, hiddenKey };
+  return _edgeGeomCache;
 }
 
 // ───── Coalesced render scheduling ────────────────────────────────────────
@@ -380,24 +422,11 @@ export function render(): void {
                              "var(--edge-default)";
   const effectMarker = effectMarkerName;
 
-  // Materialize once: we iterate the edges twice (anchor fan-out below, then the
-  // casing/colour passes) so we must not recompute the rerouting each time.
-  const renderEdges = computeRenderEdges();
-
-  // Per-edge vertical anchor offsets. Edges that share a node face fan out by
-  // (effect, line-style) bucket so differently-coloured arrows entering the
-  // same node stop landing on the same point. Parallel by index to renderEdges.
-  const edgeStyleOf = (re: RenderEdge): string =>
-    re.synthetic ? (re.dashed ? "dashed" : "solid")
-                 : (re.edge.style === "dashed" ? "dashed" : "solid");
-  const anchorOffsets = computeEdgeAnchorOffsets(
-    renderEdges,
-    layout.positions,
-    (re) => re.from,
-    (re) => re.to,
-    (re) => re.effect,
-    edgeStyleOf,
-  );
+  // The edge re-routing + anchor fan are cached (edgeGeometry) — they depend only
+  // on topology / visibility / positions, so selection / hover / sim renders reuse
+  // the previous result instead of recomputing. anchorOffsets stays parallel by
+  // index to renderEdges (both come from the same cache entry together).
+  const { renderEdges, anchorOffsets } = edgeGeometry();
 
   // Two output buffers. Every edge's CASING (a wide background-coloured stroke)
   // is emitted first, then every coloured stroke + arrowhead. Drawing all

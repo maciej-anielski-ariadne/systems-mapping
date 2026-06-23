@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { loadDataFromCsv } from "../assets/js/06-data-loader";
-import { NODES, EDGES, state } from "../assets/js/03-state";
+import { toggleCategory } from "../assets/js/10-filters";
+import { NODES, EDGES, nodeById, state } from "../assets/js/03-state";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const sampleCsv = readFileSync(resolve(here, "../assets/data/sample.csv"), "utf-8");
@@ -54,5 +55,27 @@ describe("end-to-end: load the shipped sample.csv and render", () => {
     // Clicking the empty background deselects.
     svg.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(state.selectedNodeId).toBe(null);
+  });
+
+  it("invalidates the edge-geometry cache when a category is toggled", () => {
+    loadDataFromCsv(sampleCsv);
+    const svg = document.getElementById("viz-svg")!;
+    const before = svg.querySelectorAll(".node-group").length;
+
+    // Pick a category that actually has nodes, then count how many nodes carry it.
+    const someNode = NODES.find((n) => n.category)!;
+    const catId = someNode.category!;
+    const inCat = NODES.filter((n) => (n.categoryIds || [n.category]).includes(catId)).length;
+    expect(inCat).toBeGreaterThan(0);
+
+    // toggleCategory hides the category and re-renders. Category hiding does NOT
+    // call setLayout, so this is exactly the path the cache keys on its hidden
+    // sets to catch — a stale cache would keep drawing the hidden nodes.
+    toggleCategory(catId);
+    expect(svg.querySelectorAll(".node-group").length).toBe(before - inCat);
+
+    // Toggling it back restores them (cache invalidates the other direction too).
+    toggleCategory(catId);
+    expect(svg.querySelectorAll(".node-group").length).toBe(before);
   });
 });
