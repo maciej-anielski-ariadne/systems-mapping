@@ -3,9 +3,12 @@
 // -----------------------------------------------------------------------------
 // Two layers, one storage:
 //
-//   • Multi-level undo/redo. Every call to applyCanvasMutation (16f) pushes
-//     the prior state's CSV onto state.history.past. Undo restores by feeding
-//     a snapshot back through loadDataFromCsv. Triggered by Ctrl/Cmd+Z and
+//   • Multi-level undo/redo. Before each edit we take a "snapshot" — a complete
+//     copy of the whole map saved as CSV text (see "undo snapshot" in
+//     docs/GLOSSARY.md). Every call to applyCanvasMutation (16f) pushes the prior
+//     state's snapshot onto state.history.past; Undo restores by feeding the most
+//     recent snapshot back through loadDataFromCsv. Keeping a stack of snapshots
+//     is what allows undoing many steps in a row. Triggered by Ctrl/Cmd+Z and
 //     Ctrl/Cmd+Shift+Z (16e keydown handler).
 //
 //   • Soft delete toast. Deletes additionally surface a 6-second toast with

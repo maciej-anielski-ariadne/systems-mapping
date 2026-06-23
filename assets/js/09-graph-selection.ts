@@ -35,10 +35,12 @@ import { scheduleUiStateSave } from "./04a-storage";
 // initialized to [] for every node by rebuildIndexes (06-data-loader.js),
 // so we don't need defensive `|| []` fallbacks when reading them.
 
-// Breadth-first walk up to `depth` hops from nodeId, following `adjacency`
-// (incomingEdges or outgoingEdges) and reading the far end of each edge via
+// Walk outward up to `depth` hops from nodeId, ring by ring — everything one
+// arrow away, then everything two arrows away, and so on (this is "breadth-
+// first search" / BFS; see docs/GLOSSARY.md). Follows `adjacency`
+// (incomingEdges or outgoingEdges) and reads the far end of each edge via
 // `endpoint` ("from" or "to"). Returns the set of reached node ids; the start
-// node itself is never included.
+// node itself is never included. (`frontier` = the ring we're expanding now.)
 export function bfsNeighbors(
   nodeId: string,
   depth: number,

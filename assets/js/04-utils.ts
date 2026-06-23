@@ -164,8 +164,14 @@ export function isBackwardEdge(fromPos: NodePosition, toPos: NodePosition): bool
   return toPos.x < fromPos.x + fromPos.width + BACK_MARGIN;
 }
 
-// The cubic-bezier "M…C…" path for an edge from one node box to another, drawn
-// the same smooth way whether the edge runs forward or backward — only the
+// The smooth S-shaped curve for an edge (arrow) from one node box to another.
+// It's written as an SVG path string ("M x,y C …" = move to the start point,
+// then draw one cubic-bezier curve). A cubic bezier is a curve shaped by two
+// invisible "control points" that pull it into form; here the control points
+// are pushed straight out horizontally from each box face, which makes the
+// curve leave and arrive flat (its "tangent" — the direction it's heading — is
+// horizontal). See "cubic bezier" / "tangent" in docs/GLOSSARY.md. The curve is
+// drawn the same way whether the edge runs forward or backward — only the
 // faces it connects flip:
 //   • FORWARD  (target to the right): source RIGHT face → target LEFT face, so
 //     the curve flows left→right and the arrowhead points right into the left
@@ -220,6 +226,12 @@ const EFFECT_FAN_ORDER: Record<string, number> = {
 
 // Decide where each edge should attach to its source/target node face so that
 // differently-coloured arrows stop piling onto the single vertical-centre point.
+//
+// In plain terms: if five arrows all touch the right side of one box, we don't
+// want them stacked on the exact same spot. So we sort them into groups (called
+// "buckets" below) and spread — "fan out" — their attachment points evenly up
+// and down that side of the box. (See "edge anchor / fan-out" in
+// docs/GLOSSARY.md.) The result is one small up/down offset per edge.
 //
 // Edges sharing a node face are bucketed by (effect, line-style): every edge in
 // a bucket shares one anchor (same colour merging is fine and expected), while
@@ -288,12 +300,15 @@ export function effectMarkerName(effect: string): string {
   return (effect === "increases" || effect === "decreases" || effect === "enables") ? effect : "default";
 }
 
-// Longest shortest-path distance (in hops) reachable downstream from any start
-// node, following `neighbors(id) => id[]`. This is the graph's effective
-// "diameter" in the downstream direction and serves as the dynamic cap for the
-// highlight-depth control — past it, raising the depth reveals nothing further.
+// How many arrow-hops away the furthest-reachable box is, starting from any of
+// the given boxes and following `neighbors(id) => id[]`. In plain terms: explore
+// outward in rings — everything one hop away, then two hops, and so on (this
+// ring-by-ring walk is "breadth-first search" / BFS; see docs/GLOSSARY.md) — and
+// report the deepest ring reached. Used as the dynamic cap for the highlight-
+// depth control: past this number, turning the depth up reveals nothing further.
 // Shared by the live map (09-graph-selection.ts, over the whole graph) and the
 // published export viewer's cap (19-export.ts, over the published subset).
+// `visited` stops us counting a box twice; `frontier` is the current ring.
 // Always >= 1.
 export function maxReachableDepth(starts: Iterable<string>, neighbors: (id: string) => string[]): number {
   let max = 1;
@@ -337,8 +352,12 @@ export function getMapTextScale(zoomLevel: number): number {
 
 // Pick the label colour — pure white or near-black — that maximises contrast
 // against a given background fill, so category labels stay readable whatever
-// fill the user picks. Uses the WCAG relative-luminance crossover (~0.179):
-// light fills get dark text, dark fills get white. Accepts #rgb / #rrggbb;
+// fill the user picks. The decision is based on how bright the fill really
+// looks to the human eye: we compute its "relative luminance" (a standard
+// brightness measure from the WCAG accessibility guidelines — it weights green
+// most and blue least, because that's how our eyes work) and switch to dark
+// text once the fill is brighter than the standard crossover point (~0.179).
+// See "WCAG relative luminance" in docs/GLOSSARY.md. Accepts #rgb / #rrggbb;
 // falls back to white for anything unparseable.
 export function pickTextColor(bgHex: string): string {
   const hex = String(bgHex || "").trim().replace(/^#/, "");

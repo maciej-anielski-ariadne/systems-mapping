@@ -20,6 +20,10 @@ how the pieces fit):
 
 `types.ts` holds the shared data-model types every module imports.
 
+**Hit an unfamiliar term?** Comments explain jargon in plain language at first use and
+point to [`docs/GLOSSARY.md`](../../docs/GLOSSARY.md) — a non-programmer's reference for
+terms like *Cobb-Douglas*, *bezier*, *BFS/DFS*, *topological sort*, and *event delegation*.
+
 **Don't know which file?** Every file opens with a comment header describing its job. For
 a one-line index of all of them, and a "I want to change X → open this file" table, see
 the top-level [README](../../README.md#files) (**Files** and **Editing the app** sections)

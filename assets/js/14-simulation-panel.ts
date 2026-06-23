@@ -148,10 +148,14 @@ export function applySimMultiplier(nodeId: string, newMultiplier: number, origin
   saveUiStateToStorage();
 }
 
-// Show or hide the feedback-loop warning in the sim panel. A non-converged
-// solver run means a positive loop ran away (gain ≥ 1); its values are clamped
-// but shouldn't be trusted. Dragging a slider is the most likely way a user
-// pushes a loop into that regime, so we surface it right here, inline.
+// Show or hide the feedback-loop warning in the sim panel. The simulation works
+// by recalculating values over and over until they stop changing ("converge").
+// If a loop amplifies itself each time round — its "gain" is 1 or more (see
+// docs/GLOSSARY.md) — the values never settle and grow without limit, so the
+// solver gives up and reports `converged: false`. We cap those values so the UI
+// doesn't show infinity, but they shouldn't be trusted. Dragging a slider is the
+// most likely way a user pushes a loop into that runaway state, so we surface
+// the warning right here, inline.
 export function updateSimSolverBadge(): void {
   const badge = document.getElementById("sim-solver-badge");
   if (!badge) return;

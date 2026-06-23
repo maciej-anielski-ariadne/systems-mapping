@@ -79,11 +79,15 @@ export function computeNodeValues(): ComputedValues {
   }
 
   // ───── 2. Iterate to a fixed point (Gauss-Seidel) ─────────────────────
-  // Each sweep recomputes every non-controllable node from its incoming edges,
-  // writing results in place so later nodes in the sweep see the freshest
-  // values. Sweeping in topological order means an acyclic map is fully
-  // resolved on the first pass (the second pass then finds zero change and we
-  // stop), so DAG results are identical to the original single-pass engine.
+  // "Fixed point" = keep recomputing until the numbers stop moving. "Gauss-
+  // Seidel" is just the name for the repeat-until-it-settles style used here
+  // (see docs/GLOSSARY.md). Each sweep recomputes every non-controllable node
+  // from its incoming edges, writing results in place so later nodes in the
+  // sweep see the freshest values. Sweeping in topological order (causes before
+  // effects) means a loop-free map is fully resolved on the first pass (the
+  // second pass then finds zero change and we stop), so its results are
+  // identical to the original single-pass engine. Maps with loops take a few
+  // more passes to settle.
   let iterations = 0;
   let converged = false;
   for (; iterations < SOLVER_MAX_ITERATIONS; iterations++) {

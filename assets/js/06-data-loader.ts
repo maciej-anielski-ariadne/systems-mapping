@@ -76,8 +76,12 @@ import { isUndoCaptureSuspended, clearHistory } from "./16g-canvas-undo";
 
 // Build all the lookup maps from the freshly-loaded NODES/EDGES/STREAMS/STAGES.
 // Also produces a topological order: a list of node ids where every node
-// comes after all the nodes that feed into it. The Cobb-Douglas calculation
-// in 07-simulation-engine.js needs this order to propagate values correctly.
+// comes after all the nodes that feed into it (i.e. every cause is listed
+// before its effects). The Cobb-Douglas calculation in 07-simulation-engine.js
+// — the formula that turns each box's inputs into its value — needs this order
+// to propagate values correctly.
+// (Plain-language definitions of "topological order" and "Cobb-Douglas":
+//  see docs/GLOSSARY.md.)
 export function rebuildIndexes(): void {
   setNodeById({});
   setStreamNodeCount({});
@@ -117,6 +121,11 @@ export function rebuildIndexes(): void {
 
   // ───── Topological sort (Kahn's algorithm) ─────────────────────────────
   // Sort nodes so every node comes after the nodes whose arrows point INTO it.
+  // In plain terms: repeatedly take any box that has no remaining un-placed
+  // causes, place it next, and "remove" its outgoing arrows so its effects can
+  // become ready in turn. (Kahn's algorithm is the standard recipe for this;
+  // see "topological sort" in docs/GLOSSARY.md.) "In-degree" below = how many
+  // arrows still point into a box.
   const remainingInDegree: Record<string, number> = {};
   for (const node of NODES) remainingInDegree[node.id] = 0;
   for (const edge of EDGES) {
@@ -142,10 +151,13 @@ export function rebuildIndexes(): void {
     }
   }
 
-  // Any node Kahn couldn't place lies on a feedback loop. Feedback loops are a
-  // supported feature (the iterative solver in 07-simulation-engine.js handles
-  // them), so we don't drop these nodes — we append them so every node is still
-  // swept, and the acyclic prefix keeps providing a good Gauss-Seidel order.
+  // Any node Kahn couldn't place lies on a feedback loop (a chain of arrows
+  // that leads back to itself — see "cycle" in docs/GLOSSARY.md). Feedback
+  // loops are a supported feature (the iterative solver in
+  // 07-simulation-engine.js handles them), so we don't drop these nodes — we
+  // append them so every node is still swept, and the loop-free prefix keeps
+  // giving the solver a good starting order to refine from (the "Gauss-Seidel"
+  // / repeat-until-it-settles order; see docs/GLOSSARY.md).
   const hasCycle = sorted.length !== NODES.length;
   if (hasCycle) {
     const sortedSet = new Set(sorted);
@@ -176,12 +188,17 @@ export function rebuildIndexes(): void {
 }
 
 // Find the edges that close feedback loops and the nodes that lie on them.
-// Runs an iterative depth-first search over outgoingEdges with the classic
-// white/gray/black colouring: an edge into a node currently on the DFS stack
-// (gray) is a "back-edge" that closes a cycle. Iterative (not recursive) so a
-// few hundred deeply-linked nodes can't overflow the JS call stack. Results go
-// into the module-level `cycleInfo` (declared in 03-state.js). Relies on
-// edge.id already being assigned earlier in rebuildIndexes().
+//
+// In plain terms: walk the arrows depth-first (follow one chain as far as it
+// goes, then back up and try the next — see "DFS" in docs/GLOSSARY.md). Mark
+// each box white = not visited yet, gray = on the chain we're currently
+// walking, black = finished. If we follow an arrow and land on a gray box, we
+// just looped back onto our own path — that arrow is a "back-edge" closing a
+// cycle. We do this with an explicit stack (not by calling the function
+// recursively) so a few hundred deeply-linked nodes can't overflow the JS call
+// stack. Results go into the module-level `cycleInfo` (declared in
+// 03-state.js). Relies on edge.id already being assigned earlier in
+// rebuildIndexes().
 export function detectCycles(): void {
   const WHITE = 0, GRAY = 1, BLACK = 2;
   const color: Record<string, number> = {};

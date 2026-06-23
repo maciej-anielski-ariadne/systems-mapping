@@ -25,6 +25,11 @@
 //
 //   { streamId, stageId, slotIndex }
 //
+// A "slot" is one stacking position within a single grid cell: a cell can hold
+// several boxes stacked vertically, and slotIndex (0, 1, 2, …) says which one.
+// So the cursor needs the row (streamId), the column (stageId), AND which slot
+// in that cell — three coordinates, not two.
+//
 // Streams have a `streamRowCount` equal to their busiest cell (across all
 // stages). Inside a stream every column has that many slots, even if its own
 // cell has fewer nodes — the empty slots are navigable so the cursor never
