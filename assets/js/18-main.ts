@@ -61,7 +61,6 @@ import {
   loadBuilderFromStorage,
 } from "./04a-storage";
 import { loadDataFromCsv } from "./06-data-loader";
-import { wireDataTooltips } from "./12-tooltip";
 import { renderBuilder } from "./16b-builder-render";
 import { initCanvasEdit, bootEmptyStateGrid } from "./16e-canvas-edit";
 
@@ -70,11 +69,9 @@ console.log(
   "Click any cell to add a node. Drag from a node's right edge to draw an edge. Press Delete to remove (with undo).",
 );
 
-// Wire tooltips on every element with a data-tooltip attribute (header
-// buttons, etc.). Dynamic re-renders that add new tooltipped elements
-// (renderSidebar, the SVG render path) call attachTooltip / wireDataTooltips
-// themselves, so this only needs to run once at startup.
-wireDataTooltips();
+// Tooltips on every element with a data-tooltip attribute (header buttons,
+// sidebar rows, SVG row/column labels, …) are handled by a single delegated
+// document listener set up in 12-tooltip.ts — no startup wiring needed.
 
 // One-shot wiring for the canvas direct-edit module: mousemove for ghost
 // cell tracking, document keydown for Delete / Esc, undo toast element.

@@ -16,13 +16,13 @@
 import type { Category, GraphNode, NodePosition } from "./types";
 import { CATEGORIES, NODES, STAGES, STREAMS, layout, nodeById, stageById, state, streamById } from "./03-state";
 import { deselectAll, selectNode } from "./09-graph-selection";
-import { deltaColorFor, edgeBezierPath, escapeHtml, getMapTextScale, wrapLabel } from "./04-utils";
+import { deltaColorFor, edgeBezierPath, effectMarkerName, escapeHtml, getMapTextScale, wrapLabel } from "./04-utils";
 import { COL_GAP, COL_HEADER_HEIGHT, LABEL_INSET, NODE_GAP_Y, NODE_HEIGHT, NODE_WIDTH, ROW_HEADER_WIDTH, ROW_PADDING, SVG_PADDING_TOP } from "./02-config";
 import { slotTopY } from "./08-layout";
 import { computeRenderEdges } from "./10a-collapsed-edges";
 import { isEdgeVisible, isNodeVisible, toggleStage, toggleStream } from "./10-filters";
 import { formatNodeDelta, formatNodeValue, getOutcomeBorderColor } from "./07-simulation-engine";
-import { attachTooltip, hideTooltip, moveTooltip, showTooltip } from "./12-tooltip";
+import { hideTooltip, moveTooltip, showTooltip } from "./12-tooltip";
 import { attachCanvasEditHandlers } from "./16e-canvas-edit";
 
 // Single grabbed reference to the SVG element we draw into.
@@ -171,7 +171,8 @@ export function render(): void {
     const isStageCollapsed = state.hiddenStages.has(stage.id);
 
     const cx = colLeft + colW / 2;
-    content += '<g class="col-header-group' + (isStageCollapsed ? ' collapsed' : '') + '" data-stage-id="' + escapeHtml(stage.id) + '">';
+    const stageTip = (isStageCollapsed ? "Click to expand " : "Click to collapse ") + stage.label + " on the map.";
+    content += '<g class="col-header-group' + (isStageCollapsed ? ' collapsed' : '') + '" data-stage-id="' + escapeHtml(stage.id) + '" data-tooltip="' + escapeHtml(stageTip) + '">';
     // Transparent hit area over the header band captures the toggle click (the
     // label text has pointer-events:none).
     content += '<rect class="col-header-hit" x="' + colLeft + '" y="0" width="' + colW + '" height="' + headerBandBottom + '"></rect>';
@@ -279,7 +280,8 @@ export function render(): void {
     const rowHeight = layout.rowHeights[stream.id];
     const labelText = isCollapsed ? "+ " + stream.short : stream.short;
 
-    content += '<g class="row-label-group' + (isCollapsed ? ' collapsed' : '') + '" data-stream-id="' + stream.id + '">';
+    const streamTip = (isCollapsed ? "Click to expand " : "Click to collapse ") + stream.label + " on the map.";
+    content += '<g class="row-label-group' + (isCollapsed ? ' collapsed' : '') + '" data-stream-id="' + stream.id + '" data-tooltip="' + escapeHtml(streamTip) + '">';
     content += '<rect class="row-label-bg" x="0" y="' + rowYPos + '" width="' + ROW_HEADER_WIDTH + '" height="' + rowHeight + '"></rect>';
     // Thin coloured stripe on the right edge of the strip
     content += '<rect x="' + (ROW_HEADER_WIDTH - 4) + '" y="' + rowYPos + '" width="4" height="' + rowHeight + '" fill="' + stream.color + '" opacity="' + (isCollapsed ? 0.4 : 0.7) + '"></rect>';
@@ -302,8 +304,7 @@ export function render(): void {
     effect === "decreases" ? "var(--edge-decreases)" :
     effect === "enables"   ? "var(--edge-enables)"   :
                              "var(--edge-default)";
-  const effectMarker = (effect: string): string =>
-    (effect === "increases" || effect === "decreases" || effect === "enables") ? effect : "default";
+  const effectMarker = effectMarkerName;
 
   for (const re of computeRenderEdges()) {
     const fromPos = layout.positions[re.from];
@@ -430,7 +431,7 @@ export function render(): void {
     const chips    = nodeSecondaryChips(node, pos);
 
     // Class flags applied to the <g> wrapper — see 05-visualization.css
-    // and 12-no-borders.css (state glows) + 13-search.css (search halo).
+    // (state glows) + 13-search.css (search halo).
     // Every member of the multi-selection gets the "selected" glow. The
     // ancestor/descendant/dimmed neighbour treatment only applies in
     // single-select (refreshNeighborHighlight empties those sets when >1 is
@@ -640,32 +641,24 @@ export function attachSvgEventHandlers(): void {
   // on the map). Renaming and re-colouring streams happens in the sidebar.
   svg.querySelectorAll(".row-label-group").forEach(group => {
     const streamId = group.getAttribute("data-stream-id")!;
-    const stream = streamById[streamId];
     group.addEventListener("click", event => {
       event.stopPropagation();
       toggleStream(streamId);
     });
-    if (stream) {
-      const collapsed = state.hiddenStreams.has(streamId);
-      const text = (collapsed ? "Click to expand " : "Click to collapse ") + stream.label + " on the map.";
-      if (typeof attachTooltip === "function") attachTooltip(group as HTMLElement, text);
-    }
+    // Hover hint comes from the data-tooltip attribute baked into the markup
+    // above, picked up by the delegated handler in 12-tooltip.ts.
   });
 
   // Clicking a column header toggles the whole stage (collapse / expand its
   // column on the map). Mirrors the stream row-label behaviour above.
   svg.querySelectorAll(".col-header-group").forEach(group => {
     const stageId = group.getAttribute("data-stage-id")!;
-    const stage = stageById[stageId];
     group.addEventListener("click", event => {
       event.stopPropagation();
       toggleStage(stageId);
     });
-    if (stage) {
-      const collapsed = state.hiddenStages.has(stageId);
-      const text = (collapsed ? "Click to expand " : "Click to collapse ") + stage.label + " on the map.";
-      if (typeof attachTooltip === "function") attachTooltip(group as HTMLElement, text);
-    }
+    // Hover hint comes from the data-tooltip attribute baked into the markup
+    // above, picked up by the delegated handler in 12-tooltip.ts.
   });
 
   // (The svg-background click → deselect listener is registered once at

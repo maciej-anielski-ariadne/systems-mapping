@@ -23,7 +23,6 @@ import {
   streamNodeCount,
 } from "./03-state";
 import { renderSimulationPanel } from "./14-simulation-panel";
-import { wireDataTooltips } from "./12-tooltip";
 import {
   escapeHtml,
   nodeCategoryIds,
@@ -65,8 +64,8 @@ export function renderSidebar(): void {
   renderCategoriesList();
   renderLegendFilters();
 
-  // Newly-rendered rows have data-tooltip; wire them up to the tooltip system.
-  if (typeof wireDataTooltips === "function") wireDataTooltips(sidebarEl);
+  // Newly-rendered rows carry data-tooltip attributes; the delegated handler in
+  // 12-tooltip.ts picks them up automatically — no per-render wiring needed.
 
   // NOTE: the "+ Add stream / + Add stage" buttons live in index.html (they
   // persist across renders), so they're wired ONCE from 17-events.js at
@@ -231,7 +230,7 @@ export const LINE_STYLE_FILTERS = [
 export const LEGEND_FILTER_GROUPS: LegendFilterGroup[] = [
   { kind: "effect", containerId: "edge-type-filters",  title: "Link types", ctx: "links on the map",
     items: EDGE_TYPE_FILTERS,  hiddenSet: () => state.hiddenEffects,
-    swatch: (f, count) => edgeCountBadge(f.id, count),
+    swatch: (f, count) => edgeCountBadge(count),
     count:  (f, counts) => counts.effects[f.id] || 0,
     countInSwatch: true },
   { kind: "style", containerId: "edge-style-filters", title: "Line style", ctx: "links on the map",
@@ -347,7 +346,7 @@ export function countSwatch(color: string, count: number): string {
 // Neutral count badge for the edge-type legend rows. The box is not an editable
 // colour picker, so it matches the sidebar background like the other non-picker
 // boxes — only the editable Category / Stream swatches carry colour.
-export function edgeCountBadge(effectId: string, count: number | null | undefined): string {
+export function edgeCountBadge(count: number | null | undefined): string {
   return '<span class="count-swatch count-swatch--plain">' + count + '</span>';
 }
 

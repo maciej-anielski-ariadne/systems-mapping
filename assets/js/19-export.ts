@@ -57,7 +57,9 @@ import {
 import {
   deltaColorFor,
   edgeBezierPath,
+  effectMarkerName,
   escapeHtml,
+  maxReachableDepth,
   measureLabelLines,
   nodeCategoryIds,
 } from "./04-utils";
@@ -416,8 +418,7 @@ export function renderExportSvg(
     effect === "decreases" ? pal.edgeDecreases :
     effect === "enables"   ? pal.edgeEnables   :
                              pal.edgeDefault;
-  const effectMarker = (effect: string): string =>
-    (effect === "increases" || effect === "decreases" || effect === "enables") ? effect : "default";
+  const effectMarker = effectMarkerName;
   const lay = model.layout;
   const W = lay.totalWidth, H = lay.totalHeight;
   const nodeInfo: Record<string, Record<string, string>> = {};
@@ -715,29 +716,14 @@ export function publishCanvasHtml(): void {
   showLoadFeedback("Published systems-map.html (interactive)", false);
 }
 
-// Deepest reachable hop over a set of edges — the longest shortest path measured
-// downstream from any node (mirrors computeMaxHighlightDepth in 09-graph-
-// selection.js). Caps the published viewer's highlight-depth control. Always >= 1.
+// Deepest reachable hop over a set of edges — caps the published viewer's
+// highlight-depth control. Builds a downstream adjacency from the published
+// subset of edges and defers to the shared maxReachableDepth (04-utils), the
+// same primitive the live map uses via computeMaxHighlightDepth. Always >= 1.
 export function exportMaxHighlightDepth(edges: Edge[]): number {
   const out: Record<string, string[]> = {};
   for (const e of edges) (out[e.from] || (out[e.from] = [])).push(e.to);
-  let max = 1;
-  for (const start in out) {
-    const visited = new Set([start]);
-    let frontier = [start], level = 0;
-    while (frontier.length) {
-      const next: string[] = [];
-      for (const id of frontier) {
-        for (const to of (out[id] || [])) {
-          if (!visited.has(to)) { visited.add(to); next.push(to); }
-        }
-      }
-      if (next.length) level++;
-      frontier = next;
-    }
-    if (level > max) max = level;
-  }
-  return max;
+  return maxReachableDepth(Object.keys(out), id => out[id] || []);
 }
 
 // Wrap the SVG in a self-contained, interactive pan / zoom / highlight viewer:

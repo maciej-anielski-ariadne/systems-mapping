@@ -8,7 +8,7 @@
 
 import { serializeLiveStateToCsv } from "./05a-csv-serializer";
 import { getMapTextScale } from "./04-utils";
-import { clearCsvFromStorage, saveUiStateToStorage } from "./04a-storage";
+import { clearCsvFromStorage, saveUiStateToStorage, scheduleUiStateSave } from "./04a-storage";
 import { refreshNeighborHighlight } from "./09-graph-selection";
 import { computeLayout } from "./08-layout";
 import { render } from "./11-rendering";
@@ -275,7 +275,6 @@ export const ZOOM_STEP = 0.1;
 
 export const _vizSvgEl   = document.getElementById("viz-svg") as SVGSVGElement | null;
 export const _zoomReadEl = document.getElementById("viz-zoom-readout");
-export let _zoomSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function clampZoom(level: number): number {
   return Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, level));
@@ -308,9 +307,10 @@ export function applyZoom(): void {
   }
 }
 
+// Zoom changes fire in rapid bursts (wheel / pinch), so coalesce their persist
+// through the shared debounced saver rather than writing on every step.
 export function scheduleZoomSave(): void {
-  if (_zoomSaveTimer) clearTimeout(_zoomSaveTimer);
-  _zoomSaveTimer = setTimeout(() => { _zoomSaveTimer = null; saveUiStateToStorage(); }, 250);
+  scheduleUiStateSave();
 }
 
 export function setZoom(level: number): void {

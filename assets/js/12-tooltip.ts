@@ -74,22 +74,6 @@ export function showUiTooltip(text: string, event: MouseEvent): void {
   moveTooltip(event);
 }
 
-// Wire mouseenter / mousemove / mouseleave on a single element so it shows
-// `text` as a tooltip. Sets a flag on the element to avoid double-wiring
-// if the helper is called twice for the same element.
-export function attachTooltip(element: (Element & { _uiTooltipWired?: boolean }) | null, text: string | null): void {
-  if (!element || !text || element._uiTooltipWired) return;
-  element._uiTooltipWired = true;
-  element.addEventListener("mouseenter", e => showUiTooltip(text, e as MouseEvent));
-  element.addEventListener("mousemove", moveTooltip as EventListener);
-  element.addEventListener("mouseleave", hideTooltip);
-}
-
-// HTML [data-tooltip] elements are handled by the delegated listener below,
-// so per-element wiring is no longer needed. Kept as a no-op export so the
-// existing call sites (18-main.ts, 13-sidebar.ts) stay valid.
-export function wireDataTooltips(_container?: ParentNode | null): void {}
-
 // ───── Delegated data-tooltip handling ────────────────────────────────────
 // One document-level listener set drives every HTML element carrying a
 // `data-tooltip` attribute. Using closest('[data-tooltip]') means the

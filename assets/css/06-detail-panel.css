@@ -240,11 +240,11 @@
 /* === One row in a list of edges (input / impact) ===
  * The 3px coloured stripe on the left signals the effect type (green =
  * increases, red = decreases, purple = enables). Painted with
- * box-shadow:inset because 12-no-borders.css strips real borders.
+ * box-shadow:inset because the flat look uses no CSS borders.
  * `--edge-color` is overridden per modifier class below. */
 /* Shared edge-stripe frame — the 3px coloured left stripe signals the effect
  * type (green = increases, red = decreases, purple = enables) on a bg-mid card.
- * box-shadow:inset because 12-no-borders.css strips real borders. ONE definition
+ * box-shadow:inset because the flat look uses no CSS borders. ONE definition
  * used by both the read-only edge rows (.edge-stripe--nav, a <button>) and the
  * editable edge editors (.edge-stripe--edit, a <div>); only --edge-color differs
  * per effect modifier. */

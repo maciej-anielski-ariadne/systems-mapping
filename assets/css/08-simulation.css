@@ -81,7 +81,7 @@
   /* Coloured stripe on the left signals which stream this slider group
    * belongs to. The stream's hex colour comes in via the --stream-color
    * CSS variable set by JS (14-simulation-panel.js); painted via
-   * box-shadow:inset because 12-no-borders.css strips real borders. */
+   * box-shadow:inset because the flat look uses no CSS borders. */
   box-shadow: inset 3px 0 0 var(--stream-color, var(--border-strong));
   margin-bottom: var(--heading-gap);
 }

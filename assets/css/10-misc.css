@@ -5,7 +5,7 @@
  * ========================================================================== */
 
 /* === Toast message shown after a CSV load attempt ===
- * The `border` is stripped globally by 12-no-borders.css, so we paint the
+ * The flat look uses no CSS borders, so we paint the
  * success/error colour cue via a box-shadow ring instead. */
 .load-feedback {
   position: fixed;

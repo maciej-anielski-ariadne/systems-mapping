@@ -69,6 +69,18 @@ export function saveUiStateToStorage(): void {
   } catch (_) {}
 }
 
+// Coalesced UI-state save. saveUiStateToStorage does a synchronous
+// JSON.stringify of the whole UI payload (including the userOverrides map) plus
+// a localStorage write, so firing it on every event of a rapid burst — typing
+// in search auto-selects a node per keystroke, wheel/pinch zoom, panel drags —
+// is wasteful. These bits of state aren't critical to persist instantly, so we
+// debounce to one write per quiet 250 ms. Used by the zoom and selection paths.
+let _uiSaveTimer: ReturnType<typeof setTimeout> | null = null;
+export function scheduleUiStateSave(): void {
+  if (_uiSaveTimer) clearTimeout(_uiSaveTimer);
+  _uiSaveTimer = setTimeout(() => { _uiSaveTimer = null; saveUiStateToStorage(); }, 250);
+}
+
 export function loadUiStateFromStorage(): any {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_UI);

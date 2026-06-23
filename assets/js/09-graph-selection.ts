@@ -15,6 +15,7 @@
 // =============================================================================
 
 import type { Edge } from "./types";
+import { maxReachableDepth } from "./04-utils";
 import {
   state,
   incomingEdges,
@@ -28,7 +29,7 @@ import { endEdgeCycleSession } from "./16e-canvas-edit";
 import { render } from "./11-rendering";
 import { renderDetailPanel } from "./15-detail-panel";
 import { renderMultiSelectBar } from "./16j-multi-select-bar";
-import { saveUiStateToStorage } from "./04a-storage";
+import { scheduleUiStateSave } from "./04a-storage";
 
 // NOTE: `incomingEdges[id]` and `outgoingEdges[id]` are guaranteed to be
 // initialized to [] for every node by rebuildIndexes (06-data-loader.js),
@@ -114,28 +115,13 @@ export function computeHighlightedEdges(
 // highlight lights up nothing further, so the depth control (17-events.js) uses
 // it as a dynamic cap instead of a fixed ceiling. Cached into the global
 // `maxHighlightDepth` by rebuildIndexes. Falls back to 1 for an edge-less map.
+// Defers to the shared maxReachableDepth primitive (04-utils), which the export
+// viewer's cap also uses, so the two stay in lockstep.
 export function computeMaxHighlightDepth(): number {
-  let max = 1;
-  for (const node of NODES) {
-    const visited = new Set([node.id]);
-    let frontier = [node.id];
-    let level = 0;
-    while (frontier.length) {
-      const next: string[] = [];
-      for (const id of frontier) {
-        for (const edge of outgoingEdges[id]) {
-          if (!visited.has(edge.to)) {
-            visited.add(edge.to);
-            next.push(edge.to);
-          }
-        }
-      }
-      if (next.length) level++;
-      frontier = next;
-    }
-    if (level > max) max = level;
-  }
-  return max;
+  return maxReachableDepth(
+    NODES.map(n => n.id),
+    id => outgoingEdges[id].map(e => e.to)
+  );
 }
 
 // ───── Select / deselect ──────────────────────────────────────────────────
@@ -205,7 +191,7 @@ export function selectNode(nodeId: string): void {
   render();
   renderDetailPanel();
   if (typeof renderMultiSelectBar === "function") renderMultiSelectBar();
-  saveUiStateToStorage();
+  scheduleUiStateSave();
 }
 
 // Shift+click a node: add it to / remove it from the multi-selection without
@@ -230,7 +216,7 @@ export function toggleNodeInSelection(nodeId: string): void {
   render();
   renderDetailPanel();
   if (typeof renderMultiSelectBar === "function") renderMultiSelectBar();
-  saveUiStateToStorage();
+  scheduleUiStateSave();
 }
 
 // Replace the whole selection with the given ids, picking primaryId as primary
@@ -262,7 +248,7 @@ export function deselectNode(): void {
   render();
   renderDetailPanel();
   if (typeof renderMultiSelectBar === "function") renderMultiSelectBar();
-  saveUiStateToStorage();
+  scheduleUiStateSave();
 }
 
 // Clicking an edge on the canvas selects the edge's source node and opens
@@ -301,7 +287,7 @@ export function selectEdge(edgeId: string): void {
     Object.assign(state, computeTraceFor(edge.from));
     render();
     renderDetailPanel();
-    saveUiStateToStorage();
+    scheduleUiStateSave();
   }
 
   // After the panel renders, scroll the flashed row into view + auto-clear
@@ -335,7 +321,7 @@ export function deselectAll(): void {
   render();
   renderDetailPanel();
   if (typeof renderMultiSelectBar === "function") renderMultiSelectBar();
-  saveUiStateToStorage();
+  scheduleUiStateSave();
 }
 
 // Smoothly scroll the visualization so the given node is centred on screen.
