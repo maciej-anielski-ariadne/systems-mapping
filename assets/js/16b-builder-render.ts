@@ -481,7 +481,7 @@ export function renderBuilderCategoriesStep(): string {
       html +=   '<td><input type="color" data-section="categories" data-field="color" data-index="' + i + '" value="' + escapeHtml(c.color || "#a3a3a3") + '" /></td>';
       html +=   '<td><input type="color" data-section="categories" data-field="textColor" data-index="' + i + '" value="' + escapeHtml(c.textColor || "#1c1917") + '" /></td>';
       html +=   '<td><select data-section="categories" data-field="class" data-index="' + i + '">' +
-                  '<option value="primary"'   + ((c.class || "primary") !== "secondary" ? " selected" : "") + '>Fill</option>' +
+                  '<option value="primary"'   + ((c.class || "primary") !== "secondary" ? " selected" : "") + '>Fill tag</option>' +
                   '<option value="secondary"' + ((c.class || "primary") === "secondary" ? " selected" : "") + '>Corner tag</option>' +
                 '</select></td>';
       html +=   rowActionsHtml("categories", i);

@@ -266,7 +266,7 @@ export function categoryEditControl(node: GraphNode): string {
     }
     return h + '</div>';
   };
-  return group("Fill", byClass.primary, primSet) +
+  return group("Fill tag", byClass.primary, primSet) +
          group("Corner tag", byClass.secondary, secSet);
 }
 
