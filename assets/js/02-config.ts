@@ -20,13 +20,15 @@ export const NODE_HEIGHT = 40;   // Compact density (was 44; the 44px panel-head
 export const NODE_GAP_Y = 8;
 
 // Grow-to-fit label metrics.
-//   LABEL_INSET    – symmetric left/right text inset inside a node, so the
-//                    label spans the full node width (the left inset also
-//                    clears the stream-colour stripe).
-//   NODE_LINE_STEP – vertical advance between wrapped label lines (matches the
-//                    renderer's dy of 1.083em at the 12px label font).
-export const LABEL_INSET    = 14;
-export const NODE_LINE_STEP = 13;
+//   LABEL_INSET       – left text inset inside a node (also clears the
+//                       stream-colour stripe); this is where the label's x sits.
+//   LABEL_INSET_RIGHT – right text inset, a touch larger than the left so labels
+//                       wrap before the text runs right up to the node's edge.
+//   NODE_LINE_STEP    – vertical advance between wrapped label lines (matches the
+//                       renderer's dy of 1.083em at the 12px label font).
+export const LABEL_INSET       = 14;
+export const LABEL_INSET_RIGHT = 20;
+export const NODE_LINE_STEP    = 13;
 
 // Padding at the top and bottom of every stream row.
 export const ROW_PADDING = 12;   // Compact (was 16)

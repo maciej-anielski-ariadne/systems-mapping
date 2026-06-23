@@ -10,6 +10,7 @@ import { serializeLiveStateToCsv } from "./05a-csv-serializer";
 import { getMapTextScale } from "./04-utils";
 import { clearCsvFromStorage, saveUiStateToStorage } from "./04a-storage";
 import { refreshNeighborHighlight } from "./09-graph-selection";
+import { computeLayout } from "./08-layout";
 import { render } from "./11-rendering";
 import { toggleSimulationMode } from "./14-simulation-panel";
 import { downloadCsvBlob, readCsvFile } from "./16-file-io";
@@ -22,6 +23,7 @@ import {
   NODES,
   layout,
   maxHighlightDepth,
+  setLayout,
   state,
 } from "./03-state";
 
@@ -278,15 +280,31 @@ export function clampZoom(level: number): number {
   return Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, level));
 }
 
+// Last text-scale we re-laid-out for, so we only re-wrap labels when the scale
+// actually changes (zooming within the ≥ TEXT_SCALE_RATIO band leaves it at 1).
+let _lastTextScale = getMapTextScale(state.zoomLevel);
+
 export function applyZoom(): void {
   const svgEl    = _vizSvgEl   || document.getElementById("viz-svg");
   const readout  = _zoomReadEl || document.getElementById("viz-zoom-readout");
+  const textScale = getMapTextScale(state.zoomLevel);
   if (svgEl && layout && layout.totalWidth) {
     svgEl.setAttribute("width",  String(layout.totalWidth  * state.zoomLevel));
     svgEl.setAttribute("height", String(layout.totalHeight * state.zoomLevel));
-    (svgEl as SVGSVGElement).style.setProperty("--map-text-scale", String(getMapTextScale(state.zoomLevel)));
+    (svgEl as SVGSVGElement).style.setProperty("--map-text-scale", String(textScale));
   }
   if (readout) readout.textContent = Math.round(state.zoomLevel * 100) + "%";
+
+  // When the zoom text-scale changes, labels are wrapped/sized for the old scale,
+  // so re-run layout (which re-wraps at the new scale) and redraw — otherwise the
+  // enlarged font spills out of the boxes. Skipped while the scale stays put
+  // (the common ≥ TEXT_SCALE_RATIO range) so ordinary zooming stays cheap.
+  // render() re-applies the zoom-scaled SVG width/height + --map-text-scale itself.
+  if (textScale !== _lastTextScale) {
+    _lastTextScale = textScale;
+    setLayout(computeLayout());
+    render();
+  }
 }
 
 export function scheduleZoomSave(): void {

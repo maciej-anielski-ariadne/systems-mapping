@@ -25,6 +25,7 @@ import {
   COL_GAP,
   COL_HEADER_HEIGHT,
   LABEL_INSET,
+  LABEL_INSET_RIGHT,
   NODE_GAP_Y,
   NODE_HEIGHT,
   NODE_LINE_STEP,
@@ -36,26 +37,35 @@ import {
   SVG_PADDING_RIGHT,
   SVG_PADDING_TOP,
 } from "./02-config";
-import { measureLabelLines } from "./04-utils";
+import { getMapTextScale, measureLabelLines } from "./04-utils";
 import { NODES, STAGES, STREAMS, layout, state } from "./03-state";
 
 // Node height for a label that wraps to `lineCount` lines. The label block is
 // anchored to the box top (first line centred at +16, matching the renderer)
 // and each extra line adds NODE_LINE_STEP; a value-bearing node reserves a
 // bottom row for its value/delta. Floored at NODE_HEIGHT (the minimum box).
-export function nodeBoxHeight(lineCount: number, hasValue: boolean): number {
+//
+// `textScale` (1 at zoom ≥ TEXT_SCALE_RATIO, up to TEXT_SCALE_MAX when zoomed
+// out) grows the rendered label/value font via --map-text-scale, so the vertical
+// metrics scale with it too — otherwise tall zoomed-out text overruns the box.
+export function nodeBoxHeight(lineCount: number, hasValue: boolean, textScale = 1): number {
   const lines = Math.max(1, lineCount);
-  const labelBottom = 23 + (lines - 1) * NODE_LINE_STEP;   // ~bottom of last label line
-  const height = labelBottom + (hasValue ? 35 : 14);       // value row, or just bottom padding
+  const labelBottom = (23 + (lines - 1) * NODE_LINE_STEP) * textScale;   // ~bottom of last label line
+  const height = labelBottom + (hasValue ? 35 : 14) * textScale;         // value row, or just bottom padding
   return Math.max(NODE_HEIGHT, height);
 }
 
 // Wrap a node's label to the node's inner width and return { lines, height }.
 // Value-bearing nodes (those with a baseline) reserve room for the value row.
+// The wrap width is divided by the active zoom text-scale so labels break sooner
+// by exactly the factor the rendered font is enlarged — then the scaled-up text
+// still fits inside the (fixed-width) node box instead of spilling off its edge.
 export function measureNode(node: GraphNode): { lines: string[]; height: number } {
-  const lines = measureLabelLines(node.label || node.id || "", NODE_WIDTH - LABEL_INSET * 2);
+  const textScale = getMapTextScale(state.zoomLevel);
+  const innerWidth = (NODE_WIDTH - LABEL_INSET - LABEL_INSET_RIGHT) / textScale;
+  const lines = measureLabelLines(node.label || node.id || "", innerWidth);
   const hasValue = node.baseline !== undefined;
-  return { lines: lines, height: nodeBoxHeight(lines.length, hasValue) };
+  return { lines: lines, height: nodeBoxHeight(lines.length, hasValue, textScale) };
 }
 
 // Top Y (layout coords) of slot `slotIndex` within a (stream, stage) cell,
