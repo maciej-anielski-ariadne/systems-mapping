@@ -138,6 +138,40 @@ body.no-data .panel-pin {
   z-index: var(--z-header);
 }
 
+/* === Brand lockup ===
+ * Mark + wordmark pinned to the left of the header. The mark uses the purple
+ * "enable" data-hue (links are purple in this app), deliberately NOT the
+ * interactive blue, so the logo never masquerades as a clickable control.
+ * The wordmark is Plex Sans (the UI/title face), distinct from the mono used
+ * on the buttons, so it reads as identity rather than chrome. */
+.app-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.app-brand-mark {
+  flex-shrink: 0;
+  color: var(--accent-purple);
+}
+
+.app-brand-name {
+  font-family: var(--font-display);
+  font-size: var(--fs-title);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+/* Narrow viewports: keep the mark, drop the wordmark text so the search box
+ * and actions keep their room. */
+@media (max-width: 720px) {
+  .app-brand-name { display: none; }
+}
+
 /* === Search box ===
  * Stretches to fill the available header space; the action buttons sit to
  * its right. */

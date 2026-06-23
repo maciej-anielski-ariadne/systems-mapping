@@ -64,7 +64,7 @@ import { loadDataFromCsv } from "./06-data-loader";
 import { renderBuilder } from "./16b-builder-render";
 import { initCanvasEdit, bootEmptyStateGrid } from "./16e-canvas-edit";
 
-console.log("Systems Map — canvas-edit ready");
+console.log("Ariadne Maps — canvas-edit ready");
 console.log(
   "Click any cell to add a node. Drag from a node's right edge to draw an edge. Press Delete to remove (with undo).",
 );
