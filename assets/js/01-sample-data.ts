@@ -71,9 +71,9 @@ id,label,description,stream,stage,category,baseline,unit,controllable,direction,
 team_size,Team size,People working in Operations.,ops,resources,resource,10,people,true,,3
 marketing_spend,Marketing budget,Monthly spend on paid acquisition campaigns.,sales,resources,resource|risk,5000,£/mo,true,,3
 support_staff,Support staff,Customer support headcount.,support,resources,resource,4,people,true,,3
-content_production,Content production,Day-to-day writing and publishing of articles.,ops,activities,activity,,,,,
-campaign_execution,Campaign execution,Running the paid campaigns funded by the marketing budget.,sales,activities,activity,,,,,
-ticket_handling,Ticket handling,Triaging and resolving inbound support tickets.,support,activities,activity,,,,,
+content_production,Content production,Day-to-day writing and publishing of articles.,ops,activities,activity,100,index,,,
+campaign_execution,Campaign execution,Running the paid campaigns funded by the marketing budget.,sales,activities,activity,100,index,,,
+ticket_handling,Ticket handling,Triaging and resolving inbound support tickets.,support,activities,activity,100,index,,,
 content_published,Content published,Number of articles or assets shipped each month.,ops,outputs,metric,20,pieces/mo,,higher_better,
 leads_generated,Leads generated,New marketing-qualified leads per month.,sales,outputs,metric,100,leads/mo,,higher_better,
 avg_resolution_time,Avg resolution time,Mean hours between ticket open and close.,support,outputs,metric|risk,24,hours,,lower_better,
