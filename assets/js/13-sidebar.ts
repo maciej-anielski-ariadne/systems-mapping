@@ -164,7 +164,7 @@ export function renderCategoriesList(): void {
     const isSecondary = (cat.class || "primary") === "secondary";
     const reclassLabel = isSecondary ? "→ fill" : "→ corner tag";
     const reclassTitle = isSecondary
-      ? "Make this a Main category (fill; several blend into a gradient)"
+      ? "Make this a Fill category (fills the box; several blend into a gradient)"
       : "Make this a Corner tag category (a corner tag)";
     const tip = (isHidden ? "Click to show " : "Click to hide ") + cat.label + " — " + count + " box" + (count === 1 ? "" : "es") + " on the map. Shift-click the name to rename.";
     let h = '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="category" data-id="' + escapeHtml(catId) + '" data-index="' + indexOf[catId] + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
@@ -180,14 +180,15 @@ export function renderCategoriesList(): void {
   const group = (title: string, classKey: string, ids: string[], addLabel: string): string => {
     const shown = ids.filter(id => !state.hiddenCategories.has(id)).length;
     let h = '<div class="sidebar-section-title"><span>' + title + '</span><span class="count">' + shown + ' / ' + ids.length + '</span></div>';
-    h += ids.length ? ids.map(catRow).join("") : '<div class="sidebar-empty">None yet.</div>';
+    const emptyText = 'No ' + title.toLowerCase() + ' categories yet. Click "' + addLabel + '" to create one.';
+    h += ids.length ? ids.map(catRow).join("") : '<div class="sidebar-empty">' + emptyText + '</div>';
     h += '<button class="sidebar-add-btn sidebar-cat-add" data-cat-class="' + classKey + '">' + addLabel + '</button>';
     return h;
   };
 
   const split = splitCategoriesByClass(allIds);
   let html = "";
-  html += group("Main",      "primary",   split.primary,   "+ Add main");
+  html += group("Fill",      "primary",   split.primary,   "+ Add fill");
   html += '<div class="sidebar-cat-group-gap"></div>';
   html += group("Corner tag",   "secondary", split.secondary, "+ Add corner tag");
   html += '<div class="sidebar-drop-end" data-kind="category" data-target-index="' + allIds.length + '"></div>';
@@ -215,8 +216,8 @@ export const EDGE_TYPE_FILTERS = [
   { id: "decreases", label: "Decreases" },
 ];
 export const TRACE_FILTERS = [
-  { id: "ancestors",   label: "What affects it",   varName: "--edge-ancestor"   },
-  { id: "descendants", label: "What it affects", varName: "--edge-descendant" },
+  { id: "ancestors",   label: "Causes",  varName: "--edge-ancestor"   },
+  { id: "descendants", label: "Effects", varName: "--edge-descendant" },
 ];
 export const LINE_STYLE_FILTERS = [
   { id: "solid",  label: "Solid",  swatchClass: "legend-line-solid"  },

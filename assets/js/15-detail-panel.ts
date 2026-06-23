@@ -145,7 +145,7 @@ export function renderNodeSkeleton(node: GraphNode, editMode: boolean): string {
 
   // ── Direct inputs — read-only stripes in BOTH modes (incoming edges
   //    are edited from the source node; clicking jumps there) ───────────
-  html += renderEdgeList("What feeds in", directInputs, "from", "Nothing feeds into this box — it is a starting input.");
+  html += renderEdgeList("Causes", directInputs, "from", "No causes — this is a starting input.");
   if (editMode && directInputs.length) {
     html += '<div class="detail-edge-hint">Edit a link from the box it starts at →</div>';
   }
@@ -154,7 +154,7 @@ export function renderNodeSkeleton(node: GraphNode, editMode: boolean): string {
   if (editMode) {
     html += renderOutgoingEdgesBlock(node);
   } else {
-    html += renderEdgeList("What it affects", directImpacts, "to", "This box does not affect anything else — it is a final result.");
+    html += renderEdgeList("Effects", directImpacts, "to", "No effects — this is a final result.");
   }
 
   // ── Delete node (edit only) ──────────────────────────────────────────
@@ -266,7 +266,7 @@ export function categoryEditControl(node: GraphNode): string {
     }
     return h + '</div>';
   };
-  return group("Main · fills the box", byClass.primary, primSet) +
+  return group("Fill", byClass.primary, primSet) +
          group("Corner tag", byClass.secondary, secSet);
 }
 
@@ -310,7 +310,7 @@ export function renderOutgoingEdgesBlock(node: GraphNode): string {
   const adding = state.canvasEdit && state.canvasEdit.addingEdgeFromNodeId === node.id;
 
   let html = '<div class="outgoing-edges-block">';
-  html +=   '<div class="detail-list-title"><span>What it affects</span><span class="count">' + outgoing.length + '</span></div>';
+  html +=   '<div class="detail-list-title"><span>Effects</span><span class="count">' + outgoing.length + '</span></div>';
 
   if (outgoing.length === 0) {
     html += '<div class="outgoing-edges-empty">No links out yet. Drag from the right edge of this box on the map, or add one below.</div>';
@@ -321,7 +321,7 @@ export function renderOutgoingEdgesBlock(node: GraphNode): string {
       const flashClass = (edge.id === flashedId) ? " flash" : "";
       html += '<div class="edge-stripe edge-stripe--edit ' + edge.effect + flashClass + '" data-edge-row-id="' + escapeHtml(edge.id) + '">';
       html +=   '<div class="outgoing-edge-header">';
-      html +=     '<button class="outgoing-edge-target-link" data-jump-node="' + escapeHtml(edge.to) + '" data-tooltip="Jump to the box this affects">→ ' + escapeHtml(target ? target.label : edge.to) + '</button>';
+      html +=     '<button class="outgoing-edge-target-link" data-jump-node="' + escapeHtml(edge.to) + '" data-tooltip="Jump to this effect">→ ' + escapeHtml(target ? target.label : edge.to) + '</button>';
       html +=     '<button class="outgoing-edge-delete" data-edge-action="delete" data-edge-id="' + escapeHtml(edge.id) + '" data-tooltip="Delete this link">×</button>';
       html +=   '</div>';
       html +=   '<div class="outgoing-edge-controls">';
@@ -652,7 +652,7 @@ export function renderEdgeItem(otherNode: GraphNode, edge: Edge, direction: stri
   // A real <button> so the "jump to the connected node" action is Tab-reachable
   // and Enter/Space-activatable (the click handler in wireViewModeHandlers works
   // unchanged). aria-label names the otherwise-implicit navigate action.
-  const jumpDir = direction === "from" ? "(affects this)" : "(this affects)";
+  const jumpDir = direction === "from" ? "(a cause)" : "(an effect)";
   let html = '<button type="button" class="edge-stripe edge-stripe--nav ' + effectClass + '" data-target-node="' + escapeHtml(otherNode.id) + '" aria-label="Jump to ' + escapeHtml(otherNode.label) + ' ' + jumpDir + '">';
   html +=   '<div class="detail-edge-header">';
   html +=     '<div class="detail-edge-name">' + arrow + ' ' + escapeHtml(otherNode.label) + '</div>';
