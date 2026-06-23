@@ -262,7 +262,7 @@
   font: inherit;
   color: inherit;
   cursor: pointer;
-  padding: var(--space-1) 0 var(--space-1) calc(var(--edge-stripe-w) + var(--space-0_5));
+  padding: var(--space-1) var(--space-2) var(--space-1) calc(var(--edge-stripe-w) + var(--space-2));
   margin-bottom: var(--row-gap);
   transition: background var(--dur-fast), transform var(--dur-fast);   /* for the :hover translateX/background (the edit variant had none) */
 }
@@ -296,12 +296,13 @@
   font-size: var(--fs-body);
   font-weight: var(--fw-medium);
   color: var(--text-primary);
-  /* Truncate instead of pushing the elasticity value out of alignment. */
+  /* Wrap the full connected-node title (mirroring how node labels grow to fit on
+   * the canvas) instead of truncating; the elasticity value stays right-aligned
+   * and the name wraps onto extra lines beneath it. */
   flex: 1 1 auto;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: break-word;
 }
 
 .detail-edge-elasticity {
@@ -668,9 +669,8 @@
   font-weight: var(--fw-medium);
   padding: var(--space-0_5) 0;
   cursor: pointer;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: break-word;
 }
 .outgoing-edge-target-link:hover {
   color: var(--act);
