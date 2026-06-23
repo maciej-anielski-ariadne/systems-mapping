@@ -17,7 +17,7 @@ import type { GraphNode } from "./types";
 import { state, NODES, STREAMS, nodeById } from "./03-state";
 import { escapeHtml, formatScalar } from "./04-utils";
 import { recomputeValues, formatNodeDelta } from "./07-simulation-engine";
-import { render, scheduleRender } from "./11-rendering";
+import { render, scheduleRender, updateSimulationValuesInPlace } from "./11-rendering";
 import { renderDetailPanel } from "./15-detail-panel";
 import { saveUiStateToStorage } from "./04a-storage";
 import { renderSidebar } from "./13-sidebar";
@@ -141,7 +141,10 @@ export function applySimMultiplier(nodeId: string, newMultiplier: number, origin
   recomputeValues();
   syncSimRow(nodeId, originElement);
   updateSimSolverBadge();
-  scheduleRender();   // coalesce rapid slider-input rebuilds to one per frame
+  // Patch the changed values straight into the existing node DOM. Only when that
+  // can't apply cleanly (a delta label must appear/disappear, or a node is
+  // selected) do we fall back to a coalesced full render.
+  if (!updateSimulationValuesInPlace()) scheduleRender();
   saveUiStateToStorage();
 }
 

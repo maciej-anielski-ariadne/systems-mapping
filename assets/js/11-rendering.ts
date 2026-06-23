@@ -800,6 +800,66 @@ export function render(): void {
   attachSvgEventHandlers();
 }
 
+// Patch only the value / delta / outcome-border of quantified nodes in place,
+// skipping a full SVG rebuild. A simulation slider scrub recomputes downstream
+// values every frame but changes nothing structural — same nodes, same edges,
+// same positions — so on a large map a full render() is mostly wasted work.
+// Returns true if it fully handled the update; false (→ caller falls back to a
+// full render) when:
+//   • something is selected — selection/ancestor borders interact with the
+//     outcome border and aren't worth patching in place (rare during a scrub), or
+//   • a delta label needs to appear or disappear — that's a markup change, so
+//     the structure must be rebuilt.
+export function updateSimulationValuesInPlace(): boolean {
+  if (!state.dataLoaded) return false;
+  if (state.selectedNodeId || state.selectedNodeIds.size) return false;
+  const staticLayer = svg.querySelector("." + STATIC_LAYER_CLASS);
+  if (!staticLayer) return false;
+
+  // One DOM sweep → id-keyed map (only visible nodes have a group element).
+  const groupById = new Map<string, Element>();
+  staticLayer.querySelectorAll(".node-group").forEach(g => {
+    const id = g.getAttribute("data-node-id");
+    if (id) groupById.set(id, g);
+  });
+
+  // Pass 1: bail to a full render if any delta label must appear/disappear.
+  for (const node of NODES) {
+    if (node.baseline === undefined || node.baseline === null) continue;
+    const group = groupById.get(node.id);
+    if (!group) continue;
+    const d = formatNodeDelta(node.id);
+    const needs = !!(d.text && d.text !== "—");
+    const has = !!group.querySelector(".node-delta");
+    if (needs !== has) return false;
+  }
+
+  // Pass 2: patch value text, delta text + colour, and the outcome border.
+  for (const node of NODES) {
+    if (node.baseline === undefined || node.baseline === null) continue;
+    const group = groupById.get(node.id);
+    if (!group) continue;
+
+    const valueEl = group.querySelector(".node-value");
+    if (valueEl) valueEl.textContent = formatNodeValue(node.id);
+
+    const d = formatNodeDelta(node.id);
+    const deltaEl = group.querySelector(".node-delta");
+    if (deltaEl && d.text && d.text !== "—") {
+      deltaEl.textContent = d.text;
+      deltaEl.setAttribute("fill", deltaColorFor(node, d));
+    }
+
+    const rectEl = group.querySelector(".node-rect");
+    if (rectEl) {
+      const outcome = getOutcomeBorderColor(node.id);
+      rectEl.setAttribute("stroke", outcome || "rgba(0,0,0,0.4)");
+      rectEl.setAttribute("stroke-width", outcome ? "2" : "1");
+    }
+  }
+  return true;
+}
+
 // Ensure the delegated event listeners are wired. All node / row-label /
 // column-header / tooltip handling is delegated to the stable svg element at
 // module load (see the top of this file), and the canvas direct-edit gestures
