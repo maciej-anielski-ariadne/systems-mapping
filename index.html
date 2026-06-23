@@ -125,17 +125,17 @@
          actions (CSV / PNG / HTML), then the Simulate / Theme toggles past
          another divider. The trigger classes / ids are unchanged, so the
          handlers in 17-events.js still bind. -->
-    <button class="header-button header-button--primary create-map-trigger" data-tooltip="Clear the map and start fresh from an empty 3×3 starter grid. Asks you to confirm if a map is loaded.">Create</button>
-    <button class="header-button edit-data-trigger"   data-tooltip="Open the form-based helper filled in with the current map. Handy for many edits at once.">Edit</button>
-    <button class="header-button import-data-trigger" data-tooltip="Open a map spreadsheet from your computer. Same as dragging a spreadsheet onto the window.">Import</button>
+    <button class="header-button header-button--primary create-map-trigger" data-tooltip="Clear the map and start from an empty 3×3 grid.">Create</button>
+    <button class="header-button edit-data-trigger"   data-tooltip="Edit the whole map in a form — handy for many edits at once.">Edit</button>
+    <button class="header-button import-data-trigger" data-tooltip="Open a map spreadsheet — same as dragging one onto the window.">Import</button>
 
     <span class="header-divider" aria-hidden="true"></span>
-    <button class="header-button save-data-trigger"    data-tooltip="Save the map as a spreadsheet (openable in Excel / Sheets, or load it back here). With a box selected, saves just its highlighted boxes and links.">CSV</button>
-    <button class="header-button export-image-trigger" data-tooltip="Copy the map to the clipboard as a PNG image. With a box selected, copies just its highlighted boxes and links.">PNG</button>
-    <button class="header-button publish-html-trigger" data-tooltip="Publish a self-contained, view-only web page of the map (pan / zoom / hover). With a box selected, publishes just its highlighted boxes and links.">HTML</button>
+    <button class="header-button save-data-trigger"    data-tooltip="Save the map as a spreadsheet for Excel / Sheets. With a box selected, saves only its highlighted boxes and links.">CSV</button>
+    <button class="header-button export-image-trigger" data-tooltip="Copy the map to the clipboard as a PNG. With a box selected, copies only its highlighted boxes and links.">PNG</button>
+    <button class="header-button publish-html-trigger" data-tooltip="Publish a self-contained, view-only web page (pan / zoom / hover). With a box selected, publishes only its highlighted boxes and links.">HTML</button>
 
     <span class="header-divider" aria-hidden="true"></span>
-    <button id="sim-toggle-button" class="header-button" data-tooltip="Turn on what-if mode — sliders on every adjustable input, and the values it affects update live.">Simulate</button>
+    <button id="sim-toggle-button" class="header-button" data-tooltip="Turn on what-if mode — a slider on every adjustable input; its effects update live.">Simulate</button>
     <button id="theme-toggle-button" class="header-button" data-tooltip="Switch between the light and dark theme. Your choice is remembered." aria-label="Switch theme">Theme</button>
   </header>
 
@@ -187,10 +187,10 @@
     </div>
 
     <!-- Category filters + editing — JS fills the list in 13-sidebar.js.
-         Rendered as two groups (Primary · fill / Secondary · chips), each with
+         Rendered as two groups (Fill / Corner tag), each with
          its own heading, count and "+ Add" button. Per-row edit matches streams:
          click the swatch to recolour, double-click the name to rename, the
-         "→ chip / → fill" button reclassifies, trash deletes; click the row body
+         "→ fill / → corner tag" button reclassifies, trash deletes; click the row body
          to toggle visibility. The headings + add buttons are rendered (not
          static), so they're wired per-render in 13-sidebar.js. -->
     <div class="sidebar-section" id="category-filters-section">
@@ -273,9 +273,8 @@
         <div class="drop-zone-brand">Ariadne Maps<span class="drop-zone-tagline">Map cause and effect</span></div>
         <div class="drop-zone-title">Drop a spreadsheet here to build your map</div>
         <div class="drop-zone-subtitle">
-          Drop a spreadsheet here, or use the buttons below. The map is driven by a spreadsheet
-          defining rows, columns, categories, boxes, and links — build it
-          directly on the map, or edit by hand in Excel / Google Sheets.
+          Or use the buttons below. Build directly on the map, or edit the
+          spreadsheet by hand in Excel / Google Sheets.
         </div>
         <div class="drop-zone-buttons">
           <button class="drop-zone-button primary import-data-trigger">Choose spreadsheet file</button>
@@ -301,11 +300,11 @@
     <!-- Shown when no node is selected -->
     <div class="detail-empty" id="detail-empty">
       <h3>Cause and effect.</h3>
-      <p>Click any box to see what feeds into it and what it affects — step by step, across the whole map.</p>
+      <p>Click any box to see its causes and effects — step by step, across the whole map.</p>
       <p>Click again to deselect. Use the rows in the left panel to hide branches.</p>
       <div class="hint">
         <b>DATA</b> — All structure and numbers are loaded from a spreadsheet. Use <b>Create</b> / <b>Edit</b> in the header for the form-based helper, or edit the spreadsheet by hand in Excel / Sheets and drag it back in.<br><br>
-        <b>LINKS</b> — Each link is marked as <i>enables</i>, <i>increases</i>, or <i>decreases</i>, with a strength that drives the what-if results.
+        <b>LINKS</b> — Each link is marked as <i>enables</i>, <i>increases</i>, or <i>decreases</i>, with a strength that drives the simulation.
       </div>
     </div>
     <!-- Filled by JS in 15-detail-panel.js when a node is selected -->

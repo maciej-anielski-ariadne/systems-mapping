@@ -343,7 +343,7 @@ export function renderBuilderStreamsStep(): string {
   let html = "";
   html += '<h2 class="builder-step-heading">Rows of the map</h2>';
   html += '<p class="builder-step-blurb">Rows are the functional flows or domains running across your map. ' +
-          'Each row becomes a horizontal row. Examples: <i>Operations, Sales, Support</i>, or any grouping that makes sense for your system.</p>';
+          'Examples: <i>Operations, Sales, Support</i>, or any grouping that makes sense for your system.</p>';
   html += '<div class="builder-step-help">' +
           '<b>id</b> — short, lowercase, no spaces (e.g. <code>ops</code>). Auto-filled from the label. ' +
           '<b>label</b> — what users see in the sidebar. ' +
@@ -367,7 +367,7 @@ export function renderBuilderStreamsStep(): string {
             '</tr></thead><tbody>';
 
   if (state.builder.streams.length === 0) {
-    html += tableEmptyRow(7, 'No rows yet. Click "+ Add row" to start.');
+    html += tableEmptyRow(7, 'No rows yet. Click "+ Add row" to create one.');
   } else {
     state.builder.streams.forEach((s, i) => {
       const invalidId = v.dupStreams.has(s.id) || !s.id ? ' invalid' : '';
@@ -420,7 +420,7 @@ export function renderBuilderStagesStep(): string {
             '</tr></thead><tbody>';
 
   if (state.builder.stages.length === 0) {
-    html += tableEmptyRow(5, 'No columns yet. Click "+ Add column".');
+    html += tableEmptyRow(5, 'No columns yet. Click "+ Add column" to create one.');
   } else {
     state.builder.stages.forEach((s, i) => {
       const invalidId = v.dupStages.has(s.id) || !s.id ? ' invalid' : '';
@@ -469,7 +469,7 @@ export function renderBuilderCategoriesStep(): string {
             '</tr></thead><tbody>';
 
   if (state.builder.categories.length === 0) {
-    html += tableEmptyRow(8, 'No categories yet. Click "+ Add category".');
+    html += tableEmptyRow(8, 'No categories yet. Click "+ Add category" to create one.');
   } else {
     state.builder.categories.forEach((c, i) => {
       const invalidId = v.dupCategories.has(c.id) || !c.id ? ' invalid' : '';
@@ -481,8 +481,8 @@ export function renderBuilderCategoriesStep(): string {
       html +=   '<td><input type="color" data-section="categories" data-field="color" data-index="' + i + '" value="' + escapeHtml(c.color || "#a3a3a3") + '" /></td>';
       html +=   '<td><input type="color" data-section="categories" data-field="textColor" data-index="' + i + '" value="' + escapeHtml(c.textColor || "#1c1917") + '" /></td>';
       html +=   '<td><select data-section="categories" data-field="class" data-index="' + i + '">' +
-                  '<option value="primary"'   + ((c.class || "primary") !== "secondary" ? " selected" : "") + '>Primary · fill</option>' +
-                  '<option value="secondary"' + ((c.class || "primary") === "secondary" ? " selected" : "") + '>Secondary · chip</option>' +
+                  '<option value="primary"'   + ((c.class || "primary") !== "secondary" ? " selected" : "") + '>Fill</option>' +
+                  '<option value="secondary"' + ((c.class || "primary") === "secondary" ? " selected" : "") + '>Corner tag</option>' +
                 '</select></td>';
       html +=   rowActionsHtml("categories", i);
       html += '</tr>';
@@ -543,7 +543,7 @@ export function renderBuilderNodesStep(): string {
             '</tr></thead><tbody>';
 
   if (state.builder.nodes.length === 0) {
-    html += tableEmptyRow(13, 'No boxes yet. Click "+ Add box".');
+    html += tableEmptyRow(13, 'No boxes yet. Click "+ Add box" to create one.');
   } else {
     sortedBuilderIndices("nodes").forEach((i) => {
       const n = state.builder.nodes[i];

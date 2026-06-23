@@ -47,7 +47,7 @@ export function renderSimulationPanel(): void {
   html +=   '<div class="sim-title">Adjustable inputs</div>';
   html +=   '<button class="sim-reset" id="sim-reset-button">Reset</button>';
   html += '</div>';
-  html += '<div class="sim-help">Drag a slider or type a value. Everything it affects updates live.</div>';
+  html += '<div class="sim-help">Drag a slider or type a value. Its effects update live.</div>';
   // Placeholder for the feedback-loop non-convergence warning. Kept in the DOM
   // (toggled via updateSimSolverBadge) so slider drags can update it inline
   // without re-rendering the whole panel and stealing focus.

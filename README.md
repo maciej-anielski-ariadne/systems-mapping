@@ -25,7 +25,7 @@ The header has seven buttons left-to-right: **Create · Edit · Save · Import �
 ## What you get
 
 - Layered layout: rows × columns, boxes placed in grid cells, links as bezier curves.
-- Click a box → highlights what affects it (blue) and what it affects (amber), dims everything else.
+- Click a box → highlights its causes (blue) and effects (amber), dims everything else.
 - Click a row label (sidebar or row header) → collapse / expand the whole row.
 - **Smart search** → fuzzy match across every box field — name, description, row, column, category, ID, and unit — ranked in that priority order (handles typos like "brder" → "Border" and word-initials like "bff" → "Border Force FTE"). So searching a row/column/category name surfaces every box in it. Top results show as a dropdown below the search box, with the matched text highlighted; matching boxes get an amber glow on the map. Press `/` from anywhere on the page to jump to the search box.
 - Detail panel → category, row, column, starting value + current values, all direct inputs/impacts with per-link strengths, click-through navigation. **Edit Box** toggle turns the panel into an edit form (every field as an input, per-row outgoing-link editor, delete button).
