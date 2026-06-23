@@ -10,14 +10,14 @@
   background: var(--bg-light);
   color: var(--text-primary);
   padding: var(--pad-card);
-  border-radius: 5px;
-  font-size: 12px;
+  border-radius: var(--radius-surface);
+  font-size: var(--fs-body);
   pointer-events: none;
   z-index: 100;
   max-width: 260px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-float);
   opacity: 0;
-  transition: opacity 0.1s;
+  transition: opacity var(--dur-fast);
 }
 
 .tooltip.visible {
@@ -25,13 +25,13 @@
 }
 
 .tooltip-title {
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   margin-bottom: var(--space-1);
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 
 .tooltip-desc {
-  font-size: 11px;
+  font-size: var(--fs-cap);
   color: var(--text-secondary);
   line-height: 1.4;
 }
@@ -39,21 +39,21 @@
 /* Quantification line: "Current: 9000 FTE (+5% vs baseline 8571 FTE)" */
 .tooltip-quant {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-cap);
   color: var(--text-primary);
   margin-bottom: var(--space-1_5);
   padding: var(--space-1) 0;
 }
 
 .tooltip-quant-label  { color: var(--text-tertiary); }
-.tooltip-quant-value  { font-weight: 600; }
+.tooltip-quant-value  { font-weight: var(--fw-semibold); }
 .tooltip-quant-delta  { color: var(--text-secondary); margin-left: var(--space-1); }
 
 /* Single-line text tooltip used for buttons / filters / SVG row labels.
  * Sits in the same #tooltip container as the rich node hover; just a
  * shorter, simpler layout. */
 .tooltip-text {
-  font-size: 12px;
+  font-size: var(--fs-body);
   color: var(--text-primary);
   line-height: 1.4;
   max-width: 240px;

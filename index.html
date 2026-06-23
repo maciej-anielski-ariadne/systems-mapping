@@ -37,6 +37,25 @@
   <title>Systems Map</title>
 
   <!-- ──────────────────────────────────────────────────────────────────────
+       THEME — set <html data-theme> BEFORE any CSS paints, so there's no flash.
+       Uses the saved choice if there is one, otherwise the OS preference.
+       Twilight (dark) and Linen (light) are both defined in 01-variables.css.
+       ────────────────────────────────────────────────────────────────────── -->
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('theme');
+        if (t !== 'light' && t !== 'dark') {
+          t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        }
+        document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    })();
+  </script>
+
+  <!-- ──────────────────────────────────────────────────────────────────────
        FONTS (loaded locally — works offline)
        ────────────────────────────────────────────────────────────────────── -->
   <link rel="stylesheet" href="assets/fonts/fonts.css">
@@ -102,6 +121,7 @@
 
     <span class="header-divider" aria-hidden="true"></span>
     <button id="sim-toggle-button" class="header-button" data-tooltip="Turn on what-if mode — sliders on every adjustable input, and the values it affects update live.">Simulate</button>
+    <button id="theme-toggle-button" class="header-button" data-tooltip="Switch between the light and dark theme. Your choice is remembered." aria-label="Switch theme">Theme</button>
   </header>
 
   <!-- Hidden file picker. Clicking any .import-data-trigger button triggers it. -->
@@ -296,6 +316,26 @@
      (writes dist/systems-map.html).
      ========================================================================== -->
 <script type="module" src="assets/js/18-main.ts"></script>
+
+<!-- Theme toggle wiring (kept inline + out of the TS bundle so it has no build
+     dependencies). The label shows the theme you'd switch TO. -->
+<script>
+  (function () {
+    var btn = document.getElementById('theme-toggle-button');
+    if (!btn) return;
+    function relabel() {
+      var isLight = document.documentElement.getAttribute('data-theme') === 'light';
+      btn.textContent = isLight ? '☾ Dark' : '☀ Light';
+    }
+    relabel();
+    btn.addEventListener('click', function () {
+      var next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-theme', next);
+      try { localStorage.setItem('theme', next); } catch (e) {}
+      relabel();
+    });
+  })();
+</script>
 
 </body>
 </html>

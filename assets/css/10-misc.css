@@ -14,15 +14,15 @@
   background: var(--bg-light);
   color: var(--text-primary);
   padding: var(--pad-card);
-  border-radius: 6px;
-  font-size: 12px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4), 0 0 0 2px var(--accent-green);
+  border-radius: var(--radius-surface);
+  font-size: var(--fs-body);
+  box-shadow: var(--shadow-float), 0 0 0 2px var(--accent-green);
   z-index: var(--z-overlay);
   max-width: 380px;
 }
 
 .load-feedback.error {
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4), 0 0 0 2px var(--accent-red);
+  box-shadow: var(--shadow-float), 0 0 0 2px var(--accent-red);
 }
 
 /* === Undo toast (bottom-centre) ===
@@ -35,14 +35,14 @@
   background: var(--bg-light);
   color: var(--text-primary);
   padding: var(--pad-card);
-  border-radius: 8px;
-  font-size: 13px;
+  border-radius: var(--radius-surface);
+  font-size: var(--fs-body);
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--border-strong);
+  box-shadow: var(--shadow-float), 0 0 0 1px var(--border-strong);
   z-index: 220;
-  animation: undo-toast-slide-in 0.22s ease;
+  animation: undo-toast-slide-in var(--dur-slow) ease;
 }
 
 @keyframes undo-toast-slide-in {
@@ -56,18 +56,18 @@
 
 .undo-toast .undo-link {
   background: none;
-  color: var(--accent-blue);
+  color: var(--act);
   font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.08em;
+  font-size: var(--fs-cap);
+  letter-spacing: var(--tracking-cap);
   text-transform: uppercase;
   cursor: pointer;
   padding: var(--pad-row);
-  border-radius: 4px;
-  transition: background 0.12s, color 0.12s;
+  border-radius: var(--radius-interactive);
+  transition: background var(--dur-fast), color var(--dur-fast);
 }
 .undo-toast .undo-link:hover {
-  background: color-mix(in srgb, var(--accent-blue) 15%, transparent);
+  background: var(--act-tint);
   color: var(--text-primary);
 }
 
@@ -84,20 +84,20 @@
   background: var(--bg-light);
   color: var(--text-primary);
   padding: var(--pad-card);
-  border-radius: 8px;
-  font-size: 13px;
+  border-radius: var(--radius-surface);
+  font-size: var(--fs-body);
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--border-strong);
+  box-shadow: var(--shadow-float), 0 0 0 1px var(--border-strong);
   z-index: 221;
-  animation: undo-toast-slide-in 0.22s ease;
+  animation: undo-toast-slide-in var(--dur-slow) ease;
 }
 
 .multi-select-bar .msb-count {
   font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.06em;
+  font-size: var(--fs-cap);
+  letter-spacing: var(--tracking-cap);
   text-transform: uppercase;
   color: var(--text-secondary);
   white-space: nowrap;
@@ -106,26 +106,29 @@
 .multi-select-bar .msb-select {
   background: var(--bg-dark);
   color: var(--text-primary);
-  border-radius: 5px;
-  font-size: 12px;
+  border-radius: var(--radius-interactive);
+  font-size: var(--fs-body);
   padding: var(--pad-input);
   cursor: pointer;
+  box-shadow: var(--edit-cue);
+  transition: box-shadow var(--dur-fast);
 }
 
 .multi-select-bar .msb-delete {
   background: none;
-  color: var(--accent-red);
+  color: var(--danger);
   font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.08em;
+  font-size: var(--fs-cap);
+  letter-spacing: var(--tracking-cap);
   text-transform: uppercase;
   cursor: pointer;
   padding: var(--pad-button);
-  border-radius: 5px;
-  transition: background 0.12s, color 0.12s;
+  border-radius: var(--radius-interactive);
+  transition: background var(--dur-fast), color var(--dur-fast);
 }
 .multi-select-bar .msb-delete:hover {
-  background: color-mix(in srgb, var(--accent-red) 15%, transparent);
+  background: var(--danger-tint);
+  color: var(--danger);
 }
 
 /* === When no data is loaded, the side panels are dimmed and inert === */
@@ -171,16 +174,16 @@ body.no-data .detail-panel {
   background: color-mix(in srgb, var(--bg-deep) 85%, transparent);
   backdrop-filter: blur(8px);
   padding: var(--space-1) var(--space-1_5);   /* tight glass control, not a full card */
-  border-radius: 6px;
+  border-radius: var(--radius-surface);
   font-family: var(--font-mono);
 }
 
 /* Card title so the user can tell the two controls apart. */
 .viz-control-title {
   color: var(--text-tertiary);
-  font-size: 9px;
+  font-size: var(--fs-cap);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--tracking-cap);
   text-align: center;
   white-space: nowrap;
 }
@@ -199,7 +202,7 @@ body.no-data .detail-panel {
 .viz-zoom-readout {
   background: transparent;
   color: var(--text-secondary);
-  border-radius: 4px;
+  border-radius: var(--radius-interactive);
   height: 26px;
   line-height: 1;
   display: flex;
@@ -211,38 +214,38 @@ body.no-data .detail-panel {
 .viz-depth-button,
 .viz-zoom-button {
   width: 26px;
-  font-size: 16px;
+  font-size: var(--fs-title);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background var(--dur-fast), color var(--dur-fast);
 }
 
 /* Readouts stretch to fill the space between the −/+ buttons. */
 .viz-depth-readout {
   flex: 1;
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 
 .viz-zoom-readout {
   flex: 1;
-  font-size: 11px;
+  font-size: var(--fs-cap);
   letter-spacing: 0.04em;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background var(--dur-fast), color var(--dur-fast);
 }
 
 .viz-depth-button:hover,
 .viz-zoom-button:hover,
 .viz-zoom-readout:hover {
   color: var(--text-primary);
-  background: var(--bg-light);
+  background: var(--act-tint);
 }
 
 /* A button parked at the end of its range (e.g. depth already at the map's
  * maximum) reads as inert. */
 .viz-depth-button:disabled,
 .viz-zoom-button:disabled {
-  opacity: 0.3;
-  cursor: default;
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .viz-depth-button:disabled:hover,
@@ -264,17 +267,17 @@ body.no-data .detail-panel {
   align-items: center;
   justify-content: center;
   font-family: var(--font-mono);
-  font-size: 18px;
+  font-size: var(--fs-title);
   line-height: 1;
   color: var(--text-secondary);
   background: color-mix(in srgb, var(--bg-deep) 85%, transparent);
   backdrop-filter: blur(8px);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-interactive);
   cursor: pointer;
   transition: background var(--dur-base), color var(--dur-base);
 }
 .viz-more-toggle:hover,
 .viz-controls-cluster.show-more .viz-more-toggle {
   color: var(--text-primary);
-  background: color-mix(in srgb, var(--bg-light) 92%, transparent);
+  background: var(--act-tint);
 }

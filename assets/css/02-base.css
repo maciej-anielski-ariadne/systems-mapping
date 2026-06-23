@@ -32,7 +32,7 @@ body {
   font-family: var(--font-ui);
   background: var(--bg-deepest);
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: var(--fs-body);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   /* Disable text selection app-wide so dragging nodes / edges / panels never

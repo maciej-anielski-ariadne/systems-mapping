@@ -1,168 +1,164 @@
 /* =============================================================================
- * DESIGN TOKENS (colours, fonts, and the spacing / radius / motion / elevation
- * scales the rest of the app builds on)
+ * DESIGN TOKENS  +  AFFORDANCE LANGUAGE  +  THEMES
  * -----------------------------------------------------------------------------
- * Every colour, font, radius, duration and shadow in the app is defined here as
- * a CSS "variable". Changing one value here changes it everywhere — so a
- * non-technical editor can retheme the app without hunting through every file.
+ * Every colour, font, radius, duration and shadow is defined here once, so a
+ * non-technical editor can retheme the whole app from this one file.
+ *
+ * Two themes ship: "Twilight" (dark, the default) and "Linen" (light). The
+ * active theme is chosen by an inline script in index.html that sets
+ * <html data-theme="dark|light"> from the saved choice or the OS preference.
+ * Only the ~16 base colours below differ between themes — everything else
+ * (tints, rings, edge colours, shadows) derives from them with color-mix(), so
+ * both themes stay in lockstep automatically.
+ *
+ * AFFORDANCE LANGUAGE (the visual grammar this build follows):
+ *   appearance encodes interactivity and NOTHING else. The blue accent is
+ *   reserved for things you can act on; hierarchy comes from weight + opacity;
+ *   one cue per affordance. The --act / --edit-cue / --danger / --on tokens
+ *   below are that grammar's vocabulary. The map's data hues (green / red /
+ *   purple = increase / decrease / enable) are the one sanctioned exception —
+ *   they encode DATA, not UI affordance.
  *
  * How CSS variables work:
- *   :root { --my-color: #ff0000; }          ← define a variable
- *   .some-class { color: var(--my-color); }  ← use it
- *   color-mix(in srgb, var(--x) 20%, transparent)  ← a 20%-opacity tint of --x
- *
- * Naming convention:
- *   --bg-*      → background shades (deepest is darkest)
- *   --text-*    → text shades (primary brightest, tertiary dimmest)
- *   --border-*  → low-contrast shades used for hairline fills / dividers / rings
- *   --accent-*  → highlight / semantic hues
- *   --edge-*    → arrow colours in the map (semantic aliases of the accents)
- *   --radius-*  --space-*  --fs-*  --fw-*  --dur-*  --shadow-*  --z-*  → scales
- *   --font-*    → font families (font files are in ../fonts/)
- *
- * NOTE ON BORDERS: 12-no-borders.css wipes every CSS `border` with
- * `border: 0 !important`, so --border-subtle / --border-strong are NOT used as
- * real borders — they are the low-contrast shades behind dividers, the faint
- * background grid, and the box-shadow "rings" that stand in for borders.
+ *   :root { --x: #f00; }   .y { color: var(--x); }
+ *   color-mix(in srgb, var(--x) 20%, transparent)  → a 20%-opacity tint of --x
  * ========================================================================== */
 
 :root {
-  /* ===== Background shades, dark → light ================================== */
-  --bg-deepest: #0a0e1a;
-  --bg-deep:    #111827;
-  --bg-mid:     #1a2030;
-  --bg-light:   #232a3d;
-  --bg-lighter: #2c354b;
-  --bg-dark:    #0f172a;   /* slate used by the multi-select dropdown (was an
-                              UNDEFINED token relying on a hardcoded fallback) */
+  /* ===== THEME: Twilight (dark) — the 16 base colours ==================== *
+   * Muted / pastel. Override set lives in :root[data-theme="light"] below. */
+  --bg-deepest: #14161d;   /* deepest bg · also the text colour on filled accent */
+  --bg-deep:    #1c1f28;   /* panels / header / inputs */
+  --bg-mid:     #262a35;   /* cards / hover fill */
+  --bg-light:   #313643;   /* raised / active hover */
+  --bg-lighter: #3d4251;   /* highest raised / strong hover */
+  --bg-dark:    #10121a;   /* multi-select dropdown slate (just below deepest) */
 
-  /* ===== Low-contrast "border" shades (see note above) =================== */
-  --border-subtle: #2a3346;
-  --border-strong: #3a455e;
+  --border-subtle: #2c313d;   /* hairline divider fill */
+  --border-strong: #444a5e;   /* stronger divider / default edge / grid base */
 
-  /* ===== Text shades ===================================================== */
-  --text-primary:   #e7ecf3;
-  --text-secondary: #a1adc4;
-  --text-tertiary:  #8c97ad;   /* lightened for WCAG-AA contrast on the dark
-                                  surfaces (was #6b7691, which failed AA — 3.6:1
-                                  on bg-mid — for the most-used label colour) */
+  --text-primary:   #e6e4ea;
+  --text-secondary: #aeb0c0;
+  --text-tertiary:  #83879a;
 
-  /* ===== Accent / semantic hues ========================================== */
-  --accent-blue:    #60a5fa;
-  --accent-blue-hi: #93c5fd;   /* lighter blue for primary-button hover (was
-                                  hardcoded #93c5fd in 5 places) */
-  --accent-amber:   #fbbf24;
-  --accent-green:   #34d399;
-  --accent-red:     #f87171;
-  --accent-purple:  #a78bfa;
-  /* (--accent-orange #fb923c removed in the consolidation — it had 0 references.) */
+  --accent-blue:    #8fb6d9;   /* THE interactive accent (see --act) */
+  --accent-blue-hi: #aecce8;   /* brighter accent for primary-button hover */
+  --accent-amber:   #e6c79c;   /* search-match hue (freed from trace, see below) */
+  --accent-green:   #9ed1b4;   /* data: increase / good / undo flash */
+  --accent-red:     #e3a3a8;   /* data: decrease + UI: destructive (see --danger) */
+  --accent-purple:  #bfaede;   /* data: enable */
 
-  /* Two literals that aren't an accent but recur in tints; kept as tokens so
-     they stop being raw hex. Both get unified into the accents in a later pass. */
-  --red-tint-base: var(--accent-red);     /* T4: danger tints use the one red */
-  --flash-green:   var(--accent-green);   /* T4: undo/redo pulse uses the one green */
+  /* ===== Affordance grammar (derived; theme-agnostic) ==================== */
+  --act:        var(--accent-blue);     /* the one interactive hue */
+  --act-hi:     var(--accent-blue-hi);  /* primary-action hover */
+  --act-tint:   color-mix(in srgb, var(--accent-blue) 14%, transparent);  /* clickable hover bg */
+  --act-on:     color-mix(in srgb, var(--accent-blue) 22%, transparent);  /* toggled-on / selected fill */
+  --edit-cue:   inset 0 -1px 0 var(--accent-blue);   /* editable: 1px underline at rest */
+  --danger:     var(--accent-red);                   /* destructive (UI), never used for non-destructive chrome */
+  --danger-tint: color-mix(in srgb, var(--accent-red) 16%, transparent);
 
-  /* ===== Outcome-status colours (JS colours deltas good/bad vs baseline) == */
-  --status-good: var(--accent-green);  /* T4: one green for the whole app */
-  --status-bad:  var(--accent-red);    /* one red */
+  /* Legacy tint aliases kept so component rules don't break. */
+  --red-tint-base: var(--accent-red);
+  --flash-green:   var(--accent-green);
+  --status-good:   var(--accent-green);
+  --status-bad:    var(--accent-red);
 
-  /* ===== Map arrow colours — semantic aliases of the accents / shades ===== *
-   * These were previously hardcoded copies of the hex values above, so editing
-   * an accent did NOT move the matching edge colour. Aliased here so they stay
-   * in lockstep. */
-  --edge-default:    var(--border-strong);  /* normal, unselected arrow */
-  --edge-dim:        var(--bg-light);        /* dimmed-out arrow */
-  --edge-ancestor:   var(--accent-blue);     /* upstream chain (blue) */
-  --edge-descendant: var(--accent-amber);    /* downstream chain (amber) */
-  --edge-increases:  var(--accent-green);    /* "X increases Y" (green) */
-  --edge-decreases:  var(--accent-red);      /* "X decreases Y" (red) */
-  --edge-enables:    var(--accent-purple);   /* "X enables Y" (purple) */
+  /* ===== Map edge / trace colours ======================================= *
+   * Affordance language: upstream + downstream are the SAME relation ("tied to
+   * your selection"), so both use the one --act hue at two strengths — the
+   * arrowheads already encode direction. Amber is freed to mean ONLY a
+   * search match. The increase/decrease/enable hues are DATA, not UI, and stay. */
+  --edge-default:    var(--border-strong);                                  /* normal, unselected */
+  --edge-dim:        var(--bg-light);                                       /* dimmed-out */
+  --edge-ancestor:   var(--accent-blue);                                    /* upstream chain (full act) */
+  --edge-descendant: color-mix(in srgb, var(--accent-blue) 50%, var(--bg-deepest)); /* downstream (dimmer act) */
+  --edge-increases:  var(--accent-green);
+  --edge-decreases:  var(--accent-red);
+  --edge-enables:    var(--accent-purple);
 
-  /* ===== Focus ring ====================================================== *
-   * The blue 2px ring used on focused inputs / cells (was the hand-written
-   * `0 0 0 2px rgba(96,165,250,.5)` repeated ~8×). color-mix(... 50% ...)
-   * resolves to exactly that rgba. */
-  --focus-ring: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 50%, transparent);
+  /* ===== Focus ring ===================================================== */
+  --focus-ring: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 55%, transparent);
 
-  /* ===== Radius scale ==================================================== *
-   * Introduced now at the values already in use; rules are migrated onto these
-   * in the component-consolidation pass. */
-  --radius-xs:   3px;
-  --radius-sm:   5px;
-  --radius-md:   6px;
-  --radius-lg:   8px;
-  --radius-xl:   12px;
+  /* ===== Radius — collapsed to a 2-step affordance signal =============== *
+   * interactive (clickable / editable) vs surface (floating panels). Inert
+   * inline chips are flattened to 0 in the component layer. The xs/sm/md/lg/xl
+   * names are kept as aliases so existing rules resolve. */
+  --radius-interactive: 6px;
+  --radius-surface:     12px;
+  --radius-xs:   var(--radius-interactive);
+  --radius-sm:   var(--radius-interactive);
+  --radius-md:   var(--radius-interactive);
+  --radius-lg:   var(--radius-surface);
+  --radius-xl:   var(--radius-surface);
   --radius-full: 9999px;
 
-  /* ===== Spacing scale (4px grid + two legitimate half-steps) ============ */
-  --space-0_5: 2px;    /* hairline / tight-chip half-step */
+  /* ===== Spacing scale (4px grid + two half-steps) ====================== */
+  --space-0_5: 2px;
   --space-1:   4px;
-  --space-1_5: 6px;    /* dense-row half-step (kept, not snapped to 8) */
+  --space-1_5: 6px;
   --space-2:   8px;
   --space-3:   12px;
   --space-4:   16px;
   --space-5:   20px;
   --space-6:   24px;
 
-  /* ===== Semantic spacing — the app's actual spacing, expressed in the scale.
-   * Set to the COMPACT density (a deliberate, information-dense choice). Change
-   * these few values to re-pace the whole app; components reference them rather
-   * than hand-typed literals. ===== */
-  --gutter:       var(--space-4);   /* 16 — panel side padding (both panels) */
-  --section-gap:  var(--space-3);   /* 12 — between sidebar sections / detail blocks */
-  --heading-gap:  var(--space-2);   /* 8  — section heading → its content */
-  --row-gap:      var(--space-1);   /* 4  — between filter / list rows */
+  /* ===== Semantic spacing (Compact density) ============================= */
+  --header-h:     64px;             /* one source of truth for the header row height */
+  --gutter:       var(--space-4);   /* 16 — panel side padding */
+  --section-gap:  var(--space-3);   /* 12 — between sections / detail blocks */
+  --heading-gap:  var(--space-2);   /* 8  — heading → content */
+  --row-gap:      var(--space-1);   /* 4  — between list rows */
   --pad-row:      4px 8px;          /* compact list-row padding */
-  --pad-button:   5px 10px;         /* one button padding */
-  --pad-input:    5px 8px;          /* one text-input padding */
-  --pad-card:     var(--space-2);   /* 8  — card / inset block padding */
-  --pad-cell:     4px 8px;          /* builder table th AND td (matched) */
-  --gap-sm:       var(--space-1);   /* 4  */
-  --gap-md:       var(--space-1_5); /* 6  */
-  --gap-lg:       var(--space-2);   /* 8  */
-  --value-col:    88px;             /* shared right-edge width for numeric value columns */
-  --edge-stripe-w: 3px;             /* the coloured left stripe on edge / sim rows */
+  --pad-button:   6px 12px;         /* one button padding (snapped to the 4px grid) */
+  --pad-input:    6px 8px;          /* one text-input padding (snapped to the grid) */
+  --pad-card:     var(--space-2);   /* 8  — card / inset padding */
+  --pad-cell:     4px 8px;          /* builder table th AND td */
+  --gap-sm:       var(--space-1);   /* 4 */
+  --gap-md:       var(--space-1_5); /* 6 */
+  --gap-lg:       var(--space-2);   /* 8 */
+  --value-col:    88px;
+  --edge-stripe-w: 3px;
 
-  /* ===== Type scale (target; applied in the typography pass) ============= */
-  --fs-2xs:  10px;
-  --fs-xs:   11px;
-  --fs-sm:   12px;
-  --fs-base: 13px;
-  --fs-md:   16px;
-  --fs-lg:   18px;
-  --fs-xl:   22px;
+  /* ===== Type — collapsed to two prose sizes + one mono caption ========= *
+   * Hierarchy is carried by weight + opacity, not by many sizes. Mono caption
+   * is the single small "this is a number / a tracked label" signal. The old
+   * fs-* names alias onto these three so existing rules resolve; the component
+   * layer points each element at --fs-cap / --fs-body / --fs-title directly. */
+  --fs-cap:   11px;   /* mono captions, counts, eyebrows, numeric readouts */
+  --fs-body:  13px;   /* all prose / labels / inputs / buttons */
+  --fs-title: 18px;   /* the one heading size */
+  --tracking-cap: 0.08em;   /* one tracking value for mono eyebrows */
+  --fs-2xs:  var(--fs-cap);
+  --fs-xs:   var(--fs-cap);
+  --fs-sm:   var(--fs-body);
+  --fs-base: var(--fs-body);
+  --fs-md:   var(--fs-title);
+  --fs-lg:   var(--fs-title);
+  --fs-xl:   var(--fs-title);
 
-  /* ===== Font weights ==================================================== */
+  /* ===== Font weights =================================================== */
   --fw-medium:   500;
   --fw-semibold: 600;
   --fw-bold:     700;
 
-  /* ===== Motion ========================================================== */
+  /* ===== Motion ========================================================= */
   --dur-fast:  0.12s;
   --dur-base:  0.15s;
   --dur-slow:  0.18s;
   --dur-flash: 1.4s;
   --ease:      ease;
 
-  /* ===== Elevation (drop shadows) ======================================== */
-  --shadow-pop:    0 6px 24px rgba(0, 0, 0, 0.4);    /* tooltip / toast */
-  --shadow-pop-lg: 0 12px 32px rgba(0, 0, 0, 0.55);  /* dropdown / popup */
-  --shadow-drag:   0 8px 28px rgba(0, 0, 0, 0.6);    /* dragged element / bar */
-  --shadow-panel:  4px 0 18px rgba(0, 0, 0, 0.55);   /* unpinned panel overlay */
+  /* ===== Elevation — collapsed to one float + one drag ================== *
+   * Built from --shadow-color so the light theme can soften them in one move.
+   * pop / pop-lg / panel are kept as aliases. */
+  --shadow-color: 0, 0, 0;
+  --shadow-float: 0 10px 30px rgba(var(--shadow-color), 0.5);
+  --shadow-drag:  0 8px 28px rgba(var(--shadow-color), 0.55);
+  --shadow-panel: 4px 0 18px rgba(var(--shadow-color), 0.5);
+  --shadow-pop:    var(--shadow-float);
+  --shadow-pop-lg: var(--shadow-float);
 
-  /* ===== Z-index ladder (documents the real stacking order) ============== *
-   *   base content ............ 0–1
-   *   unpinned panel strips .... 30
-   *   panel resize handles ..... 35
-   *   header (+ its dropdowns) . 40
-   *   viz controls / toasts .... 50–221
-   *   builder overlay .......... 200
-   *   canvas edge-picker ....... 250   (intentionally ABOVE the builder so it
-   *                                     can open from view mode; it is NOT
-   *                                     "below the builder" as an old comment
-   *                                     in 05-visualization.css claimed)
-   *   builder cell editor ...... 300
-   *   typeable-dropdown popup .. 400   (above every overlay) */
+  /* ===== Z-index ladder ================================================= */
   --z-panel-strip: 30;
   --z-resize:      35;
   --z-header:      40;
@@ -172,12 +168,43 @@
   --z-cell-editor: 300;
   --z-dropdown:    400;
 
-  /* ===== Font families — loaded locally from ../fonts/fonts.css ========== *
-   * Tier 4 = two fonts only: a humanist sans (IBM Plex Sans) for UI AND titles,
-   * and a true monospace (IBM Plex Mono) for numeric readouts / tracked labels.
-   * The editorial serif (Fraunces) is dropped; title hierarchy comes from size
-   * + weight. System fallbacks keep things working if a face fails to load. */
-  --font-display: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* ===== Fonts ========================================================== *
+   * Two faces only: IBM Plex Sans (UI + titles) and IBM Plex Mono (numbers /
+   * tracked labels). --font-display is kept as an alias of --font-ui. */
   --font-ui:      'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: var(--font-ui);
   --font-mono:    'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+/* =============================================================================
+ * THEME: Linen (light) — overrides ONLY the 16 base colours. Everything else
+ * derives from these via the var()/color-mix() definitions above.
+ * ========================================================================== */
+:root[data-theme="light"] {
+  --bg-deepest: #fbfaf7;
+  --bg-deep:    #f3f1ea;
+  --bg-mid:     #eae7de;
+  --bg-light:   #e0dcd1;
+  --bg-lighter: #d2cdc0;
+  --bg-dark:    #ece7dd;
+
+  --border-subtle: #e7e2d7;
+  --border-strong: #c2bcac;
+
+  --text-primary:   #3b3a40;
+  --text-secondary: #6b6a73;
+  --text-tertiary:  #8c8a93;
+
+  --accent-blue:    #5b82b8;
+  --accent-blue-hi: #486ea3;
+  --accent-amber:   #b48a52;
+  --accent-green:   #5f9e7e;
+  --accent-red:     #bd7780;
+  --accent-purple:  #8a76b3;
+
+  /* Soften the drop shadows for a light surface (cool grey, low alpha). */
+  --shadow-color: 90, 85, 75;
+  --shadow-float: 0 10px 30px rgba(var(--shadow-color), 0.16);
+  --shadow-drag:  0 8px 28px rgba(var(--shadow-color), 0.22);
+  --shadow-panel: 4px 0 18px rgba(var(--shadow-color), 0.14);
 }

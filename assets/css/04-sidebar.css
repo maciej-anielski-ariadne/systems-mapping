@@ -59,7 +59,7 @@
   padding: 0;
   min-width: 0;
   background: transparent;
-  transition: width 0.18s ease, box-shadow 0.18s ease, background 0.15s ease;
+  transition: width var(--dur-slow) ease, box-shadow var(--dur-slow) ease, background var(--dur-base) ease;
 }
 
 .app.sidebar-unpinned .sidebar .panel-header {
@@ -71,7 +71,7 @@
   overflow-y: auto;
   padding: 0 0 var(--space-5) 0;
   background: var(--bg-deep);
-  box-shadow: 4px 0 18px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--shadow-panel);
 }
 
 .app.sidebar-unpinned .sidebar:hover .panel-header {
@@ -93,9 +93,9 @@
 /* Small uppercase heading at the top of each sidebar block */
 .sidebar-section-title {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-cap);
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: var(--tracking-cap);
   color: var(--text-tertiary);
   margin-bottom: var(--heading-gap);
   display: flex;
@@ -105,7 +105,7 @@
 
 .sidebar-section-title .count {
   color: var(--text-tertiary);
-  font-size: 9px;
+  font-size: var(--fs-cap);
 }
 
 /* Heading + "+ Add" buttons + swatches share ONE left column (the row's content
@@ -122,20 +122,20 @@
   display: flex;
   align-items: center;
   padding: var(--pad-row);
-  border-radius: 5px;
+  border-radius: var(--radius-interactive);
   cursor: pointer;
-  transition: background 0.12s;
+  transition: background var(--dur-fast);
   user-select: none;
   margin-bottom: 0;
 }
 
 .filter-row:hover {
-  background: var(--bg-mid);
+  background: var(--act-tint);
 }
 
 /* Visual state for a filter that has been clicked off */
 .filter-row.disabled {
-  opacity: 0.35;
+  opacity: 0.4;
 }
 
 .filter-row.disabled .filter-label {
@@ -144,13 +144,13 @@
 
 .filter-label {
   flex: 1;
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--text-secondary);
 }
 
 .filter-count {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-cap);
   color: var(--text-tertiary);
 }
 
@@ -162,7 +162,7 @@
   flex: 0 0 auto;
   width: 30px;
   height: 18px;
-  border-radius: 4px;
+  border-radius: var(--radius-interactive);
   overflow: hidden;
   filter: saturate(0.65);   /* match the muted map fills */
 }
@@ -172,7 +172,7 @@
   width: 100%;
   height: 100%;
   padding: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-interactive);
   cursor: pointer;
 }
 .count-swatch .count-num {
@@ -182,8 +182,8 @@
   align-items: center;
   justify-content: center;
   font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 600;
+  font-size: var(--fs-cap);
+  font-weight: var(--fw-semibold);
   pointer-events: none;   /* clicks fall through to the colour input behind it */
 }
 /* Neutral badge for every NON-picker box (stages, edge-types, line-style, trace):
@@ -196,7 +196,7 @@
   background: var(--bg-deepest);   /* visible neutral box, but no border */
   color: var(--text-secondary);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-cap);
   filter: none;
 }
 
@@ -208,17 +208,17 @@
   flex-shrink: 0;
   background: transparent;
   color: var(--text-tertiary);
-  font-size: 10px;
+  font-size: var(--fs-cap);
   letter-spacing: 0.02em;
   padding: var(--space-0_5) var(--space-1);
-  border-radius: 4px;
+  border-radius: var(--radius-interactive);
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.12s, background 0.12s, color 0.12s;
+  transition: opacity var(--dur-fast), background var(--dur-fast), color var(--dur-fast);
 }
 .sidebar-edit-row:hover .sidebar-cat-reclass,
 .sidebar-edit-row:focus-within .sidebar-cat-reclass { opacity: 1; }
-.sidebar-cat-reclass:hover { color: var(--text-primary); background: var(--bg-lighter); }
+.sidebar-cat-reclass:hover { color: var(--text-primary); background: var(--act-tint); }
 
 /* Gap between the Primary and Secondary category groups. */
 .sidebar-cat-group-gap { height: 14px; }
@@ -232,8 +232,8 @@
   align-items: center;
   gap: var(--row-gap);
   padding: var(--space-1) var(--row-pad-r) var(--space-1) var(--row-pad-l);
-  border-radius: 5px;
-  transition: background 0.12s;
+  border-radius: var(--radius-interactive);
+  transition: background var(--dur-fast);
   user-select: none;
   margin-bottom: 0;
   position: relative;
@@ -244,7 +244,7 @@
 }
 
 .sidebar-edit-row:hover {
-  background: var(--bg-mid);
+  background: var(--act-tint);
 }
 
 .sidebar-edit-row.dragging {
@@ -252,7 +252,7 @@
 }
 
 .sidebar-edit-row.drop-target {
-  box-shadow: 0 -2px 0 var(--accent-blue);
+  box-shadow: 0 -2px 0 var(--act);
 }
 
 .sidebar-edit-drag {
@@ -265,7 +265,7 @@
   transform: translateY(-50%);
   color: var(--text-tertiary);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-body);
   line-height: 1;
   letter-spacing: -1px;
   user-select: none;
@@ -280,7 +280,7 @@
 
 .sidebar-edit-label {
   flex: 1 1 auto;
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -298,7 +298,7 @@
 
 .sidebar-edit-count {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-cap);
   color: var(--text-tertiary);
 }
 
@@ -308,11 +308,11 @@
   background: none;
   padding: 0;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: var(--radius-interactive);
 }
 .sidebar-edit-color::-webkit-color-swatch-wrapper { padding: 0; }
-.sidebar-edit-color::-webkit-color-swatch         { border-radius: 4px; }
-.sidebar-edit-color::-moz-color-swatch            { border-radius: 4px; }
+.sidebar-edit-color::-webkit-color-swatch         { border-radius: var(--radius-interactive); }
+.sidebar-edit-color::-moz-color-swatch            { border-radius: var(--radius-interactive); }
 
 /* Compact inline colour swatch — a native colour input shrunk to swatch size
  * so streams / categories can be recoloured directly in the filter row without
@@ -321,10 +321,10 @@
   flex: 0 0 var(--swatch-w);
   width: var(--swatch-w);
   height: 16px;
-  border-radius: 3px;
+  border-radius: var(--radius-interactive);
   /* Ring strong enough (~3:1) that even a dark, near-background swatch colour
      keeps a visible boundary on the dark panel (WCAG 1.4.11). */
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
 }
 
 /* Invisible spacer in the swatch slot of STAGE rows — stages have no colour, so
@@ -348,10 +348,10 @@
   height: 22px;
   background: transparent;
   color: var(--text-tertiary);
-  border-radius: 4px;
+  border-radius: var(--radius-interactive);
   cursor: pointer;
   opacity: 0;
-  transition: background 0.12s, color 0.12s, opacity 0.12s;
+  transition: background var(--dur-fast), color var(--dur-fast), opacity var(--dur-fast);
 }
 
 .sidebar-edit-row:hover .sidebar-row-delete,
@@ -360,15 +360,15 @@
 }
 
 .sidebar-row-delete:hover {
-  background: color-mix(in srgb, var(--red-tint-base) 18%, transparent);
-  color: #fca5a5;
+  background: var(--danger-tint);
+  color: var(--danger);
 }
 
 /* Filter-row variant: the inline-editable label sits between the swatch and
  * the count. Same alignment as the compact sidebar-edit-row layout. */
 .sidebar-edit-row.filter-row .filter-label {
   flex: 1 1 auto;
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -380,12 +380,12 @@
 .sidebar-short-chip {
   flex: 0 0 auto;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-cap);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-tertiary);
   background: var(--bg-deepest);
-  border-radius: 3px;
+  border-radius: 0;
   padding: 1px var(--space-1);
   min-width: 18px;
   text-align: center;
@@ -399,7 +399,7 @@
   white-space: normal;
   color: var(--text-primary);
   background: var(--bg-deepest);
-  border-radius: 4px;
+  border-radius: var(--radius-interactive);
   padding: var(--space-0_5) var(--space-1_5);
   margin: calc(-1 * var(--space-0_5)) 0;
   outline: none;
@@ -409,7 +409,7 @@
 
 .sidebar-edit-row.filter-row .filter-count {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-cap);
   color: var(--text-tertiary);
   flex: 0 0 auto;
 }
@@ -420,10 +420,10 @@
 .sidebar-drop-end {
   height: 6px;
   margin-top: var(--space-0_5);
-  border-radius: 3px;
+  border-radius: 0;
 }
 .sidebar-drop-end.drop-target {
-  background: var(--accent-blue);
+  background: var(--act);
   opacity: 0.6;
 }
 
@@ -432,26 +432,26 @@
   margin-top: var(--space-2);
   width: 100%;
   background: transparent;
-  color: var(--accent-blue);
-  border-radius: 4px;
+  color: var(--act);
+  border-radius: var(--radius-interactive);
   padding: var(--pad-button);
   padding-left: var(--row-pad-l);   /* "+" lines up with the heading + swatch column */
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-cap);
   letter-spacing: 0.04em;
   text-align: left;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition: background var(--dur-fast), color var(--dur-fast);
 }
 
 .sidebar-add-btn:hover {
-  background: var(--bg-mid);
-  color: var(--text-primary);
+  background: var(--act-tint);
+  color: var(--act-hi);
 }
 
 /* Generic empty-state text for sidebar sections */
 .sidebar-empty {
-  font-size: 12px;
+  font-size: var(--fs-body);
   line-height: 1.5;
   color: var(--text-tertiary);
   padding: var(--space-1) var(--space-1) var(--space-2);
@@ -468,7 +468,7 @@
 .legend-swatch {
   width: 14px;
   height: 14px;
-  border-radius: 3px;
+  border-radius: 0;
   margin-left: var(--space-2);   /* indicator now sits on the RIGHT, like the count badges */
   flex-shrink: 0;
 }
@@ -481,7 +481,7 @@
 }
 
 .legend-label {
-  font-size: 12px;
+  font-size: var(--fs-body);
   color: var(--text-secondary);
 }
 
@@ -502,11 +502,11 @@
      is 22px; legend rows have no delete, so match the height explicitly. */
   min-height: 30px;
   box-sizing: border-box;
-  border-radius: 5px;
+  border-radius: var(--radius-interactive);
   cursor: pointer;
-  transition: background 0.12s;
+  transition: background var(--dur-fast);
 }
-.legend-filter-row:hover { background: var(--bg-mid); }
+.legend-filter-row:hover { background: var(--act-tint); }
 
 /* Neutral line-style swatches (style is orthogonal to the effect colour).
  * Both use `background` rather than a border, since 12-no-borders.css strips
@@ -528,9 +528,9 @@
   cursor: pointer;
   padding: var(--space-0_5) 0;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-cap);
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: var(--tracking-cap);
   font-weight: var(--fw-semibold);
   color: var(--text-tertiary);
   transition: color var(--dur-fast);

@@ -50,12 +50,18 @@
 .typeable-dropdown-input {
   cursor: text;
   padding-right: var(--space-6);                  /* room for the chevron */
+  border-radius: var(--radius-interactive);
+  box-shadow: var(--edit-cue);                    /* editable underline cue */
   background-image:
     linear-gradient(45deg,  transparent 50%, var(--text-secondary) 50%),
     linear-gradient(135deg, var(--text-secondary) 50%, transparent 50%);
   background-position: calc(100% - 14px) 50%, calc(100% - 9px) 50%;
   background-size: 5px 5px, 5px 5px;
   background-repeat: no-repeat;
+}
+
+.typeable-dropdown-input:focus {
+  box-shadow: var(--focus-ring);
 }
 
 /* The popup is position:fixed so it floats over scroll containers
@@ -65,11 +71,11 @@
   position: fixed;
   z-index: var(--z-dropdown);                                   /* above builder overlay (200) and cell editor (300) */
   background: var(--bg-deep);
-  border-radius: 4px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--shadow-float);
   padding: var(--space-1) 0;
   font-family: var(--font-ui);
-  font-size: 12px;
+  font-size: var(--fs-body);
   color: var(--text-primary);
   overflow-y: auto;
   overflow-x: hidden;
@@ -92,7 +98,7 @@
 }
 
 .typeable-dropdown-item.highlighted {
-  background: var(--accent-blue);
+  background: var(--act);
   color: var(--bg-deepest);
 }
 
@@ -100,11 +106,11 @@
   padding: var(--pad-row);
   color: var(--text-tertiary);
   font-style: italic;
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 
 /* Inside builder tables, fall back to mono font (matches the cell inputs). */
 .builder-table .typeable-dropdown-popup {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-body);
 }

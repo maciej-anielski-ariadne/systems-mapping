@@ -21,32 +21,33 @@
 
 .sim-title {
   font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
+  font-size: var(--fs-cap);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-cap);
   text-transform: uppercase;
   color: var(--text-secondary);
 }
 
 .sim-reset {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-cap);
   background: var(--bg-light);
   color: var(--text-secondary);
   padding: var(--pad-button);
-  border-radius: 4px;
+  border-radius: var(--radius-interactive);
   cursor: pointer;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--tracking-cap);
+  transition: background var(--dur-fast), color var(--dur-fast);
 }
 
 .sim-reset:hover {
-  background: var(--bg-lighter);
+  background: var(--act-tint);
   color: var(--text-primary);
 }
 
 .sim-help {
-  font-size: 11px;
+  font-size: var(--fs-cap);
   color: var(--text-tertiary);
   margin-bottom: var(--section-gap);
   line-height: 1.4;
@@ -55,11 +56,11 @@
 /* Warning shown when an active feedback loop fails to converge (runaway
  * positive feedback). Surfaced inline so a slider drag can reveal it live. */
 .sim-solver-badge {
-  font-size: 11px;
+  font-size: var(--fs-cap);
   line-height: 1.4;
   color: var(--status-bad);
   background: color-mix(in srgb, var(--status-bad) 12%, transparent);
-  border-radius: 6px;
+  border-radius: var(--radius-surface);
   padding: var(--pad-card);
   margin-bottom: var(--section-gap);
 }
@@ -71,8 +72,8 @@
 
 .sim-stream-header {
   font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 600;
+  font-size: var(--fs-cap);
+  font-weight: var(--fw-semibold);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-secondary);
@@ -99,7 +100,7 @@
 }
 
 .sim-slider-name {
-  font-size: 12px;
+  font-size: var(--fs-body);
   color: var(--text-primary);
   /* Truncate instead of pushing the readout out of alignment. */
   flex: 1 1 auto;
@@ -111,7 +112,7 @@
 
 .sim-slider-readout {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-cap);
   color: var(--text-secondary);
   display: inline-flex;
   align-items: baseline;
@@ -126,12 +127,15 @@
   width: 70px;
   background: var(--bg-mid);
   color: var(--text-primary);
-  border-radius: 3px;
+  border-radius: var(--radius-interactive);
   padding: var(--pad-input);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-cap);
   text-align: right;
   outline: none;
+  cursor: text;
+  /* at-rest accent underline signals the field is editable */
+  box-shadow: var(--edit-cue);
   /* hide the spinner; users can use the slider or type for fine control */
   -moz-appearance: textfield;
 }
@@ -158,7 +162,7 @@
   -webkit-appearance: none;
   appearance: none;
   background: var(--bg-light);
-  border-radius: 3px;
+  border-radius: var(--radius-interactive);
   height: 4px;
   outline: none;
   cursor: pointer;
@@ -170,7 +174,7 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: var(--accent-blue);
+  background: var(--act);
   cursor: pointer;
 }
 
@@ -178,6 +182,6 @@
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: var(--accent-blue);
+  background: var(--act);
   cursor: pointer;
 }

@@ -71,7 +71,7 @@ body.panning * {
 }
 
 .node-rect {
-  transition: filter 0.15s, opacity 0.15s;
+  transition: filter var(--dur-fast), opacity var(--dur-fast);
   /* The renderer emits an inline stroke on every node rect; the flat look means
      rectangles never show an outline — only the glow states below. A CSS class
      rule overrides the SVG inline `stroke` attribute without needing !important. */
@@ -85,7 +85,7 @@ body.panning * {
 /* The stream-colour stripe down each node's left edge is muted with the fill. */
 .node-stripe {
   filter: saturate(0.32);
-  transition: filter 0.15s;
+  transition: filter var(--dur-fast);
 }
 
 /* Hovering a resting node brightens it slightly but keeps it muted (the
@@ -103,7 +103,8 @@ body.panning * {
  * states read as stacked drop-shadow halos instead (moved here from the old
  * 12-no-borders.css). Each stacks a tight inner ring, a mid bloom and a wide
  * soft tail. Selected = white (loudest); ancestor = blue (upstream);
- * descendant = amber (downstream); hovered = soft white (subtler). */
+ * descendant = dimmer blue (downstream — direction is shown by arrowheads, not
+ * hue); hovered = soft white (subtler). */
 .node-group.selected .node-rect {
   filter:
     drop-shadow(0 0 2px rgba(255, 255, 255, 1))
@@ -122,7 +123,7 @@ body.panning * {
   filter:
     drop-shadow(0 0 2px var(--edge-descendant))
     drop-shadow(0 0 7px var(--edge-descendant))
-    drop-shadow(0 0 14px color-mix(in srgb, var(--accent-amber) 55%, transparent));
+    drop-shadow(0 0 14px color-mix(in srgb, var(--accent-blue) 55%, transparent));
 }
 
 .node-group.hovered:not(.selected):not(.ancestor):not(.descendant) .node-rect {
@@ -140,7 +141,7 @@ body.panning * {
    On undo/redo, 16g-canvas-undo.js diffs the before/after snapshots and tags
    the affected nodes (and edges, below) with .undo-flash so the user can see
    what the operation touched. A short green pulse — deliberately distinct from
-   the blue/amber selection treatment and the amber search halo. The node
+   the blue selection treatment and the amber search halo. The node
    variant also forces full opacity so a flashed node is never washed out by an
    unrelated selection's dimming. Auto-cleared after the animation by JS. */
 @keyframes undo-flash-pulse {
@@ -168,16 +169,16 @@ body.panning * {
  */
 .node-label {
   font-family: var(--font-ui);
-  font-weight: 500;
-  font-size: calc(12px * var(--map-text-scale, 1));
+  font-weight: var(--fw-medium);
+  font-size: calc(var(--fs-body) * var(--map-text-scale, 1));
   pointer-events: none;   /* clicks pass through to the underlying rect */
   user-select: none;
 }
 
 .node-value {
   font-family: var(--font-mono);
-  font-size: calc(10px * var(--map-text-scale, 1));
-  font-weight: 500;
+  font-size: calc(var(--fs-cap) * var(--map-text-scale, 1));
+  font-weight: var(--fw-medium);
   pointer-events: none;
   user-select: none;
   letter-spacing: 0.01em;
@@ -185,8 +186,8 @@ body.panning * {
 
 .node-delta {
   font-family: var(--font-mono);
-  font-size: calc(10px * var(--map-text-scale, 1));
-  font-weight: 600;
+  font-size: calc(var(--fs-cap) * var(--map-text-scale, 1));
+  font-weight: var(--fw-semibold);
   pointer-events: none;
   user-select: none;
   letter-spacing: 0.01em;
@@ -195,7 +196,7 @@ body.panning * {
 /* === Edges (the arrows connecting nodes) === */
 .edge-path {
   fill: none;
-  transition: opacity 0.15s, stroke-width 0.15s;
+  transition: opacity var(--dur-fast), stroke-width var(--dur-fast);
 }
 
 .edge-path.dimmed {
@@ -217,8 +218,8 @@ body.panning * {
 
 .row-label-text {
   font-family: var(--font-mono);
-  font-size: calc(11px * var(--map-text-scale, 1));
-  font-weight: 600;
+  font-size: calc(var(--fs-cap) * var(--map-text-scale, 1));
+  font-weight: var(--fw-semibold);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   pointer-events: none;
@@ -239,7 +240,7 @@ body.panning * {
 }
 
 .row-label-group.collapsed .row-label-text {
-  font-size: calc(10px * var(--map-text-scale, 1));
+  font-size: calc(var(--fs-cap) * var(--map-text-scale, 1));
   opacity: 0.55;
 }
 
@@ -258,8 +259,8 @@ body.panning * {
 
 .col-header-text {
   font-family: var(--font-mono);
-  font-size: calc(11px * var(--map-text-scale, 1));
-  font-weight: 600;
+  font-size: calc(var(--fs-cap) * var(--map-text-scale, 1));
+  font-weight: var(--fw-semibold);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   fill: var(--text-secondary);
@@ -289,14 +290,14 @@ body.panning * {
   pointer-events: all;
 }
 .col-header-group.collapsed .col-header-text {
-  font-size: calc(10px * var(--map-text-scale, 1));
+  font-size: calc(var(--fs-cap) * var(--map-text-scale, 1));
   opacity: 0.55;
 }
 .col-header-group.collapsed:hover .col-header-text {
   opacity: 1;
 }
 .col-header-group.collapsed .col-header-plus {
-  font-size: calc(14px * var(--map-text-scale, 1));
+  font-size: calc(var(--fs-body) * var(--map-text-scale, 1));
   opacity: 0.7;
 }
 
@@ -324,18 +325,18 @@ body.panning * {
   stroke-dasharray: 5 4;
   opacity: 0;
   pointer-events: none;
-  transition: fill 0.12s, opacity 0.1s;
+  transition: fill var(--dur-fast), opacity var(--dur-fast);
 }
 .ghost-cell text {
   fill: var(--accent-blue);
   font-family: var(--font-mono);
-  font-size: calc(11px * var(--map-text-scale, 1));
-  font-weight: 600;
+  font-size: calc(var(--fs-cap) * var(--map-text-scale, 1));
+  font-weight: var(--fw-semibold);
   letter-spacing: 0.04em;
   pointer-events: none;
   user-select: none;
   opacity: 0;
-  transition: opacity 0.1s;
+  transition: opacity var(--dur-fast);
 }
 body.canvas-shift-edit .ghost-cell rect {
   opacity: 1;
@@ -360,8 +361,8 @@ body.canvas-shift-edit .ghost-cell text {
 .cursor-cell text {
   fill: var(--accent-blue);
   font-family: var(--font-mono);
-  font-size: calc(11px * var(--map-text-scale, 1));
-  font-weight: 600;
+  font-size: calc(var(--fs-cap) * var(--map-text-scale, 1));
+  font-weight: var(--fw-semibold);
   letter-spacing: 0.04em;
   pointer-events: none;
   user-select: none;
@@ -377,15 +378,15 @@ body.canvas-shift-edit .ghost-cell text {
   position: fixed;
   z-index: var(--z-edge-picker);
   background: var(--bg-deep);
-  border-radius: 6px;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.6);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--shadow-float);
   padding: var(--pad-card);
   width: 280px;
   font-family: var(--font-ui);
 }
 .canvas-edge-picker-label {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-cap);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-tertiary);
@@ -395,14 +396,16 @@ body.canvas-shift-edit .ghost-cell text {
   width: 100%;
   background: var(--bg-deepest);
   color: var(--text-primary);
-  border-radius: 4px;
+  border-radius: var(--radius-interactive);
   padding: var(--pad-input);
   font-family: var(--font-ui);
-  font-size: 13px;
+  font-size: var(--fs-body);
+  cursor: text;
+  box-shadow: var(--edit-cue);
   outline: none;
 }
 .canvas-edge-picker .typeable-dropdown-input:focus {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 25%, transparent);
+  box-shadow: var(--focus-ring);
 }
 
 /* Edge handle on the right edge of every node. Hidden by default; reveals
@@ -414,7 +417,7 @@ body.canvas-shift-edit .ghost-cell text {
   stroke-width: 1.5;
   opacity: 0;
   cursor: crosshair;
-  transition: opacity 0.15s, r 0.15s;
+  transition: opacity var(--dur-fast), r var(--dur-fast);
   pointer-events: none;
 }
 body.canvas-shift-edit .edge-handle {
@@ -485,14 +488,14 @@ body.canvas-shift-edit .node-group:active {
   fill: var(--text-secondary);
   font-family: var(--font-display);
   font-style: italic;
-  font-size: 18px;
+  font-size: var(--fs-title);
   pointer-events: none;
   user-select: none;
 }
 .empty-state-hint-sub {
   fill: var(--text-tertiary);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-cap);
   font-style: normal;
   letter-spacing: 0.04em;
 }
@@ -513,10 +516,10 @@ body.node-dragging * {
 .node-drag-preview {
   opacity: 0.9;
   pointer-events: none;
-  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.45));
+  filter: drop-shadow(var(--shadow-drag));
 }
 .node-drag-preview .drag-count-badge {
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+  filter: drop-shadow(var(--shadow-drag));
 }
 /* Marquee selection box (shift+drag on empty canvas). See 16e-canvas-edit.js. */
 .marquee-box {

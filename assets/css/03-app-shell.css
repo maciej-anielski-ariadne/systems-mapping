@@ -75,7 +75,7 @@
   background: transparent;
   color: var(--text-tertiary);
   cursor: pointer;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-interactive);
   transition: background var(--dur-base), color var(--dur-base);
 }
 
@@ -86,7 +86,7 @@
 
 .panel-pin:hover {
   color: var(--text-primary);
-  background: var(--bg-light);
+  background: var(--act-tint);
 }
 
 /* Collapsed → flip the chevron to point inward ("expand"). */
@@ -133,10 +133,12 @@ body.no-data .panel-pin {
   background: var(--bg-mid);
   color: var(--text-primary);
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--fs-body);
   padding: 5px 8px 5px 36px;  /* extra left padding leaves room for the icon */
-  border-radius: 6px;
+  border-radius: var(--radius-interactive);
   outline: none;
+  cursor: text;
+  box-shadow: var(--edit-cue);   /* editable: 1px accent underline at rest */
 }
 
 .search-icon {
@@ -153,35 +155,35 @@ body.no-data .panel-pin {
   background: var(--bg-mid);
   color: var(--text-secondary);
   padding: var(--pad-button);
-  border-radius: 6px;
+  border-radius: var(--radius-interactive);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-cap);
   letter-spacing: 0.05em;
   text-transform: uppercase;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background var(--dur-fast), color var(--dur-fast), box-shadow var(--dur-fast);
 }
 
 .header-button:hover {
   color: var(--text-primary);
-  background: var(--bg-light);
+  background: var(--act-tint);
 }
 
 /* The Simulation button is highlighted while simulation mode is on */
 .header-button.active {
-  background: var(--accent-blue);
+  background: var(--act);
   color: var(--bg-deepest);
 }
 
 /* === Ranked header: one primary action (Create) ===
  * The single filled, highest-emphasis action so the eye has an entry point. */
 .header-button--primary {
-  background: var(--accent-blue);
+  background: var(--act);
   color: var(--bg-deepest);
   font-weight: var(--fw-semibold);
 }
 .header-button--primary:hover {
-  background: var(--accent-blue-hi);
+  background: var(--act-hi);
   color: var(--bg-deepest);
 }
 
@@ -201,8 +203,8 @@ body.no-data .panel-pin {
   gap: var(--space-0_5);
   padding: var(--space-1);
   background: var(--bg-deep);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-pop-lg);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--shadow-float);
 }
 .header-menu-list[hidden] { display: none; }
 .header-menu-item {
@@ -210,16 +212,16 @@ body.no-data .panel-pin {
   color: var(--text-secondary);
   text-align: left;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-cap);
   letter-spacing: 0.05em;
   text-transform: uppercase;
   padding: var(--pad-row);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-interactive);
   cursor: pointer;
   transition: background var(--dur-fast), color var(--dur-fast);
 }
 .header-menu-item:hover {
-  background: var(--bg-light);
+  background: var(--act-tint);
   color: var(--text-primary);
 }
 
@@ -267,18 +269,18 @@ body.no-data .publish-html-trigger:hover {
   cursor: col-resize;
   z-index: var(--z-resize);     /* above unpinned panel strips (30), below header (40) */
   background: transparent;
-  transition: background 0.12s ease;
+  transition: background var(--dur-fast) ease;
 }
 
 .sidebar-resize-handle { left:  var(--sidebar-w); }
 .detail-resize-handle  { right: var(--detail-w);  }
 
 .panel-resize-handle:hover {
-  background: color-mix(in srgb, var(--accent-blue) 25%, transparent);   /* accent-blue, faint */
+  background: color-mix(in srgb, var(--act) 25%, transparent);   /* interactive hue, faint */
 }
 
 .panel-resize-handle.dragging {
-  background: color-mix(in srgb, var(--accent-blue) 55%, transparent);
+  background: color-mix(in srgb, var(--act) 55%, transparent);
 }
 
 /* Resize handle only makes sense when its panel is in pinned (full-width)

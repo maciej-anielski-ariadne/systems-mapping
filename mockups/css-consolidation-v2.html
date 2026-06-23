@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<!--
+================================================================================
+ Systems Map — CSS consolidation v2 + interactive theme lab
+ --------------------------------------------------------------------------------
+ A self-contained design console (no build step — just open it). It does 3 things:
+
+   1. THEME LAB     A live slice of the real app you can re-theme by hand. Edit
+                    any of the 16 root tokens, flip light/dark, try presets,
+                    then "Copy variables" straight into assets/css/01-variables.css.
+   2. OPTIONS       The same slice rendered under Current / Option 1 / 2 / 3 so
+                    you can see how far each consolidation goes — and a
+                    "Highlight affordances" mode that proves every visual
+                    difference signals an interaction.
+   3. INVENTORY     The full map: every colour, font size, gap, radius, shadow,
+                    alignment, primitive, duplicate and raw-value leak found.
+
+ Built from a 16-agent audit of all 14 CSS files (449 rules). Nothing here is
+ wired to the app yet — it's a proposal surface.
+================================================================================
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Systems Map — CSS consolidation v2 + theme lab</title>
+<style>
+/* ======================================================================
+   CONSOLE CHROME  (the page around the preview — deliberately neutral so
+   it never gets confused with the app slice it frames)
+   ====================================================================== */
+:root{
+  --c-bg:#0d1017; --c-panel:#151a23; --c-panel-2:#1b212d; --c-line:#262d3b;
+  --c-text:#e6eaf2; --c-dim:#9aa6bd; --c-faint:#6b7689;
+  --c-accent:#6ea8fe; --c-good:#41d39a; --c-warn:#f5b740; --c-bad:#f3737b;
+  --mono:'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,monospace;
+  --sans:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--sans);background:var(--c-bg);color:var(--c-text);line-height:1.5;
+  -webkit-font-smoothing:antialiased;padding-bottom:120px}
+a{color:var(--c-accent)}
+code,.mono{font-family:var(--mono)}
+h1,h2,h3{font-weight:600;letter-spacing:-.01em}
+.wrap{max-width:1240px;margin:0 auto;padding:0 24px}
+
+header.top{position:sticky;top:0;z-index:50;background:color-mix(in srgb,var(--c-bg) 88%,transparent);
+  backdrop-filter:blur(10px);border-bottom:1px solid var(--c-line)}
+header.top .wrap{display:flex;align-items:center;gap:18px;height:60px}
+header.top h1{font-size:17px;display:flex;align-items:baseline;gap:10px}
+header.top h1 span{font-size:12px;color:var(--c-faint);font-weight:400;letter-spacing:0}
+nav.top{margin-left:auto;display:flex;gap:4px}
+nav.top a{font-size:12px;color:var(--c-dim);text-decoration:none;padding:6px 11px;border-radius:7px}
+nav.top a:hover{background:var(--c-panel-2);color:var(--c-text)}
+
+section{padding:46px 0 8px}
+.sec-head{display:flex;align-items:baseline;gap:12px;margin-bottom:6px}
+.sec-head .n{font-family:var(--mono);font-size:12px;color:var(--c-accent);font-weight:600}
+.sec-head h2{font-size:22px}
+.sec-sub{color:var(--c-dim);font-size:13.5px;max-width:74ch;margin-bottom:22px}
+
+.card{background:var(--c-panel);border:1px solid var(--c-line);border-radius:14px}
+.pad{padding:20px}
+
+/* scorecard */
+.score{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:8px}
+.score .cell{background:var(--c-panel);border:1px solid var(--c-line);border-radius:12px;padding:16px 18px}
+.score .big{font-family:var(--mono);font-size:30px;font-weight:600;letter-spacing:-.02em}
+.score .lab{font-size:11px;color:var(--c-faint);text-transform:uppercase;letter-spacing:.08em;margin-top:2px}
+.score .sub{font-size:12px;color:var(--c-dim);margin-top:7px}
+.score .arrow{color:var(--c-good)}
+
+/* segmented controls */
+.seg{display:inline-flex;background:var(--c-panel-2);border:1px solid var(--c-line);border-radius:10px;padding:3px;gap:2px}
+.seg button{font:inherit;font-size:12.5px;color:var(--c-dim);background:transparent;border:0;border-radius:7px;
+  padding:7px 13px;cursor:pointer;white-space:nowrap;transition:background .12s,color .12s}
+.seg button:hover{color:var(--c-text)}
+.seg button[aria-pressed="true"]{background:var(--c-accent);color:#06101f;font-weight:600}
+.seg.subtle button[aria-pressed="true"]{background:var(--c-panel);color:var(--c-text);box-shadow:inset 0 0 0 1px var(--c-line)}
+
+.toolbar{display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-bottom:16px}
+.toolbar .spacer{flex:1}
+.cbtn{font:inherit;font-size:12.5px;color:var(--c-text);background:var(--c-panel-2);border:1px solid var(--c-line);
+  border-radius:9px;padding:8px 13px;cursor:pointer;transition:background .12s}
+.cbtn:hover{background:var(--c-line)}
+.chk{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--c-dim);cursor:pointer;user-select:none}
+.chk input{accent-color:var(--c-accent);width:15px;height:15px}
+
+/* ===== layout: lab = preview + controls ===== */
+.lab{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:18px;align-items:start}
+@media(max-width:1040px){.lab{grid-template-columns:1fr}}
+
+.device{border:1px solid var(--c-line);border-radius:14px;overflow:hidden;background:#000;
+  box-shadow:0 18px 50px rgba(0,0,0,.45)}
+.device-bar{display:flex;align-items:center;gap:7px;padding:9px 13px;background:var(--c-panel-2);border-bottom:1px solid var(--c-line)}
+.device-bar .dot{width:10px;height:10px;border-radius:50%;background:#3a4253}
+.device-bar .tag{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--c-faint)}
+
+/* swatch editor */
+.swed{display:flex;flex-direction:column;gap:7px}
+.swed .grp{font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--c-faint);margin:10px 0 2px}
+.swrow{display:flex;align-items:center;gap:10px;padding:5px 8px;border-radius:9px}
+.swrow:hover{background:var(--c-panel-2)}
+.swrow input[type=color]{-webkit-appearance:none;appearance:none;width:30px;height:24px;border:1px solid var(--c-line);
+  border-radius:6px;background:none;cursor:pointer;flex:0 0 auto;padding:0}
+.swrow input[type=color]::-webkit-color-swatch-wrapper{padding:2px}
+.swrow input[type=color]::-webkit-color-swatch{border:none;border-radius:4px}
+.swrow .meta{min-width:0;flex:1;display:flex;flex-direction:column;line-height:1.25}
+.swrow .vn{font-family:var(--mono);font-size:11.5px;color:var(--c-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.swrow .rl{font-size:10.5px;color:var(--c-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.swrow .hex{font-family:var(--mono);font-size:10.5px;color:var(--c-dim);flex:0 0 auto}
+
+.presets{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:6px}
+.preset{cursor:pointer;border:1px solid var(--c-line);border-radius:10px;padding:8px;background:var(--c-panel-2);text-align:left}
+.preset:hover{border-color:var(--c-accent)}
+.preset .pv{display:flex;gap:3px;margin-bottom:6px}
+.preset .pv i{width:100%;height:16px;border-radius:3px;display:block}
+.preset .nm{font-size:11.5px;color:var(--c-text)}
+.preset .md{font-size:10px;color:var(--c-faint);text-transform:uppercase;letter-spacing:.06em}
+
+/* affordance legend */
+.afflegend{display:none;flex-wrap:wrap;gap:7px 14px;margin:12px 0 0;font-size:11.5px;color:var(--c-dim)}
+.afflegend.on{display:flex}
+.afflegend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+
+/* option spec card */
+.spec{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:22px}
+@media(max-width:900px){.spec{grid-template-columns:1fr}}
+.spec h3{font-size:16px;margin-bottom:3px;display:flex;align-items:center;gap:9px}
+.spec .pill{font-family:var(--mono);font-size:10.5px;padding:2px 8px;border-radius:20px;font-weight:600}
+.spec .principle{color:var(--c-dim);font-size:13px;margin:8px 0 14px}
+.spec ul{list-style:none;display:flex;flex-direction:column;gap:8px}
+.spec ul li{font-size:12.5px;color:var(--c-text);padding-left:18px;position:relative;line-height:1.45}
+.spec ul li::before{content:"→";position:absolute;left:0;color:var(--c-accent)}
+.spec .meta-row{display:flex;gap:18px;margin:6px 0 14px;flex-wrap:wrap}
+.spec .meta-row .m .v{font-family:var(--mono);font-size:18px;font-weight:600}
+.spec .meta-row .m .k{font-size:10.5px;color:var(--c-faint);text-transform:uppercase;letter-spacing:.07em}
+.risk{font-size:12px;color:var(--c-warn);background:color-mix(in srgb,var(--c-warn) 9%,transparent);
+  border:1px solid color-mix(in srgb,var(--c-warn) 22%,transparent);border-radius:9px;padding:10px 12px;margin-top:6px}
+.afftable{width:100%;border-collapse:collapse;font-size:12px}
+.afftable th{text-align:left;color:var(--c-faint);font-weight:600;font-size:10.5px;text-transform:uppercase;
+  letter-spacing:.06em;padding:0 10px 8px 0;border-bottom:1px solid var(--c-line)}
+.afftable td{padding:8px 10px 8px 0;border-bottom:1px solid var(--c-line);vertical-align:top;color:var(--c-dim)}
+.afftable td:first-child{color:var(--c-text);white-space:nowrap;font-weight:500}
+
+/* inventory tables */
+.tabs{display:flex;gap:2px;flex-wrap:wrap;margin-bottom:14px}
+.tabs button{font:inherit;font-size:12px;color:var(--c-dim);background:var(--c-panel-2);border:1px solid var(--c-line);
+  border-radius:8px;padding:7px 12px;cursor:pointer}
+.tabs button[aria-pressed="true"]{background:var(--c-panel);color:var(--c-text);border-color:var(--c-accent)}
+.inv{display:none}.inv.on{display:block}
+table.data{width:100%;border-collapse:collapse;font-size:12.5px}
+table.data th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--c-faint);
+  padding:12px 12px 8px;border-bottom:1px solid var(--c-line);background:var(--c-panel)}
+table.data td{padding:8px 12px;border-bottom:1px solid var(--c-line);vertical-align:top}
+table.data tr:hover td{background:var(--c-panel-2)}
+table.data .mono{color:var(--c-text)}
+table.data .role{color:var(--c-dim);font-size:12px}
+table.data .num{font-family:var(--mono);color:var(--c-accent);text-align:right;white-space:nowrap}
+.chipc{display:inline-block;width:13px;height:13px;border-radius:3px;vertical-align:-2px;margin-right:7px;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.18)}
+.bar{height:6px;border-radius:3px;background:var(--c-accent);display:inline-block;vertical-align:middle}
+.tag2{font-family:var(--mono);font-size:10px;padding:1px 6px;border-radius:5px;background:var(--c-panel-2);color:var(--c-dim)}
+.warnt{color:var(--c-warn)}
+.foot{color:var(--c-faint);font-size:12px;margin-top:30px;border-top:1px solid var(--c-line);padding-top:18px}
+
+/* ======================================================================
+   PREVIEW SLICE  — a faithful chunk of the real app. Every value derives
+   from the 16 themeable tokens set inline on #preview, exactly like the
+   app derives from 01-variables.css. Option look is switched with a class.
+   ====================================================================== */
+.preview{
+  /* fallback dark seed; JS overwrites these inline */
+  --bg-deepest:#0a0e1a;--bg-deep:#111827;--bg-mid:#1a2030;--bg-light:#232a3d;--bg-lighter:#2c354b;
+  --border-subtle:#2a3346;--border-strong:#3a455e;
+  --text-primary:#e7ecf3;--text-secondary:#a1adc4;--text-tertiary:#8c97ad;
+  --accent-blue:#60a5fa;--accent-blue-hi:#93c5fd;--accent-amber:#fbbf24;
+  --accent-green:#34d399;--accent-red:#f87171;--accent-purple:#a78bfa;
+  /* derived (mirrors the app's color-mix usage) */
+  --focus-ring:0 0 0 2px color-mix(in srgb,var(--accent-blue) 50%,transparent);
+  --act-tint:color-mix(in srgb,var(--accent-blue) 13%,transparent);
+  --danger-tint:color-mix(in srgb,var(--accent-red) 18%,transparent);
+  --row-hover:var(--bg-mid);
+  --r-xs:3px;--r-sm:5px;--r-md:6px;--r-lg:8px;
+  --fs-cap:10px;--fs-sm:12px;--fs-base:13px;--fs-title:18px;
+  font-family:var(--sans);background:var(--bg-deepest);color:var(--text-primary);
+  display:flex;flex-direction:column;min-height:520px;position:relative;
+}
+.preview::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:0;
+  background-image:linear-gradient(color-mix(in srgb,var(--border-strong) 8%,transparent) 1px,transparent 1px),
+  linear-gradient(90deg,color-mix(in srgb,var(--border-strong) 8%,transparent) 1px,transparent 1px);
+  background-size:28px 28px}
+.preview>*{position:relative;z-index:1}
+
+/* header */
+.pv-header{display:flex;align-items:center;gap:10px;padding:0 14px;height:48px;background:var(--bg-deep)}
+.pv-search{position:relative;flex:1;min-width:0;display:flex;align-items:center}
+.pv-search svg{position:absolute;left:10px;width:14px;height:14px;color:var(--text-tertiary)}
+.pv-search-input{width:100%;background:var(--bg-mid);color:var(--text-primary);font-family:var(--mono);
+  font-size:var(--fs-base);padding:6px 8px 6px 30px;border-radius:var(--r-md);outline:none}
+.pv-search-input:focus{box-shadow:var(--focus-ring)}
+.pv-btn{background:var(--bg-mid);color:var(--text-secondary);padding:6px 10px;border-radius:var(--r-md);
+  font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;cursor:pointer;
+  transition:background .12s,color .12s}
+.pv-btn:hover{background:var(--bg-light);color:var(--text-primary)}
+.pv-btn--primary{background:var(--accent-blue);color:var(--bg-deepest);font-weight:600}
+.pv-btn--primary:hover{background:var(--accent-blue-hi);color:var(--bg-deepest)}
+.pv-btn--toggle[aria-pressed="true"]{background:var(--accent-blue);color:var(--bg-deepest)}
+.pv-btn--danger{background:transparent;color:var(--accent-red)}
+.pv-btn--danger:hover{background:var(--danger-tint);color:var(--accent-red)}
+.pv-divider{width:1px;height:20px;background:var(--border-subtle);margin:0 2px}
+
+.pv-body{display:grid;grid-template-columns:200px 1fr 220px;flex:1;min-height:0}
+.pv-side{background:var(--bg-deep);padding:12px;overflow:hidden}
+.pv-detail{background:var(--bg-deep);padding:12px;overflow:hidden}
+.pv-canvas{background:var(--bg-deepest);position:relative;overflow:hidden}
+
+.pv-sec-title{display:flex;justify-content:space-between;align-items:center;font-family:var(--mono);
+  font-size:var(--fs-cap);text-transform:uppercase;letter-spacing:.1em;color:var(--text-tertiary);
+  margin:14px 4px 6px}
+.pv-sec-title:first-child{margin-top:0}
+.pv-count{font-family:var(--mono);font-size:var(--fs-cap);color:var(--text-tertiary)}
+
+.pv-row{display:flex;align-items:center;gap:7px;padding:4px 6px;border-radius:var(--r-sm);cursor:pointer;
+  transition:background .12s;user-select:none}
+.pv-row:hover{background:var(--row-hover)}
+.pv-row .pv-label{flex:1;font-size:var(--fs-base);color:var(--text-secondary);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.pv-row--off{opacity:.4}
+.pv-row--off .pv-label{text-decoration:line-through}
+.pv-grip{font-family:var(--mono);font-size:12px;color:var(--text-tertiary);letter-spacing:-2px;opacity:0;cursor:grab}
+.pv-row:hover .pv-grip{opacity:.7}
+.pv-swatch{flex:0 0 auto;width:30px;height:18px;border-radius:var(--r-xs);background:var(--c,#60a5fa);
+  filter:saturate(.65);display:flex;align-items:center;justify-content:center;font-family:var(--mono);
+  font-size:var(--fs-cap);font-weight:600;color:#06101f;box-shadow:inset 0 0 0 1px rgba(255,255,255,.4)}
+.pv-swatch--plain{background:var(--bg-deepest);color:var(--text-secondary);filter:none;box-shadow:none;width:auto;
+  min-width:22px;padding:0 6px}
+.pv-del{flex:0 0 auto;width:20px;height:20px;display:flex;align-items:center;justify-content:center;
+  color:var(--text-tertiary);border-radius:var(--r-xs);opacity:0;transition:opacity .12s,background .12s,color .12s}
+.pv-row:hover .pv-del{opacity:1}
+.pv-del:hover{background:var(--danger-tint);color:var(--accent-red)}
+.pv-add{margin-top:6px;width:100%;background:transparent;color:var(--accent-blue);border-radius:var(--r-xs);
+  padding:5px 8px;font-family:var(--mono);font-size:11px;letter-spacing:.04em;text-align:left;cursor:pointer}
+.pv-add:hover{background:var(--bg-mid);color:var(--text-primary)}
+
+.pv-legend{display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:var(--r-sm);cursor:pointer}
+.pv-legend:hover{background:var(--row-hover)}
+.pv-legend span.t{font-size:var(--fs-sm);color:var(--text-secondary);flex:1}
+.pv-line{width:22px;height:2px;border-radius:2px}
+.pv-line--inc{background:var(--accent-green)}.pv-line--dec{background:var(--accent-red)}
+.pv-line--ena{background:var(--accent-purple)}
+
+.pv-slider-row{display:flex;align-items:center;gap:8px;margin:6px 4px 2px}
+.pv-slider-row .pv-label{font-size:var(--fs-sm);color:var(--text-secondary);flex:0 0 auto}
+.pv-slider{-webkit-appearance:none;appearance:none;flex:1;height:4px;border-radius:2px;background:var(--bg-light);outline:none}
+.pv-slider::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;
+  background:var(--accent-blue);cursor:pointer}
+.pv-readout{font-family:var(--mono);font-size:var(--fs-cap);color:var(--accent-green);font-weight:600}
+
+/* canvas chips */
+.pv-canvas-inner{position:absolute;inset:0;padding:18px}
+.pv-node{position:absolute;padding:8px 11px;border-radius:var(--r-md);background:var(--bg-deep);
+  font-size:var(--fs-sm);color:var(--text-primary);cursor:pointer;box-shadow:0 1px 0 color-mix(in srgb,#000 30%,transparent);
+  font-weight:500}
+.pv-node--sel{box-shadow:0 0 0 1px var(--text-primary),0 0 8px color-mix(in srgb,#fff 55%,transparent),0 0 16px color-mix(in srgb,#fff 30%,transparent)}
+.pv-node--up{box-shadow:0 0 0 1px var(--accent-blue),0 0 8px color-mix(in srgb,var(--accent-blue) 60%,transparent)}
+.pv-node--down{box-shadow:0 0 0 1px var(--accent-amber),0 0 8px color-mix(in srgb,var(--accent-amber) 60%,transparent)}
+.pv-edge{position:absolute;height:2px;transform-origin:left center;border-radius:2px;opacity:.85}
+.pv-tooltip{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);background:var(--bg-light);
+  color:var(--text-primary);font-size:var(--fs-sm);padding:7px 10px;border-radius:var(--r-md);
+  box-shadow:0 6px 24px rgba(0,0,0,.4);white-space:nowrap}
+.pv-tooltip b{color:var(--accent-blue);font-weight:600}
+
+/* detail */
+.pv-detail-name{font-size:var(--fs-title);font-weight:600;color:var(--text-primary);margin-bottom:8px;cursor:text;
+  border-radius:var(--r-xs)}
+.pv-tags{display:flex;gap:6px;margin-bottom:6px}
+.pv-tag{font-family:var(--mono);font-size:var(--fs-cap);text-transform:uppercase;letter-spacing:.05em;
+  padding:2px 7px;border-radius:var(--r-xs);background:var(--bg-mid);color:var(--text-secondary)}
+.pv-tag--cat{background:var(--act-tint);color:var(--accent-blue)}
+.pv-effect{display:flex;align-items:center;gap:8px;padding:6px;border-radius:var(--r-sm);
+  box-shadow:inset 3px 0 0 var(--ec,var(--border-strong))}
+.pv-effect .en{flex:1;font-size:var(--fs-base);color:var(--text-secondary)}
+.pv-effect .kd{font-family:var(--mono);font-size:var(--fs-cap);text-transform:uppercase;letter-spacing:.05em}
+.pv-effect--inc{--ec:var(--accent-green)}.pv-effect--inc .kd{color:var(--accent-green)}
+.pv-effect--dec{--ec:var(--accent-red)}.pv-effect--dec .kd{color:var(--accent-red)}
+.pv-effect--ena{--ec:var(--accent-purple)}.pv-effect--ena .kd{color:var(--accent-purple)}
+.pv-quant{display:flex;align-items:center;gap:8px;margin:10px 0 4px}
+.pv-quant .pv-label{font-size:var(--fs-sm);color:var(--text-tertiary);flex:1}
+.pv-field{background:var(--bg-mid);color:var(--text-primary);font-family:var(--mono);font-size:var(--fs-sm);
+  padding:5px 8px;border-radius:var(--r-xs);outline:none;width:84px;text-align:right}
+.pv-field:focus{box-shadow:var(--focus-ring)}
+.pv-actions{display:flex;gap:6px;margin-top:14px}
+
+/* ===== OPTION 2 — Primitive Set (subtle): one shape per role, scales snapped ===== */
+.preview.opt-2{--r-xs:6px;--r-sm:6px;--r-md:6px;--r-lg:6px;--fs-cap:10px;--fs-sm:12px}
+.preview.opt-2 .pv-btn{padding:6px 12px;border-radius:6px}
+.preview.opt-2 .pv-swatch,.preview.opt-2 .pv-swatch--plain{width:26px;height:18px;border-radius:6px}
+.preview.opt-2 .pv-swatch--plain{width:auto;min-width:24px}
+.preview.opt-2 .pv-row,.preview.opt-2 .pv-legend{border-radius:6px;padding:4px 8px}
+.preview.opt-2 .pv-field{border-radius:6px}
+.preview.opt-2 .pv-tag{border-radius:6px}
+.preview.opt-2 .pv-effect{border-radius:6px}
+/* one unified secondary-button hover, one unified row hover already shared */
+
+/* ===== OPTION 3 — Affordance Language (strong): look encodes interaction ===== */
+.preview.opt-3{
+  --r-int:6px;     /* clickable / editable */
+  --r-surf:12px;   /* floating surfaces */
+  --fs-cap:11px;--fs-sm:13px;--fs-base:13px;--fs-title:18px; /* two real sizes */
+}
+/* blue is reserved for interactivity: strip it from inert chrome */
+.preview.opt-3 .pv-tag--cat{background:var(--bg-mid);color:var(--text-secondary)}
+.preview.opt-3 .pv-readout{color:var(--text-secondary)}            /* a readout is data, not a control */
+.preview.opt-3 .pv-search svg{color:var(--text-tertiary)}
+/* clickable: rounded + accent only on hover */
+.preview.opt-3 [data-aff="clickable"]{border-radius:var(--r-int)}
+.preview.opt-3 .pv-btn[data-aff="clickable"]{background:transparent;color:var(--text-secondary)}
+.preview.opt-3 .pv-btn[data-aff="clickable"]:hover{background:var(--act-tint);color:var(--accent-blue)}
+.preview.opt-3 .pv-add[data-aff="clickable"]{color:var(--accent-blue)}
+/* primary: the single filled accent CTA */
+.preview.opt-3 [data-aff="primary"]{background:var(--accent-blue);color:var(--bg-deepest);border-radius:var(--r-int);font-weight:600}
+/* editable: 1px accent underline cue + caret, never a fill */
+.preview.opt-3 [data-aff="editable"]{box-shadow:inset 0 -1px 0 var(--accent-blue)}
+.preview.opt-3 .pv-search-input[data-aff="editable"]{background:transparent;border-radius:0;box-shadow:inset 0 -1px 0 var(--accent-blue)}
+.preview.opt-3 .pv-search-input[data-aff="editable"]:focus{box-shadow:var(--focus-ring)}
+.preview.opt-3 .pv-field[data-aff="editable"]{background:transparent;border-radius:0}
+.preview.opt-3 .pv-field[data-aff="editable"]:focus{box-shadow:var(--focus-ring)}
+.preview.opt-3 .pv-detail-name[data-aff="editable"]{box-shadow:inset 0 -1px 0 var(--accent-blue);width:max-content;padding-bottom:1px}
+.preview.opt-3 .pv-swatch[data-aff="editable"]{box-shadow:inset 0 0 0 1px var(--accent-blue)}
+/* toggle: binary — ON full + accent dot, OFF dim+strike (already) */
+.preview.opt-3 .pv-row[data-aff="toggle"]::after{content:"";width:6px;height:6px;border-radius:50%;
+  background:var(--accent-blue);margin-left:2px;flex:0 0 auto}
+.preview.opt-3 .pv-row--off[data-aff="toggle"]::after{background:var(--text-tertiary);opacity:.5}
+.preview.opt-3 .pv-btn--toggle[aria-pressed="true"]{background:var(--act-tint);color:var(--accent-blue)}
+/* draggable: grip always present (discoverable), not hover-only */
+.preview.opt-3 .pv-grip[data-aff="draggable"]{opacity:.55}
+/* destructive: red text only, reserved */
+.preview.opt-3 [data-aff="destructive"]{color:var(--accent-red);background:transparent}
+/* static: no cursor, no accent, hierarchy by weight+opacity */
+.preview.opt-3 .pv-count[data-aff="static"]{color:var(--text-tertiary)}
+.preview.opt-3 .pv-tooltip{border-radius:var(--r-surf)}
+.preview.opt-3 .pv-node{border-radius:var(--r-int)}
+/* trace: one hue, two opacities (down = same blue, lower) instead of blue+amber */
+.preview.opt-3 .pv-node--down{box-shadow:0 0 0 1px color-mix(in srgb,var(--accent-blue) 55%,transparent),0 0 8px color-mix(in srgb,var(--accent-blue) 32%,transparent)}
+
+/* ===== affordance highlighter (teaching overlay, theme-independent palette) ===== */
+.preview.aff [data-aff]{outline:1.5px dashed transparent;outline-offset:1px;border-radius:3px}
+.preview.aff [data-aff="clickable"]{outline-color:#46c8e0}
+.preview.aff [data-aff="primary"]{outline-color:#5b8cff}
+.preview.aff [data-aff="editable"]{outline-color:#41d39a}
+.preview.aff [data-aff="toggle"]{outline-color:#c08cff}
+.preview.aff [data-aff="draggable"]{outline-color:#f5a740;opacity:1}
+.preview.aff [data-aff="draggable"]{opacity:1!important}
+.preview.aff .pv-grip{opacity:.9!important}
+.preview.aff [data-aff="destructive"]{outline-color:#f3737b}
+.preview.aff [data-aff="static"]{outline-color:#5a6679}
+.preview.aff .pv-del{opacity:1}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <h1>CSS consolidation <span>v2 · map → 3 options · theme lab</span></h1>
+    <nav class="top">
+      <a href="#lab">Theme lab</a>
+      <a href="#options">Options</a>
+      <a href="#inventory">Inventory</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- ============ SCORECARD ============ -->
+  <section id="score">
+    <div class="sec-head"><span class="n">00</span><h2>Where it stands, and how far each option goes</h2></div>
+    <p class="sec-sub">The app is already strongly tokenised — one design-token file, no real borders, the Tier&nbsp;1–4 pass merged. The remaining waste is <b>application</b>, not <b>system</b>: scales that exist but aren't used, and the same shape re-declared per file. The three options below trade reach for risk.</p>
+    <div class="score">
+      <div class="cell"><div class="big">449</div><div class="lab">CSS rules today</div><div class="sub">across 14 files · 18 recurring primitives</div></div>
+      <div class="cell"><div class="big">0<span style="font-size:15px;color:var(--c-faint)"> / 7</span></div><div class="lab">type-scale tokens used</div><div class="sub warnt">a 7-step <code>--fs-*</code> scale exists; every rule uses raw px</div></div>
+      <div class="cell"><div class="big">~150</div><div class="lab">raw-value leaks</div><div class="sub">font-sizes, radii (raw <code>4px</code> ×25), durations, shadows</div></div>
+      <div class="cell"><div class="big">16</div><div class="lab">tokens to re-theme</div><div class="sub">everything else derives via <code>color-mix</code></div></div>
+    </div>
+  </section>
+
+  <!-- ============ THEME LAB ============ -->
+  <section id="lab">
+    <div class="sec-head"><span class="n">01</span><h2>Theme lab — re-colour the app, light or dark</h2></div>
+    <p class="sec-sub">A live slice of the real app. Edit any of the 16 root tokens on the right, flip light/dark, or load a preset — the whole slice re-derives from them, just like editing <code>01-variables.css</code>. When you like it, <b>Copy variables</b> and paste them in.</p>
+
+    <div class="toolbar">
+      <div class="seg" id="modeSeg" role="group" aria-label="Light or dark">
+        <button data-mode="dark" aria-pressed="true">● Dark</button>
+        <button data-mode="light" aria-pressed="false">○ Light</button>
+      </div>
+      <label class="chk"><input type="checkbox" id="affChk"> Highlight affordances</label>
+      <div class="spacer"></div>
+      <button class="cbtn" id="copyBtn">⧉ Copy variables</button>
+    </div>
+
+    <div class="afflegend" id="affLegend">
+      <span><i style="background:#46c8e0"></i>clickable</span>
+      <span><i style="background:#5b8cff"></i>primary action</span>
+      <span><i style="background:#41d39a"></i>editable</span>
+      <span><i style="background:#c08cff"></i>toggle</span>
+      <span><i style="background:#f5a740"></i>draggable</span>
+      <span><i style="background:#f3737b"></i>destructive</span>
+      <span><i style="background:#5a6679"></i>static</span>
+    </div>
+
+    <div class="lab" style="margin-top:6px">
+      <!-- preview device -->
+      <div class="device">
+        <div class="device-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+          <span class="tag" id="deviceTag">Current look · Dark</span></div>
+        <div class="preview opt-current" id="preview" data-mode="dark">
+          <!-- header -->
+          <div class="pv-header">
+            <div class="pv-search" data-aff="editable">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+              <input class="pv-search-input" data-aff="editable" placeholder="Search boxes  ( / )">
+            </div>
+            <button class="pv-btn" data-aff="clickable">Edit</button>
+            <button class="pv-btn" data-aff="clickable">Import</button>
+            <button class="pv-btn" data-aff="clickable">Export&nbsp;▾</button>
+            <span class="pv-divider"></span>
+            <button class="pv-btn pv-btn--toggle" data-aff="toggle" aria-pressed="true">Simulate</button>
+            <button class="pv-btn pv-btn--primary" data-aff="primary">Create</button>
+          </div>
+          <!-- body -->
+          <div class="pv-body">
+            <!-- sidebar -->
+            <div class="pv-side">
+              <div class="pv-sec-title"><span>Columns</span><span class="pv-count" data-aff="static">3</span></div>
+              <div class="pv-row" data-aff="toggle"><span class="pv-grip" data-aff="draggable">⋮⋮</span><span class="pv-label">Awareness</span><span class="pv-swatch pv-swatch--plain" data-aff="static">7</span></div>
+              <div class="pv-row" data-aff="toggle"><span class="pv-grip" data-aff="draggable">⋮⋮</span><span class="pv-label">Decision</span><span class="pv-swatch pv-swatch--plain" data-aff="static">5</span></div>
+              <button class="pv-add" data-aff="clickable">+ Add column</button>
+
+              <div class="pv-sec-title"><span>Rows</span><span class="pv-count" data-aff="static">4</span></div>
+              <div class="pv-row" data-aff="toggle"><span class="pv-grip" data-aff="draggable">⋮⋮</span><span class="pv-swatch" data-aff="editable" style="--c:#8fb6d9">12</span><span class="pv-label">Demand</span></div>
+              <div class="pv-row" data-aff="toggle"><span class="pv-grip" data-aff="draggable">⋮⋮</span><span class="pv-swatch" data-aff="editable" style="--c:#9ed1b4">8</span><span class="pv-label">Supply</span><span class="pv-del" data-aff="destructive">🗑</span></div>
+              <div class="pv-row pv-row--off" data-aff="toggle"><span class="pv-grip" data-aff="draggable">⋮⋮</span><span class="pv-swatch" data-aff="editable" style="--c:#e6c79c">3</span><span class="pv-label">Friction</span></div>
+              <button class="pv-add" data-aff="clickable">+ Add row</button>
+
+              <div class="pv-sec-title"><span>Links</span></div>
+              <div class="pv-legend" data-aff="toggle"><span class="t">increases</span><span class="pv-line pv-line--inc"></span></div>
+              <div class="pv-legend" data-aff="toggle"><span class="t">decreases</span><span class="pv-line pv-line--dec"></span></div>
+              <div class="pv-legend pv-row--off" data-aff="toggle"><span class="t">enables</span><span class="pv-line pv-line--ena"></span></div>
+
+              <div class="pv-slider-row"><span class="pv-label">Budget</span><input type="range" class="pv-slider" value="62" data-aff="editable"><span class="pv-readout" data-aff="static">+12%</span></div>
+            </div>
+
+            <!-- canvas -->
+            <div class="pv-canvas">
+              <div class="pv-canvas-inner" id="cv">
+                <div class="pv-node pv-node--up" data-aff="clickable" style="left:14px;top:30px">Traffic</div>
+                <div class="pv-node pv-node--sel" data-aff="clickable" style="left:120px;top:96px">Signups</div>
+                <div class="pv-node" data-aff="clickable" style="left:30px;top:150px">Ad spend</div>
+                <div class="pv-node pv-node--down" data-aff="clickable" style="left:160px;top:184px">Revenue</div>
+                <div class="pv-tooltip" data-aff="static"><b>Signups</b> · 2 inputs, 1 effect</div>
+              </div>
+            </div>
+
+            <!-- detail -->
+            <div class="pv-detail">
+              <div class="pv-detail-name" data-aff="editable">Signups</div>
+              <div class="pv-tags"><span class="pv-tag" data-aff="static">Outcome</span><span class="pv-tag pv-tag--cat" data-aff="static">Growth</span></div>
+              <div class="pv-sec-title"><span>What feeds in</span><span class="pv-count" data-aff="static">2</span></div>
+              <div class="pv-effect pv-effect--inc" data-aff="static"><span class="en">Traffic</span><span class="kd">increases</span></div>
+              <div class="pv-effect pv-effect--ena" data-aff="static"><span class="en">Ad spend</span><span class="kd">enables</span></div>
+              <div class="pv-sec-title"><span>What it affects</span><span class="pv-count" data-aff="static">1</span></div>
+              <div class="pv-effect pv-effect--dec" data-aff="static"><span class="en">Churn</span><span class="kd">decreases</span></div>
+              <div class="pv-quant"><span class="pv-label">Baseline</span><input class="pv-field" value="1200" data-aff="editable"></div>
+              <div class="pv-actions">
+                <button class="pv-btn pv-btn--primary" data-aff="primary">Apply</button>
+                <button class="pv-btn" data-aff="clickable">Reset</button>
+                <button class="pv-btn pv-btn--danger" data-aff="destructive">Delete</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- controls -->
+      <div class="card pad">
+        <div class="grp" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--c-faint);margin-bottom:8px">Presets</div>
+        <div class="presets" id="presets"></div>
+        <div class="swed" id="swed"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ OPTIONS ============ -->
+  <section id="options">
+    <div class="sec-head"><span class="n">02</span><h2>Three options — least to most disruptive</h2></div>
+    <p class="sec-sub">Switch the preview above-style slice between the current look and each option. Turn on <b>Highlight affordances</b> to see the rule that governs Option&nbsp;3: every visual difference maps to one — and only one — way of interacting.</p>
+
+    <div class="toolbar">
+      <div class="seg" id="optSeg" role="group" aria-label="Choose an option">
+        <button data-opt="current" aria-pressed="true">Current</button>
+        <button data-opt="1">① Token seal</button>
+        <button data-opt="2">② Primitive set</button>
+        <button data-opt="3">③ Affordance language</button>
+      </div>
+      <label class="chk"><input type="checkbox" id="affChk2"> Highlight affordances</label>
+    </div>
+
+    <!-- the options preview reuses a second instance for side-by-side feel -->
+    <div class="device" style="margin-bottom:22px">
+      <div class="device-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="tag" id="optTag">Current</span></div>
+      <div class="preview opt-current" id="preview2" data-mode="dark"></div>
+    </div>
+
+    <div class="card pad" id="specCard"></div>
+  </section>
+
+  <!-- ============ INVENTORY ============ -->
+  <section id="inventory">
+    <div class="sec-head"><span class="n">03</span><h2>The full map</h2></div>
+    <p class="sec-sub">Every colour, type size, gap, radius, shadow, alignment, primitive and raw-value leak found across the 14 CSS files by a 16-agent audit. This is the evidence the options are built on.</p>
+    <div class="tabs" id="invTabs"></div>
+    <div class="card" style="overflow:hidden">
+      <div class="inv on" id="inv-colors"></div>
+      <div class="inv" id="inv-type"></div>
+      <div class="inv" id="inv-space"></div>
+      <div class="inv" id="inv-prim"></div>
+      <div class="inv" id="inv-dup"></div>
+      <div class="inv" id="inv-leak"></div>
+    </div>
+    <p class="foot">Generated for <code>systems-mapping</code> · not wired to the app — open this file directly to explore. The “Copy variables” output drops straight into <code>assets/css/01-variables.css</code>.</p>
+  </section>
+
+</div>
+
+<script>
+/* ============================ DATA ============================ */
+// 16 themeable tokens (dark = current app, light = derived coherent light theme)
+const TOKENS=[
+ {g:'Backgrounds',t:'--bg-deepest',r:'deepest bg · text-on-accent',d:'#14161d',l:'#fbfaf7'},
+ {g:'Backgrounds',t:'--bg-deep',r:'panel / header / input bg',d:'#1c1f28',l:'#f3f1ea'},
+ {g:'Backgrounds',t:'--bg-mid',r:'card / hover fill',d:'#262a35',l:'#eae7de'},
+ {g:'Backgrounds',t:'--bg-light',r:'raised / active hover',d:'#313643',l:'#e0dcd1'},
+ {g:'Backgrounds',t:'--bg-lighter',r:'highest raised / strong hover',d:'#3d4251',l:'#d2cdc0'},
+ {g:'Dividers',t:'--border-subtle',r:'hairline divider fill',d:'#2c313d',l:'#e7e2d7'},
+ {g:'Dividers',t:'--border-strong',r:'divider / default edge / grid',d:'#444a5e',l:'#c2bcac'},
+ {g:'Text',t:'--text-primary',r:'brightest text',d:'#e6e4ea',l:'#3b3a40'},
+ {g:'Text',t:'--text-secondary',r:'body labels',d:'#aeb0c0',l:'#6b6a73'},
+ {g:'Text',t:'--text-tertiary',r:'dim captions / counts',d:'#83879a',l:'#8c8a93'},
+ {g:'Accents',t:'--accent-blue',r:'THE interactive accent',d:'#8fb6d9',l:'#5b82b8'},
+ {g:'Accents',t:'--accent-blue-hi',r:'primary-button hover',d:'#aecce8',l:'#486ea3'},
+ {g:'Accents',t:'--accent-amber',r:'search-match / downstream',d:'#e6c79c',l:'#b48a52'},
+ {g:'Accents',t:'--accent-green',r:'good / increase / flash',d:'#9ed1b4',l:'#5f9e7e'},
+ {g:'Accents',t:'--accent-red',r:'bad / destructive / decrease',d:'#e3a3a8',l:'#bd7780'},
+ {g:'Accents',t:'--accent-purple',r:'enable-edge data hue',d:'#bfaede',l:'#8a76b3'},
+];
+// All muted / pastel. Interactive accent kept distinct from the green/red/amber semantics.
+const PRESETS=[
+ {name:'Twilight',sub:'default',mode:'dark',bg:'#14161d',surface:'#262a35',text:'#e6e4ea',accent:'#8fb6d9',good:'#9ed1b4',bad:'#e3a3a8',warn:'#e6c79c'},
+ {name:'Linen',mode:'light',bg:'#fbfaf7',surface:'#eae7de',text:'#3b3a40',accent:'#5b82b8',good:'#5f9e7e',bad:'#bd7780',warn:'#b48a52'},
+ {name:'Sage',mode:'light',bg:'#f6f8f3',surface:'#e6ece0',text:'#353b35',accent:'#5f86a8',good:'#5f9e7e',bad:'#bd7780',warn:'#ac9455'},
+ {name:'Dusk',mode:'dark',bg:'#1a1622',surface:'#2c2536',text:'#ece5f0',accent:'#c2a9dd',good:'#9ed1b4',bad:'#e3a3a8',warn:'#e6c79c'},
+ {name:'Harbor',mode:'dark',bg:'#111a1e',surface:'#203036',text:'#dde9ea',accent:'#8fc2c4',good:'#9ed1b4',bad:'#e3a3a8',warn:'#e6c79c'},
+ {name:'Clay',mode:'light',bg:'#faf7f3',surface:'#ece3d9',text:'#3c3a36',accent:'#6d86bd',good:'#5f9e7e',bad:'#bd7780',warn:'#b07d45'},
+];
+const COLORS=[
+ ['--text-secondary','#a1adc4',28,'Default label / secondary text'],['--accent-blue','#60a5fa',27,'Primary accent: active, focus, slider, trace-up'],
+ ['--text-primary','#e7ecf3',26,'Brightest text: body, inputs, titles'],['--bg-deep','#111827',20,'Panel / header / dropdown / card bg'],
+ ['--text-tertiary','#8c97ad',20,'Dimmest: counts, captions, icons, hints'],['--bg-mid','#1a2030',18,'Hover-fill bg, search/value inputs'],
+ ['--bg-deepest','#0a0e1a',17,'Body bg + dark text on filled accent'],['--bg-light','#232a3d',14,'Pin/menu hover, slider track, tooltip'],
+ ['--accent-red','#f87171',9,'Danger: delete, invalid, decrease edge'],['--bg-lighter','#2c354b',6,'2nd-level hover'],
+ ['--accent-green','#34d399',6,'Good / increase / undo flash'],['--accent-amber','#fbbf24',6,'Search-match, downstream trace'],
+ ['--border-strong','#3a455e',6,'Grid line, hairline rings, default edge'],['--focus-ring','(blue 50%)',6,'Standard 2px focus ring'],
+ ['--accent-blue-hi','#93c5fd',5,'Primary-button hover'],['--border-subtle','#2a3346',2,'Header divider'],
+ ['--accent-purple','#a78bfa',2,'Enables edge'],['--bg-dark','#0f172a',1,'⚠ off-ramp slate (breaks dark→light order)'],
+];
+const TYPE=[
+ ['--fs-2xs','10px',40,'counts, captions, mono labels, table th, chips'],
+ ['--fs-base','13px',22,'standard labels, search input, buttons'],
+ ['--fs-xs','11px',21,'header buttons, sim title/help, add btn'],
+ ['--fs-sm','12px',18,'tooltip, legend, empty states, cell inputs'],
+ ['--fs-lg','18px',3,'empty-state hint, close/more glyphs'],
+ ['--fs-xl','22px',2,'builder step heading, node title-scale'],
+ ['--fs-md','16px',2,'control button glyphs'],
+];
+const SPACE=[
+ ['--space-1','4px',24],['--space-2','8px',22],['--section-gap','12px',14],['--pad-card','8px',12],['--heading-gap','8px',11],
+ ['--space-0_5','2px',9],['--gutter','16px',9],['--pad-row','4px 8px',8],['--space-6','24px',7],['--pad-input','5px 8px ⚠',7],
+ ['--pad-button','5px 10px ⚠',6],['--space-1_5','6px',6],['raw layout px','11/14/22/30/40/64…',30],['fixed widths','120/168/240/340/1180',9],
+];
+const PRIM=[
+ ['list / filter row',6,'one .row + swatch/count/disabled modifiers'],
+ ['icon button',7,'one .icon-btn with --size var'],
+ ['mono uppercase eyebrow',12,'one .u-caption + --tracking token'],
+ ['count / value readout',6,'one .count utility'],
+ ['text input / select',5,'one .field primitive'],
+ ['primary accent button',4,'one .btn--primary'],
+ ['secondary / neutral button',6,'one .btn base'],
+ ['colour swatch',4,'one .swatch base'],
+ ['panel header strip',3,'shared .panel-header'],
+ ['floating popover / card',8,'one .floating-surface'],
+ ['menu / dropdown item',3,'one .menu-item'],
+ ['coloured left stripe',3,'one .stripe + --edge-stripe-w'],
+ ['dashed canvas cell',4,'one .canvas-dashed-cell'],
+ ['selection / trace glow',3,'one halo template + --halo-color'],
+ ['glass control card',2,'one .glass utility'],
+ ['fullscreen scrim',2,'one .overlay-scrim'],
+ ['ring (border substitute)',5,'one ring helper + --ring-color'],
+];
+const DUP=[
+ ['Identical floating-bar shadow+shell','.undo-toast + .multi-select-bar','.floating-bar (use --shadow-drag)'],
+ ['Mono-uppercase eyebrow label','header / sidebar / sim / builder ×15','one .u-caption + --tracking'],
+ ['Text-input block','search, sim-value, builder, dropdown','one .field'],
+ ['Hover-reveal action button','reclass + row-delete + edge-handle','.hover-action'],
+ ['Pill action link','.undo-link + .msb-delete','.toast-action + colour modifier'],
+ ['Mono-count text','filter-count, edit-count, count-num…','one .count'],
+ ['13px ellipsis label','filter / edit / search labels','.label + .truncate'],
+ ['Primary accent button + hover','header / drop-zone / builder','.btn--primary'],
+ ['64px header height magic number','grid-rows + resize-handle + toast','--header-h token'],
+ ['Glass card backdrop','viz controls + more-toggle','.glass utility'],
+ ['92% dark scrim','drop-zone + builder-overlay','.overlay-scrim'],
+ ['Slider thumb webkit+moz','sim ::thumb ×2','group + --slider-thumb-size'],
+ ['Bespoke blue ring','builder cell-editor + picker','var(--focus-ring)'],
+ ['Duplicate woff2 across weights','Fraunces 400-700, Plex 400-600','one @font-face/family; drop Fraunces'],
+];
+const LEAK=[
+ 'RAW font-sizes everywhere — every component file hardcodes px (9/10/11/12/13/14/16/18/22/24); the --fs-* scale has ZERO callers.',
+ 'RAW border-radius everywhere — tokens used by ~4 selectors only; raw 4px alone ~25 uses with no matching token.',
+ 'RAW transition durations — 0.1/0.12/0.15/0.18/0.2s hardcoded while --dur-fast/base/slow exist.',
+ 'RAW black shadows rgba(0,0,0,.4–.6) inlined in 6 files, duplicating --shadow-pop/-pop-lg/-drag/-panel.',
+ 'RAW white glow rgba(255,255,255,…) for node halos in 05-visualization — no --glow token.',
+ 'RAW #fca5a5 delete-hover icon colour in 04-sidebar bypassing --accent-red.',
+ 'RAW base font-size 14px on body bypasses the type scale.',
+ 'Off-grid px baked into tokens: --pad-button 5px 10px, --pad-input 5px 8px (not on the 4px grid).',
+ 'RAW layout magic numbers: header 64px, strip 40px, count-swatch 30×18, delete 22px, control 26/28px…',
+ 'RAW letter-spacing 0.01–0.12em + -1px scattered, no --tracking token.',
+ 'transition:all on .header-button + builder (broad instead of targeting colour/background).',
+ 'DEAD tokens: --value-col, --edge-stripe-w, --fw-bold, --font-display (==--font-ui), --radius-full; dead Fraunces @font-face.',
+ '--bg-dark (#0f172a) breaks the documented dark→light ordering (darker than --bg-deep).',
+ 'RAW z-index 299 on cell-editor backdrop despite a full --z-* ladder.',
+];
+const OPTIONS={
+ current:{name:'Current',color:'#9aa6bd',principle:'The app as it ships today — already past a Tier 1–4 consolidation. A clean baseline to measure against.',moves:['One design-token file drives colour, motion, elevation, z-index.','No real CSS borders — hairlines and rings are box-shadow.','But: the type / radius scales exist unused, and shapes repeat per file.'],prim:'18',delta:'449 rules',look:'—',risk:'',aff:[]},
+ '1':{name:'① Token seal',color:'#41d39a',principle:'Touch nothing the user can see. Merge byte-for-byte duplicates and fold every raw literal that already equals a token onto that token. The win is a single source of truth before any visible change — and an instantly themeable app.',
+  moves:['Fold raw radii onto --radius-* (≈60 raw → 6 tokens); raw durations onto --dur-*.','Replace inlined rgba shadows with --shadow-* tokens; add --glow-* for node halos.','Replace raw #fca5a5 with var(--accent-red); collapse --font-display onto --font-ui.','Add --header-h:64px; kill the duplicate undo-toast / multi-select-bar shell and the split sidebar rule pairs.'],
+  prim:'~17',delta:'449 → ~440',look:'none',risk:'Very low — pure find-and-replace onto values that already resolve identically. Only watch shadow color-mix rounding vs literal alphas.',
+  aff:[['clickable','unchanged — bg brightens on hover, cursor:pointer'],['editable','unchanged — field bg + focus ring'],['toggle','unchanged — accent fill on, dim+strike off'],['draggable','unchanged — grip + grab cursor'],['static','unchanged — no cursor, dim text']]},
+ '2':{name:'② Primitive set',color:'#6ea8fe',principle:'Every place the same affordance appears should be ONE class. Collapse the recurring shapes — button, input, row, count, caption, swatch, panel — into a small primitive set, and prune the type/radius/spacing scales to the fewest steps that still read. Looks subtly tightened, unmistakably the same app.',
+  moves:['One .btn (+ --primary / --danger / --icon) absorbs ~11 button selectors.','One .field absorbs search, sim-value, builder & dropdown inputs.','One .row (+ selected/disabled/dragging/drop-target) absorbs filter/edit/legend/search rows.','One .mono-cap + one .count fold ~20 caption/readout rules; one .panel surface for tooltip/menu/help/tiles.','Prune type to 4 steps, radius to 3, snap off-grid 5px/10px padding to the 4px grid.'],
+  prim:'~18',delta:'449 → ~300',look:'subtle',risk:'Medium — real selector surgery across 10 files. Sliders, native colour-inputs and the contenteditable rename stay bespoke. 5px→6px and 11/22px→10/18px snaps shift a few rows 1–2px; review sidebar/builder density.',
+  aff:[['clickable','.btn / .row hover-brighten, cursor:pointer'],['primary','.btn--primary — solid accent fill + dark text'],['editable','.field — typeable bg + focus ring, cursor:text'],['toggle','.row--selected fill on / 0.4 + strike off'],['draggable','grip (reveal on hover) + grab; .row--dragging 0.4'],['destructive','.btn--danger — red text, red-tint hover'],['static','.mono-cap / plain text, no cursor']]},
+ '3':{name:'③ Affordance language',color:'#c08cff',principle:'Appearance encodes interactivity and nothing else. Reserve the blue accent EXCLUSIVELY for things you can act on; hierarchy comes only from weight + opacity. One cue per affordance, learnable in seconds: if two things look the same they do the same.',
+  moves:['Strip accent-blue from inert chrome (search icon, readouts, category tag) — blue now ⇒ interactive.','Five archetypes: .act (click), .act--primary (the one CTA), .edit (underline cue), .toggle (binary), .grab (persistent handle) + .static.','Editable text gets a 1px accent underline; clickable gets hover-tint; drag grips are always visible.','Type scale → two sizes (13 / 18); rank by --fw + opacity. Mono reserved for numbers/captions only.','Radius → 2 steps (interactive 6 / surface 12). Trace recoloured to one hue × two opacities — frees amber for search-match only.'],
+  prim:'~9',delta:'449 → ~190',look:'strong',risk:'High — recolouring upstream/downstream trace from blue+amber to one graded hue changes a learned map cue (may need a direction arrow). Two type sizes flatten the builder/header. Largest blast radius (all 13 files).',
+  aff:[['static','no cursor, no accent — rank by weight + opacity'],['clickable','.act — radius + hover tint; the only non-data blue'],['primary','.act--primary — solid fill, ≤1 per surface'],['editable','.edit — 1px accent underline + caret (not a fill)'],['toggle','ON accent fill / OFF 0.4 + strike — binary, dot marker'],['draggable','.grab — persistent grip + grab cursor'],['destructive','red text only — red never used elsewhere in chrome'],['search-match','amber — now means ONLY “matches your query”'],['data semantics','edge green/red/purple = increase/decrease/enable']]},
+};
+
+/* ============================ THEME ENGINE ============================ */
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+function h2r(h){h=h.replace('#','');if(h.length===3)h=h.split('').map(c=>c+c).join('');return[parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];}
+function r2h(a){return'#'+a.map(x=>Math.max(0,Math.min(255,Math.round(x))).toString(16).padStart(2,'0')).join('');}
+function mix(a,b,t){const A=h2r(a),B=h2r(b);return r2h([0,1,2].map(i=>A[i]+(B[i]-A[i])*t));}
+const DARK=Object.fromEntries(TOKENS.map(t=>[t.t,t.d]));
+const LIGHT=Object.fromEntries(TOKENS.map(t=>[t.t,t.l]));
+function expand(p){const bg=p.bg,sf=p.surface,t=p.text,ac=p.accent,dk=p.mode==='dark';return{
+ '--bg-deepest':bg,'--bg-deep':mix(bg,sf,.5),'--bg-mid':sf,'--bg-light':mix(sf,t,.10),'--bg-lighter':mix(sf,t,.20),
+ '--border-subtle':mix(sf,t,.12),'--border-strong':mix(sf,t,.30),
+ '--text-primary':t,'--text-secondary':mix(t,bg,.32),'--text-tertiary':mix(t,bg,.48),
+ '--accent-blue':ac,'--accent-blue-hi':mix(ac,t,.22),'--accent-amber':p.warn,'--accent-green':p.good,'--accent-red':p.bad,
+ '--accent-purple':dk?'#bfaede':'#8a76b3'};}
+
+let state={tokens:{...DARK},mode:'dark',opt:'current',aff:false};
+const previews=['#preview','#preview2'];
+function apply(){
+  previews.forEach(sel=>{const el=$(sel);if(!el)return;
+    for(const k in state.tokens)el.style.setProperty(k,state.tokens[k]);
+    el.className='preview opt-'+state.opt+(state.aff?' aff':'');
+    el.dataset.mode=state.mode;});
+  // sync swatch inputs + hex labels
+  $$('#swed input[type=color]').forEach(inp=>{const k=inp.dataset.k;inp.value=state.tokens[k];
+    const hx=inp.parentElement.querySelector('.hex');if(hx)hx.textContent=state.tokens[k];});
+  const modeName=state.mode==='dark'?'Dark':'Light';
+  $('#deviceTag').textContent=(state.opt==='current'?'Current look':OPTIONS[state.opt].name)+' · '+modeName;
+}
+function setMode(m){state.mode=m;state.tokens={...(m==='dark'?DARK:LIGHT)};
+  $$('#modeSeg button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.mode===m));apply();}
+function setOpt(o){state.opt=o;
+  $$('#optSeg button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.opt===o));
+  $('#preview2').className='preview opt-'+o+(state.aff?' aff':'');
+  $('#optTag').textContent=OPTIONS[o].name;
+  renderSpec(o);apply();}
+function setAff(v){state.aff=v;$('#affChk').checked=v;$('#affChk2').checked=v;
+  $('#affLegend').classList.toggle('on',v);apply();}
+
+/* ============================ RENDER ============================ */
+// presets
+$('#presets').innerHTML=PRESETS.map((p,i)=>{const full=p.name==='Twilight'?DARK:p.name==='Linen'?LIGHT:expand(p);
+  const sw=[full['--bg-deepest'],full['--bg-mid'],full['--text-primary'],full['--accent-blue'],full['--accent-green'],full['--accent-red']];
+  return `<button class="preset" data-i="${i}"><div class="pv">${sw.map(c=>`<i style="background:${c}"></i>`).join('')}</div>
+   <div class="nm">${p.name}${p.sub?` · ${p.sub}`:''}</div><div class="md">${p.mode}</div></button>`;}).join('');
+$$('#presets .preset').forEach(b=>b.onclick=()=>{const p=PRESETS[+b.dataset.i];
+  state.tokens=p.name==='Twilight'?{...DARK}:p.name==='Linen'?{...LIGHT}:expand(p);
+  state.mode=p.mode;$$('#modeSeg button').forEach(x=>x.setAttribute('aria-pressed',x.dataset.mode===p.mode));apply();});
+// swatch editor
+let lastG='';
+$('#swed').innerHTML=TOKENS.map(t=>{const head=t.g!==lastG?`<div class="grp">${t.g}</div>`:'';lastG=t.g;
+  return `${head}<label class="swrow"><input type="color" data-k="${t.t}" value="${t.d}">
+   <span class="meta"><span class="vn">${t.t}</span><span class="rl">${t.r}</span></span>
+   <span class="hex">${t.d}</span></label>`;}).join('');
+$$('#swed input[type=color]').forEach(inp=>inp.oninput=()=>{state.tokens[inp.dataset.k]=inp.value;apply();});
+// option spec
+function renderSpec(o){const x=OPTIONS[o];
+  $('#specCard').innerHTML=`<div class="spec">
+   <div><h3><span class="pill" style="background:color-mix(in srgb,${x.color} 18%,transparent);color:${x.color}">${o==='current'?'BASE':'OPTION '+o}</span>${x.name}</h3>
+    <p class="principle">${x.principle}</p>
+    <div class="meta-row">
+     <div class="m"><div class="v" style="color:${x.color}">${x.delta}</div><div class="k">selectors</div></div>
+     <div class="m"><div class="v" style="color:${x.color}">${x.prim}</div><div class="k">primitives</div></div>
+     <div class="m"><div class="v" style="color:${x.color}">${x.look}</div><div class="k">look change</div></div>
+    </div>
+    <ul>${x.moves.map(m=>`<li>${m}</li>`).join('')}</ul>
+    ${x.risk?`<div class="risk"><b>Risk:</b> ${x.risk}</div>`:''}
+   </div>
+   <div><table class="afftable"><thead><tr><th>Affordance</th><th>Visual signal</th></tr></thead>
+    <tbody>${(x.aff.length?x.aff:[['—','baseline — see options 1–3']]).map(a=>`<tr><td>${a[0]}</td><td>${a[1]}</td></tr>`).join('')}</tbody></table></div>
+  </div>`;}
+// duplicate preview2 markup from preview
+$('#preview2').innerHTML=$('#preview').innerHTML;
+// inventory tables
+function bar(n,max){return `<span class="bar" style="width:${Math.max(4,n/max*70)}px"></span>`;}
+$('#inv-colors').innerHTML=`<table class="data"><thead><tr><th>Token</th><th>Value</th><th>Role</th><th class="num">Uses</th></tr></thead><tbody>${
+ COLORS.map(c=>`<tr><td class="mono"><span class="chipc" style="background:${c[1].startsWith('#')?c[1]:'#60a5fa'}"></span>${c[0]}</td>
+  <td class="mono" style="color:var(--c-dim)">${c[1]}</td><td class="role">${c[3]}</td><td class="num">${c[2]} ${bar(c[2],28)}</td></tr>`).join('')}</tbody></table>`;
+$('#inv-type').innerHTML=`<table class="data"><thead><tr><th>Token (defined, unused)</th><th>px</th><th>Where</th><th class="num">Raw uses</th></tr></thead><tbody>${
+ TYPE.map(c=>`<tr><td class="mono">${c[0]}</td><td class="mono" style="color:var(--c-dim)">${c[1]}</td><td class="role">${c[3]}</td><td class="num warnt">${c[2]} ${bar(c[2],40)}</td></tr>`).join('')}</tbody></table>
+ <div class="pad" style="color:var(--c-dim);font-size:12.5px">Two families in use: <code>IBM Plex Sans</code> (UI + titles) and <code>IBM Plex Mono</code> (numbers / tracked labels). <code>Fraunces</code> is still loaded but referenced by nothing — a dead <code>@font-face</code>. Three weights (500 / 600 / 700), 700 effectively unused.</div>`;
+$('#inv-space').innerHTML=`<table class="data"><thead><tr><th>Token / group</th><th>Value</th><th class="num">Uses</th></tr></thead><tbody>${
+ SPACE.map(c=>`<tr><td class="mono">${c[0]}</td><td class="mono" style="color:${String(c[1]).includes('⚠')?'var(--c-warn)':'var(--c-dim)'}">${c[1]}</td><td class="num">${c[2]} ${bar(c[2],30)}</td></tr>`).join('')}</tbody></table>
+ <div class="pad" style="color:var(--c-dim);font-size:12.5px">9 distinct alignment patterns carry the whole app; the dominant one (<code>flex; align-items:center</code>) appears 22×. Radii: 6 tokens, but raw <code>4px</code> (×25) has no token. Shadows: 4 tokens, ~9 raw <code>rgba(0,0,0,…)</code> duplicates inlined.</div>`;
+$('#inv-prim').innerHTML=`<table class="data"><thead><tr><th>Recurring primitive</th><th class="num">Variants now</th><th>Unify to</th></tr></thead><tbody>${
+ PRIM.map(c=>`<tr><td>${c[0]}</td><td class="num">${c[1]} ${bar(c[1],12)}</td><td class="role">${c[2]}</td></tr>`).join('')}</tbody></table>`;
+$('#inv-dup').innerHTML=`<table class="data"><thead><tr><th>Duplicated pattern</th><th>Where</th><th>Merge into</th></tr></thead><tbody>${
+ DUP.map(c=>`<tr><td>${c[0]}</td><td class="role">${c[1]}</td><td class="mono" style="font-size:11.5px;color:var(--c-good)">${c[2]}</td></tr>`).join('')}</tbody></table>`;
+$('#inv-leak').innerHTML=`<table class="data"><thead><tr><th class="num" style="text-align:left">#</th><th>Raw-value leak — bypasses the token scales</th></tr></thead><tbody>${
+ LEAK.map((c,i)=>`<tr><td class="num" style="color:var(--c-warn)">${i+1}</td><td class="role" style="color:var(--c-text)">${c}</td></tr>`).join('')}</tbody></table>`;
+// inventory tabs
+const INVTABS=[['colors','Colours (24)'],['type','Type & fonts'],['space','Spacing · radius · align'],['prim','Primitives (18)'],['dup','Duplicates (14)'],['leak','Raw-value leaks (14)']];
+$('#invTabs').innerHTML=INVTABS.map((t,i)=>`<button data-inv="${t[0]}" aria-pressed="${i===0}">${t[1]}</button>`).join('');
+$$('#invTabs button').forEach(b=>b.onclick=()=>{$$('#invTabs button').forEach(x=>x.setAttribute('aria-pressed','false'));
+  b.setAttribute('aria-pressed','true');$$('.inv').forEach(p=>p.classList.remove('on'));$('#inv-'+b.dataset.inv).classList.add('on');});
+
+/* ============================ WIRING ============================ */
+$$('#modeSeg button').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
+$$('#optSeg button').forEach(b=>b.onclick=()=>setOpt(b.dataset.opt));
+$('#affChk').onchange=e=>setAff(e.target.checked);
+$('#affChk2').onchange=e=>setAff(e.target.checked);
+$('#copyBtn').onclick=()=>{const css=':root {\n'+TOKENS.map(t=>`  ${t.t}: ${state.tokens[t.t]};`).join('\n')+'\n}';
+  navigator.clipboard?.writeText(css).then(()=>{$('#copyBtn').textContent='✓ Copied to clipboard';
+   setTimeout(()=>$('#copyBtn').textContent='⧉ Copy variables',1600);},()=>alert(css));};
+
+// init
+renderSpec('current');apply();
+</script>
+</body>
+</html>

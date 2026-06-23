@@ -36,13 +36,13 @@ body.drag-active .drop-zone-inner {
   max-width: 540px;
   text-align: center;
   background: var(--bg-deep);
-  border-radius: 12px;
+  border-radius: var(--radius-surface);
   padding: var(--space-6) var(--gutter);
-  transition: box-shadow 0.2s;
+  transition: box-shadow var(--dur-base);
 }
 
 .drop-zone-icon {
-  color: var(--accent-blue);
+  color: var(--text-secondary);
   margin-bottom: var(--space-4);
   display: flex;
   justify-content: center;
@@ -50,14 +50,14 @@ body.drag-active .drop-zone-inner {
 
 .drop-zone-title {
   font-family: var(--font-display);
-  font-size: 24px;
-  font-weight: 500;
+  font-size: var(--fs-title);
+  font-weight: var(--fw-medium);
   color: var(--text-primary);
   margin-bottom: var(--heading-gap);
 }
 
 .drop-zone-subtitle {
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--text-secondary);
   line-height: 1.5;
   margin-bottom: var(--section-gap);
@@ -73,32 +73,33 @@ body.drag-active .drop-zone-inner {
 
 .drop-zone-button {
   font-family: var(--font-ui);
-  font-size: 13px;
-  font-weight: 500;
+  font-size: var(--fs-body);
+  font-weight: var(--fw-medium);
   background: var(--bg-light);
   color: var(--text-primary);
   padding: var(--pad-button);
-  border-radius: 6px;
+  border-radius: var(--radius-interactive);
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background var(--dur-fast), color var(--dur-fast), box-shadow var(--dur-fast);
 }
 
 .drop-zone-button:hover {
-  background: var(--bg-lighter);
+  background: var(--act-tint);
+  color: var(--text-primary);
 }
 
 .drop-zone-button.primary {
-  background: var(--accent-blue);
+  background: var(--act);
   color: var(--bg-deepest);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
 }
 
 .drop-zone-button.primary:hover {
-  background: var(--accent-blue-hi);
+  background: var(--act-hi);
 }
 
 .drop-zone-hint {
-  font-size: 12px;
+  font-size: var(--fs-cap);
   color: var(--text-tertiary);
   line-height: 1.5;
   padding-top: var(--space-4);

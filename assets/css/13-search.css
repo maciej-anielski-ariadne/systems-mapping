@@ -2,7 +2,7 @@
  * SEARCH — dropdown of ranked results + map-halo for every match
  * -----------------------------------------------------------------------------
  * Companion to assets/js/17a-search.js. The dropdown floats below the
- * header's search input; matches on the map get a soft amber drop-shadow
+ * header's search input; matches on the map get a soft amber search-halo
  * via the .node-group.search-match class (added by 11-rendering.js).
  * ========================================================================== */
 
@@ -16,8 +16,8 @@
   max-height: min(420px, 60vh);
   overflow-y: auto;
   background: var(--bg-deep);
-  border-radius: 6px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--shadow-float);
   padding: var(--pad-card);
 }
 
@@ -29,10 +29,10 @@
   align-items: center;
   gap: var(--space-3);
   padding: var(--pad-row);
-  border-radius: 4px;
+  border-radius: var(--radius-interactive);
   cursor: pointer;
   font-family: var(--font-ui);
-  transition: background 0.12s;
+  transition: background var(--dur-fast);
 }
 
 .search-result + .search-result {
@@ -41,7 +41,7 @@
 
 .search-result.focused,
 .search-result:hover {
-  background: var(--bg-light);
+  background: var(--act-tint);
 }
 
 .search-result-main {
@@ -50,7 +50,7 @@
 }
 
 .search-result-label {
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
@@ -59,7 +59,7 @@
 
 .search-result-id {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-cap);
   color: var(--text-tertiary);
   letter-spacing: 0.02em;
   white-space: nowrap;
@@ -70,7 +70,7 @@
 /* Snippet of the description, shown only when the match was on description. */
 .search-result-desc {
   font-family: var(--font-ui);
-  font-size: 11px;
+  font-size: var(--fs-cap);
   color: var(--text-secondary);
   margin-top: var(--space-0_5);
   white-space: nowrap;
@@ -81,7 +81,7 @@
 /* Three-part stream · stage · category tag on the right. */
 .search-result-meta {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-cap);
   letter-spacing: 0.04em;
   color: var(--text-tertiary);
   text-transform: uppercase;
@@ -94,12 +94,12 @@
   background: var(--accent-amber);
   color: var(--bg-deepest);
   padding: 0 1px;
-  border-radius: 2px;
-  font-weight: 600;
+  border-radius: 0;
+  font-weight: var(--fw-semibold);
 }
 
 .search-result.focused mark {
-  background: var(--accent-blue);
+  background: var(--act);
   color: var(--bg-deepest);
 }
 
@@ -107,7 +107,7 @@
 .search-result-empty {
   padding: var(--pad-card);
   font-family: var(--font-ui);
-  font-size: 12px;
+  font-size: var(--fs-body);
   color: var(--text-tertiary);
   font-style: italic;
 }

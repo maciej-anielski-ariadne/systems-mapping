@@ -29,7 +29,7 @@
   width: 100%;
   max-width: 1180px;
   background: var(--bg-deep);
-  border-radius: 12px;
+  border-radius: var(--radius-surface);
   display: flex;
   flex-direction: column;
   overflow: hidden;          /* let the body scroll, not the whole card */
@@ -46,7 +46,7 @@
 
 .builder-title {
   font-family: var(--font-display);
-  font-size: 20px;
+  font-size: var(--fs-title);
   font-weight: 500;
   color: var(--text-primary);
 }
@@ -59,23 +59,24 @@
 
 .builder-step-dot {
   font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.05em;
+  font-size: var(--fs-cap);
+  letter-spacing: var(--tracking-cap);
   text-transform: uppercase;
   background: var(--bg-light);
   color: var(--text-tertiary);
   padding: var(--pad-button);
-  border-radius: 4px;
+  border-radius: var(--radius-interactive);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background var(--dur-fast), color var(--dur-fast);
 }
 
 .builder-step-dot:hover {
-  color: var(--text-secondary);
+  color: var(--text-primary);
+  background: var(--act-tint);
 }
 
 .builder-step-dot.active {
-  background: var(--accent-blue);
+  background: var(--act);
   color: var(--bg-deepest);
 }
 
@@ -84,17 +85,19 @@
   color: var(--text-tertiary);
   width: 30px;
   height: 30px;
-  border-radius: 6px;
+  border-radius: var(--radius-interactive);
   cursor: pointer;
-  font-size: 18px;
+  font-size: var(--fs-title);
   line-height: 1;
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: background var(--dur-fast), color var(--dur-fast);
 }
 
 .builder-close:hover {
   color: var(--text-primary);
+  background: var(--act-tint);
 }
 
 /* ───── Card body — split into a fixed top section and a scrolling table area ─────
@@ -141,14 +144,14 @@
 
 .builder-step-heading {
   font-family: var(--font-display);
-  font-size: 22px;
+  font-size: var(--fs-title);
   font-weight: 500;
   color: var(--text-primary);
   margin: 0 0 var(--heading-gap) 0;
 }
 
 .builder-step-blurb {
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--text-secondary);
   line-height: 1.5;
   margin-bottom: var(--heading-gap);
@@ -156,13 +159,13 @@
 }
 
 .builder-step-help {
-  font-size: 12px;
+  font-size: var(--fs-body);
   color: var(--text-tertiary);
   line-height: 1.5;
   margin-bottom: var(--section-gap);
   padding: var(--pad-card);
   background: var(--bg-mid);
-  border-radius: 4px;
+  border-radius: var(--radius-surface);
   max-width: 760px;
 }
 
@@ -174,15 +177,15 @@
   border-collapse: separate;
   border-spacing: 0;
   background: var(--bg-mid);
-  border-radius: 6px;
+  border-radius: var(--radius-surface);
   margin-bottom: var(--section-gap);
 }
 
 .builder-table th {
   text-align: left;
   font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.06em;
+  font-size: var(--fs-cap);
+  letter-spacing: var(--tracking-cap);
   text-transform: uppercase;
   color: var(--text-tertiary);
   padding: var(--pad-cell);
@@ -196,7 +199,7 @@
  * similar rows group together (view-only; see 16a sortedBuilderIndices). */
 .builder-table th.builder-th-sort { cursor: pointer; user-select: none; }
 .builder-table th.builder-th-sort:hover { color: var(--text-secondary); }
-.builder-sort-ind { color: var(--accent-blue); font-size: 9px; margin-left: 3px; }
+.builder-sort-ind { color: var(--text-secondary); font-size: var(--fs-cap); margin-left: 3px; }
 
 .builder-table td {
   padding: var(--pad-cell);
@@ -209,12 +212,14 @@
   width: 100%;
   background: var(--bg-deep);
   color: var(--text-primary);
-  border-radius: 4px;
+  border-radius: var(--radius-interactive);
   padding: var(--pad-input);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-body);
   outline: none;
-  transition: box-shadow 0.15s;
+  box-shadow: var(--edit-cue);
+  cursor: text;
+  transition: box-shadow var(--dur-fast);
   box-sizing: border-box;
 }
 
@@ -234,14 +239,14 @@
 .builder-table input.invalid,
 .builder-table select.invalid,
 .builder-table textarea.invalid {
-  box-shadow: inset 0 0 0 2px var(--accent-red);
+  box-shadow: inset 0 0 0 2px var(--danger);
 }
 
 .builder-table input[type="color"] {
   width: 40px;
   height: 28px;
   padding: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-interactive);
   background: var(--bg-deep);
   cursor: pointer;
 }
@@ -249,7 +254,7 @@
 .builder-table input[type="checkbox"] {
   width: 16px;
   height: 16px;
-  accent-color: var(--accent-blue);
+  accent-color: var(--act);
   cursor: pointer;
 }
 
@@ -260,17 +265,18 @@
   cursor: grab;
   text-align: center;
   color: var(--text-tertiary);
+  opacity: 0.5;
   user-select: none;
   font-family: var(--font-mono);
   font-weight: 600;
   letter-spacing: -0.1em;
-  font-size: 14px;
+  font-size: var(--fs-body);
 }
-.builder-row-drag:hover { color: var(--text-secondary); }
+.builder-row-drag:hover { color: var(--text-secondary); opacity: 1; }
 .builder-row-drag:active { cursor: grabbing; }
-.builder-table tr.dragging { opacity: 0.45; }
-.builder-table tr.drop-target-above td { box-shadow: inset 0 2px 0 var(--accent-blue); }
-.builder-table tr.drop-target-below td { box-shadow: inset 0 -2px 0 var(--accent-blue); }
+.builder-table tr.dragging { opacity: 0.4; cursor: grabbing; }
+.builder-table tr.drop-target-above td { box-shadow: inset 0 2px 0 var(--act); }
+.builder-table tr.drop-target-below td { box-shadow: inset 0 -2px 0 var(--act); }
 
 .builder-row-actions {
   display: flex;
@@ -282,10 +288,10 @@
 .builder-row-action {
   background: var(--bg-light);
   color: var(--text-tertiary);
-  border-radius: 4px;
+  border-radius: var(--radius-interactive);
   width: 26px;
   height: 26px;
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-family: var(--font-mono);
   cursor: pointer;
   display: inline-flex;
@@ -293,20 +299,21 @@
   justify-content: center;
   padding: 0;
   line-height: 1;
+  transition: background var(--dur-fast), color var(--dur-fast);
 }
 
 .builder-row-action:hover {
   color: var(--text-primary);
-  background: var(--bg-lighter);
+  background: var(--act-tint);
 }
 
-.builder-row-action.danger:hover { color: var(--accent-red); }
+.builder-row-action.danger:hover { color: var(--danger); background: var(--danger-tint); }
 
 .builder-empty-row td {
   text-align: center;
   padding: var(--space-6);
   color: var(--text-tertiary);
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-style: italic;
 }
 
@@ -327,28 +334,28 @@
   background: var(--bg-mid);
   color: var(--text-secondary);
   padding: var(--pad-button);
-  border-radius: 6px;
+  border-radius: var(--radius-interactive);
   font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.05em;
+  font-size: var(--fs-cap);
+  letter-spacing: var(--tracking-cap);
   text-transform: uppercase;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background var(--dur-fast), color var(--dur-fast);
 }
 
 .builder-action:hover {
   color: var(--text-primary);
-  background: var(--bg-light);
+  background: var(--act-tint);
 }
 
 .builder-action.primary {
-  background: var(--accent-blue);
+  background: var(--act);
   color: var(--bg-deepest);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
 }
 
 .builder-action.primary:hover {
-  background: var(--accent-blue-hi);
+  background: var(--act-hi);
 }
 
 .builder-action:disabled,
@@ -373,14 +380,14 @@
 .builder-select-col input[type="checkbox"] {
   width: 16px;
   height: 16px;
-  accent-color: var(--accent-blue);
+  accent-color: var(--act);
   cursor: pointer;
   vertical-align: middle;
 }
 
 /* Selected-row highlight. */
 .builder-table tr.selected td {
-  background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
+  background: var(--act-on);
 }
 
 /* The bulk action bar — accent-tinted strip above the table. */
@@ -391,17 +398,17 @@
   flex-wrap: wrap;
   margin-bottom: var(--section-gap);
   padding: var(--pad-card);
-  background: color-mix(in srgb, var(--accent-blue) 8%, transparent);
-  border-radius: 6px;
+  background: var(--act-tint);
+  border-radius: var(--radius-surface);
 }
 
 .builder-bulk-count {
   font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.05em;
+  font-size: var(--fs-cap);
+  letter-spacing: var(--tracking-cap);
   text-transform: uppercase;
-  color: var(--accent-blue);
-  font-weight: 600;
+  color: var(--text-secondary);
+  font-weight: var(--fw-semibold);
   margin-right: var(--gap-sm);
   white-space: nowrap;
 }
@@ -413,11 +420,13 @@
 .builder-bulk-select {
   background: var(--bg-deep);
   color: var(--text-primary);
-  border-radius: 4px;
+  border-radius: var(--radius-interactive);
   padding: var(--pad-input);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-cap);
   outline: none;
+  box-shadow: var(--edit-cue);
+  cursor: text;
   min-width: 130px;
 }
 
@@ -431,20 +440,22 @@
   width: 110px;
   background: var(--bg-deep);
   color: var(--text-primary);
-  border-radius: 4px;
+  border-radius: var(--radius-interactive);
   padding: var(--pad-input);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-body);
   outline: none;
+  box-shadow: var(--edit-cue);
+  cursor: text;
 }
 
 .builder-bulk-bar .builder-action.danger {
-  color: var(--accent-red);
+  color: var(--danger);
 }
 
 .builder-bulk-bar .builder-action.danger:hover {
-  background: var(--accent-red);
-  color: var(--bg-deepest);
+  background: var(--danger-tint);
+  color: var(--danger);
 }
 
 /* ───── Edges config row (step 5) — help text + defaults side by side ──────
@@ -469,7 +480,7 @@
   margin-bottom: var(--section-gap);
   padding: var(--pad-card);
   background: var(--bg-mid);
-  border-radius: 6px;
+  border-radius: var(--radius-surface);
 }
 
 .builder-defaults label {
@@ -477,9 +488,9 @@
   flex-direction: column;
   gap: var(--gap-sm);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-cap);
   color: var(--text-tertiary);
-  letter-spacing: 0.05em;
+  letter-spacing: var(--tracking-cap);
   text-transform: uppercase;
 }
 
@@ -487,11 +498,13 @@
   width: 100px;
   background: var(--bg-deep);
   color: var(--text-primary);
-  border-radius: 4px;
+  border-radius: var(--radius-interactive);
   padding: var(--pad-input);
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--fs-body);
   outline: none;
+  box-shadow: var(--edit-cue);
+  cursor: text;
 }
 
 /* ───── Review step (step 6) ────────────────────────────────────────── */
@@ -504,14 +517,14 @@
 
 .builder-review-tile {
   background: var(--bg-mid);
-  border-radius: 6px;
+  border-radius: var(--radius-surface);
   padding: var(--pad-card);
 }
 
 .builder-review-tile-label {
   font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.06em;
+  font-size: var(--fs-cap);
+  letter-spacing: var(--tracking-cap);
   text-transform: uppercase;
   color: var(--text-tertiary);
   margin-bottom: var(--heading-gap);
@@ -519,34 +532,34 @@
 
 .builder-review-tile-value {
   font-family: var(--font-display);
-  font-size: 24px;
+  font-size: var(--fs-title);
   color: var(--text-primary);
 }
 
 .builder-validation {
   background: var(--bg-mid);
-  border-radius: 6px;
+  border-radius: var(--radius-surface);
   padding: var(--pad-card);
   margin-bottom: var(--section-gap);
 }
 
 .builder-validation-title {
   font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.05em;
+  font-size: var(--fs-cap);
+  letter-spacing: var(--tracking-cap);
   text-transform: uppercase;
   margin-bottom: var(--heading-gap);
   color: var(--text-secondary);
 }
 
 .builder-validation.ok .builder-validation-title { color: var(--status-good); }
-.builder-validation.errors .builder-validation-title { color: var(--accent-red); }
+.builder-validation.errors .builder-validation-title { color: var(--danger); }
 
 .builder-validation ul {
   margin: 0;
   padding-left: var(--space-4);
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--fs-body);
   line-height: 1.6;
 }
 
@@ -565,7 +578,7 @@
 
 .builder-footer-status {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-cap);
   color: var(--text-tertiary);
   margin-right: var(--gap-lg);
 }
@@ -574,7 +587,7 @@
 
 /* ───── Inline column-help (tiny grey label under each table) ────────── */
 .builder-column-help {
-  font-size: 11px;
+  font-size: var(--fs-cap);
   color: var(--text-tertiary);
   line-height: 1.5;
   margin: var(--space-1) var(--space-0_5) var(--section-gap) var(--space-0_5);
@@ -595,11 +608,11 @@
   z-index: var(--z-cell-editor);
   background: var(--bg-deep);
   color: var(--text-primary);
-  border-radius: 4px;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 25%, transparent);
+  border-radius: var(--radius-interactive);
+  box-shadow: var(--focus-ring);
   padding: var(--pad-input);           /* matches .builder-table input */
   font-family: var(--font-mono);       /* matches .builder-table input */
-  font-size: 12px;                     /* matches .builder-table input */
+  font-size: var(--fs-body);           /* matches .builder-table input */
   line-height: 1.5;
   outline: none;
   resize: none;
@@ -621,7 +634,7 @@
 }
 
 .builder-cell-editor.transitioning {
-  transition: width 100ms ease-out, height 100ms ease-out;
+  transition: width var(--dur-fast) ease-out, height var(--dur-fast) ease-out;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -635,7 +648,7 @@
   background: rgba(0, 0, 0, 0.45);
   z-index: 299;                        /* just under the editor (z 300) */
   opacity: 0;
-  transition: opacity 120ms ease-out;
+  transition: opacity var(--dur-base) ease-out;
   pointer-events: none;                /* let clicks reach the cell behind */
 }
 
