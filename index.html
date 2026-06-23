@@ -135,7 +135,8 @@
          centred in the header; the label reads "Click here to (un)pin" and
          the pin icon sits to the right of the text as if it were part of it. -->
     <div class="panel-header">
-      <button class="panel-pin sidebar-pin" id="sidebar-pin" title="Collapse sidebar" aria-label="Collapse sidebar">
+      <button class="panel-pin sidebar-pin" id="sidebar-pin" aria-label="Collapse sidebar">
+        <span class="panel-pin-label"></span>
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <polyline points="15 6 9 12 15 18"></polyline>
         </svg>
@@ -198,9 +199,9 @@
        JS wiring + persistence live in 17-events.js. Hidden when the
        respective panel is unpinned (resize doesn't apply in strip mode). -->
   <div class="panel-resize-handle sidebar-resize-handle" id="sidebar-resize-handle"
-       title="Drag to resize sidebar · double-click to reset"></div>
+       data-tooltip="Drag to resize. Double-click to reset."></div>
   <div class="panel-resize-handle detail-resize-handle"  id="detail-resize-handle"
-       title="Drag to resize detail panel · double-click to reset"></div>
+       data-tooltip="Drag to resize. Double-click to reset."></div>
 
   <!-- ============== CENTER VISUALIZATION ============== -->
   <main class="viz-container" id="viz-container">
@@ -219,7 +220,7 @@
       <!-- Highlight-depth: how many connected levels light up when a node is
            selected. -->
       <div class="viz-depth-controls" id="viz-depth-controls"
-           title="How many connected levels to highlight when a box is selected">
+           data-tooltip="How many connected levels to highlight when a box is selected.">
         <span class="viz-control-title">Highlight depth</span>
         <div class="viz-control-row">
           <button class="viz-depth-button" id="viz-depth-down" aria-label="Decrease highlight depth">−</button>
@@ -230,12 +231,12 @@
 
       <!-- Zoom. -->
       <div class="viz-zoom-controls" id="viz-zoom-controls"
-           title="Zoom the map in and out">
+           data-tooltip="Zoom the map in and out.">
         <span class="viz-control-title">Zoom</span>
         <div class="viz-control-row">
-          <button class="viz-zoom-button" id="viz-zoom-out"  title="Zoom out (Ctrl+−)" aria-label="Zoom out">−</button>
-          <button class="viz-zoom-readout" id="viz-zoom-readout" title="Reset zoom (click)">100%</button>
-          <button class="viz-zoom-button" id="viz-zoom-in"   title="Zoom in (Ctrl+=)"  aria-label="Zoom in">+</button>
+          <button class="viz-zoom-button" id="viz-zoom-out"  data-tooltip="Zoom out (Ctrl+−)" aria-label="Zoom out">−</button>
+          <button class="viz-zoom-readout" id="viz-zoom-readout" data-tooltip="Reset zoom">100%</button>
+          <button class="viz-zoom-button" id="viz-zoom-in"   data-tooltip="Zoom in (Ctrl+=)"  aria-label="Zoom in">+</button>
         </div>
       </div>
 
@@ -273,10 +274,11 @@
     <!-- Sticky header strip with the centred "Click here to (un)pin" label +
          pin icon. -->
     <div class="panel-header">
-      <button class="panel-pin detail-pin" id="detail-pin" title="Collapse details" aria-label="Collapse details">
+      <button class="panel-pin detail-pin" id="detail-pin" aria-label="Collapse details">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <polyline points="9 6 15 12 9 18"></polyline>
         </svg>
+        <span class="panel-pin-label"></span>
       </button>
     </div>
 

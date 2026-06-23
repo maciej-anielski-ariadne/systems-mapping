@@ -13,7 +13,7 @@
   border-radius: var(--radius-surface);
   font-size: var(--fs-body);
   pointer-events: none;
-  z-index: 100;
+  z-index: var(--z-tooltip);
   max-width: 260px;
   box-shadow: var(--shadow-float);
   opacity: 0;

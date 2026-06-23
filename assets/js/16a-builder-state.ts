@@ -207,8 +207,8 @@ export function findDuplicateIds(rows: { id?: string }[]): Set<string> {
 // row, factored out because every step's table uses them identically.
 export function rowActionsHtml(section: BuilderSection, i: number): string {
   return '<td><div class="builder-row-actions">' +
-           '<button class="builder-row-action" data-duplicate="' + section + '" data-index="' + i + '" title="Duplicate">⎘</button>' +
-           '<button class="builder-row-action danger" data-delete="' + section + '" data-index="' + i + '" title="Delete">×</button>' +
+           '<button class="builder-row-action" data-duplicate="' + section + '" data-index="' + i + '" data-tooltip="Duplicate">⎘</button>' +
+           '<button class="builder-row-action danger" data-delete="' + section + '" data-index="' + i + '" data-tooltip="Delete">×</button>' +
          '</div></td>';
 }
 
@@ -216,7 +216,7 @@ export function rowActionsHtml(section: BuilderSection, i: number): string {
 // stages, categories). Dragging the row reorders the underlying
 // state.builder array — see drag handlers in 16d-builder-events.js.
 export function rowDragHandleHtml(): string {
-  return '<td class="builder-row-drag" title="Drag to reorder">⋮⋮</td>';
+  return '<td class="builder-row-drag" data-tooltip="Drag to reorder">⋮⋮</td>';
 }
 
 export function tableEmptyRow(colSpan: number, message: string): string {

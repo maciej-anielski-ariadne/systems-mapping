@@ -84,9 +84,28 @@
   transition: transform var(--dur-slow) ease;
 }
 
+/* Visible action label beside the chevron ("Collapse" / "Expand"),
+   filled by applyPanelPinnedClasses() in 17-events.ts. Quiet uppercase-mono
+   treatment matches the sidebar section titles so it reads as an affordance,
+   not a loud button. */
+.panel-pin { gap: var(--space-1_5); }
+
+.panel-pin-label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-cap);
+  letter-spacing: var(--tracking-cap);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
 .panel-pin:hover {
   color: var(--text-primary);
   background: var(--act-tint);
+}
+
+.panel-pin:hover .panel-pin-label {
+  color: var(--text-secondary);
 }
 
 /* Collapsed → flip the chevron to point inward ("expand"). */

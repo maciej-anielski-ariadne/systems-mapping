@@ -173,7 +173,7 @@ export function renderBuilderHeader(): string {
   return '<div class="builder-header">' +
            '<div class="builder-title">Build / Edit Map</div>' +
            '<div class="builder-step-indicator">' + dots + '</div>' +
-           '<button class="builder-close" id="builder-close-button" title="Close (Esc)">×</button>' +
+           '<button class="builder-close" id="builder-close-button" data-tooltip="Close (Esc)">×</button>' +
          '</div>';
 }
 
@@ -229,7 +229,7 @@ export function refreshBuilderFooter(): void {
 // syncBuilderSelectAllState() in 16d.
 export function selectAllTh(section: string): string {
   return '<th class="builder-select-col">' +
-           '<input type="checkbox" data-selectall="' + section + '" title="Select all" />' +
+           '<input type="checkbox" data-selectall="' + section + '" data-tooltip="Select all" />' +
          '</th>';
 }
 

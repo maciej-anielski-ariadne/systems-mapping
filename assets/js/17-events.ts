@@ -147,11 +147,12 @@ export function applyPanelPinnedClasses(): void {
 
   const updatePin = (button: HTMLElement | null, pinned: boolean, kind: string): void => {
     if (!button) return;
+    // pinned === true → panel is expanded, so the action is "Collapse".
     const label = button.querySelector(".panel-pin-label");
-    const text  = pinned ? "Click here to unpin" : "Click here to pin";
-    if (label) label.textContent = text;
-    button.title = text + " " + kind;
-    button.setAttribute("aria-label", text + " " + kind);
+    const verb  = pinned ? "Collapse" : "Expand";
+    if (label) label.textContent = verb;
+    button.removeAttribute("title");                 // styled UI only, no native tooltip
+    button.setAttribute("aria-label", verb + " " + kind);
   };
   updatePin(document.getElementById("sidebar-pin"), state.sidebarPinned,     "sidebar");
   updatePin(document.getElementById("detail-pin"),  state.detailPanelPinned, "details");

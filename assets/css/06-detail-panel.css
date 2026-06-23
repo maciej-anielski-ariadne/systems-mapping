@@ -74,6 +74,12 @@
 .app.detail-unpinned .detail-panel > *:not(.panel-header) { visibility: hidden; }
 .app.detail-unpinned .detail-panel:hover > *              { visibility: visible; }
 
+/* Strip mode: hide the verb label beside the chevron (no room); it lives
+ * inside .panel-header (exempt from the rule above), so it needs its own
+ * hide rule. It returns when the strip hover-expands. */
+.app.detail-unpinned .detail-panel .panel-pin-label { display: none; }
+.app.detail-unpinned .detail-panel:hover .panel-pin-label { display: inline; }
+
 /* === Empty state (nothing selected) === */
 .detail-empty {
   text-align: left;

@@ -85,12 +85,50 @@ export function attachTooltip(element: (Element & { _uiTooltipWired?: boolean })
   element.addEventListener("mouseleave", hideTooltip);
 }
 
-// Auto-scan: find every element under `container` (or the whole document)
-// with a `data-tooltip` attribute and wire it. Idempotent — re-runs after
-// dynamic renders (e.g. renderSidebar) without duplicating listeners.
-export function wireDataTooltips(container?: ParentNode | null): void {
-  const root: ParentNode = container || document;
-  root.querySelectorAll("[data-tooltip]").forEach(el => {
-    attachTooltip(el, el.getAttribute("data-tooltip"));
-  });
+// HTML [data-tooltip] elements are handled by the delegated listener below,
+// so per-element wiring is no longer needed. Kept as a no-op export so the
+// existing call sites (18-main.ts, 13-sidebar.ts) stay valid.
+export function wireDataTooltips(_container?: ParentNode | null): void {}
+
+// ───── Delegated data-tooltip handling ────────────────────────────────────
+// One document-level listener set drives every HTML element carrying a
+// `data-tooltip` attribute. Using closest('[data-tooltip]') means the
+// INNERMOST tooltipped element under the cursor wins automatically, so a small
+// control nested inside a tooltipped row shows its own hint — never the row's,
+// and never both at once (there is only one #tooltip element, so two tooltips
+// can never overlap). mouseover/mouseout bubble (unlike mouseenter/mouseleave),
+// which is what makes the delegation work.
+let activeTipEl: Element | null = null;
+
+function tipTargetFrom(event: Event): Element | null {
+  const target = event.target as Element | null;
+  return target && typeof target.closest === "function" ? target.closest("[data-tooltip]") : null;
 }
+
+document.addEventListener("mouseover", event => {
+  const el = tipTargetFrom(event);
+  if (!el || el === activeTipEl) return;
+  activeTipEl = el;
+  showUiTooltip(el.getAttribute("data-tooltip") || "", event as MouseEvent);
+});
+
+document.addEventListener("mousemove", event => {
+  if (!activeTipEl) return;
+  const el = tipTargetFrom(event);
+  if (el && el !== activeTipEl) {            // moved onto a nested / different target
+    activeTipEl = el;
+    showUiTooltip(el.getAttribute("data-tooltip") || "", event as MouseEvent);
+    return;
+  }
+  if (!el) { activeTipEl = null; hideTooltip(); return; }
+  moveTooltip(event as MouseEvent);
+});
+
+document.addEventListener("mouseout", event => {
+  if (!activeTipEl) return;
+  const to = (event as MouseEvent).relatedTarget as Element | null;
+  // Still inside the same tooltipped element (e.g. onto a child)? keep showing.
+  if (to && typeof to.closest === "function" && to.closest("[data-tooltip]") === activeTipEl) return;
+  activeTipEl = null;
+  hideTooltip();
+});
