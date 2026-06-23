@@ -6,7 +6,7 @@ import tseslint from "typescript-eslint";
 // that would only generate noise across a freshly-migrated codebase.
 export default tseslint.config(
   {
-    ignores: ["dist/**", "node_modules/**", "mockups/**", ".migration/**"],
+    ignores: ["dist/**", "node_modules/**", ".migration/**"],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
