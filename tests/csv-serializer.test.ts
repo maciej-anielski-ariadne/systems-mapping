@@ -46,6 +46,23 @@ describe("serializeBuilderToCsv", () => {
     expect(sections.edges[0]).toMatchObject({ from: "a", to: "a", effect: "increases" });
   });
 
+  it("adds readable from_label/to_label companion columns to edges (ignored on load)", () => {
+    const b = {
+      ...builder,
+      nodes: [
+        { id: "a", label: "Alpha", stream: "ops", stage: "s1", category: "cat" },
+        { id: "b", label: "Beta", stream: "ops", stage: "s1", category: "cat" },
+      ],
+      edges: [{ from: "a", to: "b", effect: "increases", description: "link" }],
+    };
+    const sections = parseCsvDocument(serializeBuilderToCsv(b as BuilderState));
+    // Titles sit beside the ids for human readers...
+    expect(sections.edges[0]).toMatchObject({ from: "a", to: "b", from_label: "Alpha", to_label: "Beta" });
+    // ...while the ids the app maps links by are still intact.
+    expect(sections.edges[0].from).toBe("a");
+    expect(sections.edges[0].to).toBe("b");
+  });
+
   it("writes pipe-joined categoryIds when present", () => {
     const b = { ...builder, nodes: [{ id: "a", label: "A", stream: "ops", stage: "s1", categoryIds: ["cat", "sec"] }] };
     const csv = serializeBuilderToCsv(b as BuilderState);
