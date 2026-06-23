@@ -136,18 +136,68 @@ export function splitCategoriesByClass(
   return { primary: primary, secondary: secondary };
 }
 
-// The cubic-bezier "M…C…" path for an edge from one node box to another
-// (right side of source → left side of target, horizontal tangents). Shared by
-// the live renderer and the export so the curve math lives in one place.
+// The cubic-bezier "M…C…" path for an edge from one node box to another.
+// FORWARD edges (target clearly to the right) leave the source's right side and
+// enter the target's left side with horizontal tangents — unchanged. BACKWARD /
+// feedback edges (target left of, or vertically level with, the source) would
+// double back over the forward edges and read as identical, so they re-route as
+// a wide separated arc: both ends anchor on the same horizontal face (top or
+// bottom) and the curve bows away from the grid to clear the nodes between them.
+// The arrow marker is orient="auto-start-reverse" (see 11-rendering.ts) so the
+// arrowhead follows the new end tangent for free — do NOT touch the marker.
+// Shared by the live renderer and the export so the curve math lives in one place.
 export function edgeBezierPath(fromPos: NodePosition, toPos: NodePosition): string {
-  const startX = fromPos.x + fromPos.width;
-  const startY = fromPos.y + fromPos.height / 2;
-  const endX   = toPos.x;
-  const endY   = toPos.y + toPos.height / 2;
-  const ctrlOffset = Math.max(40, Math.abs(endX - startX) * 0.5);
+  const fromMidX = fromPos.x + fromPos.width / 2;
+  const fromMidY = fromPos.y + fromPos.height / 2;
+  const toMidX   = toPos.x + toPos.width / 2;
+  const toMidY   = toPos.y + toPos.height / 2;
+
+  const startXfwd = fromPos.x + fromPos.width;   // source right side (forward anchor)
+  const endXfwd   = toPos.x;                      // target left side (forward anchor)
+  const BACK_MARGIN = 24;                         // hair of slack before flipping
+  const isBackward = endXfwd < startXfwd + BACK_MARGIN;
+
+  if (!isBackward) {
+    // ── Forward: right side → left side, horizontal tangents (unchanged) ──
+    const startX = startXfwd;
+    const startY = fromMidY;
+    const endX   = endXfwd;
+    const endY   = toMidY;
+    const ctrlOffset = Math.max(40, Math.abs(endX - startX) * 0.5);
+    return "M " + startX + "," + startY +
+           " C " + (startX + ctrlOffset) + "," + startY +
+           " " + (endX - ctrlOffset) + "," + endY +
+           " " + endX + "," + endY;
+  }
+
+  // ── Backward / feedback: bow off one horizontal face so the arc separates
+  // from the left-to-right forward edges. Bow UP by default; bow DOWN when the
+  // target sits clearly below the source so the arc opens away from the
+  // descending flow (and same-column pairs don't collide). SVG y grows down.
+  const dy = toMidY - fromMidY;
+  const bowUp = dy <= 0;                          // tie (same row) bows up
+
+  const startX = fromMidX;
+  const startY = bowUp ? fromPos.y : fromPos.y + fromPos.height;
+  const endX   = toMidX;
+  const endY   = bowUp ? toPos.y : toPos.y + toPos.height;
+
+  const spanX = Math.abs(endX - startX);
+  const spanY = Math.abs(endY - startY);
+  // Bow height: clears a node row at minimum, grows with the longer span, capped
+  // so a cross-map feedback doesn't fly off the canvas.
+  const bow = Math.min(260, Math.max(60, spanX * 0.28 + spanY * 0.6));
+  const dir = bowUp ? -1 : 1;                     // -1 = up (smaller y), +1 = down
+  const ctrlSplay = Math.max(30, spanX * 0.1);    // keep the arc rounded, not pinched
+
+  const c1x = startX - ctrlSplay;
+  const c1y = startY + dir * bow;
+  const c2x = endX + ctrlSplay;
+  const c2y = endY + dir * bow;
+
   return "M " + startX + "," + startY +
-         " C " + (startX + ctrlOffset) + "," + startY +
-         " " + (endX - ctrlOffset) + "," + endY +
+         " C " + c1x + "," + c1y +
+         " " + c2x + "," + c2y +
          " " + endX + "," + endY;
 }
 
