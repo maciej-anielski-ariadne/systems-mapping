@@ -100,8 +100,8 @@ body.panning * {
 
 /* === Selection / trace state glows ===
  * Flat look → node rectangles never show an outline; selection and causal-trace
- * states read as stacked drop-shadow halos instead (moved here from the old
- * 12-no-borders.css). Each stacks a tight inner ring, a mid bloom and a wide
+ * states read as stacked drop-shadow halos instead. Each stacks a tight inner
+ * ring, a mid bloom and a wide
  * soft tail. Selected = white (loudest); ancestor = blue (upstream);
  * descendant = dimmer blue (downstream — direction is shown by arrowheads, not
  * hue); hovered = soft white (subtler). */

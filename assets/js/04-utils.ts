@@ -201,6 +201,44 @@ export function edgeBezierPath(fromPos: NodePosition, toPos: NodePosition): stri
          " " + endX + "," + endY;
 }
 
+// effect → arrow-marker name. The four edge effects map to their own markers
+// ("increases" / "decreases" / "enables"); anything else falls back to
+// "default". Shared by the live renderer (11-rendering.ts) and the export
+// (19-export.ts) so the two agree on marker ids. The stroke *colour* differs
+// between them (live uses CSS vars, export resolves to literal hex), so only
+// the marker mapping is shared.
+export function effectMarkerName(effect: string): string {
+  return (effect === "increases" || effect === "decreases" || effect === "enables") ? effect : "default";
+}
+
+// Longest shortest-path distance (in hops) reachable downstream from any start
+// node, following `neighbors(id) => id[]`. This is the graph's effective
+// "diameter" in the downstream direction and serves as the dynamic cap for the
+// highlight-depth control — past it, raising the depth reveals nothing further.
+// Shared by the live map (09-graph-selection.ts, over the whole graph) and the
+// published export viewer's cap (19-export.ts, over the published subset).
+// Always >= 1.
+export function maxReachableDepth(starts: Iterable<string>, neighbors: (id: string) => string[]): number {
+  let max = 1;
+  for (const start of starts) {
+    const visited = new Set([start]);
+    let frontier = [start];
+    let level = 0;
+    while (frontier.length) {
+      const next: string[] = [];
+      for (const id of frontier) {
+        for (const nb of neighbors(id)) {
+          if (!visited.has(nb)) { visited.add(nb); next.push(nb); }
+        }
+      }
+      if (next.length) level++;
+      frontier = next;
+    }
+    if (level > max) max = level;
+  }
+  return max;
+}
+
 // Colour for a node's value-delta given its direction-of-merit and % change.
 // Green = "good" move, red = "bad" move, blue/orange when no direction is set.
 export function deltaColorFor(node: GraphNode, deltaInfo: { pct: number }): string {

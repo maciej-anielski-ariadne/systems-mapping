@@ -537,8 +537,8 @@ body.canvas-shift-edit .sidebar-inline-edit:not(.editing):hover {
 .legend-filter-row:hover { background: var(--act-tint); }
 
 /* Neutral line-style swatches (style is orthogonal to the effect colour).
- * Both use `background` rather than a border, since 12-no-borders.css strips
- * every CSS border with `border: 0 !important`. The dashed one is a repeating
+ * Both use `background` rather than a border, since the flat look uses no
+ * CSS borders (02-base.css). The dashed one is a repeating
  * gradient: 5px dash, 4px gap. */
 .legend-line-solid  { background: var(--text-secondary); }
 .legend-line-dashed { background: repeating-linear-gradient(to right, var(--text-secondary) 0 5px, transparent 5px 9px); }

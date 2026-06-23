@@ -113,8 +113,8 @@
 }
 
 /* === Map halo on every match ===
- * Sits next to the existing .selected / .ancestor / .descendant filters
- * from 12-no-borders.css. A subtle amber drop-shadow so matches stand
+ * Sits next to the existing .selected / .ancestor / .descendant state
+ * glows (05-visualization.css). A subtle amber drop-shadow so matches stand
  * out without overpowering the white selection / blue trace glows. */
 .node-group.search-match .node-rect {
   filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent-amber) 75%, transparent));

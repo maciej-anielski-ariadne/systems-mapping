@@ -57,7 +57,9 @@ import {
 import {
   deltaColorFor,
   edgeBezierPath,
+  effectMarkerName,
   escapeHtml,
+  maxReachableDepth,
   measureLabelLines,
   nodeCategoryIds,
 } from "./04-utils";
@@ -66,8 +68,9 @@ import {
   formatNodeValue,
   getOutcomeBorderColor,
 } from "./07-simulation-engine";
-import { measureNode } from "./08-layout";
+import { measureNode, packColumns, packRows, rowHeightFor, stackHeight } from "./08-layout";
 import { isEdgeVisible, isNodeVisible } from "./10-filters";
+import { computeRenderEdges } from "./10a-collapsed-edges";
 import { nodePrimaryFill, nodeSecondaryChips } from "./11-rendering";
 import { showLoadFeedback } from "./16-file-io";
 
@@ -102,10 +105,23 @@ interface ExportLayout {
   colX: Record<string, number>;
 }
 
+// A drawable edge in an export — the common shape of a REAL edge and a SYNTHETIC
+// "through" connector (visible → hidden… → visible, see 10a-collapsed-edges.ts).
+// The export draws and re-traces both, so collapsing a stage produces the same
+// rerouted arrows the live map shows instead of dropping the link entirely.
+export interface ExportEdge {
+  id: string;
+  from: string;
+  to: string;
+  effect: string;
+  style?: "solid" | "dashed";
+  synthetic: boolean;
+}
+
 // ───── Assembled export model ───────────────────────────────────────────────
 interface ExportModel {
   nodeIds: Set<string>;
-  edges: Edge[];
+  edges: ExportEdge[];
   selectionActive: boolean;
   stageIds: string[];
   streamOrder: string[];
@@ -146,12 +162,17 @@ export function exportPalette(): ExportPalette {
   };
 }
 
+// A real Edge as an ExportEdge.
+function realExportEdge(e: Edge): ExportEdge {
+  return { id: e.id!, from: e.from, to: e.to, effect: e.effect || "", style: e.style, synthetic: false };
+}
+
 // ───── Which nodes/edges to include ────────────────────────────────────────
-// Returns { nodeIds:Set, edges:[edge], selectionActive:bool }.
+// Returns { nodeIds:Set, edges:[ExportEdge], selectionActive:bool }.
 // `allEdges` (used by the interactive published HTML) includes every edge among
 // the chosen nodes rather than only the ones highlighted by the current depth —
 // so the published viewer can re-trace connections itself as the user clicks.
-export function getExportSelection(allEdges = false): { nodeIds: Set<string>; edges: Edge[]; selectionActive: boolean } {
+export function getExportSelection(allEdges = false): { nodeIds: Set<string>; edges: ExportEdge[]; selectionActive: boolean } {
   const singleSelected = state.selectedNodeId &&
     (!state.selectedNodeIds || state.selectedNodeIds.size <= 1);
 
@@ -161,9 +182,13 @@ export function getExportSelection(allEdges = false): { nodeIds: Set<string>; ed
     if (state.descendantSet) state.descendantSet.forEach(id => ids.add(id));
     // Every edge among the chosen nodes (interactive), or only the edges
     // highlighted by the current highlight depth (static image / default).
-    const edges = EDGES.filter(e =>
-      ids.has(e.from) && ids.has(e.to) &&
-      (allEdges || (state.highlightedEdgeIds && state.highlightedEdgeIds.has(e.id!))));
+    // The trace already spans collapsed stages (it walks the full graph), so
+    // every node here gets a real box — no synthetic rerouting needed.
+    const edges = EDGES
+      .filter(e =>
+        ids.has(e.from) && ids.has(e.to) && isEdgeVisible(e) &&
+        (allEdges || (state.highlightedEdgeIds && state.highlightedEdgeIds.has(e.id!))))
+      .map(realExportEdge);
     return { nodeIds: ids, edges, selectionActive: true };
   }
 
@@ -177,7 +202,23 @@ export function getExportSelection(allEdges = false): { nodeIds: Set<string>; ed
     if (rect && !rectsOverlap(pos, rect)) continue;
     ids.add(node.id);
   }
-  const edges = EDGES.filter(e => ids.has(e.from) && ids.has(e.to));
+  // Draw exactly what the live map draws: real edges between visible nodes PLUS
+  // the synthetic "through" arrows that reroute a chain across a collapsed
+  // stage (computeRenderEdges, shared with 11-rendering). Honour the same
+  // sidebar edge filters the renderer applies, then keep only edges whose
+  // endpoints are both inside the framed viewport.
+  const edges: ExportEdge[] = [];
+  for (const re of computeRenderEdges()) {
+    if (!ids.has(re.from) || !ids.has(re.to)) continue;
+    if (re.synthetic) {
+      if (state.hiddenEffects.has(re.effect)) continue;
+      if (state.hiddenStyles.has(re.dashed ? "dashed" : "solid")) continue;
+      edges.push({ id: re.id, from: re.from, to: re.to, effect: re.effect, style: re.dashed ? "dashed" : "solid", synthetic: true });
+    } else {
+      if (!isEdgeVisible(re.edge)) continue;
+      edges.push(realExportEdge(re.edge));
+    }
+  }
   return { nodeIds: ids, edges, selectionActive: false };
 }
 
@@ -210,7 +251,7 @@ export function rectsOverlap(
 // every cluster gets packed together (not just the first). Clusters are emitted
 // heaviest-first; streams with no cross-stream edges keep their original order
 // at the end. Deterministic (ties broken by original index).
-export function orderExportStreams(streamIds: string[], edges: Edge[]): string[] {
+export function orderExportStreams(streamIds: string[], edges: ExportEdge[]): string[] {
   const present = streamIds.slice();
   const n = present.length;
   if (n <= 2) return present;
@@ -288,18 +329,11 @@ export function computeExportLayout(nodeIds: Set<string>, streamOrder: string[],
     });
   }
 
-  // Columns: packed left→right over the included stages only.
-  const colX: Record<string, number> = {};
-  let cursorX = SVG_PADDING_LEFT + ROW_HEADER_WIDTH;
-  for (const stageId of stageIds) {
-    colX[stageId] = cursorX;
-    cursorX += NODE_WIDTH + COL_GAP;
-  }
-  const totalWidth = cursorX - COL_GAP + SVG_PADDING_RIGHT;
+  // Columns: packed left→right over the included stages only (always full
+  // NODE_WIDTH — the export never draws collapsed-column stubs). Shares the
+  // packing geometry with the live layout (08-layout).
+  const { colX, totalWidth } = packColumns(stageIds, () => NODE_WIDTH);
 
-  // Rows: packed top→bottom over the (reordered) included streams. Row height
-  // is the tallest cell's SUMMED stack height (nodes grow to fit their labels),
-  // reusing each node's grown height from the live layout.
   // Per-node grown height: reuse the live layout's measurement, falling back to
   // a fresh measure for any node without a live position (e.g. one in a stage
   // that's collapsed on the canvas but pulled into a selection export).
@@ -309,25 +343,22 @@ export function computeExportLayout(nodeIds: Set<string>, streamOrder: string[],
     const n = nodeById[id];
     return n ? measureNode(n).height : NODE_HEIGHT;
   };
-  const rowHeights: Record<string, number> = {}, rowY: Record<string, number> = {};
+
+  // Rows: each row's height is its tallest cell's summed stack (nodes grow to
+  // fit their labels); then pack top→bottom over the reordered streams — both
+  // via the shared 08-layout primitives, so export and canvas stay in lockstep.
+  const rowHeights: Record<string, number> = {};
   for (const streamId of streamOrder) {
     let maxContent = 0;
     for (const stageId of stageIds) {
       const c = cells[streamId + ":" + stageId];
       if (!c || !c.length) continue;
-      let sum = 0;
-      for (const n of c) sum += exHeight(n.id);
-      sum += (c.length - 1) * NODE_GAP_Y;
+      const sum = stackHeight(c.map(n => exHeight(n.id)));
       if (sum > maxContent) maxContent = sum;
     }
-    rowHeights[streamId] = (maxContent || NODE_HEIGHT) + ROW_PADDING * 2;   // floor empty rows only (matches live)
+    rowHeights[streamId] = rowHeightFor(maxContent);
   }
-  let cursorY = SVG_PADDING_TOP + COL_HEADER_HEIGHT;
-  for (const streamId of streamOrder) {
-    rowY[streamId] = cursorY;
-    cursorY += rowHeights[streamId];
-  }
-  const totalHeight = cursorY + SVG_PADDING_BOTTOM;
+  const { rowY, totalHeight } = packRows(streamOrder, rowHeights);
 
   const positions: Record<string, NodePosition> = {};
   for (const streamId of streamOrder) {
@@ -416,8 +447,7 @@ export function renderExportSvg(
     effect === "decreases" ? pal.edgeDecreases :
     effect === "enables"   ? pal.edgeEnables   :
                              pal.edgeDefault;
-  const effectMarker = (effect: string): string =>
-    (effect === "increases" || effect === "decreases" || effect === "enables") ? effect : "default";
+  const effectMarker = effectMarkerName;
   const lay = model.layout;
   const W = lay.totalWidth, H = lay.totalHeight;
   const nodeInfo: Record<string, Record<string, string>> = {};
@@ -505,7 +535,8 @@ export function renderExportSvg(
   // map draws an edge when nothing is selected). Effect colours and arrowheads
   // are the app's *highlight* state, so they are deliberately not used here.
   for (const edge of model.edges) {
-    if (typeof isEdgeVisible === "function" && !isEdgeVisible(edge)) continue;   // honour the sidebar edge filters
+    // Visibility / sidebar-filter culling already happened in getExportSelection
+    // (which also added the synthetic through-edges for collapsed stages).
     const fromPos = lay.positions[edge.from], toPos = lay.positions[edge.to];
     if (!fromPos || !toPos) continue;
     const dashAttr = edge.style === "dashed" ? ' stroke-dasharray="6 5"' : '';
@@ -715,29 +746,14 @@ export function publishCanvasHtml(): void {
   showLoadFeedback("Published systems-map.html (interactive)", false);
 }
 
-// Deepest reachable hop over a set of edges — the longest shortest path measured
-// downstream from any node (mirrors computeMaxHighlightDepth in 09-graph-
-// selection.js). Caps the published viewer's highlight-depth control. Always >= 1.
-export function exportMaxHighlightDepth(edges: Edge[]): number {
+// Deepest reachable hop over a set of edges — caps the published viewer's
+// highlight-depth control. Builds a downstream adjacency from the published
+// subset of edges and defers to the shared maxReachableDepth (04-utils), the
+// same primitive the live map uses via computeMaxHighlightDepth. Always >= 1.
+export function exportMaxHighlightDepth(edges: ExportEdge[]): number {
   const out: Record<string, string[]> = {};
   for (const e of edges) (out[e.from] || (out[e.from] = [])).push(e.to);
-  let max = 1;
-  for (const start in out) {
-    const visited = new Set([start]);
-    let frontier = [start], level = 0;
-    while (frontier.length) {
-      const next: string[] = [];
-      for (const id of frontier) {
-        for (const to of (out[id] || [])) {
-          if (!visited.has(to)) { visited.add(to); next.push(to); }
-        }
-      }
-      if (next.length) level++;
-      frontier = next;
-    }
-    if (level > max) max = level;
-  }
-  return max;
+  return maxReachableDepth(Object.keys(out), id => out[id] || []);
 }
 
 // Wrap the SVG in a self-contained, interactive pan / zoom / highlight viewer:
@@ -750,7 +766,7 @@ export function buildPublishHtml(
   height: number,
   nodeInfo: Record<string, Record<string, string>>,
   pal: ExportPalette,
-  edges: Edge[]
+  edges: ExportEdge[]
 ): string {
   // Guard the embedded JSON against closing-tag breakouts by escaping "<".
   const esc = (o: unknown): string => JSON.stringify(o).replace(/</g, "\\u003c");

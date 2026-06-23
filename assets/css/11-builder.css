@@ -234,8 +234,7 @@
   z-index: 2;
 }
 
-/* Invalid cell — red inset ring (the flat-look stand-in for a red border;
- * moved here from the old 12-no-borders.css). */
+/* Invalid cell — red inset ring (the flat-look stand-in for a red border). */
 .builder-table input.invalid,
 .builder-table select.invalid,
 .builder-table textarea.invalid {
