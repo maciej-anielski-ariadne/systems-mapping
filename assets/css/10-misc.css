@@ -254,30 +254,3 @@ body.no-data .detail-panel {
   background: transparent;
 }
 
-/* === T4: tuck the advanced Highlight-Depth card behind a "⋯ more" toggle ===
- * Zoom is the only resting control; clicking ⋯ reveals the depth card. */
-.viz-depth-controls { display: none; }
-.viz-controls-cluster.show-more .viz-depth-controls { display: flex; }
-
-.viz-more-toggle {
-  align-self: flex-end;
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--font-mono);
-  font-size: var(--fs-title);
-  line-height: 1;
-  color: var(--text-secondary);
-  background: color-mix(in srgb, var(--bg-deep) 85%, transparent);
-  backdrop-filter: blur(8px);
-  border-radius: var(--radius-interactive);
-  cursor: pointer;
-  transition: background var(--dur-base), color var(--dur-base);
-}
-.viz-more-toggle:hover,
-.viz-controls-cluster.show-more .viz-more-toggle {
-  color: var(--text-primary);
-  background: var(--act-tint);
-}
