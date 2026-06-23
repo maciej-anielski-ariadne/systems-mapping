@@ -93,9 +93,9 @@ export function renderStagesList(): void {
     const isHidden = state.hiddenStages.has(stage.id);
     const tip = (isHidden ? "Click to show " : "Click to hide ") + stage.label + " — " + count + " box" + (count === 1 ? "" : "es") + " on the map. Shift-click the name to rename.";
     html += '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="stage" data-id="' + escapeHtml(stage.id) + '" data-index="' + i + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
-    html +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
     html +=   '<span class="sidebar-edit-label sidebar-inline-edit" data-field="label" title="Shift-click to rename">' + escapeHtml(stage.label) + '</span>';
     html +=   '<span class="count-swatch count-swatch--plain">' + count + '</span>';
+    html +=   dragHandleButton("Drag to reorder");
     html +=   deleteIconButton("Delete column");
     html += '</div>';
   }
@@ -126,10 +126,10 @@ export function renderStreamsList(): void {
 
     const tip = (isHidden ? "Click to show " : "Click to hide ") + stream.label + " — " + count + " box" + (count === 1 ? "" : "es") + " on the map. Shift-click the name to rename.";
     html += '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="stream" data-id="' + escapeHtml(stream.id) + '" data-index="' + i + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
-    html +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
     html +=   '<div class="filter-label sidebar-inline-edit" data-field="label" title="Shift-click to rename">' + escapeHtml(stream.label) + '</div>';
     html +=   '<span class="sidebar-short-chip sidebar-inline-edit" data-field="short" title="Shift-click to edit short label">' + escapeHtml(short) + '</span>';
     html +=   countSwatch(stream.color, count);
+    html +=   dragHandleButton("Drag to reorder");
     html +=   deleteIconButton("Delete row");
     html += '</div>';
   }
@@ -169,10 +169,10 @@ export function renderCategoriesList(): void {
       : "Make this a Corner tag category (a corner tag)";
     const tip = (isHidden ? "Click to show " : "Click to hide ") + cat.label + " — " + count + " box" + (count === 1 ? "" : "es") + " on the map. Shift-click the name to rename.";
     let h = '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="category" data-id="' + escapeHtml(catId) + '" data-index="' + indexOf[catId] + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
-    h +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
     h +=   '<div class="filter-label sidebar-inline-edit" data-field="label" title="Shift-click to rename">' + escapeHtml(cat.label) + '</div>';
     h +=   '<button class="sidebar-cat-reclass" data-action="reclass" title="' + escapeHtml(reclassTitle) + '">' + reclassLabel + '</button>';
     h +=   countSwatch(cat.color, count);
+    h +=   dragHandleButton("Drag to reorder");
     h +=   deleteIconButton("Delete category");
     h += '</div>';
     return h;
@@ -360,6 +360,17 @@ export function deleteIconButton(title: string): string {
     '</svg></button>';
 }
 
+// Trailing drag grip — the default reorder affordance. The whole row is
+// draggable, so this is a visual hint (not a separate drag trigger). It shares
+// the trailing slot with the delete button; CSS shows the grip by default and
+// swaps to the delete button while Shift is held.
+export function dragHandleButton(title: string): string {
+  return '<span class="sidebar-row-drag" title="' + escapeHtml(title) + '" aria-hidden="true">' +
+    '<svg viewBox="0 0 16 16" width="13" height="13" focusable="false">' +
+    '<path fill="currentColor" d="M6 3.25a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Zm6.5 0a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0ZM6 8a1.25 1.25 0 1 1-2.5 0A1.25 1.25 0 0 1 6 8Zm6.5 0a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0ZM6 12.75a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Zm6.5 0a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Z"/>' +
+    '</svg></span>';
+}
+
 // Turn an inline-editable element into a text editor: make it contenteditable,
 // select its text, and commit on Enter / blur (Escape cancels). The `field`
 // ("label" or "short") routes the committed value through applySidebarFieldEdit.
@@ -466,7 +477,7 @@ export function wireRowHandlers(container: HTMLElement, kind: string): void {
     if (isFilter) {
       row.addEventListener("click", event => {
         if ((event as MouseEvent).shiftKey) return; // Shift is the edit key — never toggle while held
-        if ((event.target as HTMLElement).closest(".sidebar-edit-drag, .sidebar-edit-color, .sidebar-row-delete, .sidebar-cat-reclass")) return;
+        if ((event.target as HTMLElement).closest(".sidebar-row-drag, .sidebar-edit-color, .sidebar-row-delete, .sidebar-cat-reclass")) return;
         toggle();
       });
     }
