@@ -81,6 +81,9 @@ interface ExportPalette {
   textSecondary: string;
   textTertiary: string;
   edgeDefault: string;
+  edgeIncreases: string;
+  edgeDecreases: string;
+  edgeEnables: string;
   statusGood: string;
   statusBad: string;
 }
@@ -129,6 +132,9 @@ export function exportPalette(): ExportPalette {
     textSecondary: v("--text-secondary", "#a1adc4"),
     textTertiary:  v("--text-tertiary",  "#6b7691"),
     edgeDefault:   v("--edge-default",   "#3a455e"),
+    edgeIncreases: v("--edge-increases", "#9ed1b4"),
+    edgeDecreases: v("--edge-decreases", "#e3a3a8"),
+    edgeEnables:   v("--edge-enables",   "#bfaede"),
     statusGood:    v("--status-good",    "#10b981"),
     statusBad:     v("--status-bad",     "#f87171"),
   };
@@ -384,11 +390,24 @@ export function exportNodeStroke(nodeId: string, pal: ExportPalette): { color: s
 // metadata used by the published HTML viewer's hover tooltips.
 export function renderExportSvg(
   model: ExportModel,
-  opts?: { pal?: ExportPalette }
+  opts?: { pal?: ExportPalette; transparent?: boolean }
 ): { svg: string; width: number; height: number; nodeInfo: Record<string, Record<string, string>> } {
   _xnodeGradSeq = 0;   // restart per export
   opts = opts || {};
   const pal = opts.pal || exportPalette();
+  // Clean, slide-ready variant: transparent background, no structural chrome
+  // (stripes / dividers / band fills), edges in full-opacity effect colour with
+  // arrowheads. Used by the PNG copy; the HTML viewer leaves this off.
+  const transparent = !!opts.transparent;
+  // effect → stroke colour + arrow-marker name (mirrors the live map's
+  // effectStroke / effectMarker in 11-rendering.ts).
+  const effectEdge = (effect: string): string =>
+    effect === "increases" ? pal.edgeIncreases :
+    effect === "decreases" ? pal.edgeDecreases :
+    effect === "enables"   ? pal.edgeEnables   :
+                             pal.edgeDefault;
+  const effectMarker = (effect: string): string =>
+    (effect === "increases" || effect === "decreases" || effect === "enables") ? effect : "default";
   const lay = model.layout;
   const W = lay.totalWidth, H = lay.totalHeight;
   const nodeInfo: Record<string, Record<string, string>> = {};
@@ -407,27 +426,51 @@ export function renderExportSvg(
      +   '.xc-header{font-size:11px;font-weight:600;letter-spacing:0.12em;}'
      + '</style>';
 
-  // Background.
-  s += '<rect x="0" y="0" width="' + W + '" height="' + H + '" fill="' + pal.bgDeep + '"></rect>';
-
-  // Per-stream background stripe + top divider.
-  for (const streamId of model.streamOrder) {
-    const stream = streamById[streamId] || ({ color: "#94a3b8" } as Stream);
-    const y = lay.rowY[streamId], h = lay.rowHeights[streamId];
-    s += '<rect x="0" y="' + y + '" width="' + W + '" height="' + h + '" fill="' + stream.color + '" opacity="0.04"></rect>';
-    s += '<line x1="0" y1="' + y + '" x2="' + W + '" y2="' + y + '" stroke="' + pal.borderSubtle + '" stroke-width="1"></line>';
+  // Arrowhead markers (clean export only) — one per effect colour so the slide
+  // image reads edge direction, matching the live map's highlighted style.
+  if (transparent) {
+    const markers: Array<[string, string]> = [
+      ["default",   pal.edgeDefault],
+      ["increases", pal.edgeIncreases],
+      ["decreases", pal.edgeDecreases],
+      ["enables",   pal.edgeEnables],
+    ];
+    s += '<defs>';
+    for (const [name, color] of markers) {
+      s += '<marker id="xarrow_' + name + '" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">'
+         +   '<path d="M 0 0 L 10 5 L 0 10 z" fill="' + color + '"></path>'
+         + '</marker>';
+    }
+    s += '</defs>';
   }
 
-  // Column-header band + stage labels + vertical dividers.
+  // Background. The clean export is transparent (drops straight onto a slide),
+  // so the solid backdrop and structural chrome below are skipped entirely.
+  if (!transparent) {
+    s += '<rect x="0" y="0" width="' + W + '" height="' + H + '" fill="' + pal.bgDeep + '"></rect>';
+
+    // Per-stream background stripe + top divider.
+    for (const streamId of model.streamOrder) {
+      const stream = streamById[streamId] || ({ color: "#94a3b8" } as Stream);
+      const y = lay.rowY[streamId], h = lay.rowHeights[streamId];
+      s += '<rect x="0" y="' + y + '" width="' + W + '" height="' + h + '" fill="' + stream.color + '" opacity="0.04"></rect>';
+      s += '<line x1="0" y1="' + y + '" x2="' + W + '" y2="' + y + '" stroke="' + pal.borderSubtle + '" stroke-width="1"></line>';
+    }
+  }
+
+  // Column-header band + stage labels + vertical dividers. The clean export
+  // keeps the stage labels but drops the band fill and dashed dividers.
   const headerBandBottom = SVG_PADDING_TOP + COL_HEADER_HEIGHT;
-  s += '<rect x="0" y="0" width="' + W + '" height="' + headerBandBottom + '" fill="' + pal.bgDeep + '"></rect>';
+  if (!transparent) {
+    s += '<rect x="0" y="0" width="' + W + '" height="' + headerBandBottom + '" fill="' + pal.bgDeep + '"></rect>';
+  }
   for (let i = 0; i < model.stageIds.length; i++) {
     const stageId = model.stageIds[i];
     const stage = stageById[stageId] || ({ label: stageId } as StageWithIndex);
     const cx = lay.colX[stageId] + NODE_WIDTH / 2;
     s += '<text class="xc-header" x="' + cx + '" y="' + (SVG_PADDING_TOP + 24) +
          '" text-anchor="middle" fill="' + pal.textSecondary + '">' + escapeHtml(stage.label) + '</text>';
-    if (i < model.stageIds.length - 1) {
+    if (!transparent && i < model.stageIds.length - 1) {
       const dividerX = lay.colX[stageId] + NODE_WIDTH + COL_GAP / 2;
       s += '<line x1="' + dividerX + '" y1="' + headerBandBottom + '" x2="' + dividerX + '" y2="' + H +
            '" stroke="' + pal.borderSubtle + '" stroke-width="1" stroke-dasharray="2 4" opacity="0.6"></line>';
@@ -438,7 +481,9 @@ export function renderExportSvg(
   for (const streamId of model.streamOrder) {
     const stream = streamById[streamId] || ({ short: streamId, color: "#94a3b8" } as Stream);
     const y = lay.rowY[streamId], h = lay.rowHeights[streamId];
-    s += '<rect x="0" y="' + y + '" width="' + ROW_HEADER_WIDTH + '" height="' + h + '" fill="' + pal.bgDeepest + '"></rect>';
+    if (!transparent) {
+      s += '<rect x="0" y="' + y + '" width="' + ROW_HEADER_WIDTH + '" height="' + h + '" fill="' + pal.bgDeepest + '"></rect>';
+    }
     s += '<rect x="' + (ROW_HEADER_WIDTH - 4) + '" y="' + y + '" width="4" height="' + h + '" fill="' + stream.color + '" opacity="0.7"></rect>';
     s += '<text class="xr-label" x="' + (ROW_HEADER_WIDTH / 2) + '" y="' + (y + h / 2) +
          '" text-anchor="middle" dominant-baseline="middle" fill="' + stream.color + '">' + escapeHtml(stream.short) + '</text>';
@@ -453,8 +498,15 @@ export function renderExportSvg(
     const fromPos = lay.positions[edge.from], toPos = lay.positions[edge.to];
     if (!fromPos || !toPos) continue;
     const dashAttr = edge.style === "dashed" ? ' stroke-dasharray="6 5"' : '';
-    s += '<path d="' + edgeBezierPath(fromPos, toPos) + '" fill="none" stroke="' + pal.edgeDefault +
-         '" stroke-width="1" stroke-opacity="0.45"' + dashAttr + '></path>';
+    if (transparent) {
+      // Full-colour, full-opacity edges with a directional arrowhead — the live
+      // map's highlighted style, so the slide image reads effect and direction.
+      s += '<path d="' + edgeBezierPath(fromPos, toPos) + '" fill="none" stroke="' + effectEdge(edge.effect) +
+           '" stroke-width="1.5" stroke-opacity="1" marker-end="url(#xarrow_' + effectMarker(edge.effect) + ')"' + dashAttr + '></path>';
+    } else {
+      s += '<path d="' + edgeBezierPath(fromPos, toPos) + '" fill="none" stroke="' + pal.edgeDefault +
+           '" stroke-width="1" stroke-opacity="0.45"' + dashAttr + '></path>';
+    }
   }
 
   // Nodes.
@@ -501,7 +553,7 @@ export function renderExportSvg(
     if (valueText) {
       const valueY = pos.y + pos.height - 12;
       s += '<text class="xn-value" x="' + (pos.x + LABEL_INSET) + '" y="' + valueY +
-           '" fill="' + fillInfo.textColor + '" dominant-baseline="middle" opacity="0.75">' + escapeHtml(valueText) + '</text>';
+           '" fill="' + fillInfo.textColor + '" dominant-baseline="middle"' + (transparent ? '' : ' opacity="0.75"') + '>' + escapeHtml(valueText) + '</text>';
       const deltaInfo = formatNodeDelta(node.id);
       if (deltaInfo.text && deltaInfo.text !== "—") {
         const deltaColor = deltaColorFor(node, deltaInfo);
@@ -563,7 +615,7 @@ export const EXPORT_MAX_CANVAS_AREA = 16384 * 16384;
 // than upscaling a low-resolution bitmap. The density is clamped so the canvas
 // never exceeds the browser's limits; for very large maps it drops below the
 // target (even below 1×) to produce the largest valid image instead of failing.
-export function renderExportPngBlob(svg: string, width: number, height: number, pal: ExportPalette): Promise<Blob> {
+export function renderExportPngBlob(svg: string, width: number, height: number, pal: ExportPalette, transparent?: boolean): Promise<Blob> {
   return new Promise((resolve, reject) => {
     let scale = Math.min(
       EXPORT_PNG_SCALE,
@@ -593,8 +645,12 @@ export function renderExportPngBlob(svg: string, width: number, height: number, 
         canvas.width  = cw;
         canvas.height = ch;
         const ctx = canvas.getContext("2d")!;
-        ctx.fillStyle = pal.bgDeep || "#111827";
-        ctx.fillRect(0, 0, cw, ch);
+        // Clean export keeps the canvas alpha so the PNG is transparent; the
+        // standard export paints the solid backdrop first.
+        if (!transparent) {
+          ctx.fillStyle = pal.bgDeep || "#111827";
+          ctx.fillRect(0, 0, cw, ch);
+        }
         ctx.drawImage(img, 0, 0, cw, ch);   // 1:1 — image already at full res
         URL.revokeObjectURL(blobUrl);
         if (!canvas.toBlob) { reject(new Error("Canvas.toBlob unsupported")); return; }
@@ -617,11 +673,14 @@ export function exportCanvasImage(): void {
   }
 
   const pal = exportPalette();
-  const { svg, width, height } = renderExportSvg(model, { pal });
+  // Slide-ready PNG: transparent background, no chrome, full-colour edges. The
+  // current theme (Twilight/Linen) decides the ink, so the image reads on a
+  // matching dark or light slide.
+  const { svg, width, height } = renderExportSvg(model, { pal, transparent: true });
 
   // Hand ClipboardItem a Promise<Blob> so the write stays tied to the click
   // gesture even though rasterization is asynchronous.
-  const blobPromise = renderExportPngBlob(svg, width, height, pal);
+  const blobPromise = renderExportPngBlob(svg, width, height, pal, true);
   navigator.clipboard.write([new ClipboardItem({ "image/png": blobPromise })])
     .then(() => showLoadFeedback("Map image copied to clipboard.", false))
     .catch(err => {
