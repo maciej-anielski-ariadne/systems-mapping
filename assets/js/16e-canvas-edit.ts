@@ -83,7 +83,7 @@ import {
   toggleNodeInSelection,
 } from "./09-graph-selection";
 import { isNodeVisible } from "./10-filters";
-import { render, scheduleRender } from "./11-rendering";
+import { render, scheduleRender, scheduleOverlayRender } from "./11-rendering";
 import { renderSidebar } from "./13-sidebar";
 import { renderDetailPanel } from "./15-detail-panel";
 import { hideDropZone } from "./16-file-io";
@@ -813,7 +813,9 @@ export function updateEdgeDrag(event: { clientX: number; clientY: number }): voi
   draft.currentY = point.y;
   // Detect which node (if any) is under the cursor so we can highlight it.
   draft.dropTargetId = nodeAtLayoutPoint(point.x, point.y);
-  scheduleRender();   // coalesce per-mousemove rebuilds to one per frame
+  // Only the draft-edge preview moves — the static node/edge DOM is unchanged,
+  // so rewrite just the overlay layer.
+  scheduleOverlayRender();
 }
 
 export function endEdgeDrag(event: MouseEvent): void {
@@ -974,8 +976,15 @@ export function updateNodeDrag(event: { clientX: number; clientY: number }): voi
   // Recompute layout when the dragged cell changes — entering a non-empty
   // cell expands its row to make room for the inserted slot.
   const samePrev = prev && next && prev.streamId === next.streamId && prev.stageId === next.stageId && prev.insertIndex === next.insertIndex;
-  if (!samePrev) setLayout(computeLayout());
-  scheduleRender();   // coalesce per-mousemove rebuilds to one per frame
+  if (!samePrev) {
+    // Crossing into a new slot re-parts the static node stack → full render.
+    setLayout(computeLayout());
+    scheduleRender();
+  } else {
+    // Same slot: only the floating preview + drop-slot moved. Rewrite just the
+    // overlay layer and leave the (potentially huge) node/edge DOM untouched.
+    scheduleOverlayRender();
+  }
 }
 
 export function endNodeDrag(event: MouseEvent): void {

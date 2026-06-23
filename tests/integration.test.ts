@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { loadDataFromCsv } from "../assets/js/06-data-loader";
 import { toggleCategory } from "../assets/js/10-filters";
+import { renderOverlay } from "../assets/js/11-rendering";
 import { NODES, EDGES, nodeById, state } from "../assets/js/03-state";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -77,5 +78,38 @@ describe("end-to-end: load the shipped sample.csv and render", () => {
     // Toggling it back restores them (cache invalidates the other direction too).
     toggleCategory(catId);
     expect(svg.querySelectorAll(".node-group").length).toBe(before);
+  });
+
+  it("renders static + overlay layers and updates the overlay in isolation", () => {
+    loadDataFromCsv(sampleCsv);
+    const svg = document.getElementById("viz-svg")!;
+    const staticLayer = svg.querySelector(".ml-static-layer")!;
+    const overlayLayer = svg.querySelector(".ml-overlay-layer")!;
+    expect(staticLayer).toBeTruthy();
+    expect(overlayLayer).toBeTruthy();
+
+    // Nodes live in the static layer; the overlay is empty with no transient state.
+    expect(staticLayer.querySelectorAll(".node-group").length).toBe(NODES.length);
+    expect(overlayLayer.querySelector(".ghost-cell")).toBe(null);
+
+    // Grab a stable reference to a node element so we can prove the overlay-only
+    // update never re-parses the static DOM.
+    const someNode = NODES[0];
+    const nodeEl = staticLayer.querySelector(
+      '.node-group[data-node-id="' + someNode.id + '"]',
+    )!;
+
+    // Park a hover "+ add box" ghost in a real cell, then update ONLY the overlay.
+    state.canvasEdit.hoverCell = { streamId: someNode.stream, stageId: someNode.stage, insertIndex: 0 };
+    renderOverlay();
+
+    // The ghost now exists in the overlay…
+    expect(overlayLayer.querySelector(".ghost-cell")).toBeTruthy();
+    // …and the static node element is the very same DOM node (not rebuilt).
+    expect(
+      staticLayer.querySelector('.node-group[data-node-id="' + someNode.id + '"]'),
+    ).toBe(nodeEl);
+
+    state.canvasEdit.hoverCell = null;
   });
 });

@@ -213,10 +213,167 @@ export function scheduleRender(): void {
   _renderRAF = _raf(() => { _renderQueued = false; _renderRAF = 0; render(); });
 }
 
+// ───── Transient overlay layer ────────────────────────────────────────────
+// The SVG is split into two sibling <g> groups: a STATIC layer (backgrounds,
+// headers, edges, nodes — the bulk of the markup) and an OVERLAY layer holding
+// only the transient interaction affordances (keyboard cursor slot, hover "+
+// add" ghost, drag drop-slot, draft edge, floating drag preview, marquee box).
+//
+// A node drag that stays within its slot, and an edge-draw drag, change ONLY
+// these transient affordances — not a single node or edge. renderOverlay()
+// rewrites just the overlay group's innerHTML, leaving the (potentially huge)
+// static node/edge DOM completely untouched. That is what keeps dragging smooth
+// on large maps: per-frame work drops from "rebuild the whole graph" to "rebuild
+// a handful of preview shapes". Anything that changes the static layer (a slot
+// crossing that re-parts the stack, a selection change, a filter) still goes
+// through the full render().
+export const STATIC_LAYER_CLASS  = "ml-static-layer";
+export const OVERLAY_LAYER_CLASS = "ml-overlay-layer";
+
+// Build only the transient overlay markup. Reads the live canvasEdit state, so
+// it always reflects the current cursor / hover / drag / marquee.
+export function buildOverlayContent(): string {
+  let content = "";
+  const ce = state.canvasEdit;
+  if (!state.dataLoaded || !ce) return content;
+
+  // ───── Keyboard cursor slot (arrow-key navigation on an empty slot) ───
+  const cursorCell = ce.cursorCell;
+  if (cursorCell && layout.rowY[cursorCell.streamId] !== undefined && layout.colX[cursorCell.stageId] !== undefined) {
+    const hov = ce.hoverCell;
+    const sameAsHover = hov && hov.streamId === cursorCell.streamId && hov.stageId === cursorCell.stageId;
+    if (!sameAsHover) {
+      const cursorCellNodes = (layout.cells && layout.cells[cursorCell.streamId + ":" + cursorCell.stageId]) || [];
+      const slot = Math.max(0, Math.min(cursorCellNodes.length, cursorCell.slotIndex || 0));
+      const x = layout.colX[cursorCell.stageId];
+      const y = slotTopY(cursorCell.streamId, cursorCell.stageId, slot);
+      content += '<g class="cursor-cell">';
+      content +=   '<rect x="' + x + '" y="' + y + '" width="' + NODE_WIDTH + '" height="' + NODE_HEIGHT + '" rx="5"></rect>';
+      content +=   '<text x="' + (x + NODE_WIDTH / 2) + '" y="' + (y! + NODE_HEIGHT / 2) + '" text-anchor="middle" dominant-baseline="central">Type to create a box</text>';
+      content += '</g>';
+    }
+  }
+
+  // ───── Ghost cell (hover preview for adding a new node) ───────────────
+  const hoverCell = ce.hoverCell;
+  if (hoverCell && layout.rowY[hoverCell.streamId] !== undefined && layout.colX[hoverCell.stageId] !== undefined) {
+    const existingInCell = NODES.reduce((acc, n) => (n.stream === hoverCell.streamId && n.stage === hoverCell.stageId) ? acc + 1 : acc, 0);
+    const insertSlot = hoverCell.insertIndex != null ? hoverCell.insertIndex : existingInCell;
+    const ghostX = layout.colX[hoverCell.stageId];
+    const ghostY = slotTopY(hoverCell.streamId, hoverCell.stageId, insertSlot);
+    const ghostLabel = "+ add box";
+    content += '<g class="ghost-cell" data-stream-id="' + escapeHtml(hoverCell.streamId) + '" data-stage-id="' + escapeHtml(hoverCell.stageId) + '" data-insert-index="' + insertSlot + '">';
+    content +=   '<rect x="' + ghostX + '" y="' + ghostY + '" width="' + NODE_WIDTH + '" height="' + NODE_HEIGHT + '" rx="5"></rect>';
+    content +=   '<text x="' + (ghostX + NODE_WIDTH / 2) + '" y="' + (ghostY! + NODE_HEIGHT / 2) + '" text-anchor="middle" dominant-baseline="central">' + ghostLabel + '</text>';
+    content += '</g>';
+  }
+
+  // ───── Drag landing slot (during node drag) ───────────────────────────
+  const drag = ce.draggingNode;
+  if (drag && drag.dropCell && drag.dropCell.insertIndex != null && layout.rowY[drag.dropCell.streamId] !== undefined && layout.colX[drag.dropCell.stageId] !== undefined) {
+    const dc = drag.dropCell;
+    const cellLeft = layout.colX[dc.stageId];
+    const groupSet = new Set((drag.groupIds && drag.groupIds.length) ? drag.groupIds : [drag.nodeId]);
+    const kept = (layout.cells![dc.streamId + ":" + dc.stageId] || []).filter(n => !groupSet.has(n.id));
+    let slotY = layout.rowY[dc.streamId] + ROW_PADDING;
+    for (let i = 0; i < dc.insertIndex! && i < kept.length; i++) {
+      const kp = layout.positions[kept[i].id];
+      slotY += ((kp && kp.height) || NODE_HEIGHT) + NODE_GAP_Y;
+    }
+    const dpos = layout.positions[drag.nodeId];
+    const dropH = (dpos && dpos.height) || NODE_HEIGHT;
+    content += '<rect class="drop-slot" x="' + cellLeft + '" y="' + slotY + '" width="' + NODE_WIDTH + '" height="' + dropH + '" rx="5"></rect>';
+  }
+
+  // ───── Draft edge preview (while user drags from a node's edge handle) ───
+  const draft = ce.draftEdge;
+  if (draft) {
+    const fromPos = layout.positions[draft.fromNodeId];
+    if (fromPos) {
+      const sx = fromPos.x + fromPos.width;
+      const sy = fromPos.y + fromPos.height / 2;
+      const ex = draft.currentX;
+      const ey = draft.currentY;
+      const dx = ex - sx;
+      const ctrl = Math.max(40, Math.abs(dx) * 0.5);
+      const draftD =
+        "M " + sx + "," + sy +
+        " C " + (sx + ctrl) + "," + sy +
+        " " + (ex - ctrl) + "," + ey +
+        " " + ex + "," + ey;
+      content += '<path class="draft-edge" d="' + draftD + '"></path>';
+    }
+  }
+
+  // ───── Drag preview (a translucent copy of the dragged node at cursor) ──
+  if (drag && drag.active && nodeById[drag.nodeId]) {
+    const node = nodeById[drag.nodeId];
+    const fillInfo = nodePrimaryFill(node, "ndragprev");
+    const stream   = streamById[node.stream] || { color: "#94a3b8" };
+    const dpos = layout.positions[drag.nodeId];
+    const previewH = (dpos && dpos.height) || NODE_HEIGHT;
+    const previewLines = (dpos && dpos.labelLines) || wrapLabel(node.label, 24);
+    const px = drag.currentX - NODE_WIDTH / 2;
+    const py = drag.currentY - previewH / 2;
+    content += '<g class="node-drag-preview">';
+    content += fillInfo.defs;
+    content += '<rect x="' + px + '" y="' + py + '" width="' + NODE_WIDTH + '" height="' + previewH + '" rx="5" fill="' + fillInfo.fill + '" stroke="rgba(0,0,0,0.4)" stroke-width="1"></rect>';
+    content += '<rect x="' + px + '" y="' + py + '" width="6" height="' + previewH + '" rx="2" fill="' + stream.color + '"></rect>';
+    content += '<text class="node-label" x="' + (px + LABEL_INSET) + '" y="' + (py + 16) + '" fill="' + fillInfo.textColor + '" dominant-baseline="middle">';
+    for (let i = 0; i < previewLines.length; i++) {
+      const dy = i === 0 ? "0" : "1.083em";
+      content += '<tspan x="' + (px + LABEL_INSET) + '" dy="' + dy + '">' + escapeHtml(previewLines[i]) + '</tspan>';
+    }
+    content += '</text>';
+    if (drag.groupIds && drag.groupIds.length > 1) {
+      const bx = px + NODE_WIDTH;
+      const by = py;
+      content += '<circle class="drag-count-badge" cx="' + bx + '" cy="' + by + '" r="11" fill="#1e293b" stroke="#ffffff" stroke-width="1.5"></circle>';
+      content += '<text x="' + bx + '" y="' + by + '" text-anchor="middle" dominant-baseline="central" fill="#ffffff" font-size="11" font-weight="600">' + drag.groupIds.length + '</text>';
+    }
+    content += '</g>';
+  }
+
+  // ───── Marquee selection box (shift+drag on empty canvas) ─────────────
+  const marquee = ce.marquee;
+  if (marquee) {
+    const mx = Math.min(marquee.startX, marquee.currentX);
+    const my = Math.min(marquee.startY, marquee.currentY);
+    const mw = Math.abs(marquee.currentX - marquee.startX);
+    const mh = Math.abs(marquee.currentY - marquee.startY);
+    content += '<rect class="marquee-box" x="' + mx + '" y="' + my + '" width="' + mw + '" height="' + mh + '" rx="2"></rect>';
+  }
+
+  return content;
+}
+
+// Rewrite ONLY the overlay group. Used by the node-drag (within-slot) and
+// edge-draw hot loops so a per-mousemove frame doesn't rebuild the static
+// node/edge DOM. Falls back to a full render() if the overlay group isn't there
+// yet (first paint, or the static layer hasn't been built).
+let _overlayQueued = false;
+let _overlayRAF = 0;
+export function renderOverlay(): void {
+  if (_overlayRAF) { _cancelRaf(_overlayRAF); _overlayRAF = 0; }
+  _overlayQueued = false;
+  const overlay = svg.querySelector("." + OVERLAY_LAYER_CLASS);
+  if (!overlay) { render(); return; }
+  overlay.innerHTML = buildOverlayContent();
+}
+
+export function scheduleOverlayRender(): void {
+  // A full render already pending will redraw the overlay too — don't double up.
+  if (_renderQueued || _overlayQueued) return;
+  _overlayQueued = true;
+  _overlayRAF = _raf(() => { _overlayQueued = false; _overlayRAF = 0; renderOverlay(); });
+}
+
 export function render(): void {
-  // A synchronous render makes any queued one redundant — cancel it.
-  if (_renderRAF) { _cancelRaf(_renderRAF); _renderRAF = 0; }
+  // A synchronous render makes any queued full OR overlay render redundant.
+  if (_renderRAF)  { _cancelRaf(_renderRAF);  _renderRAF = 0; }
+  if (_overlayRAF) { _cancelRaf(_overlayRAF); _overlayRAF = 0; }
   _renderQueued = false;
+  _overlayQueued = false;
   _nodeGradSeq = 0;   // restart per render — the SVG is rebuilt wholesale
   // When no CSV is loaded at all, blank the SVG. The empty-state grid path
   // boots via bootEmptyStateGrid() which sets state.dataLoaded = true and
@@ -312,78 +469,12 @@ export function render(): void {
     }
   }
 
-  // ───── Keyboard cursor slot (arrow-key navigation on an empty slot) ───
-  // The cursor can park on any slot within a stream — including empty slots
-  // inside a partially-filled multi-node cell. Render the placeholder at the
-  // exact slot position so up/down navigation feels continuous. Suppressed
-  // if a hoverCell is already drawing in the same place (mouse-driven hover
-  // wins for immediacy).
-  const cursorCell = state.canvasEdit && state.canvasEdit.cursorCell;
-  if (cursorCell && layout.rowY[cursorCell.streamId] !== undefined && layout.colX[cursorCell.stageId] !== undefined) {
-    const hov = state.canvasEdit && state.canvasEdit.hoverCell;
-    const sameAsHover = hov && hov.streamId === cursorCell.streamId && hov.stageId === cursorCell.stageId;
-    if (!sameAsHover) {
-      // Land the placeholder at the cumulative top of its slot (heights vary).
-      // Clamp to the cell's "next empty" slot so a stale slotIndex (e.g. after a
-      // delete) can't render the box below the row.
-      const cursorCellNodes = (layout.cells && layout.cells[cursorCell.streamId + ":" + cursorCell.stageId]) || [];
-      const slot = Math.max(0, Math.min(cursorCellNodes.length, cursorCell.slotIndex || 0));
-      const x = layout.colX[cursorCell.stageId];
-      const y = slotTopY(cursorCell.streamId, cursorCell.stageId, slot);
-      content += '<g class="cursor-cell">';
-      content +=   '<rect x="' + x + '" y="' + y + '" width="' + NODE_WIDTH + '" height="' + NODE_HEIGHT + '" rx="5"></rect>';
-      content +=   '<text x="' + (x + NODE_WIDTH / 2) + '" y="' + (y! + NODE_HEIGHT / 2) + '" text-anchor="middle" dominant-baseline="central">Type to create a box</text>';
-      content += '</g>';
-    }
-  }
-
-  // ───── Ghost cell (hover preview for adding a new node) ───────────────
-  // Drawn here so it sits ABOVE background stripes but BELOW row labels and
-  // nodes. Shown over any cell whose existing-node rects don't already cover
-  // the cursor position — for partially-filled cells the ghost sits in the
-  // next stack slot. computeLayout reserves an extra slot of row height when
-  // the hovered cell is at the row's max-slot count, so the ghost always
-  // has somewhere to land without clipping into the row below.
-  const hoverCell = state.canvasEdit && state.canvasEdit.hoverCell;
-  if (hoverCell && layout.rowY[hoverCell.streamId] !== undefined && layout.colX[hoverCell.stageId] !== undefined) {
-    const existingInCell = NODES.reduce((acc, n) => (n.stream === hoverCell.streamId && n.stage === hoverCell.stageId) ? acc + 1 : acc, 0);
-    // Sit in the gap computeLayout opened at the cursor's insert slot (siblings
-    // at/after it have displaced down by one). Falls back to the bottom slot
-    // when no insertIndex is set.
-    const insertSlot = hoverCell.insertIndex != null ? hoverCell.insertIndex : existingInCell;
-    const ghostX = layout.colX[hoverCell.stageId];
-    // Cumulative top of the gap computeLayout opened for this insert slot.
-    const ghostY = slotTopY(hoverCell.streamId, hoverCell.stageId, insertSlot);
-    const ghostLabel = "+ add box";
-    content += '<g class="ghost-cell" data-stream-id="' + escapeHtml(hoverCell.streamId) + '" data-stage-id="' + escapeHtml(hoverCell.stageId) + '" data-insert-index="' + insertSlot + '">';
-    content +=   '<rect x="' + ghostX + '" y="' + ghostY + '" width="' + NODE_WIDTH + '" height="' + NODE_HEIGHT + '" rx="5"></rect>';
-    content +=   '<text x="' + (ghostX + NODE_WIDTH / 2) + '" y="' + (ghostY! + NODE_HEIGHT / 2) + '" text-anchor="middle" dominant-baseline="central">' + ghostLabel + '</text>';
-    content += '</g>';
-  }
-
-  // ───── Drag landing slot (during node drag) ───────────────────────────
-  // Drawn here so it sits under nodes but over the grid. The siblings have
-  // parted to open a gap at the insert index (computeLayout); this dashed rect
-  // marks that gap as the landing slot — same visual language as the new-note
-  // placeholder. For a same-cell reorder the dragged node's faint ghost rests
-  // inside it; for a cross-cell move the gap is open space.
+  // (The transient interaction affordances that used to be emitted here — the
+  // keyboard cursor slot, the hover "+ add box" ghost, and the drag drop-slot —
+  // now live in the overlay layer; see buildOverlayContent(). The dragged node
+  // still needs a static "dragging-source" class in the node loop below, so we
+  // keep a reference to the current drag.)
   const drag = state.canvasEdit && state.canvasEdit.draggingNode;
-  if (drag && drag.dropCell && drag.dropCell.insertIndex != null && layout.rowY[drag.dropCell.streamId] !== undefined && layout.colX[drag.dropCell.stageId] !== undefined) {
-    const dc = drag.dropCell;
-    const cellLeft = layout.colX[dc.stageId];
-    // Top of the gap = cumulative height of the kept siblings above the insert
-    // slot (the dragged group is excluded — it's the one landing here).
-    const groupSet = new Set((drag.groupIds && drag.groupIds.length) ? drag.groupIds : [drag.nodeId]);
-    const kept = (layout.cells![dc.streamId + ":" + dc.stageId] || []).filter(n => !groupSet.has(n.id));
-    let slotY = layout.rowY[dc.streamId] + ROW_PADDING;
-    for (let i = 0; i < dc.insertIndex! && i < kept.length; i++) {
-      const kp = layout.positions[kept[i].id];
-      slotY += ((kp && kp.height) || NODE_HEIGHT) + NODE_GAP_Y;
-    }
-    const dpos = layout.positions[drag.nodeId];
-    const dropH = (dpos && dpos.height) || NODE_HEIGHT;
-    content += '<rect class="drop-slot" x="' + cellLeft + '" y="' + slotY + '" width="' + NODE_WIDTH + '" height="' + dropH + '" rx="5"></rect>';
-  }
 
   // ───── Row label strip on the left (per stream) ───────────────────────
   // Hidden streams keep their label so the user can click to expand again;
@@ -685,66 +776,9 @@ export function render(): void {
     content += '</g>';
   }
 
-  // ───── Draft edge preview (while user drags from a node's edge handle) ───
-  const draft = state.canvasEdit && state.canvasEdit.draftEdge;
-  if (draft) {
-    const fromPos = layout.positions[draft.fromNodeId];
-    if (fromPos) {
-      const sx = fromPos.x + fromPos.width;
-      const sy = fromPos.y + fromPos.height / 2;
-      const ex = draft.currentX;
-      const ey = draft.currentY;
-      const dx = ex - sx;
-      const ctrl = Math.max(40, Math.abs(dx) * 0.5);
-      const draftD =
-        "M " + sx + "," + sy +
-        " C " + (sx + ctrl) + "," + sy +
-        " " + (ex - ctrl) + "," + ey +
-        " " + ex + "," + ey;
-      content += '<path class="draft-edge" d="' + draftD + '"></path>';
-    }
-  }
-
-  // ───── Drag preview (a translucent copy of the dragged node at cursor) ──
-  if (drag && drag.active && nodeById[drag.nodeId]) {
-    const node = nodeById[drag.nodeId];
-    const fillInfo = nodePrimaryFill(node, "ndragprev");
-    const stream   = streamById[node.stream] || { color: "#94a3b8" };
-    const dpos = layout.positions[drag.nodeId];
-    const previewH = (dpos && dpos.height) || NODE_HEIGHT;
-    const previewLines = (dpos && dpos.labelLines) || wrapLabel(node.label, 24);
-    const px = drag.currentX - NODE_WIDTH / 2;
-    const py = drag.currentY - previewH / 2;
-    content += '<g class="node-drag-preview">';
-    content += fillInfo.defs;
-    content += '<rect x="' + px + '" y="' + py + '" width="' + NODE_WIDTH + '" height="' + previewH + '" rx="5" fill="' + fillInfo.fill + '" stroke="rgba(0,0,0,0.4)" stroke-width="1"></rect>';
-    content += '<rect x="' + px + '" y="' + py + '" width="6" height="' + previewH + '" rx="2" fill="' + stream.color + '"></rect>';
-    content += '<text class="node-label" x="' + (px + LABEL_INSET) + '" y="' + (py + 16) + '" fill="' + fillInfo.textColor + '" dominant-baseline="middle">';
-    for (let i = 0; i < previewLines.length; i++) {
-      const dy = i === 0 ? "0" : "1.083em";
-      content += '<tspan x="' + (px + LABEL_INSET) + '" dy="' + dy + '">' + escapeHtml(previewLines[i]) + '</tspan>';
-    }
-    content += '</text>';
-    // Group drag: a count badge in the corner so it's clear the whole
-    // selection is moving, not just the previewed primary node.
-    if (drag.groupIds && drag.groupIds.length > 1) {
-      const bx = px + NODE_WIDTH;
-      const by = py;
-      content += '<circle class="drag-count-badge" cx="' + bx + '" cy="' + by + '" r="11" fill="#1e293b" stroke="#ffffff" stroke-width="1.5"></circle>';
-      content += '<text x="' + bx + '" y="' + by + '" text-anchor="middle" dominant-baseline="central" fill="#ffffff" font-size="11" font-weight="600">' + drag.groupIds.length + '</text>';
-    }
-    content += '</g>';
-  }
-
-  // ───── Marquee selection box (shift+drag on empty canvas) ─────────────
-  const marquee = state.canvasEdit && state.canvasEdit.marquee;
-  if (marquee) {
-    const mx = Math.min(marquee.startX, marquee.currentX);
-    const my = Math.min(marquee.startY, marquee.currentY);
-    const mw = Math.abs(marquee.currentX - marquee.startX);
-    const mh = Math.abs(marquee.currentY - marquee.startY);
-    content += '<rect class="marquee-box" x="' + mx + '" y="' + my + '" width="' + mw + '" height="' + mh + '" rx="2"></rect>';
-  }
+  // (The draft-edge preview, floating drag preview, and marquee box are drawn
+  // into the overlay layer — see buildOverlayContent() — so a drag that doesn't
+  // re-part the static stack only rewrites the overlay group.)
 
   // ───── Empty-state hint when no nodes exist ───────────────────────────
   if (NODES.length === 0) {
@@ -756,8 +790,13 @@ export function render(): void {
     content += '</text>';
   }
 
-  // Commit the markup, then wire up event listeners.
-  svg.innerHTML = content;
+  // Commit in two sibling groups: the bulk static content, then the transient
+  // overlay. One innerHTML write, so a full render costs the same as before —
+  // but the overlay group can now be rewritten on its own (renderOverlay) for
+  // the per-frame drag/draw loops. Then wire up the (delegated) event listeners.
+  svg.innerHTML =
+    '<g class="' + STATIC_LAYER_CLASS + '">' + content + '</g>' +
+    '<g class="' + OVERLAY_LAYER_CLASS + '">' + buildOverlayContent() + '</g>';
   attachSvgEventHandlers();
 }
 
