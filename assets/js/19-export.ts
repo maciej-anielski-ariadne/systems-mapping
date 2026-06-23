@@ -68,7 +68,7 @@ import {
   formatNodeValue,
   getOutcomeBorderColor,
 } from "./07-simulation-engine";
-import { measureNode } from "./08-layout";
+import { measureNode, packColumns, packRows, rowHeightFor, stackHeight } from "./08-layout";
 import { isEdgeVisible, isNodeVisible } from "./10-filters";
 import { computeRenderEdges } from "./10a-collapsed-edges";
 import { nodePrimaryFill, nodeSecondaryChips } from "./11-rendering";
@@ -329,18 +329,11 @@ export function computeExportLayout(nodeIds: Set<string>, streamOrder: string[],
     });
   }
 
-  // Columns: packed left→right over the included stages only.
-  const colX: Record<string, number> = {};
-  let cursorX = SVG_PADDING_LEFT + ROW_HEADER_WIDTH;
-  for (const stageId of stageIds) {
-    colX[stageId] = cursorX;
-    cursorX += NODE_WIDTH + COL_GAP;
-  }
-  const totalWidth = cursorX - COL_GAP + SVG_PADDING_RIGHT;
+  // Columns: packed left→right over the included stages only (always full
+  // NODE_WIDTH — the export never draws collapsed-column stubs). Shares the
+  // packing geometry with the live layout (08-layout).
+  const { colX, totalWidth } = packColumns(stageIds, () => NODE_WIDTH);
 
-  // Rows: packed top→bottom over the (reordered) included streams. Row height
-  // is the tallest cell's SUMMED stack height (nodes grow to fit their labels),
-  // reusing each node's grown height from the live layout.
   // Per-node grown height: reuse the live layout's measurement, falling back to
   // a fresh measure for any node without a live position (e.g. one in a stage
   // that's collapsed on the canvas but pulled into a selection export).
@@ -350,25 +343,22 @@ export function computeExportLayout(nodeIds: Set<string>, streamOrder: string[],
     const n = nodeById[id];
     return n ? measureNode(n).height : NODE_HEIGHT;
   };
-  const rowHeights: Record<string, number> = {}, rowY: Record<string, number> = {};
+
+  // Rows: each row's height is its tallest cell's summed stack (nodes grow to
+  // fit their labels); then pack top→bottom over the reordered streams — both
+  // via the shared 08-layout primitives, so export and canvas stay in lockstep.
+  const rowHeights: Record<string, number> = {};
   for (const streamId of streamOrder) {
     let maxContent = 0;
     for (const stageId of stageIds) {
       const c = cells[streamId + ":" + stageId];
       if (!c || !c.length) continue;
-      let sum = 0;
-      for (const n of c) sum += exHeight(n.id);
-      sum += (c.length - 1) * NODE_GAP_Y;
+      const sum = stackHeight(c.map(n => exHeight(n.id)));
       if (sum > maxContent) maxContent = sum;
     }
-    rowHeights[streamId] = (maxContent || NODE_HEIGHT) + ROW_PADDING * 2;   // floor empty rows only (matches live)
+    rowHeights[streamId] = rowHeightFor(maxContent);
   }
-  let cursorY = SVG_PADDING_TOP + COL_HEADER_HEIGHT;
-  for (const streamId of streamOrder) {
-    rowY[streamId] = cursorY;
-    cursorY += rowHeights[streamId];
-  }
-  const totalHeight = cursorY + SVG_PADDING_BOTTOM;
+  const { rowY, totalHeight } = packRows(streamOrder, rowHeights);
 
   const positions: Record<string, NodePosition> = {};
   for (const streamId of streamOrder) {

@@ -86,6 +86,58 @@ export function slotTopY(streamId: string, stageId: string, slotIndex: number): 
   return y;
 }
 
+// ───── Shared grid-packing geometry ─────────────────────────────────────────
+// The cumulative row/column packing and stack summation below is identical for
+// the live canvas (computeLayout) and the export's reflowed copy
+// (computeExportLayout in 19-export.ts), so it lives here as small primitives
+// both call — the SVG padding offsets, the COL_GAP end-correction, and the
+// ROW_PADDING floor are then defined in exactly one place and can't drift.
+
+// Summed height of a vertical stack of boxes: the heights plus the NODE_GAP_Y
+// gaps between them. Empty stack → 0.
+export function stackHeight(heights: number[]): number {
+  if (heights.length === 0) return 0;
+  let sum = 0;
+  for (const h of heights) sum += h;
+  return sum + (heights.length - 1) * NODE_GAP_Y;
+}
+
+// A stream row's height from its tallest cell's stack: floored so an empty row
+// still fits one default box, then padded ROW_PADDING on top and bottom.
+export function rowHeightFor(maxCellStack: number): number {
+  return (maxCellStack || NODE_HEIGHT) + ROW_PADDING * 2;
+}
+
+// Pack columns left→right: ordered stage ids + a width for each → the x of each
+// column, each column's width, and the overall SVG width.
+export function packColumns(
+  stageIds: string[],
+  widthOf: (id: string) => number
+): { colX: Record<string, number>; colWidths: Record<string, number>; totalWidth: number } {
+  const colX: Record<string, number> = {};
+  const colWidths: Record<string, number> = {};
+  let cursorX = SVG_PADDING_LEFT + ROW_HEADER_WIDTH;
+  for (const id of stageIds) {
+    const w = widthOf(id);
+    colWidths[id] = w;
+    colX[id] = cursorX;
+    cursorX += w + COL_GAP;
+  }
+  return { colX, colWidths, totalWidth: cursorX - COL_GAP + SVG_PADDING_RIGHT };
+}
+
+// Pack rows top→bottom: ordered stream ids + each row's height → the y of each
+// row and the overall SVG height.
+export function packRows(
+  streamIds: string[],
+  rowHeights: Record<string, number>
+): { rowY: Record<string, number>; totalHeight: number } {
+  const rowY: Record<string, number> = {};
+  let cursorY = SVG_PADDING_TOP + COL_HEADER_HEIGHT;
+  for (const id of streamIds) { rowY[id] = cursorY; cursorY += rowHeights[id]; }
+  return { rowY, totalHeight: cursorY + SVG_PADDING_BOTTOM };
+}
+
 export function computeLayout(): Layout {
   // ───── Group nodes into (stream, stage) cells ─────────────────────────
   const cells: Record<string, GraphNode[]> = {};
@@ -112,13 +164,8 @@ export function computeLayout(): Layout {
     ? new Set((draggingNode.groupIds && draggingNode.groupIds.length) ? draggingNode.groupIds : [draggingNode.nodeId])
     : null;
 
-  // Summed height of a stack of nodes (heights + the gaps between them).
-  const stackHeight = (nodes: GraphNode[]): number => {
-    if (!nodes || nodes.length === 0) return 0;
-    let sum = 0;
-    for (const n of nodes) sum += heightOf(n.id);
-    return sum + (nodes.length - 1) * NODE_GAP_Y;
-  };
+  // Summed height of a cell's nodes (each node's grown height + the gaps).
+  const stackOf = (nodes: GraphNode[]): number => stackHeight(nodes.map(n => heightOf(n.id)));
 
   // ───── Height of each stream row = its tallest cell's summed stack ────
   // (A cell with two tall multi-line nodes can exceed a cell with more short
@@ -132,7 +179,7 @@ export function computeLayout(): Layout {
     for (const stage of STAGES) {
       if (state.hiddenStages.has(stage.id)) continue;   // hidden column isn't drawn
       const cellNodes = cells[stream.id + ":" + stage.id] || [];
-      const baseStack = stackHeight(cellNodes);
+      const baseStack = stackOf(cellNodes);
       let content = baseStack;
 
       // A placeholder (the "+ add node" hover ghost OR the keyboard cursor's
@@ -149,31 +196,21 @@ export function computeLayout(): Layout {
       if (dragDropCell && dragDropCell.streamId === stream.id && dragDropCell.stageId === stage.id) {
         // Reserve the dragged node's own height alongside the kept siblings.
         const kept = cellNodes.filter(n => !(draggedIdSet && draggedIdSet.has(n.id)));
-        content = Math.max(content, (kept.length ? stackHeight(kept) + NODE_GAP_Y : 0) + heightOf(draggedNodeId!));
+        content = Math.max(content, (kept.length ? stackOf(kept) + NODE_GAP_Y : 0) + heightOf(draggedNodeId!));
       }
       if (content > maxContent) maxContent = content;
     }
-    if (maxContent === 0) maxContent = NODE_HEIGHT;   // empty row still fits one default node
-    rowHeights[stream.id] = maxContent + ROW_PADDING * 2;
+    rowHeights[stream.id] = rowHeightFor(maxContent);   // floored so an empty row still fits one box
   }
 
   // ───── Cumulative Y position for each row ─────────────────────────────
-  const rowY: Record<string, number> = {};
-  let cursorY = SVG_PADDING_TOP + COL_HEADER_HEIGHT;
-  for (const stream of STREAMS) { rowY[stream.id] = cursorY; cursorY += rowHeights[stream.id]; }
-  const totalHeight = cursorY + SVG_PADDING_BOTTOM;
+  const { rowY, totalHeight } = packRows(STREAMS.map(s => s.id), rowHeights);
 
   // ───── X position + width for each column ─────────────────────────────
-  const colX: Record<string, number> = {};
-  const colWidths: Record<string, number> = {};
-  let cursorX = SVG_PADDING_LEFT + ROW_HEADER_WIDTH;
-  for (const stage of STAGES) {
-    const w = state.hiddenStages.has(stage.id) ? COLLAPSED_COL_WIDTH : NODE_WIDTH;
-    colWidths[stage.id] = w;
-    colX[stage.id] = cursorX;
-    cursorX += w + COL_GAP;
-  }
-  const totalWidth = cursorX - COL_GAP + SVG_PADDING_RIGHT;
+  const { colX, colWidths, totalWidth } = packColumns(
+    STAGES.map(s => s.id),
+    id => state.hiddenStages.has(id) ? COLLAPSED_COL_WIDTH : NODE_WIDTH
+  );
 
   // ───── Position every node by cumulative offset within its cell ───────
   const positions: Layout["positions"] = {};

@@ -121,6 +121,37 @@ describe("interactive published HTML (A → B → C)", () => {
   });
 });
 
+describe("export layout reuses the live grid geometry", () => {
+  // With nothing collapsed and the streams already in order, the export's
+  // reflow is a no-op, so its packed columns/rows/size must match the canvas
+  // exactly — the guarantee of sharing the packColumns/packRows primitives.
+  let scrollEl: HTMLElement | null = null;
+  beforeEach(() => {
+    mountAppDom();
+    loadDataFromCsv(LINEAR_CSV);
+    state.selectedNodeId = null;
+    state.selectedNodeIds = new Set();
+    state.hiddenStreams = new Set();
+    state.hiddenStages = new Set();
+    setLayout(computeLayout());
+    scrollEl = document.getElementById("viz-scroll");
+    scrollEl?.parentElement?.removeChild(scrollEl);
+  });
+  afterEach(() => {
+    if (scrollEl) document.body.appendChild(scrollEl);
+  });
+
+  it("packs the full map to the same columns, rows, and overall size", () => {
+    const live = computeLayout();
+    const ex = buildExportModel()!.layout;
+    expect(ex.colX).toEqual({ s1: live.colX.s1, s2: live.colX.s2, s3: live.colX.s3 });
+    expect(ex.rowY.ops).toBe(live.rowY.ops);
+    expect(ex.rowHeights.ops).toBe(live.rowHeights.ops);
+    expect(ex.totalWidth).toBe(live.totalWidth);
+    expect(ex.totalHeight).toBe(live.totalHeight);
+  });
+});
+
 describe("export honours collapsed stages (A → B → C, hide the middle)", () => {
   // The no-selection export frames the visible viewport. jsdom reports a 0×0
   // viewport, so detach #viz-scroll — visibleLayoutRect() then returns null and
