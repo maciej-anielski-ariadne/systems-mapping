@@ -3,7 +3,9 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { loadDataFromCsv } from "../assets/js/06-data-loader";
-import { NODES, EDGES, state } from "../assets/js/03-state";
+import { toggleCategory } from "../assets/js/10-filters";
+import { renderOverlay } from "../assets/js/11-rendering";
+import { NODES, EDGES, nodeById, state } from "../assets/js/03-state";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const sampleCsv = readFileSync(resolve(here, "../assets/data/sample.csv"), "utf-8");
@@ -34,5 +36,80 @@ describe("end-to-end: load the shipped sample.csv and render", () => {
     for (const n of quantified) {
       expect(Number.isFinite(state.computedValues[n.id])).toBe(true);
     }
+  });
+
+  it("selects a node via the delegated SVG click handler", () => {
+    loadDataFromCsv(sampleCsv);
+    const svg = document.getElementById("viz-svg")!;
+    const group = svg.querySelector(".node-group") as Element;
+    const nodeId = group.getAttribute("data-node-id")!;
+
+    // Click bubbles up to the single delegated listener on #viz-svg.
+    group.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(state.selectedNodeId).toBe(nodeId);
+    // render() ran synchronously inside selectNode → the re-drawn group carries
+    // the selection class.
+    expect(
+      svg.querySelector('.node-group[data-node-id="' + nodeId + '"]')!.classList.contains("selected"),
+    ).toBe(true);
+
+    // Clicking the empty background deselects.
+    svg.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(state.selectedNodeId).toBe(null);
+  });
+
+  it("invalidates the edge-geometry cache when a category is toggled", () => {
+    loadDataFromCsv(sampleCsv);
+    const svg = document.getElementById("viz-svg")!;
+    const before = svg.querySelectorAll(".node-group").length;
+
+    // Pick a category that actually has nodes, then count how many nodes carry it.
+    const someNode = NODES.find((n) => n.category)!;
+    const catId = someNode.category!;
+    const inCat = NODES.filter((n) => (n.categoryIds || [n.category]).includes(catId)).length;
+    expect(inCat).toBeGreaterThan(0);
+
+    // toggleCategory hides the category and re-renders. Category hiding does NOT
+    // call setLayout, so this is exactly the path the cache keys on its hidden
+    // sets to catch — a stale cache would keep drawing the hidden nodes.
+    toggleCategory(catId);
+    expect(svg.querySelectorAll(".node-group").length).toBe(before - inCat);
+
+    // Toggling it back restores them (cache invalidates the other direction too).
+    toggleCategory(catId);
+    expect(svg.querySelectorAll(".node-group").length).toBe(before);
+  });
+
+  it("renders static + overlay layers and updates the overlay in isolation", () => {
+    loadDataFromCsv(sampleCsv);
+    const svg = document.getElementById("viz-svg")!;
+    const staticLayer = svg.querySelector(".ml-static-layer")!;
+    const overlayLayer = svg.querySelector(".ml-overlay-layer")!;
+    expect(staticLayer).toBeTruthy();
+    expect(overlayLayer).toBeTruthy();
+
+    // Nodes live in the static layer; the overlay is empty with no transient state.
+    expect(staticLayer.querySelectorAll(".node-group").length).toBe(NODES.length);
+    expect(overlayLayer.querySelector(".ghost-cell")).toBe(null);
+
+    // Grab a stable reference to a node element so we can prove the overlay-only
+    // update never re-parses the static DOM.
+    const someNode = NODES[0];
+    const nodeEl = staticLayer.querySelector(
+      '.node-group[data-node-id="' + someNode.id + '"]',
+    )!;
+
+    // Park a hover "+ add box" ghost in a real cell, then update ONLY the overlay.
+    state.canvasEdit.hoverCell = { streamId: someNode.stream, stageId: someNode.stage, insertIndex: 0 };
+    renderOverlay();
+
+    // The ghost now exists in the overlay…
+    expect(overlayLayer.querySelector(".ghost-cell")).toBeTruthy();
+    // …and the static node element is the very same DOM node (not rebuilt).
+    expect(
+      staticLayer.querySelector('.node-group[data-node-id="' + someNode.id + '"]'),
+    ).toBe(nodeEl);
+
+    state.canvasEdit.hoverCell = null;
   });
 });

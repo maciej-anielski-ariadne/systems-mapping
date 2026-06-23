@@ -36,6 +36,7 @@ import {
   STREAMS,
   STAGES,
   nodeById,
+  edgeById,
   streamNodeCount,
   categoryNodeCount,
   outgoingEdges,
@@ -50,6 +51,7 @@ import {
   setEdges,
   setDefaultElasticityByEffect,
   setNodeById,
+  setEdgeById,
   setOutgoingEdges,
   setIncomingEdges,
   setStreamById,
@@ -92,6 +94,7 @@ export function rebuildIndexes(): void {
 
   setOutgoingEdges({});
   setIncomingEdges({});
+  setEdgeById({});
   for (const node of NODES) {
     outgoingEdges[node.id] = [];
     incomingEdges[node.id] = [];
@@ -99,6 +102,7 @@ export function rebuildIndexes(): void {
   for (let edgeIndex = 0; edgeIndex < EDGES.length; edgeIndex++) {
     const edge = EDGES[edgeIndex];
     edge.id = "edge_" + edgeIndex;       // give every edge a stable id
+    edgeById[edge.id] = edge;            // O(1) lookup by id (select / cycle / delete)
     if (outgoingEdges[edge.from]) outgoingEdges[edge.from].push(edge);
     if (incomingEdges[edge.to])   incomingEdges[edge.to].push(edge);
   }
@@ -125,8 +129,12 @@ export function rebuildIndexes(): void {
   }
 
   const sorted: string[] = [];
-  while (ready.length > 0) {
-    const id = ready.shift()!;
+  // Drive the queue with a head index rather than Array.shift() — shift() is
+  // O(N) per call (it re-indexes the whole array), making the sort O(N^2) on
+  // large maps. `ready` only ever grows; we advance `head` through it.
+  let head = 0;
+  while (head < ready.length) {
+    const id = ready[head++];
     sorted.push(id);
     for (const edge of outgoingEdges[id]) {
       remainingInDegree[edge.to]--;

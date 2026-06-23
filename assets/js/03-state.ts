@@ -193,6 +193,7 @@ export let DEFAULT_ELASTICITY_BY_EFFECT: ElasticityDefaults = {
 
 // ───── Pre-computed indexes (rebuilt whenever data is reloaded) ───────────
 export let nodeById: Record<string, GraphNode> = {}; // id → node
+export let edgeById: Record<string, Edge> = {}; // edge id → edge (rebuilt with the edge ids in rebuildIndexes)
 export let outgoingEdges: Record<string, Edge[]> = {}; // node id → edges leaving the node
 export let incomingEdges: Record<string, Edge[]> = {}; // node id → edges entering the node
 export let streamById: Record<string, Stream> = {}; // id → stream
@@ -245,6 +246,9 @@ export function setDefaultElasticityByEffect(value: ElasticityDefaults): void {
 }
 export function setNodeById(value: Record<string, GraphNode>): void {
   nodeById = value;
+}
+export function setEdgeById(value: Record<string, Edge>): void {
+  edgeById = value;
 }
 export function setOutgoingEdges(value: Record<string, Edge[]>): void {
   outgoingEdges = value;
