@@ -192,6 +192,44 @@ function edgeGeometry(): EdgeGeometry {
   return _edgeGeomCache;
 }
 
+// ───── Viewport virtualization ────────────────────────────────────────────
+// On very large maps most nodes/edges are scrolled out of view, yet render()
+// would still serialize + parse every one. When the map is big AND the viewport
+// dimensions are known, cull to the elements near the visible scroll rect (plus
+// a margin) and re-render on scroll (17-events wires the scroll listener). The
+// background frame, headers, and row labels are always drawn in full — only the
+// O(N) nodes and O(E) edges are culled.
+//
+// Two guards keep this strictly additive: it's skipped below a node-count
+// threshold, and skipped whenever the container has no laid-out size (e.g.
+// jsdom in tests). In both cases everything is drawn, exactly as before — so
+// small maps and the test suite are unaffected.
+export const VIRTUALIZE_MIN_NODES = 400;   // below this, never cull
+export const CULL_MARGIN = 600;            // layout px drawn beyond each viewport edge
+
+export interface CullRect { minX: number; minY: number; maxX: number; maxY: number; }
+
+// The layout-coordinate rectangle to draw, or null to draw everything.
+export function computeCullRect(): CullRect | null {
+  if (NODES.length < VIRTUALIZE_MIN_NODES) return null;
+  const scroller = document.getElementById("viz-scroll");
+  if (!scroller) return null;
+  const vw = scroller.clientWidth, vh = scroller.clientHeight;
+  if (!vw || !vh) return null;   // not laid out (jsdom) → draw everything
+  const zoom = (state.zoomLevel && !isNaN(state.zoomLevel)) ? state.zoomLevel : 1.0;
+  return {
+    minX: scroller.scrollLeft / zoom - CULL_MARGIN,
+    minY: scroller.scrollTop  / zoom - CULL_MARGIN,
+    maxX: (scroller.scrollLeft + vw) / zoom + CULL_MARGIN,
+    maxY: (scroller.scrollTop  + vh) / zoom + CULL_MARGIN,
+  };
+}
+
+// AABB overlap test: does the box [x1,y1]–[x2,y2] intersect the cull rect?
+function boxInCull(x1: number, y1: number, x2: number, y2: number, c: CullRect): boolean {
+  return x1 <= c.maxX && x2 >= c.minX && y1 <= c.maxY && y2 >= c.minY;
+}
+
 // ───── Coalesced render scheduling ────────────────────────────────────────
 // Pointer-move and slider-input handlers can fire many times per frame (often
 // faster than the display refresh). Each render() is a full SVG rebuild, so
@@ -519,6 +557,9 @@ export function render(): void {
   // index to renderEdges (both come from the same cache entry together).
   const { renderEdges, anchorOffsets } = edgeGeometry();
 
+  // Viewport cull rect (null on small maps / unlaid-out containers → draw all).
+  const cull = computeCullRect();
+
   // Two output buffers. Every edge's CASING (a wide background-coloured stroke)
   // is emitted first, then every coloured stroke + arrowhead. Drawing all
   // casings beneath all colours is what produces the transit-map "knockout" gap
@@ -536,6 +577,17 @@ export function render(): void {
     const fromPos = layout.positions[re.from];
     const toPos   = layout.positions[re.to];
     if (!fromPos || !toPos) continue;   // defensive — endpoints should be visible
+
+    // Virtualization: skip edges whose endpoint bounding box is well outside the
+    // viewport. Uses both endpoints, so an edge spanning across the viewport
+    // between two off-screen nodes is still drawn (its bbox overlaps the rect).
+    if (cull) {
+      const ex1 = Math.min(fromPos.x, toPos.x);
+      const ey1 = Math.min(fromPos.y, toPos.y);
+      const ex2 = Math.max(fromPos.x + fromPos.width, toPos.x + toPos.width);
+      const ey2 = Math.max(fromPos.y + fromPos.height, toPos.y + toPos.height);
+      if (!boxInCull(ex1, ey1, ex2, ey2, cull)) continue;
+    }
 
     // Smooth cubic bezier between the two node faces — forward edges connect
     // right→left, backward / feedback edges connect left→right (same style,
@@ -662,6 +714,8 @@ export function render(): void {
     if (!isNodeVisible(node)) continue;
     const pos = layout.positions[node.id];
     if (!pos) continue;
+    // Virtualization: skip nodes whose box is outside the viewport cull rect.
+    if (cull && !boxInCull(pos.x, pos.y, pos.x + pos.width, pos.y + pos.height, cull)) continue;
     const stream   = streamById[node.stream];
     const fillInfo = nodePrimaryFill(node, "ngrad_" + (_nodeGradSeq++));
     const textColor = fillInfo.textColor;

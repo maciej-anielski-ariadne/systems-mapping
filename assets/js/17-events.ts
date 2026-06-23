@@ -11,7 +11,7 @@ import { getMapTextScale } from "./04-utils";
 import { clearCsvFromStorage, saveUiStateToStorage, scheduleUiStateSave } from "./04a-storage";
 import { refreshNeighborHighlight } from "./09-graph-selection";
 import { computeLayout } from "./08-layout";
-import { render } from "./11-rendering";
+import { render, scheduleRender, computeCullRect } from "./11-rendering";
 import { toggleSimulationMode } from "./14-simulation-panel";
 import { downloadCsvBlob, readCsvFile } from "./16-file-io";
 import { closeBuilder, openBuilder } from "./16a-builder-state";
@@ -445,6 +445,15 @@ if (vizScroll) {
     const factor = Math.exp(-deltaY * sensitivity);
     zoomBy(factor, event.clientX, event.clientY);
   }, { passive: false });
+
+  // Viewport virtualization: when the map is large enough to be culled to the
+  // visible scroll rect (computeCullRect returns non-null), redraw the newly
+  // visible slice as the user scrolls/pans. Coalesced to one render per frame.
+  // On small maps computeCullRect returns null, so this is a no-op and scrolling
+  // keeps its old zero-cost behaviour.
+  vizScroll.addEventListener("scroll", () => {
+    if (computeCullRect()) scheduleRender();
+  }, { passive: true });
 }
 
 // Keyboard shortcuts: Ctrl/Cmd + =/- to zoom, Ctrl/Cmd + 0 to reset.

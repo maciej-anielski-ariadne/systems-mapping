@@ -23,7 +23,7 @@ describe("simulation slider updates node values in place", () => {
     // First nudge makes B's delta label appear (a structural change), so this
     // takes the full-render fallback. Flush it synchronously to establish the
     // delta element before we test the in-place path.
-    applySimMultiplier("a", 1.5);
+    applySimMultiplier("a", 1.5, null);
     render();
     expect(bGroup().querySelector(".node-delta")).toBeTruthy();
 
@@ -33,7 +33,7 @@ describe("simulation slider updates node values in place", () => {
 
     // Second nudge: B's delta stays present, nothing is selected → in-place
     // update runs synchronously, no full render.
-    applySimMultiplier("a", 1.6);
+    applySimMultiplier("a", 1.6, null);
 
     expect(bGroup()).toBe(groupBefore); // same element → not rebuilt
     expect(bValueEl()).toBe(valueElBefore);
@@ -44,7 +44,7 @@ describe("simulation slider updates node values in place", () => {
 
   it("keeps the map value in sync with the computed value", () => {
     loadDataFromCsv(LINEAR_CSV);
-    applySimMultiplier("a", 2.0);
+    applySimMultiplier("a", 2.0, null);
     render();
     expect(bValueEl().textContent).toBe(formatNodeValue("b"));
     expect(state.computedValues.b).toBeCloseTo(50 * Math.sqrt(2.0), 6);
