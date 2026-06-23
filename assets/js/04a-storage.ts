@@ -74,7 +74,9 @@ export function saveUiStateToStorage(): void {
 // a localStorage write, so firing it on every event of a rapid burst — typing
 // in search auto-selects a node per keystroke, wheel/pinch zoom, panel drags —
 // is wasteful. These bits of state aren't critical to persist instantly, so we
-// debounce to one write per quiet 250 ms. Used by the zoom and selection paths.
+// "debounce" — wait until the activity goes quiet, then write once (here, after
+// 250 ms of no further changes). See "debounce" in docs/GLOSSARY.md. Used by the
+// zoom and selection paths.
 let _uiSaveTimer: ReturnType<typeof setTimeout> | null = null;
 export function scheduleUiStateSave(): void {
   if (_uiSaveTimer) clearTimeout(_uiSaveTimer);

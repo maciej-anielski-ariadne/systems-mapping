@@ -10,6 +10,9 @@
 // *live bindings*, every module that imports e.g. `NODES` automatically sees the
 // latest value after a reload — but only this module may reassign them. Other
 // modules therefore call the exported `setX()` helpers instead of assigning.
+// ("Live bindings" just means an import is a live window onto the original
+//  variable, not a snapshot copy — see docs/GLOSSARY.md. The `setX()` helpers
+//  are this file's way of keeping itself the only writer.)
 // =============================================================================
 
 import type {

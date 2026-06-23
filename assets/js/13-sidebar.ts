@@ -376,6 +376,12 @@ export function dragHandleButton(title: string): string {
 // ("label" or "short") routes the committed value through applySidebarFieldEdit.
 // We disable the row's drag while editing so the cursor can be placed with the
 // mouse, then renderSidebar() rebuilds a clean row on commit.
+// Let the user rename a sidebar row by typing directly on its text. We turn the
+// label into an editable element ("contenteditable" — a browser feature that
+// makes any element typeable in place; see docs/GLOSSARY.md), then commit or
+// discard the change on blur / Enter / Escape. The `finished` flag below is a
+// guard: blur and keydown can both try to end the edit, and without it we'd run
+// the save-and-rebuild twice — `finished` makes sure `finish()` only runs once.
 export function beginInlineEdit(el: HTMLElement | null, row: HTMLElement | null, kind: string, id: string, field: string): void {
   if (!el || el.getAttribute("contenteditable") === "true") return;
   const original = el.textContent;
@@ -498,9 +504,14 @@ export function wireRowHandlers(container: HTMLElement, kind: string): void {
     });
   });
 
-  // Drag-to-reorder. Native HTML5 DnD: each row is draggable, and an
-  // insertion-marker `.sidebar-drop-end` sentinel sits after the last row
-  // so the user can drop at the end. Visual feedback via .drop-target.
+  // Drag-to-reorder, using the browser's built-in drag-and-drop. Each row can be
+  // picked up and dropped onto another row to change the order. One wrinkle:
+  // dropping a row *onto* another row means "insert before this one", so there's
+  // no row that means "put it last". We solve that with a "sentinel" — an
+  // invisible placeholder element (`.sidebar-drop-end`) parked after the final
+  // row purely as a drop target for "move to the end" — a "sentinel" is just a
+  // dummy marker that exists only to be detected. Visual feedback via
+  // .drop-target.
   let draggedIndex: number | null = null;
   container.querySelectorAll(".sidebar-edit-row[draggable='true']").forEach(row => {
     row.addEventListener("dragstart", event => {

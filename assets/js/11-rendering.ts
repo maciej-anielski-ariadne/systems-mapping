@@ -29,12 +29,16 @@ import { attachCanvasEditHandlers } from "./16e-canvas-edit";
 export const svg = document.getElementById("viz-svg") as unknown as SVGSVGElement;
 
 // ───── Delegated SVG interaction — bound ONCE, never per render ────────────
-// render() replaces svg.innerHTML wholesale, so per-element listeners had to be
-// re-attached to every node / row label / column header after each render —
-// O(nodes) addEventListener calls per frame, the dominant interaction cost on
-// large maps. Instead we bind a single listener set on the stable svg element
-// here at module load and dispatch by the innermost matching ancestor of the
-// event target. render() never touches listeners again.
+// This uses "event delegation" (see docs/GLOSSARY.md): instead of giving every
+// single box and label its own click-handler, we put ONE set of handlers on the
+// container and, when a click happens, look at what was actually clicked.
+// Why it matters here: render() rebuilds the whole drawing each time, so
+// per-element listeners would have to be re-attached to every node / row label /
+// column header after each render — one addEventListener call per box, every
+// frame, which is the dominant interaction cost on large maps. Instead we bind a
+// single listener set on the stable svg element here at module load and dispatch
+// by the innermost matching ancestor of the event target. render() never touches
+// listeners again.
 
 // Click: node select / row-stream toggle / column-stage toggle / background
 // deselect. Canvas-edit affordances (edge select, handles, ghost cells) are
@@ -193,10 +197,12 @@ function edgeGeometry(): EdgeGeometry {
 }
 
 // ───── Viewport virtualization ────────────────────────────────────────────
-// On very large maps most nodes/edges are scrolled out of view, yet render()
-// would still serialize + parse every one. When the map is big AND the viewport
-// dimensions are known, cull to the elements near the visible scroll rect (plus
-// a margin) and re-render on scroll (17-events wires the scroll listener). The
+// "Virtualization" = only build the part of the map that's actually on screen
+// (see docs/GLOSSARY.md). On very large maps most nodes/edges are scrolled out
+// of view, yet render() would still serialize + parse every one. When the map is
+// big AND the viewport dimensions are known, cull ("cull" = leave out) the
+// elements far from the visible scroll rect (keeping a margin) and re-render on
+// scroll (17-events wires the scroll listener). The
 // background frame, headers, and row labels are always drawn in full — only the
 // O(N) nodes and O(E) edges are culled.
 //
@@ -279,9 +285,13 @@ function boxInCull(x1: number, y1: number, x2: number, y2: number, c: CullRect):
 // faster than the display refresh). Each render() is a full SVG rebuild, so
 // running it synchronously per event throws away work the browser never paints.
 // scheduleRender() collapses any number of requests within a frame into a
-// single render() on the next animation frame. A synchronous render() (e.g.
-// after a discrete select / load) supersedes a pending one so the DOM is always
-// current immediately when a caller needs it.
+// single render() on the next animation frame. "Animation frame" = the moment
+// just before the browser next repaints the screen (~60 times a second), via
+// requestAnimationFrame; batching redraws onto it means ten rapid changes cause
+// one redraw, not ten (see "requestAnimationFrame / coalescing" in
+// docs/GLOSSARY.md). A synchronous render() (e.g. after a discrete select /
+// load) supersedes a pending one so the DOM is always current immediately when a
+// caller needs it.
 let _renderQueued = false;
 let _renderRAF = 0;
 const _raf: (cb: FrameRequestCallback) => number =
@@ -607,11 +617,14 @@ export function render(): void {
   const cull = computeCullRect();
   _renderedCull = cull;
 
-  // Two output buffers. Every edge's CASING (a wide background-coloured stroke)
-  // is emitted first, then every coloured stroke + arrowhead. Drawing all
-  // casings beneath all colours is what produces the transit-map "knockout" gap
-  // where one edge crosses or runs under another, keeping the top edge legible.
-  // The casing inherits the edge's `dimmed` class so it fades with its edge.
+  // Two output buffers. Every edge is drawn twice: first a slightly fatter line
+  // in the page's background colour (its "casing"), then the real coloured line
+  // on top. Emitting ALL casings first, then all colours, means wherever two
+  // arrows cross, the lower one's coloured line is interrupted by the upper
+  // one's background-coloured casing — the little gap you see on transit maps
+  // (the "knockout"), which keeps the top line legible. See "casing / knockout
+  // gap" in docs/GLOSSARY.md. The casing inherits the edge's `dimmed` class so
+  // it fades with its edge.
   const CASING_EXTRA = 2;   // casing is this many px wider than the colour stroke
   let edgeCasings = "";
   let edgeStrokes = "";
@@ -823,6 +836,11 @@ export function render(): void {
     const barRight  = pos.x + barWidth;
     const barTop    = pos.y;
     const barBottom = pos.y + pos.height;
+    // Build the coloured left stripe as an SVG path. SVG path letters are drawing
+    // pen-commands: M = move the pen to a point, L = draw a straight line to a
+    // point, A = draw an arc (a rounded corner here), Z = close the shape. The
+    // "A radius,radius 0 0 1 x,y" numbers are the arc's radii, then flags that
+    // pick which way it curves; we only round the two left corners.
     const barPath =
       "M " + (barLeft + barRadius) + "," + barTop +
       " L " + barRight + "," + barTop +

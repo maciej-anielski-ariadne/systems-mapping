@@ -244,13 +244,19 @@ export function rectsOverlap(
 }
 
 // ───── Reorder stream rows to minimise edge length ─────────────────────────
-// Greedy chains, one per connected cluster of streams. Seed each chain with the
-// heaviest remaining pair of streams, then grow it on both ends by repeatedly
-// attaching the unplaced stream with the strongest tie to either end. When a
-// chain can no longer grow we start a NEW chain from the next-heaviest pair, so
-// every cluster gets packed together (not just the first). Clusters are emitted
-// heaviest-first; streams with no cross-stream edges keep their original order
-// at the end. Deterministic (ties broken by original index).
+// In plain terms: when exporting, we re-stack the rows so that rows with lots of
+// arrows between them sit next to each other — that makes the arrows shorter and
+// the picture tidier. We don't search every possible ordering (too many); we use
+// a quick "good enough" rule, called a greedy approach: always grab the strongest
+// remaining connection next.
+//
+// How: count the arrows between each pair of rows (their "tie" strength). Start a
+// chain from the most-connected pair, then keep extending it at either end by
+// adding whichever leftover row is most strongly tied to an end. When the chain
+// can't grow, start a fresh chain from the next strongest pair — so every cluster
+// of related rows gets grouped, not just the first. Clusters come out strongest-
+// first; rows with no cross-row arrows keep their original order at the end. The
+// result is the same every time (ties broken by original position).
 export function orderExportStreams(streamIds: string[], edges: ExportEdge[]): string[] {
   const present = streamIds.slice();
   const n = present.length;
@@ -676,16 +682,20 @@ export const EXPORT_PNG_SCALE = 3;
 export const EXPORT_MAX_CANVAS_DIM  = 16384;
 export const EXPORT_MAX_CANVAS_AREA = 16384 * 16384;
 
-// Rasterize the export SVG to a PNG Blob. Returns a Promise<Blob> so it can be
-// handed straight to ClipboardItem (which keeps the originating user-gesture
-// alive while the image loads).
+// Turn the map (drawn as crisp SVG vector shapes) into a PNG image file —
+// "rasterize" means convert those shapes into a grid of pixels. Returns a
+// Promise<Blob> (a Blob is just an in-memory file) so it can be handed straight
+// to ClipboardItem (which keeps the originating user-gesture alive while the
+// image loads).
 //
-// Crucially, the SVG is rendered at the *scaled* size (its width/height grow
-// while the viewBox stays in layout coordinates), so the browser rasterizes
-// the vectors at full target resolution — genuinely sharp at any size — rather
-// than upscaling a low-resolution bitmap. The density is clamped so the canvas
-// never exceeds the browser's limits; for very large maps it drops below the
-// target (even below 1×) to produce the largest valid image instead of failing.
+// The trick for a sharp image: before converting, we tell the SVG to draw itself
+// BIGGER (we grow its declared width/height, but keep the viewBox — its internal
+// coordinate system — the same). Because SVG is resolution-independent, the
+// browser then re-draws the shapes crisply at the large size, instead of taking
+// a small picture and blowing it up blurry. The size multiplier ("scale" /
+// density) is capped so the pixel grid never exceeds what browsers allow; for a
+// very large map it drops below the target (even below 1×) to produce the
+// biggest image that still works, rather than failing outright.
 export function renderExportPngBlob(svg: string, width: number, height: number, pal: ExportPalette, transparent?: boolean): Promise<Blob> {
   return new Promise((resolve, reject) => {
     let scale = Math.min(

@@ -542,8 +542,12 @@ export function handleSvgMouseMove(event: MouseEvent): void {
   scheduleRender();
 }
 
-// Convert a clientX / clientY (mouse event) to layout coordinates, accounting
-// for both the #viz-scroll scroll offset and the current zoom level.
+// Convert a mouse position into a position on the map. A mouse event gives
+// "client" coordinates — pixels from the corner of the visible window. The map
+// has its own "layout" coordinates — fixed positions on the full drawing,
+// before zoom and scroll. To translate, we subtract where the map area sits on
+// screen, add how far it's been scrolled, then divide out the zoom. (See
+// "client vs. layout coordinates" in docs/GLOSSARY.md.)
 export function clientPointToLayout(clientX: number, clientY: number): { x: number; y: number } | null {
   const vizScrollEl = document.getElementById("viz-scroll");
   const vizSvg = document.getElementById("viz-svg");
@@ -779,6 +783,15 @@ export function autoPanTick(): void {
 }
 
 // ───── Edge drag ──────────────────────────────────────────────────────────
+// Drawing a new link is a three-step gesture, one function per step:
+//   begin  (mouse pressed on a box's edge-handle) — start a "draft edge" that
+//           follows the cursor, and listen for mouse move / release.
+//   update (mouse moves) — move the draft edge's loose end to the cursor and
+//           note which box, if any, it's hovering over as a drop target.
+//   end    (mouse released) — if it was dropped on another box, create the real
+//           link; otherwise throw the draft away. Always unhook the listeners.
+// The in-progress edge lives in state.canvasEdit.draftEdge so the renderer can
+// draw it; it's just a preview until `end` commits it.
 export let _draftEdgeMoveBound: ((e: MouseEvent) => void) | null = null;
 export let _draftEdgeUpBound: ((e: MouseEvent) => void) | null   = null;
 
@@ -884,6 +897,9 @@ export function nodeAtLayoutPoint(x: number, y: number): string | null {
 //      render() draws the dragged node ghosted in place + a preview at the
 //      cursor + a drop-target outline + an insertion line. On mouseup we
 //      either splice the node into its new cell position or no-op.
+// How far (in pixels) the cursor must move with the button held before we treat
+// it as a drag rather than a click — small wobbles while clicking shouldn't pick
+// the box up and move it.
 export const NODE_DRAG_THRESHOLD = 4;
 export let _pendingNodeDrag: { nodeId: string; startClientX: number; startClientY: number } | null = null;
 export let _nodeDragMoveBound: ((e: MouseEvent) => void) | null  = null;
@@ -1055,9 +1071,12 @@ export function swallowNextClick(): void {
 }
 
 // ───── Marquee multi-select (shift+drag on empty canvas) ──────────────────
-// Mirrors the node-drag candidate→active pattern: a shift+mousedown on blank
-// grid arms a candidate; crossing MARQUEE_DRAG_THRESHOLD promotes to a live
-// marquee that updates the selection on every move; mouseup commits. A
+// A "marquee" is the dashed rectangle you drag across the canvas to select
+// every box inside it — like rubber-banding files on a desktop (see
+// docs/GLOSSARY.md). Mirrors the node-drag candidate→active pattern: a
+// shift+mousedown on blank grid arms a candidate; crossing MARQUEE_DRAG_THRESHOLD
+// promotes to a live marquee that updates the selection on every move; mouseup
+// commits. A
 // no-threshold mouseup is a shift+click: over a cell it creates a note at the
 // placeholder slot, on bare canvas it's a no-op.
 export const MARQUEE_DRAG_THRESHOLD = 4;
