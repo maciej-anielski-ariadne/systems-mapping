@@ -21,7 +21,7 @@ import {
   incomingEdges,
   outgoingEdges,
   NODES,
-  EDGES,
+  edgeById,
   layout,
 } from "./03-state";
 import { commitInlineRename } from "./16h-canvas-inline-rename";
@@ -258,7 +258,7 @@ export function deselectNode(): void {
 // they're always edited from their from-node.
 export function selectEdge(edgeId: string): void {
   if (!state.canvasEdit) return;
-  const edge = EDGES.find(e => e.id === edgeId);
+  const edge = edgeById[edgeId];
   if (!edge) return;
   // Selecting a different edge ends the previous edge's cycle session — its
   // pre-cycle snapshot is already in history, so undo still rewinds it.

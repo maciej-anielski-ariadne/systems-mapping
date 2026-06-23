@@ -48,6 +48,7 @@ import {
   EDGES,
   layout,
   nodeById,
+  edgeById,
   streamById,
   stageById,
   setStreams,
@@ -82,7 +83,7 @@ import {
   toggleNodeInSelection,
 } from "./09-graph-selection";
 import { isNodeVisible } from "./10-filters";
-import { render } from "./11-rendering";
+import { render, scheduleRender } from "./11-rendering";
 import { renderSidebar } from "./13-sidebar";
 import { renderDetailPanel } from "./15-detail-panel";
 import { hideDropZone } from "./16-file-io";
@@ -447,9 +448,16 @@ export function setShiftHeld(held: boolean): void {
 // The mutating gestures (edge-handle mousedown, node mousedown for drag) are
 // gated on event.shiftKey so the canvas is read-only by default. Edge click →
 // select stays ungated because it's navigation, not a mutation.
+let _canvasEditDelegationBound = false;
 export function attachCanvasEditHandlers(): void {
+  // Delegated, so bound ONCE — not per render. innerHTML rebuilds replace every
+  // node / edge element each render(), so the old per-element binding meant
+  // O(nodes + edges) addEventListener calls every frame. Delegating to the
+  // stable #viz-svg element means render() never re-touches these listeners.
+  if (_canvasEditDelegationBound) return;
   const vizSvg = document.getElementById("viz-svg");
   if (!vizSvg) return;
+  _canvasEditDelegationBound = true;
 
   // Note creation is no longer wired to the ghost-cell element. The placeholder
   // is pointer-transparent and tracks the cursor everywhere; a shift+click on a
@@ -457,46 +465,39 @@ export function attachCanvasEditHandlers(): void {
   // (initCanvasEdit mousedown → cleanupPendingMarquee), while a shift+drag in
   // the same space draws a marquee.
 
-  // Edge handle mousedown → candidate phase. Drag past threshold promotes to
-  // beginEdgeDrag (in-place edge creation). Mouseup without crossing the
-  // threshold is treated as a click and opens the typeable target picker
-  // (the typeable target picker). Shift-gated.
-  vizSvg.querySelectorAll(".edge-handle").forEach(handle => {
-    handle.addEventListener("mousedown", (event: Event) => {
-      const e = event as MouseEvent;
-      if (e.button !== 0) return;
-      if (!e.shiftKey) return;
+  // Shift-gated mousedown → either an edge-draw candidate (from a node's edge
+  // handle) or a node drag-to-move candidate. Without Shift we arm neither, so
+  // the plain click → selectNode (11-rendering's delegated click) still fires.
+  vizSvg.addEventListener("mousedown", (event: Event) => {
+    const e = event as MouseEvent;
+    if (e.button !== 0 || !e.shiftKey) return;
+    const t = e.target as Element | null;
+    if (!t || typeof t.closest !== "function") return;
+
+    // Edge handle wins over the node body it sits on. Drag past threshold
+    // promotes to beginEdgeDrag; a tap opens the typeable target picker.
+    const handle = t.closest(".edge-handle");
+    if (handle) {
       e.stopPropagation();
       e.preventDefault();
-      const nodeId = handle.getAttribute("data-node-id")!;
-      beginEdgeHandleCandidate(nodeId, e.clientX, e.clientY);
-    });
+      beginEdgeHandleCandidate(handle.getAttribute("data-node-id")!, e.clientX, e.clientY);
+      return;
+    }
+    // Node mousedown → candidate drag-to-move (promoted in maybePromoteNodeDrag
+    // once the cursor moves past NODE_DRAG_THRESHOLD).
+    const group = t.closest(".node-group");
+    if (group) {
+      beginNodeDragCandidate(group.getAttribute("data-node-id")!, e.clientX, e.clientY);
+    }
   });
 
   // Edge click (wide hit-path) → select the from-node + open edit mode.
-  vizSvg.querySelectorAll(".edge-hit").forEach(path => {
-    path.addEventListener("click", (event: Event) => {
-      event.stopPropagation();
-      const edgeId = path.getAttribute("data-edge-id")!;
-      if (typeof selectEdge === "function") selectEdge(edgeId);
-    });
-  });
-
-  // Node mousedown → candidate drag-to-move. Shift-gated: without Shift we
-  // don't arm the drag candidate at all, so the existing click → selectNode
-  // (in attachSvgEventHandlers, 11-rendering.js) still fires normally.
-  // Promotion to a real drag happens in maybePromoteNodeDrag once the cursor
-  // moves past NODE_DRAG_THRESHOLD.
-  vizSvg.querySelectorAll(".node-group").forEach(group => {
-    group.addEventListener("mousedown", (event: Event) => {
-      const e = event as MouseEvent;
-      if (e.button !== 0) return;
-      if (!e.shiftKey) return;
-      const target = e.target as HTMLElement | null;
-      if (target && target.closest && target.closest(".edge-handle")) return;
-      const nodeId = group.getAttribute("data-node-id")!;
-      beginNodeDragCandidate(nodeId, e.clientX, e.clientY);
-    });
+  vizSvg.addEventListener("click", (event: Event) => {
+    const t = event.target as Element | null;
+    const path = (t && typeof t.closest === "function") ? t.closest(".edge-hit") : null;
+    if (!path) return;
+    event.stopPropagation();
+    if (typeof selectEdge === "function") selectEdge(path.getAttribute("data-edge-id")!);
   });
 }
 
@@ -516,7 +517,7 @@ export function handleSvgMouseMove(event: MouseEvent): void {
     if (state.canvasEdit.hoverCell) {
       state.canvasEdit.hoverCell = null;
       setLayout(computeLayout());
-      render();
+      scheduleRender();
     }
     return;
   }
@@ -538,7 +539,7 @@ export function handleSvgMouseMove(event: MouseEvent): void {
   // open the gap (and may add a reserved slot of row height). Cheap:
   // computeLayout is O(NODES × STAGES) and only runs on slot crossings.
   setLayout(computeLayout());
-  render();
+  scheduleRender();
 }
 
 // Convert a clientX / clientY (mouse event) to layout coordinates, accounting
@@ -812,7 +813,7 @@ export function updateEdgeDrag(event: { clientX: number; clientY: number }): voi
   draft.currentY = point.y;
   // Detect which node (if any) is under the cursor so we can highlight it.
   draft.dropTargetId = nodeAtLayoutPoint(point.x, point.y);
-  render();
+  scheduleRender();   // coalesce per-mousemove rebuilds to one per frame
 }
 
 export function endEdgeDrag(event: MouseEvent): void {
@@ -974,7 +975,7 @@ export function updateNodeDrag(event: { clientX: number; clientY: number }): voi
   // cell expands its row to make room for the inserted slot.
   const samePrev = prev && next && prev.streamId === next.streamId && prev.stageId === next.stageId && prev.insertIndex === next.insertIndex;
   if (!samePrev) setLayout(computeLayout());
-  render();
+  scheduleRender();   // coalesce per-mousemove rebuilds to one per frame
 }
 
 export function endNodeDrag(event: MouseEvent): void {
@@ -1372,7 +1373,7 @@ export const EDGE_CYCLE_SESSION_DEBOUNCE_MS = 1500;
 export function cycleSelectedEdgeEffect(direction: number): boolean {
   const edgeId = state.selectedEdgeId;
   if (!edgeId) return false;
-  const edge = EDGES.find(e => e.id === edgeId);
+  const edge = edgeById[edgeId];
   if (!edge) return false;
   const currentIdx = EFFECT_OPTIONS.indexOf(edge.effect);
   if (currentIdx < 0) return false;
@@ -1476,7 +1477,7 @@ export function deleteSelection(): boolean {
 // Delete a single edge by id, push an undo snapshot, show the toast. Called
 // from the edit panel's per-row × buttons.
 export function deleteEdgeById(edgeId: string): void {
-  const edge = EDGES.find(e => e.id === edgeId);
+  const edge = edgeById[edgeId];
   if (!edge) return;
   const snapshot = {
     kind: "edge",

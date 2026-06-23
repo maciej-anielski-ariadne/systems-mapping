@@ -35,4 +35,24 @@ describe("end-to-end: load the shipped sample.csv and render", () => {
       expect(Number.isFinite(state.computedValues[n.id])).toBe(true);
     }
   });
+
+  it("selects a node via the delegated SVG click handler", () => {
+    loadDataFromCsv(sampleCsv);
+    const svg = document.getElementById("viz-svg")!;
+    const group = svg.querySelector(".node-group") as Element;
+    const nodeId = group.getAttribute("data-node-id")!;
+
+    // Click bubbles up to the single delegated listener on #viz-svg.
+    group.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(state.selectedNodeId).toBe(nodeId);
+    // render() ran synchronously inside selectNode → the re-drawn group carries
+    // the selection class.
+    expect(
+      svg.querySelector('.node-group[data-node-id="' + nodeId + '"]')!.classList.contains("selected"),
+    ).toBe(true);
+
+    // Clicking the empty background deselects.
+    svg.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(state.selectedNodeId).toBe(null);
+  });
 });

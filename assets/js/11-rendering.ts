@@ -28,16 +28,66 @@ import { attachCanvasEditHandlers } from "./16e-canvas-edit";
 // Single grabbed reference to the SVG element we draw into.
 export const svg = document.getElementById("viz-svg") as unknown as SVGSVGElement;
 
-// One-time listener: clicking the empty SVG background deselects whatever
-// is selected (node OR edge). Registered ONCE here so it does not accumulate
-// each time render() replaces svg.innerHTML.
+// ───── Delegated SVG interaction — bound ONCE, never per render ────────────
+// render() replaces svg.innerHTML wholesale, so per-element listeners had to be
+// re-attached to every node / row label / column header after each render —
+// O(nodes) addEventListener calls per frame, the dominant interaction cost on
+// large maps. Instead we bind a single listener set on the stable svg element
+// here at module load and dispatch by the innermost matching ancestor of the
+// event target. render() never touches listeners again.
+
+// Click: node select / row-stream toggle / column-stage toggle / background
+// deselect. Canvas-edit affordances (edge select, handles, ghost cells) are
+// handled by their own delegated listeners in 16e — skip them here.
 svg.addEventListener("click", event => {
-  // Ignore clicks on canvas-edit affordances — they manage their own state.
-  if ((event.target as Element).closest && (event.target as Element).closest(".node-group, .row-label-group, .col-header-group, .edge-handle, .ghost-cell, .edge-hit, .edge-path")) {
+  const t = event.target as Element;
+  if (!t || typeof t.closest !== "function") return;
+  if (t.closest(".edge-handle, .ghost-cell, .edge-hit, .edge-path")) return;
+
+  const nodeGroup = t.closest(".node-group");
+  if (nodeGroup) {
+    event.stopPropagation();
+    selectNode(nodeGroup.getAttribute("data-node-id")!);
     return;
   }
+  const rowLabel = t.closest(".row-label-group");
+  if (rowLabel) {
+    event.stopPropagation();
+    toggleStream(rowLabel.getAttribute("data-stream-id")!);
+    return;
+  }
+  const colHeader = t.closest(".col-header-group");
+  if (colHeader) {
+    event.stopPropagation();
+    toggleStage(colHeader.getAttribute("data-stage-id")!);
+    return;
+  }
+  // Empty background → deselect whatever is selected (node OR edge).
   if (state.selectedNodeId || (state.selectedNodeIds && state.selectedNodeIds.size)) {
     deselectAll();
+  }
+});
+
+// Node rich-tooltip, delegated via mouseover / mouseout / mousemove (these
+// bubble to svg, unlike mouseenter / mouseleave). _hoverGroup is the node-group
+// currently showing a tooltip, so show/hide fire only on real enter/leave.
+let _hoverGroup: Element | null = null;
+svg.addEventListener("mouseover", event => {
+  const g = (event.target as Element)?.closest?.(".node-group");
+  if (g && g !== _hoverGroup) {
+    _hoverGroup = g;
+    showTooltip(nodeById[g.getAttribute("data-node-id")!], event as MouseEvent);
+  }
+});
+svg.addEventListener("mousemove", event => {
+  if (_hoverGroup) moveTooltip(event as MouseEvent);
+});
+svg.addEventListener("mouseout", event => {
+  if (!_hoverGroup) return;
+  const related = (event as MouseEvent).relatedTarget as Node | null;
+  if (!related || !_hoverGroup.contains(related)) {
+    _hoverGroup = null;
+    hideTooltip();
   }
 });
 
@@ -100,7 +150,31 @@ export function nodeSecondaryChips(node: GraphNode, pos: NodePosition): { svg: s
   return { svg: svg, leftEdge: minX };
 }
 
+// ───── Coalesced render scheduling ────────────────────────────────────────
+// Pointer-move and slider-input handlers can fire many times per frame (often
+// faster than the display refresh). Each render() is a full SVG rebuild, so
+// running it synchronously per event throws away work the browser never paints.
+// scheduleRender() collapses any number of requests within a frame into a
+// single render() on the next animation frame. A synchronous render() (e.g.
+// after a discrete select / load) supersedes a pending one so the DOM is always
+// current immediately when a caller needs it.
+let _renderQueued = false;
+let _renderRAF = 0;
+const _raf: (cb: FrameRequestCallback) => number =
+  typeof requestAnimationFrame === "function" ? requestAnimationFrame : (cb => setTimeout(() => cb(0), 16) as unknown as number);
+const _cancelRaf: (h: number) => void =
+  typeof cancelAnimationFrame === "function" ? cancelAnimationFrame : (h => clearTimeout(h));
+
+export function scheduleRender(): void {
+  if (_renderQueued) return;
+  _renderQueued = true;
+  _renderRAF = _raf(() => { _renderQueued = false; _renderRAF = 0; render(); });
+}
+
 export function render(): void {
+  // A synchronous render makes any queued one redundant — cancel it.
+  if (_renderRAF) { _cancelRaf(_renderRAF); _renderRAF = 0; }
+  _renderQueued = false;
   _nodeGradSeq = 0;   // restart per render — the SVG is rebuilt wholesale
   // When no CSV is loaded at all, blank the SVG. The empty-state grid path
   // boots via bootEmptyStateGrid() which sets state.dataLoaded = true and
@@ -658,57 +732,12 @@ export function render(): void {
   attachSvgEventHandlers();
 }
 
-// Attach click / hover / leave listeners to every node and row label.
-// Called fresh after every render() because innerHTML replaces all children.
+// Ensure the delegated event listeners are wired. All node / row-label /
+// column-header / tooltip handling is delegated to the stable svg element at
+// module load (see the top of this file), and the canvas direct-edit gestures
+// (edge select, edge handles, node drag) are delegated once here. Called after
+// every render() but binds at most once — render() does NOT re-attach
+// per-element listeners (that was the old O(nodes) per-frame cost).
 export function attachSvgEventHandlers(): void {
-  // Node click → select; hover → show tooltip.
-  svg.querySelectorAll(".node-group").forEach(group => {
-    group.addEventListener("click", event => {
-      event.stopPropagation();
-      const nodeId = group.getAttribute("data-node-id")!;
-      selectNode(nodeId);
-    });
-    group.addEventListener("mouseenter", event => {
-      const nodeId = group.getAttribute("data-node-id")!;
-      showTooltip(nodeById[nodeId], event as MouseEvent);
-    });
-    group.addEventListener("mousemove", event => {
-      moveTooltip(event as MouseEvent);
-    });
-    group.addEventListener("mouseleave", () => {
-      hideTooltip();
-    });
-  });
-
-  // Clicking the row label toggles the whole stream (hide / show its row
-  // on the map). Renaming and re-colouring streams happens in the sidebar.
-  svg.querySelectorAll(".row-label-group").forEach(group => {
-    const streamId = group.getAttribute("data-stream-id")!;
-    group.addEventListener("click", event => {
-      event.stopPropagation();
-      toggleStream(streamId);
-    });
-    // Hover hint comes from the data-tooltip attribute baked into the markup
-    // above, picked up by the delegated handler in 12-tooltip.ts.
-  });
-
-  // Clicking a column header toggles the whole stage (collapse / expand its
-  // column on the map). Mirrors the stream row-label behaviour above.
-  svg.querySelectorAll(".col-header-group").forEach(group => {
-    const stageId = group.getAttribute("data-stage-id")!;
-    group.addEventListener("click", event => {
-      event.stopPropagation();
-      toggleStage(stageId);
-    });
-    // Hover hint comes from the data-tooltip attribute baked into the markup
-    // above, picked up by the delegated handler in 12-tooltip.ts.
-  });
-
-  // (The svg-background click → deselect listener is registered once at
-  // the top of this file, not here — see the comment above the file's
-  // `const svg = …` line.)
-
-  // Canvas direct-edit affordances (ghost cell click, edge handles, '+' buttons,
-  // edge clicks, label double-clicks). Defined in 16e-canvas-edit.js.
   if (typeof attachCanvasEditHandlers === "function") attachCanvasEditHandlers();
 }

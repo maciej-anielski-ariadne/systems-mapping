@@ -53,6 +53,11 @@ export function wrapLabel(text: string, maxCharsPerLine: number): string[] {
 // `width|text` since computeLayout may re-run often (drag, hover) and labels
 // rarely change. The font must match .node-label in 05-visualization.css.
 export const _labelLineCache = new Map<string, string[]>();
+// Cap the cache so a long editing/renaming session on a big map (every label
+// edit mints fresh keys) can't grow it without bound. When the limit is hit we
+// drop the oldest ~25% of entries (Map preserves insertion order) — cheap, and
+// the working set of currently-visible labels is re-measured on the next render.
+export const LABEL_CACHE_MAX = 5000;
 export let _labelMeasureCtx: CanvasRenderingContext2D | null = null;
 export function measureLabelLines(text: unknown, maxWidthPx: number): string[] {
   text = String(text == null ? "" : text);
@@ -82,6 +87,15 @@ export function measureLabelLines(text: unknown, maxWidthPx: number): string[] {
   }
   if (current) lines.push(current);
   const result = lines.length ? lines : [""];
+  if (_labelLineCache.size >= LABEL_CACHE_MAX) {
+    const drop = Math.ceil(LABEL_CACHE_MAX / 4);
+    const it = _labelLineCache.keys();
+    for (let i = 0; i < drop; i++) {
+      const k = it.next().value;
+      if (k === undefined) break;
+      _labelLineCache.delete(k);
+    }
+  }
   _labelLineCache.set(key, result);
   return result;
 }
