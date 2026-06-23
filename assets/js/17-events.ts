@@ -17,7 +17,7 @@ import { downloadCsvBlob, readCsvFile } from "./16-file-io";
 import { closeBuilder, openBuilder } from "./16a-builder-state";
 import { bootEmptyStateGrid } from "./16e-canvas-edit";
 import { addCategory, addStage, addStream } from "./16f-canvas-mutations";
-import { exportCanvasImage, publishCanvasHtml } from "./19-export";
+import { exportCanvasImage, getExportSelection, publishCanvasHtml } from "./19-export";
 import {
   EDGES,
   NODES,
@@ -59,12 +59,18 @@ document.querySelectorAll(".import-data-trigger").forEach(button => {
   });
 });
 
-// "Save" — downloads the current live state as a CSV.
+// "CSV" — downloads the map as a CSV. With no box selected this is the whole
+// map; with a box selected it's just the highlighted boxes and links (matching
+// the PNG / HTML exports). getExportSelection (19-export.js) decides the subset.
 document.querySelectorAll(".save-data-trigger").forEach(button => {
   button.addEventListener("click", () => {
     if (!state.dataLoaded) return;
     if (typeof serializeLiveStateToCsv !== "function" || typeof downloadCsvBlob !== "function") return;
-    downloadCsvBlob(serializeLiveStateToCsv(), "systems_map.csv");
+    const sel = getExportSelection(true); // allEdges=true: every real edge among the chosen boxes
+    const subset = sel.selectionActive
+      ? { nodeIds: sel.nodeIds, edgeIds: new Set(sel.edges.map(e => e.id).filter((id): id is string => !!id)) }
+      : undefined;
+    downloadCsvBlob(serializeLiveStateToCsv(subset), "systems_map.csv");
   });
 });
 
@@ -533,32 +539,6 @@ window.addEventListener("drop", event => {
   const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
   if (file) readCsvFile(file);
 });
-
-// ───── Export ▾ header menu ──────────────────────────────────────────────
-// Groups Save / Export / Publish under one trigger. The menu items keep their
-// *-trigger classes, so their action handlers (wired above by class) still
-// fire; this block only toggles the dropdown open/closed.
-(() => {
-  const menu    = document.getElementById("export-menu");
-  const trigger = menu && menu.querySelector(".header-menu-trigger");
-  const list    = document.getElementById("export-menu-list");
-  if (!menu || !trigger || !list) return;
-
-  const close = (): void => { list.hidden = true;  trigger.setAttribute("aria-expanded", "false"); };
-  const open  = (): void => { list.hidden = false; trigger.setAttribute("aria-expanded", "true");  };
-
-  trigger.addEventListener("click", event => {
-    event.stopPropagation();
-    list.hidden ? open() : close();
-  });
-  // Picking an item runs its own action handler and then closes the menu.
-  list.querySelectorAll(".header-menu-item").forEach(item =>
-    item.addEventListener("click", close)
-  );
-  // Click outside or press Escape to dismiss.
-  document.addEventListener("click", event => { if (!menu.contains(event.target as Node)) close(); });
-  document.addEventListener("keydown", event => { if (event.key === "Escape") close(); });
-})();
 
 // ───── Sidebar "Map appearance" accordion ────────────────────────────────
 // Collapses the advanced edge-type / line-style / trace filters into one group.

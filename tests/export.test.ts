@@ -153,9 +153,10 @@ describe("export layout reuses the live grid geometry", () => {
 });
 
 describe("export honours collapsed stages (A → B → C, hide the middle)", () => {
-  // The no-selection export frames the visible viewport. jsdom reports a 0×0
-  // viewport, so detach #viz-scroll — visibleLayoutRect() then returns null and
-  // the export includes every visible node (B is hidden by the collapsed stage).
+  // The no-selection export covers the whole map (every box passing the sidebar
+  // visibility filters), so B is hidden only by the collapsed stage. #viz-scroll
+  // is detached here just to keep the DOM minimal; the export no longer crops to
+  // the viewport.
   let scrollEl: HTMLElement | null = null;
   beforeEach(() => {
     // The previous describe's last test overwrites document.body with the

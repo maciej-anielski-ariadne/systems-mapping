@@ -71,7 +71,14 @@ export function serializeBuilderToCsv(builder: Partial<BuilderState> | null | un
 // Serialize the LIVE runtime state (NODES/EDGES/STREAMS/STAGES/CATEGORIES) to
 // the same CSV format. Used by the canvas direct-edit path (16e-canvas-edit.js)
 // to persist every change without round-tripping through the builder.
-export function serializeLiveStateToCsv(): string {
+//
+// Pass `subset` to limit the saved boxes/links to a selection (the "CSV" export
+// with a box selected — only its highlighted boxes and links). Streams, stages,
+// categories and defaults are always written in full so the file stays a valid,
+// reloadable map. With no `subset`, the whole map is serialized.
+export function serializeLiveStateToCsv(subset?: { nodeIds: Set<string>; edgeIds: Set<string> }): string {
+  const nodes = subset ? NODES.filter((n) => subset.nodeIds.has(n.id)) : NODES;
+  const edges = subset ? EDGES.filter((e) => e.id != null && subset.edgeIds.has(e.id)) : EDGES;
   return _serializeShape({
     streams: STREAMS as unknown as BuilderStream[],
     stages: STAGES as unknown as BuilderStage[],
@@ -87,8 +94,8 @@ export function serializeLiveStateToCsv(): string {
       increases: DEFAULT_ELASTICITY_BY_EFFECT.increases,
       decreases: DEFAULT_ELASTICITY_BY_EFFECT.decreases,
     },
-    nodes: NODES as unknown as BuilderNode[],
-    edges: EDGES as unknown as BuilderEdge[],
+    nodes: nodes as unknown as BuilderNode[],
+    edges: edges as unknown as BuilderEdge[],
   });
 }
 

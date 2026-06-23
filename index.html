@@ -121,22 +121,18 @@
     </div>
 
     <!-- Header action buttons, ranked: one primary (Create), two secondary
-         (Edit / Import), the three "get data out" actions grouped under an
-         Export ▾ menu, then the Simulate mode toggle past a divider. The
-         trigger classes / ids are unchanged, so the handlers in 17-events.js
-         still bind; 17-events.js also wires the Export-menu open/close. -->
+         (Edit / Import), then — past a divider — the three "get data out"
+         actions (CSV / PNG / HTML), then the Simulate / Theme toggles past
+         another divider. The trigger classes / ids are unchanged, so the
+         handlers in 17-events.js still bind. -->
     <button class="header-button header-button--primary create-map-trigger" data-tooltip="Clear the map and start fresh from an empty 3×3 starter grid. Asks you to confirm if a map is loaded.">Create</button>
     <button class="header-button edit-data-trigger"   data-tooltip="Open the form-based helper filled in with the current map. Handy for many edits at once.">Edit</button>
     <button class="header-button import-data-trigger" data-tooltip="Open a map spreadsheet from your computer. Same as dragging a spreadsheet onto the window.">Import</button>
 
-    <div class="header-menu" id="export-menu">
-      <button class="header-button header-menu-trigger" aria-haspopup="true" aria-expanded="false" data-tooltip="Get the map out — save as a spreadsheet, copy as a PNG image, or publish a view-only web page.">Export&nbsp;▾</button>
-      <div class="header-menu-list" id="export-menu-list" hidden>
-        <button class="header-menu-item save-data-trigger"    data-tooltip="Save the current map as a spreadsheet (openable in Excel / Sheets, or load it back here).">Save CSV</button>
-        <button class="header-menu-item export-image-trigger" data-tooltip="Copy the map to the clipboard as a PNG image. Captures what's on screen. If a box is selected, only its highlighted boxes and links are copied.">Export PNG</button>
-        <button class="header-menu-item publish-html-trigger" data-tooltip="Publish a self-contained, view-only web page of the map (pan / zoom / hover).">Publish HTML</button>
-      </div>
-    </div>
+    <span class="header-divider" aria-hidden="true"></span>
+    <button class="header-button save-data-trigger"    data-tooltip="Save the map as a spreadsheet (openable in Excel / Sheets, or load it back here). With a box selected, saves just its highlighted boxes and links.">CSV</button>
+    <button class="header-button export-image-trigger" data-tooltip="Copy the map to the clipboard as a PNG image. With a box selected, copies just its highlighted boxes and links.">PNG</button>
+    <button class="header-button publish-html-trigger" data-tooltip="Publish a self-contained, view-only web page of the map (pan / zoom / hover). With a box selected, publishes just its highlighted boxes and links.">HTML</button>
 
     <span class="header-divider" aria-hidden="true"></span>
     <button id="sim-toggle-button" class="header-button" data-tooltip="Turn on what-if mode — sliders on every adjustable input, and the values it affects update live.">Simulate</button>

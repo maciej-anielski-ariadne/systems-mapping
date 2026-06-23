@@ -193,14 +193,13 @@ export function getExportSelection(allEdges = false): { nodeIds: Set<string>; ed
     return { nodeIds: ids, edges, selectionActive: true };
   }
 
-  // No single selection → everything visible within the scroll viewport.
-  const rect = visibleLayoutRect();
+  // No single selection → the whole map (every box passing the sidebar
+  // visibility filters), not just the on-screen portion.
   const ids = new Set<string>();
   for (const node of NODES) {
     if (!isNodeVisible(node)) continue;
     const pos = layout.positions[node.id];
     if (!pos) continue;                       // nodes in collapsed stages have no position
-    if (rect && !rectsOverlap(pos, rect)) continue;
     ids.add(node.id);
   }
   // Draw exactly what the live map draws: real edges between visible nodes PLUS

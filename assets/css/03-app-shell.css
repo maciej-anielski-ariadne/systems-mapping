@@ -240,45 +240,8 @@ body.no-data .panel-pin {
   color: var(--bg-deepest);
 }
 
-/* === Export ▾ menu (groups Save / Export / Publish) === */
-.header-menu {
-  position: relative;
-  display: inline-flex;
-}
-.header-menu-list {
-  position: absolute;
-  top: calc(100% + var(--space-1_5));
-  right: 0;
-  z-index: var(--z-header);
-  min-width: 168px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-0_5);
-  padding: var(--space-1);
-  background: var(--bg-deep);
-  border-radius: var(--radius-surface);
-  box-shadow: var(--shadow-float);
-}
-.header-menu-list[hidden] { display: none; }
-.header-menu-item {
-  background: transparent;
-  color: var(--text-secondary);
-  text-align: left;
-  font-family: var(--font-mono);
-  font-size: var(--fs-cap);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  padding: var(--pad-row);
-  border-radius: var(--radius-interactive);
-  cursor: pointer;
-  transition: background var(--dur-fast), color var(--dur-fast);
-}
-.header-menu-item:hover {
-  background: var(--act-tint);
-  color: var(--text-primary);
-}
-
-/* Thin separator before the Simulate mode toggle. */
+/* Thin separator that fences off a header section (the CSV / PNG / HTML export
+   group, and the Simulate / Theme toggles). */
 .header-divider {
   width: 1px;
   height: 22px;
