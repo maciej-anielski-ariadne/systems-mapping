@@ -85,16 +85,15 @@ describe("edgeBezierPath", () => {
     expect(path).toContain("300,100"); // endX,endY
   });
 
-  it("routes a backward edge as a separated arc, not a doubled-back line", () => {
-    // target directly LEFT, same row → bows up off both nodes' top faces
+  it("routes a backward edge around, keeping the right→left anchors", () => {
+    // target directly LEFT, same row → loops up but still exits right, enters left
     const from: NodePosition = { x: 400, y: 100, width: 160, height: 48, labelLines: [] };
     const to: NodePosition = { x: 100, y: 100, width: 160, height: 48, labelLines: [] };
     const path = edgeBezierPath(from, to);
-    expect(path.startsWith("M 480,100")).toBe(true); // source top-centre, not right side
-    expect(path.endsWith("180,100")).toBe(true); // target top-centre
+    expect(path.startsWith("M 560,124")).toBe(true); // source RIGHT side, mid height
+    expect(path.endsWith("100,124")).toBe(true); // target LEFT side, mid height
     const ctrlYs = [...path.matchAll(/,(-?\d+(?:\.\d+)?)/g)].map((m) => Number(m[1]));
-    expect(Math.min(...ctrlYs)).toBeLessThan(100); // real upward bow
-    expect(path.startsWith("M 560")).toBe(false); // not the old forward path
+    expect(Math.min(...ctrlYs)).toBeLessThan(124); // real upward bow
   });
 });
 
