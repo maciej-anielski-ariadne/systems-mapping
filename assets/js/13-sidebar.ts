@@ -91,10 +91,10 @@ export function renderStagesList(): void {
     const stage = STAGES[i];
     const count = NODES.reduce((acc, n) => n.stage === stage.id ? acc + 1 : acc, 0);
     const isHidden = state.hiddenStages.has(stage.id);
-    const tip = (isHidden ? "Click to show " : "Click to hide ") + stage.label + " — " + count + " box" + (count === 1 ? "" : "es") + " on the map. Double-click the name to rename.";
+    const tip = (isHidden ? "Click to show " : "Click to hide ") + stage.label + " — " + count + " box" + (count === 1 ? "" : "es") + " on the map. Shift-click the name to rename.";
     html += '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="stage" data-id="' + escapeHtml(stage.id) + '" data-index="' + i + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
     html +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
-    html +=   '<span class="sidebar-edit-label sidebar-inline-edit" data-field="label" title="Double-click to rename">' + escapeHtml(stage.label) + '</span>';
+    html +=   '<span class="sidebar-edit-label sidebar-inline-edit" data-field="label" title="Shift-click to rename">' + escapeHtml(stage.label) + '</span>';
     html +=   '<span class="count-swatch count-swatch--plain">' + count + '</span>';
     html +=   deleteIconButton("Delete column");
     html += '</div>';
@@ -124,11 +124,11 @@ export function renderStreamsList(): void {
     const count = streamNodeCount[stream.id] || 0;
     const short = stream.short || (typeof deriveShortLabel === "function" ? deriveShortLabel(stream.label) : "");
 
-    const tip = (isHidden ? "Click to show " : "Click to hide ") + stream.label + " — " + count + " box" + (count === 1 ? "" : "es") + " on the map. Double-click the name to rename.";
+    const tip = (isHidden ? "Click to show " : "Click to hide ") + stream.label + " — " + count + " box" + (count === 1 ? "" : "es") + " on the map. Shift-click the name to rename.";
     html += '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="stream" data-id="' + escapeHtml(stream.id) + '" data-index="' + i + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
     html +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
-    html +=   '<div class="filter-label sidebar-inline-edit" data-field="label" title="Double-click to rename">' + escapeHtml(stream.label) + '</div>';
-    html +=   '<span class="sidebar-short-chip sidebar-inline-edit" data-field="short" title="Double-click to edit short label">' + escapeHtml(short) + '</span>';
+    html +=   '<div class="filter-label sidebar-inline-edit" data-field="label" title="Shift-click to rename">' + escapeHtml(stream.label) + '</div>';
+    html +=   '<span class="sidebar-short-chip sidebar-inline-edit" data-field="short" title="Shift-click to edit short label">' + escapeHtml(short) + '</span>';
     html +=   countSwatch(stream.color, count);
     html +=   deleteIconButton("Delete row");
     html += '</div>';
@@ -167,10 +167,10 @@ export function renderCategoriesList(): void {
     const reclassTitle = isSecondary
       ? "Make this a Main category (fill; several blend into a gradient)"
       : "Make this a Corner tag category (a corner tag)";
-    const tip = (isHidden ? "Click to show " : "Click to hide ") + cat.label + " — " + count + " box" + (count === 1 ? "" : "es") + " on the map. Double-click the name to rename.";
+    const tip = (isHidden ? "Click to show " : "Click to hide ") + cat.label + " — " + count + " box" + (count === 1 ? "" : "es") + " on the map. Shift-click the name to rename.";
     let h = '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="category" data-id="' + escapeHtml(catId) + '" data-index="' + indexOf[catId] + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
     h +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
-    h +=   '<div class="filter-label sidebar-inline-edit" data-field="label" title="Double-click to rename">' + escapeHtml(cat.label) + '</div>';
+    h +=   '<div class="filter-label sidebar-inline-edit" data-field="label" title="Shift-click to rename">' + escapeHtml(cat.label) + '</div>';
     h +=   '<button class="sidebar-cat-reclass" data-action="reclass" title="' + escapeHtml(reclassTitle) + '">' + reclassLabel + '</button>';
     h +=   countSwatch(cat.color, count);
     h +=   deleteIconButton("Delete category");
@@ -465,31 +465,25 @@ export function wireRowHandlers(container: HTMLElement, kind: string): void {
     // filter.
     if (isFilter) {
       row.addEventListener("click", event => {
-        if ((event.target as HTMLElement).closest(".sidebar-edit-drag, .sidebar-edit-color, .sidebar-row-delete, .sidebar-cat-reclass, .sidebar-inline-edit")) return;
+        if ((event as MouseEvent).shiftKey) return; // Shift is the edit key — never toggle while held
+        if ((event.target as HTMLElement).closest(".sidebar-edit-drag, .sidebar-edit-color, .sidebar-row-delete, .sidebar-cat-reclass")) return;
         toggle();
       });
     }
 
-    // Inline text editing — double-click any editable element (the name, or a
-    // stream's short-label chip) to edit it. On filter rows a single click on
-    // that element still toggles the filter; a short timer disambiguates the
-    // single click from the double click that starts editing.
+    // Inline text editing — Shift-click any editable element (the name, or a
+    // stream's short-label chip) to edit it, mirroring the canvas where Shift is
+    // the app-wide edit key. A plain click bubbles through to the filter toggle
+    // (or is a no-op on stage rows, which don't filter), so no disambiguation
+    // timer is needed.
     row.querySelectorAll(".sidebar-inline-edit").forEach(el => {
       const field = el.getAttribute("data-field")!;
-      let clickTimer: ReturnType<typeof setTimeout> | null = null;
-      el.addEventListener("dblclick", event => {
-        event.stopPropagation();
-        if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
+      el.addEventListener("click", event => {
+        if (!(event as MouseEvent).shiftKey) return; // plain click bubbles → toggle
+        event.preventDefault();
+        event.stopPropagation();     // don't also toggle the filter
         beginInlineEdit(el as HTMLElement, row as HTMLElement, kind, id, field);
       });
-      if (isFilter) {
-        el.addEventListener("click", event => {
-          event.stopPropagation();
-          if (el.getAttribute("contenteditable") === "true") return; // already editing
-          if (clickTimer) return;
-          clickTimer = setTimeout(() => { clickTimer = null; toggle(); }, 220);
-        });
-      }
     });
   });
 
