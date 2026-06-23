@@ -162,9 +162,9 @@ export function renderCategoriesList(): void {
     const isHidden = state.hiddenCategories.has(catId);
     const count = categoryNodeCount[catId] || 0;
     const isSecondary = (cat.class || "primary") === "secondary";
-    const reclassLabel = isSecondary ? "→ fill" : "→ corner tag";
+    const reclassLabel = isSecondary ? "→ fill tag" : "→ corner tag";
     const reclassTitle = isSecondary
-      ? "Make this a Fill category (fills the box; several blend into a gradient)"
+      ? "Make this a Fill tag category (fills the box; several blend into a gradient)"
       : "Make this a Corner tag category (a corner tag)";
     const tip = (isHidden ? "Click to show " : "Click to hide ") + cat.label + " — " + count + " box" + (count === 1 ? "" : "es") + " on the map. Shift-click the name to rename.";
     let h = '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="category" data-id="' + escapeHtml(catId) + '" data-index="' + indexOf[catId] + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
@@ -188,7 +188,7 @@ export function renderCategoriesList(): void {
 
   const split = splitCategoriesByClass(allIds);
   let html = "";
-  html += group("Fill",      "primary",   split.primary,   "+ Add fill");
+  html += group("Fill tag",  "primary",   split.primary,   "+ Add fill tag");
   html += '<div class="sidebar-cat-group-gap"></div>';
   html += group("Corner tag",   "secondary", split.secondary, "+ Add corner tag");
   html += '<div class="sidebar-drop-end" data-kind="category" data-target-index="' + allIds.length + '"></div>';
