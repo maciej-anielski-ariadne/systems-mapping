@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { loadDataFromCsv } from "../assets/js/06-data-loader";
 import {
   buildExportModel,
@@ -8,9 +8,11 @@ import {
   exportMaxHighlightDepth,
   EXPORT_CLOSE_SCRIPT,
 } from "../assets/js/19-export";
-import { state } from "../assets/js/03-state";
+import { state, setLayout } from "../assets/js/03-state";
+import { computeLayout } from "../assets/js/08-layout";
 import { refreshNeighborHighlight } from "../assets/js/09-graph-selection";
-import { LINEAR_CSV } from "./fixtures/graphs";
+import { LINEAR_CSV, REROUTE_CSV } from "./fixtures/graphs";
+import { mountAppDom } from "./helpers/dom";
 
 // Pull the inline viewer script body out of a published HTML string.
 function viewerScript(html: string): string {
@@ -116,5 +118,57 @@ describe("interactive published HTML (A → B → C)", () => {
     node("a").dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(node("a").classList.contains("sel")).toBe(false);
     expect(node("c").classList.contains("dim")).toBe(false);
+  });
+});
+
+describe("export honours collapsed stages (A → B → C, hide the middle)", () => {
+  // The no-selection export frames the visible viewport. jsdom reports a 0×0
+  // viewport, so detach #viz-scroll — visibleLayoutRect() then returns null and
+  // the export includes every visible node (B is hidden by the collapsed stage).
+  let scrollEl: HTMLElement | null = null;
+  beforeEach(() => {
+    // The previous describe's last test overwrites document.body with the
+    // published viewer; restore the app DOM so the loader's renderDetailPanel
+    // (and our #viz-scroll detach below) have their elements back.
+    mountAppDom();
+    loadDataFromCsv(REROUTE_CSV);
+    state.selectedNodeId = null;
+    state.selectedNodeIds = new Set();
+    state.hiddenStages = new Set(["s2"]);   // collapse the middle stage
+    setLayout(computeLayout());
+    scrollEl = document.getElementById("viz-scroll");
+    scrollEl?.parentElement?.removeChild(scrollEl);
+  });
+  afterEach(() => {
+    if (scrollEl) document.body.appendChild(scrollEl);
+  });
+
+  it("reroutes the hidden middle as a synthetic A → C edge instead of dropping the link", () => {
+    const model = buildExportModel()!;
+    expect(model).not.toBeNull();
+    // B is collapsed out; A and C remain.
+    expect([...model.nodeIds].sort()).toEqual(["a", "c"]);
+    // The pathway survives as ONE synthetic A→C connector — the same rerouting
+    // the live map shows — rather than vanishing with its dropped raw edges.
+    expect(model.edges).toHaveLength(1);
+    expect(model.edges[0]).toMatchObject({ from: "a", to: "c", effect: "increases", synthetic: true });
+
+    // And the SVG actually draws that arrow.
+    const { svg } = renderExportSvg(model);
+    expect(svg).toContain('data-from="a"');
+    expect(svg).toContain('data-to="c"');
+    expect(svg).not.toContain('data-to="b"');
+  });
+
+  it("carries the synthetic edge into the published viewer so it traces through", () => {
+    const model = buildExportModel({ allEdges: true })!;
+    const pal = exportPalette();
+    const { svg, width, height, nodeInfo } = renderExportSvg(model, { pal });
+    const html = buildPublishHtml(svg, width, height, nodeInfo, pal, model.edges);
+    const m = html.match(/var EDGES=(\[.*?\]);var scroll/);
+    expect(m).not.toBeNull();
+    const edges = JSON.parse(m![1].replace(/\\u003c/g, "<"));
+    expect(edges).toHaveLength(1);
+    expect(edges[0]).toMatchObject({ from: "a", to: "c", effect: "increases" });
   });
 });
