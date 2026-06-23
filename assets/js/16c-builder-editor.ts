@@ -101,7 +101,12 @@ export function getCellEditorMirror(): HTMLDivElement {
     "font-family:var(--font-mono)",
     "font-size:12px",
     "line-height:1.5",
-    "padding:6px 8px",
+    // Track --pad-cell-input so the mirror's content box always matches the
+    // editor's (which uses var(--pad-cell-input)). Hard-coding it would let
+    // the two drift, and the mirror would mis-measure width — clipping or
+    // wrapping the text a glyph early.
+    "padding:" + (getComputedStyle(document.documentElement)
+      .getPropertyValue("--pad-cell-input").trim() || "6px 12px"),
     "border:1px solid transparent",
     "box-sizing:border-box",
     "overflow-y:auto",
@@ -281,9 +286,26 @@ export function openCellEditor(trigger: HTMLInputElement): void {
   // input we're covering. preventScroll guards against the browser scrolling
   // the viewport on focus — the editor is already in view since the input
   // was. setSelectionRange is deferred to the rAF above (see B7).
-  try { editor.focus({ preventScroll: true }); } catch (_) {
-    try { editor.focus(); } catch (_) {}
-  }
+  //
+  // B15: when openCellEditor runs from inside a native `input` event (the
+  // typing-triggered overflow path in 16d), a synchronous focus() can be
+  // ignored by the browser — focus stays on the underlying <input>. That
+  // leaves the textarea a dead overlay (keystrokes keep hitting the input,
+  // and the input keeps its :focus ring, which reads as a "stuck" highlight
+  // that never closes). Re-assert focus on the microtask, after the input
+  // dispatch has unwound, and only if it didn't take the first time.
+  const takeFocus = () => {
+    try { editor.focus({ preventScroll: true }); } catch (_) {
+      try { editor.focus(); } catch (_) {}
+    }
+  };
+  takeFocus();
+  queueMicrotask(() => {
+    if (cellEditorState && cellEditorState.editor === editor &&
+        document.activeElement !== editor) {
+      takeFocus();
+    }
+  });
 
   const onScroll = () => setCellEditorAnchor(editor, trigger);
   // B2 + B6: window resize updates BOTH position (re-anchor to cell) AND
@@ -429,6 +451,16 @@ export function hideCellEditor(options?: HideCellEditorOptions): void {
   }
   if (options && options.refocusTrigger && trigger && typeof trigger.focus === "function") {
     try { trigger.focus(); } catch (_) {}
+  }
+
+  // B15: if the underlying input still holds focus — which happens when
+  // editor.focus() never took during the typing-open path — blur it so the
+  // cell isn't left "stuck highlighted" (its :focus ring) after the editor
+  // is gone. trigger.blur() fires focusout → handleBuilderFocusOut, which
+  // clears _dismissedTrigger so re-entering the cell starts fresh.
+  if (!(options && options.refocusTrigger) && trigger &&
+      document.activeElement === trigger && typeof trigger.blur === "function") {
+    try { trigger.blur(); } catch (_) {}
   }
 
   if (backdrop && backdrop.parentNode) backdrop.parentNode.removeChild(backdrop);

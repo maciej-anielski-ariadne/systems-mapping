@@ -111,6 +111,7 @@
   --pad-row:      4px 8px;          /* compact list-row padding */
   --pad-button:   6px 12px;         /* one button padding (snapped to the 4px grid) */
   --pad-input:    6px 8px;          /* one text-input padding (snapped to the grid) */
+  --pad-cell-input: 6px 12px;       /* builder table text cells: wider gutter so long values overflow cleanly */
   --pad-card:     var(--space-2);   /* 8  — card / inset padding */
   --pad-cell:     4px 8px;          /* builder table th AND td */
   --gap-sm:       var(--space-1);   /* 4 */
