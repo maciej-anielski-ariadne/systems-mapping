@@ -255,27 +255,6 @@
   box-shadow: 0 -2px 0 var(--act);
 }
 
-.sidebar-edit-drag {
-  /* Out of flow so the swatch owns the flush-left column (matches the mockup).
-     The whole row is draggable, so this grip is just a faint hover hint;
-     pointer-events:none lets clicks pass through to the swatch behind it. */
-  position: absolute;
-  left: 1px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--text-tertiary);
-  font-family: var(--font-mono);
-  font-size: var(--fs-body);
-  line-height: 1;
-  letter-spacing: -1px;
-  user-select: none;
-  opacity: 0;
-  pointer-events: none;
-}
-
-/* No hover reveal of the grip — it would overlap the now-flush swatch, and the
- * row's primary action is click-to-toggle (cursor stays pointer). The whole row
- * is still draggable for reordering. */
 .sidebar-edit-row.dragging { cursor: grabbing; }
 
 .sidebar-edit-label {
@@ -337,8 +316,12 @@
   pointer-events: none;
 }
 
-/* Inline trash-icon delete button for compact filter rows. Hidden until the
- * row is hovered so the list stays clean; turns red on hover. */
+/* Trailing controls for draggable rows — the drag grip and the delete button
+ * share one trailing slot (width: --delete-w). By default the grip is the
+ * affordance; while Shift is held (body.canvas-shift-edit, the app-wide edit
+ * key) the grip swaps out for the delete button. Only one is ever in flow, so
+ * the count swatch never shifts. Both reveal on row hover to keep the list clean. */
+.sidebar-row-drag,
 .sidebar-row-delete {
   flex: 0 0 auto;
   display: flex;
@@ -349,13 +332,38 @@
   background: transparent;
   color: var(--text-tertiary);
   border-radius: var(--radius-interactive);
-  cursor: pointer;
   opacity: 0;
   transition: background var(--dur-fast), color var(--dur-fast), opacity var(--dur-fast);
 }
 
-.sidebar-edit-row:hover .sidebar-row-delete,
-.sidebar-edit-row:focus-within .sidebar-row-delete {
+/* Drag grip — default trailing affordance (no Shift). It receives pointer
+ * events (so a click here is caught by the toggle guard rather than flipping the
+ * filter); the grab itself still initiates on the draggable row ancestor. */
+.sidebar-row-drag {
+  cursor: grab;
+}
+.sidebar-row-drag:active {
+  cursor: grabbing;
+}
+.sidebar-edit-row:hover .sidebar-row-drag,
+.sidebar-edit-row:focus-within .sidebar-row-drag {
+  opacity: 1;
+}
+
+/* Delete button — hidden out of flow until Shift is held, then it takes the
+ * grip's slot and reveals on hover; turns red on its own hover. */
+.sidebar-row-delete {
+  display: none;
+  cursor: pointer;
+}
+body.canvas-shift-edit .sidebar-row-drag {
+  display: none;
+}
+body.canvas-shift-edit .sidebar-row-delete {
+  display: flex;
+}
+body.canvas-shift-edit .sidebar-edit-row:hover .sidebar-row-delete,
+body.canvas-shift-edit .sidebar-edit-row:focus-within .sidebar-row-delete {
   opacity: 1;
 }
 

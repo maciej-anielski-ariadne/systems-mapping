@@ -86,6 +86,10 @@ interface ExportPalette {
   edgeEnables: string;
   statusGood: string;
   statusBad: string;
+  // Highlight colours used by the interactive published viewer (resolved to
+  // literals so the self-contained file needs no CSS custom properties).
+  edgeAncestor: string;
+  edgeDescendant: string;
 }
 
 // ───── Packed export layout ─────────────────────────────────────────────────
@@ -137,12 +141,17 @@ export function exportPalette(): ExportPalette {
     edgeEnables:   v("--edge-enables",   "#bfaede"),
     statusGood:    v("--status-good",    "#10b981"),
     statusBad:     v("--status-bad",     "#f87171"),
+    edgeAncestor:  v("--edge-ancestor",  "#8fb6d9"),
+    edgeDescendant:v("--edge-descendant","#4d6783"),
   };
 }
 
 // ───── Which nodes/edges to include ────────────────────────────────────────
 // Returns { nodeIds:Set, edges:[edge], selectionActive:bool }.
-export function getExportSelection(): { nodeIds: Set<string>; edges: Edge[]; selectionActive: boolean } {
+// `allEdges` (used by the interactive published HTML) includes every edge among
+// the chosen nodes rather than only the ones highlighted by the current depth —
+// so the published viewer can re-trace connections itself as the user clicks.
+export function getExportSelection(allEdges = false): { nodeIds: Set<string>; edges: Edge[]; selectionActive: boolean } {
   const singleSelected = state.selectedNodeId &&
     (!state.selectedNodeIds || state.selectedNodeIds.size <= 1);
 
@@ -150,10 +159,11 @@ export function getExportSelection(): { nodeIds: Set<string>; edges: Edge[]; sel
     const ids = new Set<string>([state.selectedNodeId!]);
     if (state.ancestorSet)   state.ancestorSet.forEach(id => ids.add(id));
     if (state.descendantSet) state.descendantSet.forEach(id => ids.add(id));
-    // Only the edges highlighted by the current highlight depth.
+    // Every edge among the chosen nodes (interactive), or only the edges
+    // highlighted by the current highlight depth (static image / default).
     const edges = EDGES.filter(e =>
-      state.highlightedEdgeIds && state.highlightedEdgeIds.has(e.id!) &&
-      ids.has(e.from) && ids.has(e.to));
+      ids.has(e.from) && ids.has(e.to) &&
+      (allEdges || (state.highlightedEdgeIds && state.highlightedEdgeIds.has(e.id!))));
     return { nodeIds: ids, edges, selectionActive: true };
   }
 
@@ -338,9 +348,9 @@ export function computeExportLayout(nodeIds: Set<string>, streamOrder: string[],
 }
 
 // ───── Assemble the export model ───────────────────────────────────────────
-export function buildExportModel(): ExportModel | null {
+export function buildExportModel(opts?: { allEdges?: boolean }): ExportModel | null {
   if (!state.dataLoaded || !layout) return null;
-  const sel = getExportSelection();
+  const sel = getExportSelection(opts && opts.allEdges);
   if (sel.nodeIds.size === 0) return null;
 
   const streamsPresent = new Set<string>(), stagesPresent = new Set<string>();
@@ -426,23 +436,24 @@ export function renderExportSvg(
      +   '.xc-header{font-size:11px;font-weight:600;letter-spacing:0.12em;}'
      + '</style>';
 
-  // Arrowhead markers (clean export only) — one per effect colour so the slide
-  // image reads edge direction, matching the live map's highlighted style.
-  if (transparent) {
-    const markers: Array<[string, string]> = [
-      ["default",   pal.edgeDefault],
-      ["increases", pal.edgeIncreases],
-      ["decreases", pal.edgeDecreases],
-      ["enables",   pal.edgeEnables],
-    ];
-    s += '<defs>';
-    for (const [name, color] of markers) {
-      s += '<marker id="xarrow_' + name + '" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">'
-         +   '<path d="M 0 0 L 10 5 L 0 10 z" fill="' + color + '"></path>'
-         + '</marker>';
-    }
-    s += '</defs>';
+  // Arrowhead markers (one per effect colour) so edges can read direction,
+  // mirroring the live map's highlighted style (11-rendering.js). Used by both
+  // the transparent slide image and the interactive published HTML's highlight;
+  // emitted once, and inert for any path that doesn't reference them.
+  const markers: Array<[string, string]> = [
+    ["default",   pal.edgeDefault],
+    ["ancestor",  pal.edgeAncestor],
+    ["increases", pal.edgeIncreases],
+    ["decreases", pal.edgeDecreases],
+    ["enables",   pal.edgeEnables],
+  ];
+  s += '<defs>';
+  for (const [name, color] of markers) {
+    s += '<marker id="xarrow_' + name + '" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">'
+       +   '<path d="M 0 0 L 10 5 L 0 10 z" fill="' + color + '"></path>'
+       + '</marker>';
   }
+  s += '</defs>';
 
   // Background. The clean export is transparent (drops straight onto a slide),
   // so the solid backdrop and structural chrome below are skipped entirely.
@@ -504,7 +515,11 @@ export function renderExportSvg(
       s += '<path d="' + edgeBezierPath(fromPos, toPos) + '" fill="none" stroke="' + effectEdge(edge.effect) +
            '" stroke-width="1.5" stroke-opacity="1" marker-end="url(#xarrow_' + effectMarker(edge.effect) + ')"' + dashAttr + '></path>';
     } else {
-      s += '<path d="' + edgeBezierPath(fromPos, toPos) + '" fill="none" stroke="' + pal.edgeDefault +
+      // Neutral resting style + data-* attributes that drive the interactive
+      // published viewer's re-tracing (inert for the static PNG export).
+      s += '<path class="xedge" data-edge-id="' + escapeHtml(edge.id!) + '" data-from="' + escapeHtml(edge.from) +
+           '" data-to="' + escapeHtml(edge.to) + '" data-effect="' + escapeHtml(edge.effect || "") +
+           '" d="' + edgeBezierPath(fromPos, toPos) + '" fill="none" stroke="' + pal.edgeDefault +
            '" stroke-width="1" stroke-opacity="0.45"' + dashAttr + '></path>';
     }
   }
@@ -522,8 +537,8 @@ export function renderExportSvg(
     s += '<g class="xnode" data-node-id="' + escapeHtml(node.id) + '">';
     s += fillInfo.defs;   // per-node gradient (empty unless multi-primary)
 
-    // Background rect.
-    s += '<rect x="' + pos.x + '" y="' + pos.y + '" width="' + pos.width + '" height="' + pos.height +
+    // Background rect (xn-bg lets the interactive viewer paint selection glows).
+    s += '<rect class="xn-bg" x="' + pos.x + '" y="' + pos.y + '" width="' + pos.width + '" height="' + pos.height +
          '" rx="5" fill="' + fillInfo.fill + '" stroke="' + stroke.color + '" stroke-width="' + stroke.width + '"></rect>';
 
     // Left stream-colour stripe (rounded only on the left corners).
@@ -691,35 +706,73 @@ export function exportCanvasImage(): void {
 
 // ───── PUBLIC: publish as a view-only HTML page ────────────────────────────
 export function publishCanvasHtml(): void {
-  const model = buildExportModel();
+  const model = buildExportModel({ allEdges: true });
   if (!model) { showLoadFeedback("Nothing to publish — load a map or zoom to some boxes.", true); return; }
   const pal = exportPalette();
   const { svg, width, height, nodeInfo } = renderExportSvg(model, { pal });
-  const html = buildPublishHtml(svg, width, height, nodeInfo, pal);
+  const html = buildPublishHtml(svg, width, height, nodeInfo, pal, model.edges);
   downloadTextBlob(html, "systems-map.html", "text/html;charset=utf-8");
-  showLoadFeedback("Published systems-map.html (view-only)", false);
+  showLoadFeedback("Published systems-map.html (interactive)", false);
 }
 
-// Wrap the SVG in a minimal, self-contained pan / zoom / hover viewer.
+// Deepest reachable hop over a set of edges — the longest shortest path measured
+// downstream from any node (mirrors computeMaxHighlightDepth in 09-graph-
+// selection.js). Caps the published viewer's highlight-depth control. Always >= 1.
+export function exportMaxHighlightDepth(edges: Edge[]): number {
+  const out: Record<string, string[]> = {};
+  for (const e of edges) (out[e.from] || (out[e.from] = [])).push(e.to);
+  let max = 1;
+  for (const start in out) {
+    const visited = new Set([start]);
+    let frontier = [start], level = 0;
+    while (frontier.length) {
+      const next: string[] = [];
+      for (const id of frontier) {
+        for (const to of (out[id] || [])) {
+          if (!visited.has(to)) { visited.add(to); next.push(to); }
+        }
+      }
+      if (next.length) level++;
+      frontier = next;
+    }
+    if (level > max) max = level;
+  }
+  return max;
+}
+
+// Wrap the SVG in a self-contained, interactive pan / zoom / highlight viewer:
+// click a box to trace its up/downstream connections, a highlight-depth control
+// to widen/narrow the trace, scroll-wheel + button zoom, drag-to-pan, and hover
+// tooltips. The whole thing stays a single file (graph data + viewer JS inline).
 export function buildPublishHtml(
   svg: string,
   width: number,
   height: number,
   nodeInfo: Record<string, Record<string, string>>,
-  pal: ExportPalette
+  pal: ExportPalette,
+  edges: Edge[]
 ): string {
   // Guard the embedded JSON against closing-tag breakouts by escaping "<".
-  const infoJson = JSON.stringify(nodeInfo).replace(/</g, "\\u003c");
+  const esc = (o: unknown): string => JSON.stringify(o).replace(/</g, "\\u003c");
+  const infoJson  = esc(nodeInfo);
+  const edgesJson = esc(edges.map(e => ({ id: e.id, from: e.from, to: e.to, effect: e.effect || "" })));
+  const maxDepth  = exportMaxHighlightDepth(edges);
 
   const viewerJs =
     '(function(){' +
-    'var W=' + width + ',H=' + height + ';' +
+    'var W=' + width + ',H=' + height + ',MAXD=' + maxDepth + ';' +
     'var INFO=' + infoJson + ';' +
+    'var EDGES=' + edgesJson + ';' +
     'var scroll=document.getElementById("mv-scroll");' +
     'var svg=document.getElementById("mv-svg");' +
     'var tip=document.getElementById("mv-tip");' +
     'var readout=document.getElementById("mv-zoom");' +
     'var z=1;' +
+    // ── adjacency for tracing (built once) ──
+    'var outAdj={},inAdj={};' +
+    'EDGES.forEach(function(e){(outAdj[e.from]||(outAdj[e.from]=[])).push(e);(inAdj[e.to]||(inAdj[e.to]=[])).push(e);});' +
+    'var sel=null,depth=1;' +
+    // ── zoom / pan ──
     'function clamp(v){return Math.max(0.2,Math.min(4,v));}' +
     'function apply(){svg.style.width=(W*z)+"px";svg.style.height=(H*z)+"px";readout.textContent=Math.round(z*100)+"%";}' +
     'function zoomTo(nz,cx,cy){var oz=z;nz=clamp(nz);if(nz===oz)return;' +
@@ -731,23 +784,51 @@ export function buildPublishHtml(
     'document.getElementById("mv-out").onclick=function(){zoomTo(z-0.1);};' +
     'document.getElementById("mv-fit").onclick=function(){fit();};' +
     'readout.onclick=function(){zoomTo(1);};' +
-    'scroll.addEventListener("wheel",function(e){if(!(e.ctrlKey||e.metaKey))return;e.preventDefault();zoomTo(z*Math.exp(-e.deltaY*0.0035),e.clientX,e.clientY);},{passive:false});' +
-    'var pan=null;' +
-    'scroll.addEventListener("mousedown",function(e){if(e.button!==0)return;if(e.target.closest&&e.target.closest(".xnode"))return;pan={x:e.clientX,y:e.clientY,l:scroll.scrollLeft,t:scroll.scrollTop};document.body.style.cursor="grabbing";});' +
-    'window.addEventListener("mousemove",function(e){if(pan){scroll.scrollLeft=pan.l-(e.clientX-pan.x);scroll.scrollTop=pan.t-(e.clientY-pan.y);}});' +
+    // Wheel zoom: Ctrl/Cmd or a mouse-wheel-like event zooms; a plain trackpad
+    // two-finger scroll keeps panning (mirrors the live app's 17-events.js).
+    'function looksLikeMouseWheel(e){if(e.deltaMode!==0)return true;if(e.deltaX!==0)return false;var a=Math.abs(e.deltaY);return a>=50&&a===Math.round(a);}' +
+    'scroll.addEventListener("wheel",function(e){var mod=e.ctrlKey||e.metaKey;var mw=!mod&&looksLikeMouseWheel(e);if(!mod&&!mw)return;' +
+      'e.preventDefault();var dy=e.deltaMode===1?e.deltaY*16:e.deltaY;var s=mw?0.0015:0.0035;zoomTo(z*Math.exp(-dy*s),e.clientX,e.clientY);},{passive:false});' +
+    'var pan=null,moved=false;' +
+    'scroll.addEventListener("mousedown",function(e){if(e.button!==0)return;moved=false;if(e.target.closest&&e.target.closest(".xnode"))return;pan={x:e.clientX,y:e.clientY,l:scroll.scrollLeft,t:scroll.scrollTop};document.body.style.cursor="grabbing";});' +
+    'window.addEventListener("mousemove",function(e){if(pan){if(Math.abs(e.clientX-pan.x)+Math.abs(e.clientY-pan.y)>3)moved=true;scroll.scrollLeft=pan.l-(e.clientX-pan.x);scroll.scrollTop=pan.t-(e.clientY-pan.y);}});' +
     'window.addEventListener("mouseup",function(){pan=null;document.body.style.cursor="";});' +
+    // ── trace (BFS up/down to `depth` hops) ──
+    'function bfs(start,d,adj,key){var seen={},res={};var fr=[start];seen[start]=1;' +
+      'for(var l=0;l<d&&fr.length;l++){var nx=[];for(var i=0;i<fr.length;i++){var a=adj[fr[i]]||[];' +
+        'for(var j=0;j<a.length;j++){var nb=a[j][key];if(nb!==start&&!res[nb]){res[nb]=1;seen[nb]=1;nx.push(nb);}}}fr=nx;}return res;}' +
+    'function edgesUpDown(start,d){var ids={};[[inAdj,"from"],[outAdj,"to"]].forEach(function(p){var adj=p[0],key=p[1];' +
+      'var seen={};seen[start]=1;var fr=[start];for(var l=0;l<d&&fr.length;l++){var nx=[];for(var i=0;i<fr.length;i++){var a=adj[fr[i]]||[];' +
+        'for(var j=0;j<a.length;j++){ids[a[j].id]=1;var nb=a[j][key];if(!seen[nb]){seen[nb]=1;nx.push(nb);}}}fr=nx;}});return ids;}' +
+    // ── apply highlight classes (no re-render) ──
+    'function applyHighlight(){var anc={},desc={},eh={};' +
+      'if(sel){anc=bfs(sel,depth,inAdj,"from");desc=bfs(sel,depth,outAdj,"to");eh=edgesUpDown(sel,depth);}' +
+      'var nodes=svg.querySelectorAll(".xnode");for(var i=0;i<nodes.length;i++){var g=nodes[i];var id=g.getAttribute("data-node-id");' +
+        'g.classList.remove("sel","anc","desc","dim");if(!sel)continue;' +
+        'if(id===sel)g.classList.add("sel");else if(anc[id])g.classList.add("anc");else if(desc[id])g.classList.add("desc");else g.classList.add("dim");}' +
+      'var eds=svg.querySelectorAll(".xedge");for(var k=0;k<eds.length;k++){var p=eds[k];p.classList.remove("ehi","edim");if(!sel)continue;' +
+        'if(eh[p.getAttribute("data-edge-id")])p.classList.add("ehi");else p.classList.add("edim");}}' +
+    'function select(id){sel=(sel===id?null:id);applyHighlight();}' +
+    // ── highlight-depth control ──
+    'var dReadout=document.getElementById("mv-depth"),dDown=document.getElementById("mv-depth-down"),dUp=document.getElementById("mv-depth-up");' +
+    'function applyDepth(){dReadout.textContent=String(depth);dDown.disabled=depth<=1;dUp.disabled=depth>=MAXD;}' +
+    'function setDepth(n){var c=Math.max(1,Math.min(MAXD,Math.round(n)));if(c===depth)return;depth=c;applyDepth();if(sel)applyHighlight();}' +
+    'dDown.onclick=function(){setDepth(depth-1);};dUp.onclick=function(){setDepth(depth+1);};applyDepth();' +
+    // ── selection clicks ──
+    'svg.addEventListener("click",function(e){if(moved)return;var g=e.target.closest&&e.target.closest(".xnode");if(g){e.stopPropagation();select(g.getAttribute("data-node-id"));}else if(sel){sel=null;applyHighlight();}});' +
+    // ── tooltips ──
     'function showTip(id,e){var d=INFO[id];if(!d)return;' +
-      'var h="<div class=\\"t-title\\">"+esc(d.label)+"</div>";' +
+      'var h="<div class=\\"t-title\\">"+esct(d.label)+"</div>";' +
       'var meta=[d.stream,d.stage,d.category].filter(Boolean).join(" \\u00b7 ");' +
-      'if(meta)h+="<div class=\\"t-meta\\">"+esc(meta)+"</div>";' +
-      'if(d.value)h+="<div class=\\"t-val\\">"+esc(d.value)+"</div>";' +
-      'if(d.description)h+="<div class=\\"t-desc\\">"+esc(d.description)+"</div>";' +
+      'if(meta)h+="<div class=\\"t-meta\\">"+esct(meta)+"</div>";' +
+      'if(d.value)h+="<div class=\\"t-val\\">"+esct(d.value)+"</div>";' +
+      'if(d.description)h+="<div class=\\"t-desc\\">"+esct(d.description)+"</div>";' +
       'tip.innerHTML=h;tip.style.display="block";moveTip(e);}' +
     'function moveTip(e){var pad=14;var w=tip.offsetWidth,ht=tip.offsetHeight;' +
       'var x=e.clientX+pad,y=e.clientY+pad;' +
       'if(x+w>window.innerWidth)x=e.clientX-w-pad;if(y+ht>window.innerHeight)y=e.clientY-ht-pad;' +
       'tip.style.left=x+"px";tip.style.top=y+"px";}' +
-    'function esc(t){return String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}' +
+    'function esct(t){return String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}' +
     'svg.addEventListener("mouseover",function(e){var g=e.target.closest&&e.target.closest(".xnode");if(g)showTip(g.getAttribute("data-node-id"),e);});' +
     'svg.addEventListener("mousemove",function(e){if(tip.style.display==="block")moveTip(e);});' +
     'svg.addEventListener("mouseout",function(e){var g=e.target.closest&&e.target.closest(".xnode");if(g)tip.style.display="none";});' +
@@ -765,20 +846,35 @@ export function buildPublishHtml(
       '#mv-scroll{position:absolute;inset:0;overflow:auto;cursor:grab;}' +
       '#mv-inner{padding:0;}' +
       '#mv-svg{display:block;}' +
-      // Zoom card — matches the main app's .viz-zoom-controls styling exactly
-      // (titled glass card, transparent borderless buttons, same tokens).
-      '#mv-toolbar{position:fixed;top:12px;right:12px;z-index:10;display:flex;flex-direction:column;gap:3px;' +
-        'width:120px;padding:5px 6px;border-radius:6px;background:' + pal.bgDeep + 'd9;backdrop-filter:blur(8px);' +
-        'font-family:Arial,Helvetica,sans-serif;}' +
-      '#mv-title{color:' + pal.textTertiary + ';font-size:9px;text-transform:uppercase;letter-spacing:0.08em;text-align:center;white-space:nowrap;}' +
-      '#mv-row{display:flex;align-items:center;justify-content:space-between;gap:2px;}' +
-      '#mv-toolbar button{background:transparent;border:none;color:' + pal.textSecondary + ';border-radius:4px;height:26px;' +
+      '.xnode{cursor:pointer;}' +
+      // Highlight states (mirror 05-visualization.css): selected = white glow,
+      // ancestor = blue, descendant = dimmer blue, everything else dimmed.
+      '.xnode.dim{opacity:0.18;}' +
+      '.xnode.sel .xn-bg{filter:drop-shadow(0 0 2px rgba(255,255,255,1)) drop-shadow(0 0 8px rgba(255,255,255,0.9)) drop-shadow(0 0 18px rgba(255,255,255,0.55));}' +
+      '.xnode.anc .xn-bg{filter:drop-shadow(0 0 2px ' + pal.edgeAncestor + ') drop-shadow(0 0 7px ' + pal.edgeAncestor + ') drop-shadow(0 0 14px ' + pal.edgeAncestor + ');}' +
+      '.xnode.desc .xn-bg{filter:drop-shadow(0 0 2px ' + pal.edgeDescendant + ') drop-shadow(0 0 7px ' + pal.edgeDescendant + ') drop-shadow(0 0 14px ' + pal.edgeAncestor + ');}' +
+      // Highlighted edges take their effect colour + arrowhead; others fade out.
+      '.xedge.edim{opacity:0.05;}' +
+      '.xedge.ehi{stroke-width:2;stroke-opacity:0.9;}' +
+      '.xedge.ehi[data-effect="enables"]{stroke:' + pal.edgeEnables + ';marker-end:url(#xarrow_enables);}' +
+      '.xedge.ehi[data-effect="increases"]{stroke:' + pal.edgeIncreases + ';marker-end:url(#xarrow_increases);}' +
+      '.xedge.ehi[data-effect="decreases"]{stroke:' + pal.edgeDecreases + ';marker-end:url(#xarrow_decreases);}' +
+      '.xedge.ehi:not([data-effect="enables"]):not([data-effect="increases"]):not([data-effect="decreases"]){stroke:' + pal.edgeAncestor + ';marker-end:url(#xarrow_ancestor);}' +
+      // Control cards — match the main app's .viz-*-controls glass-card styling.
+      '#mv-tools{position:fixed;top:12px;right:12px;z-index:10;display:flex;flex-direction:column;gap:8px;}' +
+      '.mv-card{display:flex;flex-direction:column;gap:3px;width:120px;padding:5px 6px;border-radius:6px;' +
+        'background:' + pal.bgDeep + 'd9;backdrop-filter:blur(8px);font-family:Arial,Helvetica,sans-serif;}' +
+      '.mv-title{color:' + pal.textTertiary + ';font-size:9px;text-transform:uppercase;letter-spacing:0.08em;text-align:center;white-space:nowrap;}' +
+      '.mv-row{display:flex;align-items:center;justify-content:space-between;gap:2px;}' +
+      '.mv-card button{background:transparent;border:none;color:' + pal.textSecondary + ';border-radius:4px;height:26px;' +
         'line-height:1;display:flex;align-items:center;justify-content:center;padding:0;font-family:inherit;cursor:pointer;' +
         'transition:background 0.15s,color 0.15s;}' +
-      '#mv-out,#mv-in{width:26px;font-size:16px;}' +
+      '.mv-card button:disabled{opacity:0.3;cursor:default;}' +
+      '.mv-step{width:26px;font-size:16px;}' +
       '#mv-zoom{flex:1;font-size:11px;letter-spacing:0.04em;}' +
+      '#mv-depth{flex:1;text-align:center;font-size:12px;color:' + pal.textPrimary + ';}' +
       '#mv-fit{width:100%;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;}' +
-      '#mv-toolbar button:hover{color:' + pal.textPrimary + ';background:' + pal.bgLight + ';}' +
+      '.mv-card button:not(:disabled):hover{color:' + pal.textPrimary + ';background:' + pal.bgLight + ';}' +
       '#mv-tip{position:fixed;display:none;max-width:300px;background:' + pal.bgDeep + ';border:1px solid ' + pal.borderSubtle + ';' +
         'border-radius:6px;padding:8px 10px;font-size:12px;pointer-events:none;z-index:20;box-shadow:0 8px 24px rgba(0,0,0,0.5);}' +
       '#mv-tip .t-title{font-weight:600;font-size:13px;margin-bottom:2px;}' +
@@ -789,16 +885,26 @@ export function buildPublishHtml(
     '</style></head><body>' +
     '<div id="mv-scroll"><div id="mv-inner">' + svg.replace('<svg ', '<svg id="mv-svg" ') + '</div></div>' +
     '<div id="mv-tip"></div>' +
-    '<div id="mv-toolbar">' +
-      '<span id="mv-title">Zoom</span>' +
-      '<div id="mv-row">' +
-        '<button id="mv-out" title="Zoom out" aria-label="Zoom out">−</button>' +
-        '<button id="mv-zoom" title="Reset zoom (click)">100%</button>' +
-        '<button id="mv-in" title="Zoom in" aria-label="Zoom in">+</button>' +
+    '<div id="mv-tools">' +
+      '<div class="mv-card">' +
+        '<span class="mv-title">Highlight depth</span>' +
+        '<div class="mv-row">' +
+          '<button class="mv-step" id="mv-depth-down" title="Trace fewer levels" aria-label="Decrease highlight depth">−</button>' +
+          '<span id="mv-depth">1</span>' +
+          '<button class="mv-step" id="mv-depth-up" title="Trace more levels" aria-label="Increase highlight depth">+</button>' +
+        '</div>' +
       '</div>' +
-      '<button id="mv-fit" title="Fit to screen">Fit</button>' +
+      '<div class="mv-card">' +
+        '<span class="mv-title">Zoom</span>' +
+        '<div class="mv-row">' +
+          '<button class="mv-step" id="mv-out" title="Zoom out" aria-label="Zoom out">−</button>' +
+          '<button id="mv-zoom" title="Reset zoom (click)">100%</button>' +
+          '<button class="mv-step" id="mv-in" title="Zoom in" aria-label="Zoom in">+</button>' +
+        '</div>' +
+        '<button id="mv-fit" title="Fit to screen">Fit</button>' +
+      '</div>' +
     '</div>' +
-    '<div id="mv-hint">Drag to pan · Ctrl/⌘ + scroll to zoom · hover a box for details</div>' +
+    '<div id="mv-hint">Click a box to trace its connections · drag to pan · scroll or Ctrl/⌘ + scroll to zoom · hover for details</div>' +
     '<script>' + viewerJs + EXPORT_CLOSE_SCRIPT +
     '</body></html>';
 }
