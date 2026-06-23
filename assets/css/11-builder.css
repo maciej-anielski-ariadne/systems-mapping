@@ -213,7 +213,7 @@
   background: var(--bg-deep);
   color: var(--text-primary);
   border-radius: var(--radius-interactive);
-  padding: var(--pad-input);
+  padding: var(--pad-cell-input);
   font-family: var(--font-mono);
   font-size: var(--fs-body);
   outline: none;
@@ -610,7 +610,7 @@
   color: var(--text-primary);
   border-radius: var(--radius-interactive);
   box-shadow: var(--focus-ring);
-  padding: var(--pad-input);           /* matches .builder-table input */
+  padding: var(--pad-cell-input);      /* matches .builder-table input */
   font-family: var(--font-mono);       /* matches .builder-table input */
   font-size: var(--fs-body);           /* matches .builder-table input */
   line-height: 1.5;

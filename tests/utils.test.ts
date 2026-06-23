@@ -84,6 +84,18 @@ describe("edgeBezierPath", () => {
     expect(path.startsWith("M 100,20")).toBe(true);
     expect(path).toContain("300,100"); // endX,endY
   });
+
+  it("routes a backward edge as a separated arc, not a doubled-back line", () => {
+    // target directly LEFT, same row → bows up off both nodes' top faces
+    const from: NodePosition = { x: 400, y: 100, width: 160, height: 48, labelLines: [] };
+    const to: NodePosition = { x: 100, y: 100, width: 160, height: 48, labelLines: [] };
+    const path = edgeBezierPath(from, to);
+    expect(path.startsWith("M 480,100")).toBe(true); // source top-centre, not right side
+    expect(path.endsWith("180,100")).toBe(true); // target top-centre
+    const ctrlYs = [...path.matchAll(/,(-?\d+(?:\.\d+)?)/g)].map((m) => Number(m[1]));
+    expect(Math.min(...ctrlYs)).toBeLessThan(100); // real upward bow
+    expect(path.startsWith("M 560")).toBe(false); // not the old forward path
+  });
 });
 
 describe("deltaColorFor", () => {
