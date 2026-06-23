@@ -321,8 +321,8 @@ export function renderOutgoingEdgesBlock(node: GraphNode): string {
       const flashClass = (edge.id === flashedId) ? " flash" : "";
       html += '<div class="edge-stripe edge-stripe--edit ' + edge.effect + flashClass + '" data-edge-row-id="' + escapeHtml(edge.id) + '">';
       html +=   '<div class="outgoing-edge-header">';
-      html +=     '<button class="outgoing-edge-target-link" data-jump-node="' + escapeHtml(edge.to) + '" title="Jump to the box this affects">→ ' + escapeHtml(target ? target.label : edge.to) + '</button>';
-      html +=     '<button class="outgoing-edge-delete" data-edge-action="delete" data-edge-id="' + escapeHtml(edge.id) + '" title="Delete this link">×</button>';
+      html +=     '<button class="outgoing-edge-target-link" data-jump-node="' + escapeHtml(edge.to) + '" data-tooltip="Jump to the box this affects">→ ' + escapeHtml(target ? target.label : edge.to) + '</button>';
+      html +=     '<button class="outgoing-edge-delete" data-edge-action="delete" data-edge-id="' + escapeHtml(edge.id) + '" data-tooltip="Delete this link">×</button>';
       html +=   '</div>';
       html +=   '<div class="outgoing-edge-controls">';
       html +=     '<select class="detail-edit-input detail-edit-select" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="effect">';
@@ -330,8 +330,8 @@ export function renderOutgoingEdgesBlock(node: GraphNode): string {
         html +=     '<option value="' + eff + '"' + (edge.effect === eff ? " selected" : "") + '>' + eff + '</option>';
       }
       html +=     '</select>';
-      html +=     '<input type="number" step="any" class="detail-edit-input detail-edit-number outgoing-edge-elasticity" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="elasticity" value="' + (edge.elasticity !== undefined && edge.elasticity !== null ? edge.elasticity : "") + '" placeholder="default ' + defaultElasticity + '" title="Strength (leave blank for the default for this link type)">';
-      html +=     '<select class="detail-edit-input detail-edit-select outgoing-edge-style" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="style" title="Line style">';
+      html +=     '<input type="number" step="any" class="detail-edit-input detail-edit-number outgoing-edge-elasticity" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="elasticity" value="' + (edge.elasticity !== undefined && edge.elasticity !== null ? edge.elasticity : "") + '" placeholder="default ' + defaultElasticity + '" data-tooltip="Strength (leave blank for the default for this link type)">';
+      html +=     '<select class="detail-edit-input detail-edit-select outgoing-edge-style" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="style" data-tooltip="Line style">';
       html +=       '<option value="solid"'  + (edge.style === "dashed" ? "" : " selected") + '>Solid</option>';
       html +=       '<option value="dashed"' + (edge.style === "dashed" ? " selected" : "") + '>Dashed</option>';
       html +=     '</select>';

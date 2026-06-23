@@ -93,8 +93,8 @@ export function renderStagesList(): void {
     const isHidden = state.hiddenStages.has(stage.id);
     const tip = (isHidden ? "Click to show " : "Click to hide ") + stage.label + " — " + count + " box" + (count === 1 ? "" : "es") + " on the map. Shift-click the name to rename.";
     html += '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="stage" data-id="' + escapeHtml(stage.id) + '" data-index="' + i + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
-    html +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
-    html +=   '<span class="sidebar-edit-label sidebar-inline-edit" data-field="label" title="Shift-click to rename">' + escapeHtml(stage.label) + '</span>';
+    html +=   '<span class="sidebar-edit-drag" data-tooltip="Drag to reorder">⋮⋮</span>';
+    html +=   '<span class="sidebar-edit-label sidebar-inline-edit" data-field="label" data-tooltip="Shift-click to rename">' + escapeHtml(stage.label) + '</span>';
     html +=   '<span class="count-swatch count-swatch--plain">' + count + '</span>';
     html +=   deleteIconButton("Delete column");
     html += '</div>';
@@ -126,9 +126,9 @@ export function renderStreamsList(): void {
 
     const tip = (isHidden ? "Click to show " : "Click to hide ") + stream.label + " — " + count + " box" + (count === 1 ? "" : "es") + " on the map. Shift-click the name to rename.";
     html += '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="stream" data-id="' + escapeHtml(stream.id) + '" data-index="' + i + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
-    html +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
-    html +=   '<div class="filter-label sidebar-inline-edit" data-field="label" title="Shift-click to rename">' + escapeHtml(stream.label) + '</div>';
-    html +=   '<span class="sidebar-short-chip sidebar-inline-edit" data-field="short" title="Shift-click to edit short label">' + escapeHtml(short) + '</span>';
+    html +=   '<span class="sidebar-edit-drag" data-tooltip="Drag to reorder">⋮⋮</span>';
+    html +=   '<div class="filter-label sidebar-inline-edit" data-field="label" data-tooltip="Shift-click to rename">' + escapeHtml(stream.label) + '</div>';
+    html +=   '<span class="sidebar-short-chip sidebar-inline-edit" data-field="short" data-tooltip="Shift-click to edit the short label">' + escapeHtml(short) + '</span>';
     html +=   countSwatch(stream.color, count);
     html +=   deleteIconButton("Delete row");
     html += '</div>';
@@ -169,9 +169,9 @@ export function renderCategoriesList(): void {
       : "Make this a Corner tag category (a corner tag)";
     const tip = (isHidden ? "Click to show " : "Click to hide ") + cat.label + " — " + count + " box" + (count === 1 ? "" : "es") + " on the map. Shift-click the name to rename.";
     let h = '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="category" data-id="' + escapeHtml(catId) + '" data-index="' + indexOf[catId] + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
-    h +=   '<span class="sidebar-edit-drag" title="Drag to reorder">⋮⋮</span>';
-    h +=   '<div class="filter-label sidebar-inline-edit" data-field="label" title="Shift-click to rename">' + escapeHtml(cat.label) + '</div>';
-    h +=   '<button class="sidebar-cat-reclass" data-action="reclass" title="' + escapeHtml(reclassTitle) + '">' + reclassLabel + '</button>';
+    h +=   '<span class="sidebar-edit-drag" data-tooltip="Drag to reorder">⋮⋮</span>';
+    h +=   '<div class="filter-label sidebar-inline-edit" data-field="label" data-tooltip="Shift-click to rename">' + escapeHtml(cat.label) + '</div>';
+    h +=   '<button class="sidebar-cat-reclass" data-action="reclass" data-tooltip="' + escapeHtml(reclassTitle) + '">' + reclassLabel + '</button>';
     h +=   countSwatch(cat.color, count);
     h +=   deleteIconButton("Delete category");
     h += '</div>';
@@ -339,7 +339,7 @@ export function countSwatch(color: string, count: number): string {
   const c = color || "#94a3b8";
   const tc = (typeof pickTextColor === "function") ? pickTextColor(c) : "#0a0e1a";
   return '<span class="count-swatch">' +
-    '<input type="color" class="sidebar-edit-color" data-field="color" value="' + escapeHtml(c) + '" title="Colour" aria-label="Colour">' +
+    '<input type="color" class="sidebar-edit-color" data-field="color" value="' + escapeHtml(c) + '" data-tooltip="Colour" aria-label="Colour">' +
     '<span class="count-num" style="color:' + tc + '">' + count + '</span>' +
     '</span>';
 }
@@ -354,7 +354,7 @@ export function edgeCountBadge(effectId: string, count: number | null | undefine
 // Small inline trash-icon delete button shared by every sidebar row.
 // data-action="delete" hooks into the cascade-delete wiring in wireRowHandlers.
 export function deleteIconButton(title: string): string {
-  return '<button class="sidebar-row-delete" data-action="delete" title="' + escapeHtml(title) + '" aria-label="' + escapeHtml(title) + '">' +
+  return '<button class="sidebar-row-delete" data-action="delete" data-tooltip="' + escapeHtml(title) + '" aria-label="' + escapeHtml(title) + '">' +
     '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" focusable="false">' +
     '<path fill="currentColor" d="M6.5 1.5h3a1 1 0 0 1 1 1V3h2.5a.5.5 0 0 1 0 1h-.54l-.7 9.06A1.5 1.5 0 0 1 10.27 14.5H5.73a1.5 1.5 0 0 1-1.49-1.44L3.54 4H3a.5.5 0 0 1 0-1h2.5v-.5a1 1 0 0 1 1-1Zm-1.95 2.5.69 8.98a.5.5 0 0 0 .49.52h4.54a.5.5 0 0 0 .49-.52L11.45 4H4.55ZM6.5 3h3v-.5h-3V3Zm.25 2.75a.5.5 0 0 1 .5.5v5a.5.5 0 0 1-1 0v-5a.5.5 0 0 1 .5-.5Zm2.5 0a.5.5 0 0 1 .5.5v5a.5.5 0 0 1-1 0v-5a.5.5 0 0 1 .5-.5Z"/>' +
     '</svg></button>';

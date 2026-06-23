@@ -78,6 +78,13 @@
   background: var(--bg-deep);
 }
 
+/* Strip mode: no room for the verb label beside the chevron, so hide it.
+   The label lives inside .panel-header (exempt from the visibility rule
+   below), so it needs its own hide rule. It returns when the strip
+   hover-expands. */
+.app.sidebar-unpinned .sidebar .panel-pin-label { display: none; }
+.app.sidebar-unpinned .sidebar:hover .panel-pin-label { display: inline; }
+
 /* While collapsed (not hovered) hide every child except the .panel-header
  * (which holds the pin). visibility:hidden (instead of display:none) so
  * we don't fight with any inline style.display the JS may set on direct
