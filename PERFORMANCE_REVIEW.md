@@ -7,9 +7,33 @@ vanilla-TS, SVG-based renderer; the analysis below is grounded in the current
 `assets/js/*.ts` sources.
 
 The findings are ordered by impact-to-effort. Each item names the hot path,
-explains the cost, and proposes a concrete fix. Nothing here has been applied —
-this is a review; the recommended changes are sketched so they can be picked up
-as focused follow-ups.
+explains the cost, and proposes a concrete fix.
+
+## Implementation status — all recommendations applied ✅
+
+Every recommendation below has now been implemented on this branch, in five
+verified phases (full type-check + test suite + build green after each; the
+suite grew from 105 to 114 tests):
+
+1. **Event delegation + rAF render coalescing + index fixes** — delegated all
+   SVG listeners to the stable `#viz-svg` element (bound once, not per render);
+   added `scheduleRender()` to coalesce per-frame rebuilds; replaced the Kahn
+   `Array.shift()` queue with a head index; added an `edgeById` index; capped
+   the label-measurement cache. *(items 1, 2, 6a, 6b, 6c)*
+2. **Edge-geometry caching** — `computeRenderEdges()` + anchor fan are cached and
+   reused across selection / hover / sim renders, keyed on topology, layout, and
+   the node-visibility sets. *(item 4)*
+3. **Static + transient overlay layers** — the SVG is split so node-drag and
+   edge-draw redraw only a small overlay group, never the full node/edge DOM.
+   *(item 3)*
+4. **In-place simulation updates** — slider scrubs patch value/delta/outcome
+   borders directly into the node DOM, falling back to a coalesced render only
+   for structural changes. *(item 5)*
+5. **Viewport virtualization** — large maps cull nodes/edges to the visible
+   scroll rect and redraw the slice on scroll; strictly additive (small maps and
+   the export are byte-for-byte unchanged). *(item 7)*
+
+The sections below are retained as the design rationale for each change.
 
 ---
 
