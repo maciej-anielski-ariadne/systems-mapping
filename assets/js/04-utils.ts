@@ -8,7 +8,16 @@
 //   • getMapTextScale – font-scale multiplier for the map when zoomed out
 // =============================================================================
 
-import { TEXT_SCALE_MAX, TEXT_SCALE_RATIO, FAN_SPACING, FAN_MARGIN } from "./02-config";
+import {
+  TEXT_SCALE_MAX,
+  TEXT_SCALE_RATIO,
+  FAN_SPACING,
+  FAN_MARGIN,
+  BACK_STUB,
+  BACK_CORNER_R,
+  BACK_LANE_GAP,
+  BACK_CHANNEL_INSET,
+} from "./02-config";
 import { CATEGORIES } from "./03-state";
 import type { GraphNode, Edge, CategoryMap, NodePosition } from "./types";
 
@@ -136,19 +145,120 @@ export function splitCategoriesByClass(
   return { primary: primary, secondary: secondary };
 }
 
+// Slack (px) before an edge whose target is barely to the right of its source
+// still counts as "backward". Shared by isBackwardEdge so the path builder, the
+// lane assignment, and the renderer's class tagging can never drift apart.
+const BACK_MARGIN = 24;
+
+// Does this edge run BACKWARD — i.e. its target sits left of, or only
+// marginally right of, the source, so a straight forward curve would double
+// back over the flow? The single source of truth for "is this a feedback edge".
+export function isBackwardEdge(fromPos: NodePosition, toPos: NodePosition): boolean {
+  return toPos.x < fromPos.x + fromPos.width + BACK_MARGIN;
+}
+
+// Direction + base Y for a backward edge's routing channel, derived purely from
+// the node boxes (no layout lookup needed). Bow UP — into the gap above the
+// higher node — by default; bow DOWN below the lower node when the target sits
+// clearly below the source, so the return opens away from the descending flow
+// (and same-column pairs don't collide). SVG y grows downward, so dir −1 is up.
+interface FeedbackBand { dir: -1 | 1; base: number; }
+function feedbackBand(fromPos: NodePosition, toPos: NodePosition): FeedbackBand {
+  const fromMidY = fromPos.y + fromPos.height / 2;
+  const toMidY   = toPos.y + toPos.height / 2;
+  const down = toMidY - fromMidY > Math.max(fromPos.height, toPos.height) * 0.5;
+  if (down) {
+    const bottom = Math.max(fromPos.y + fromPos.height, toPos.y + toPos.height);
+    return { dir: 1, base: bottom + BACK_CHANNEL_INSET };
+  }
+  const top = Math.min(fromPos.y, toPos.y);
+  return { dir: -1, base: top - BACK_CHANNEL_INSET };
+}
+
+// The channel Y for lane `laneOffset` (1 = closest to the nodes) within a band.
+function feedbackChannelY(band: FeedbackBand, base: number, laneOffset: number): number {
+  return base + band.dir * laneOffset * BACK_LANE_GAP;
+}
+
+// Build a single orthogonal path through `pts` with rounded corners. Each
+// interior vertex is softened with a quadratic bevel (`Q`) whose control point
+// is the sharp corner and whose end point is `radius` along the outgoing
+// segment — pure string math (no arc sweep flags), so it renders identically in
+// the live SVG and the export. The first and last segments stay straight, so a
+// caller that makes them horizontal keeps clean horizontal end tangents.
+function roundedOrthogonalPath(pts: { x: number; y: number }[], radius: number): string {
+  // Drop consecutive duplicates so a zero-length segment can't break the corner
+  // math (happens when a stub collapses on a near-coincident pair).
+  const p: { x: number; y: number }[] = [];
+  for (const q of pts) {
+    const last = p[p.length - 1];
+    if (!last || last.x !== q.x || last.y !== q.y) p.push(q);
+  }
+  const r2 = (n: number): number => Math.round(n * 100) / 100;
+  if (p.length === 1) return "M " + p[0].x + "," + p[0].y;
+
+  let d = "M " + p[0].x + "," + p[0].y;
+  for (let i = 1; i < p.length - 1; i++) {
+    const a = p[i - 1], b = p[i], c = p[i + 1];
+    const lenIn  = Math.hypot(b.x - a.x, b.y - a.y);
+    const lenOut = Math.hypot(c.x - b.x, c.y - b.y);
+    const r = Math.min(radius, lenIn / 2, lenOut / 2);
+    const pre  = { x: b.x - (b.x - a.x) / lenIn * r,  y: b.y - (b.y - a.y) / lenIn * r };
+    const post = { x: b.x + (c.x - b.x) / lenOut * r, y: b.y + (c.y - b.y) / lenOut * r };
+    d += " L " + r2(pre.x) + "," + r2(pre.y) +
+         " Q " + r2(b.x) + "," + r2(b.y) + " " + r2(post.x) + "," + r2(post.y);
+  }
+  const last = p[p.length - 1];
+  return d + " L " + last.x + "," + last.y;
+}
+
+// Orthogonal "return" path for a BACKWARD / feedback edge: a short horizontal
+// stub out of the source's right face, up (or down) into the routing channel at
+// `channelY`, across, then down (or up) into the target's left face — with
+// rounded corners. EVERY edge still exits the source's right and enters the
+// target's left, both via horizontal stubs, so the arrowhead (marker
+// orient="auto-start-reverse") still points rightward into the left face — do
+// NOT touch the marker. Layout-free: the lane-specific `channelY` is resolved by
+// computeBackEdgeLanes and passed in. Shared by the live renderer and export.
+export function edgeFeedbackPath(
+  fromPos: NodePosition,
+  toPos: NodePosition,
+  channelY: number,
+  fromYOffset = 0,
+  toYOffset = 0,
+): string {
+  const sy = fromPos.y + fromPos.height / 2 + fromYOffset;   // source mid (fanned)
+  const ey = toPos.y + toPos.height / 2 + toYOffset;         // target mid (fanned)
+  const sx = fromPos.x + fromPos.width;                      // source right face
+  const ex = toPos.x;                                        // target left face
+
+  const x1 = sx + BACK_STUB;   // end of the source exit stub (points right)
+  const x2 = ex - BACK_STUB;   // start of the target entry stub (points right)
+  return roundedOrthogonalPath([
+    { x: sx, y: sy },
+    { x: x1, y: sy },
+    { x: x1, y: channelY },
+    { x: x2, y: channelY },
+    { x: x2, y: ey },
+    { x: ex, y: ey },
+  ], BACK_CORNER_R);
+}
+
 // The cubic-bezier "M…C…" path for an edge from one node box to another.
 // EVERY edge leaves the source's right side and enters the target's left side —
 // one consistent invariant, so arrowheads always point rightward into the left
 // face. FORWARD edges (target clearly to the right) connect with horizontal
-// tangents directly. BACKWARD / feedback edges (target left of, or vertically
-// level with, the source) would double back over the forward flow if drawn
-// straight, so they keep the same right→left anchors but route AROUND: the curve
-// exits the right, bows away from the flow, and sweeps back into the left face.
-// The bow goes up by default and down when the target sits clearly below the
-// source, so the arc opens away from the descending flow. The arrow marker is
-// orient="auto-start-reverse" (see 11-rendering.ts) so the arrowhead follows the
-// horizontal end tangent for free — do NOT touch the marker. Shared by the live
-// renderer and the export so the curve math lives in one place.
+// tangents directly. BACKWARD / feedback edges route AROUND via edgeFeedbackPath
+// (see there). The arrow marker is orient="auto-start-reverse" (see
+// 11-rendering.ts) so the arrowhead follows the horizontal end tangent for free
+// — do NOT touch the marker. Shared by the live renderer and the export so the
+// curve math lives in one place.
+//
+// When called for a backward edge WITHOUT an explicit channel (the lone-edge
+// path: tests and any caller that hasn't run computeBackEdgeLanes), it derives a
+// default single-lane channel from the node extents so the edge still routes
+// neatly; callers that fan parallel returns pass the lane's channelY to
+// edgeFeedbackPath directly.
 export function edgeBezierPath(
   fromPos: NodePosition,
   toPos: NodePosition,
@@ -159,59 +269,20 @@ export function edgeBezierPath(
   // edges into (or out of) one node don't all land on the same point — see
   // computeEdgeAnchorOffsets. They default to 0, so callers that don't fan out
   // (and the export's center-anchored modes) are unaffected.
-  const fromMidY = fromPos.y + fromPos.height / 2 + fromYOffset;
-  const toMidY   = toPos.y + toPos.height / 2 + toYOffset;
-
-  const startXfwd = fromPos.x + fromPos.width;   // source right side (forward anchor)
-  const endXfwd   = toPos.x;                      // target left side (forward anchor)
-  const BACK_MARGIN = 24;                         // hair of slack before flipping
-  const isBackward = endXfwd < startXfwd + BACK_MARGIN;
-
-  if (!isBackward) {
-    // ── Forward: right side → left side, horizontal tangents (unchanged) ──
-    const startX = startXfwd;
-    const startY = fromMidY;
-    const endX   = endXfwd;
-    const endY   = toMidY;
-    const ctrlOffset = Math.max(40, Math.abs(endX - startX) * 0.5);
-    return "M " + startX + "," + startY +
-           " C " + (startX + ctrlOffset) + "," + startY +
-           " " + (endX - ctrlOffset) + "," + endY +
-           " " + endX + "," + endY;
+  if (isBackwardEdge(fromPos, toPos)) {
+    const band = feedbackBand(fromPos, toPos);
+    return edgeFeedbackPath(fromPos, toPos, feedbackChannelY(band, band.base, 1), fromYOffset, toYOffset);
   }
 
-  // ── Backward / feedback: keep the right→left anchors, but route AROUND so the
-  // edge doesn't fold back over the forward flow. The curve exits the source's
-  // right and re-enters the target's left, both with horizontal tangents (so the
-  // arrowhead still points rightward into the left face). Bow UP by default; bow
-  // DOWN when the target sits clearly below the source so the arc opens away from
-  // the descending flow (and same-column pairs don't collide). SVG y grows down.
-  const dy = toMidY - fromMidY;
-  const bowUp = dy <= 0;                          // tie (same row) bows up
-  const dir = bowUp ? -1 : 1;                     // -1 = up (smaller y), +1 = down
-
-  const startX = startXfwd;                       // source right side
-  const startY = fromMidY;
-  const endX   = endXfwd;                         // target left side
-  const endY   = toMidY;
-
-  const spanX = Math.abs(startX - endX);
-  const spanY = Math.abs(endY - startY);
-  // Bow height: clears a node row at minimum, grows with the longer span, capped
-  // so a cross-map feedback doesn't fly off the canvas.
-  const bow = Math.min(260, Math.max(60, spanX * 0.28 + spanY * 0.6));
-  // Push the control points OUTWARD (c1 right of the start, c2 left of the end)
-  // so the loop swings wide and both end tangents stay horizontal.
-  const ctrlOut = Math.max(40, spanX * 0.25);
-
-  const c1x = startX + ctrlOut;
-  const c1y = startY + dir * bow;
-  const c2x = endX - ctrlOut;
-  const c2y = endY + dir * bow;
-
+  // ── Forward: right side → left side, horizontal tangents ──
+  const startX = fromPos.x + fromPos.width;
+  const startY = fromPos.y + fromPos.height / 2 + fromYOffset;
+  const endX   = toPos.x;
+  const endY   = toPos.y + toPos.height / 2 + toYOffset;
+  const ctrlOffset = Math.max(40, Math.abs(endX - startX) * 0.5);
   return "M " + startX + "," + startY +
-         " C " + c1x + "," + c1y +
-         " " + c2x + "," + c2y +
+         " C " + (startX + ctrlOffset) + "," + startY +
+         " " + (endX - ctrlOffset) + "," + endY +
          " " + endX + "," + endY;
 }
 
@@ -281,6 +352,68 @@ export function computeEdgeAnchorOffsets<T>(
   });
   for (const n in outgoing) fanFace(n, outgoing[n], "fromYOffset");
   for (const n in incoming) fanFace(n, incoming[n], "toYOffset");
+
+  return result;
+}
+
+// Per-edge feedback-routing decision, parallel by index to the edge array:
+// whether the edge is backward, and (if so) the Y of the channel its "return"
+// path should run along. Computed once per render — like computeEdgeAnchorOffsets
+// — because the renderer iterates edges twice and recomputing per-edge would be
+// wasteful and could disagree between passes. Shared by the live renderer (11)
+// and the export (19) via the accessor callbacks.
+export interface BackEdgeLane { isBackward: boolean; channelY: number; }
+
+// Assign backward edges to stacked LANES so several feedback returns sharing a
+// region read as neat parallel lines instead of overlapping balloons. Backward
+// edges are grouped into channel bands (by bow direction + a coarse base Y);
+// within a band they share one base line and fan into lanes. The widest loop
+// takes the OUTERMOST lane (furthest from the nodes) so nested loops nest like
+// contour lines and never cross. Forward edges get { isBackward:false } and are
+// left untouched. Deterministic — independent of edge insertion order.
+export function computeBackEdgeLanes<T>(
+  edges: T[],
+  positions: Record<string, NodePosition>,
+  getFrom: (e: T) => string,
+  getTo: (e: T) => string,
+): BackEdgeLane[] {
+  const result: BackEdgeLane[] = edges.map(() => ({ isBackward: false, channelY: 0 }));
+
+  interface Item { i: number; band: FeedbackBand; span: number; sy: number; ey: number; }
+  const groups: Record<string, Item[]> = {};
+  edges.forEach((e, i) => {
+    const fromPos = positions[getFrom(e)];
+    const toPos   = positions[getTo(e)];
+    if (!fromPos || !toPos || !isBackwardEdge(fromPos, toPos)) return;
+    const band = feedbackBand(fromPos, toPos);
+    const item: Item = {
+      i, band,
+      span: Math.abs((fromPos.x + fromPos.width) - toPos.x),
+      sy: fromPos.y + fromPos.height / 2,
+      ey: toPos.y + toPos.height / 2,
+    };
+    // Coarse band key: same bow direction and a base within ~2 lanes group
+    // together, so nearby returns stack while far-apart ones route locally.
+    const key = band.dir + ":" + Math.round(band.base / (BACK_LANE_GAP * 2));
+    (groups[key] ||= []).push(item);
+  });
+
+  for (const key in groups) {
+    const g = groups[key];
+    const dir = g[0].band.dir;
+    // One shared base line for the whole band: the most-outward member's base,
+    // so every lane references the same channel and they can't overlap.
+    const sharedBase = dir < 0
+      ? Math.min(...g.map(it => it.band.base))
+      : Math.max(...g.map(it => it.band.base));
+    // Widest span first → outermost lane (largest offset, furthest from nodes).
+    g.sort((a, b) => b.span - a.span || a.sy - b.sy || a.ey - b.ey || a.i - b.i);
+    const m = g.length;
+    g.forEach((it, rank) => {
+      const laneOffset = m - rank;   // rank 0 (widest) → m (furthest)
+      result[it.i] = { isBackward: true, channelY: feedbackChannelY(it.band, sharedBase, laneOffset) };
+    });
+  }
 
   return result;
 }

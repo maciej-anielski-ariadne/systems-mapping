@@ -54,6 +54,24 @@ export const COL_GAP = 64;   // Compact (was 90)
 export const FAN_SPACING = 9;
 export const FAN_MARGIN  = 8;
 
+// Feedback / backward-edge routing. A backward edge (target left of, or level
+// with, the source) is drawn as a rounded-rectangle "return": a short
+// horizontal stub out of the source's right face, up (or down) into a
+// horizontal routing channel that sits OUTSIDE the node rows, across, then down
+// into the target's left face. See edgeFeedbackPath / computeBackEdgeLanes in
+// 04-utils.ts.
+//   • BACK_STUB           – length of the horizontal stub at each end, so the
+//                           arrowhead still exits/enters horizontally.
+//   • BACK_CORNER_R       – corner-rounding radius for the orthogonal turns.
+//   • BACK_LANE_GAP       – vertical gap between parallel feedback lanes, so
+//                           several returns sharing a band stack as neat lines.
+//   • BACK_CHANNEL_INSET  – how far the first lane sits above (or below) the
+//                           highest (or lowest) endpoint, into the row gap.
+export const BACK_STUB          = 18;
+export const BACK_CORNER_R      = 8;
+export const BACK_LANE_GAP      = 12;
+export const BACK_CHANNEL_INSET = 10;
+
 // Width of the row-label strip (e.g. "AIR", "RORO") on the left.
 export const ROW_HEADER_WIDTH = 96;   // Compact (was 110)
 

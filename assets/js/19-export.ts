@@ -55,9 +55,11 @@ import {
   streamById,
 } from "./03-state";
 import {
+  computeBackEdgeLanes,
   computeEdgeAnchorOffsets,
   deltaColorFor,
   edgeBezierPath,
+  edgeFeedbackPath,
   effectMarkerName,
   escapeHtml,
   maxReachableDepth,
@@ -546,6 +548,15 @@ export function renderExportSvg(
     (e) => e.effect || "default",
     (e) => (e.style === "dashed" ? "dashed" : "solid"),
   );
+  // Backward / feedback edges route as orthogonal "returns" through stacked
+  // channels, matching the live map (computeBackEdgeLanes / edgeFeedbackPath in
+  // 04-utils.js). Parallel by index to model.edges.
+  const backLanes = computeBackEdgeLanes(
+    model.edges,
+    lay.positions,
+    (e) => e.from,
+    (e) => e.to,
+  );
   // Two buffers so every casing sits under every colour stroke (the transit-map
   // knockout gap at crossings / under-runs). The transparent slide has no
   // background to knock out against, so it gets fan-out only — a solid casing
@@ -560,7 +571,10 @@ export function renderExportSvg(
     const fromPos = lay.positions[edge.from], toPos = lay.positions[edge.to];
     if (!fromPos || !toPos) continue;
     const off = edgeOffsets[i];
-    const pathD = edgeBezierPath(fromPos, toPos, off.fromYOffset, off.toYOffset);
+    const lane = backLanes[i];
+    const pathD = lane.isBackward
+      ? edgeFeedbackPath(fromPos, toPos, lane.channelY, off.fromYOffset, off.toYOffset)
+      : edgeBezierPath(fromPos, toPos, off.fromYOffset, off.toYOffset);
     const dashAttr = edge.style === "dashed" ? ' stroke-dasharray="6 5"' : '';
     if (transparent) {
       // Full-colour, full-opacity edges with a directional arrowhead — the live
@@ -572,7 +586,7 @@ export function renderExportSvg(
       edgeCasings += '<path fill="none" stroke="' + pal.bgDeepest + '" stroke-width="3" d="' + pathD + '"></path>';
       // Neutral resting style + data-* attributes that drive the interactive
       // published viewer's re-tracing (inert for the static PNG export).
-      edgeStrokes += '<path class="xedge" data-edge-id="' + escapeHtml(edge.id!) + '" data-from="' + escapeHtml(edge.from) +
+      edgeStrokes += '<path class="xedge' + (lane.isBackward ? ' feedback' : '') + '" data-edge-id="' + escapeHtml(edge.id!) + '" data-from="' + escapeHtml(edge.from) +
            '" data-to="' + escapeHtml(edge.to) + '" data-effect="' + escapeHtml(edge.effect || "") +
            '" d="' + pathD + '" fill="none" stroke="' + pal.edgeDefault +
            '" stroke-width="1" stroke-opacity="0.45"' + dashAttr + '></path>';
@@ -896,6 +910,8 @@ export function buildPublishHtml(
       '.xnode.anc .xn-bg{filter:drop-shadow(0 0 2px ' + pal.edgeAncestor + ') drop-shadow(0 0 7px ' + pal.edgeAncestor + ') drop-shadow(0 0 14px ' + pal.edgeAncestor + ');}' +
       '.xnode.desc .xn-bg{filter:drop-shadow(0 0 2px ' + pal.edgeDescendant + ') drop-shadow(0 0 7px ' + pal.edgeDescendant + ') drop-shadow(0 0 14px ' + pal.edgeAncestor + ');}' +
       // Highlighted edges take their effect colour + arrowhead; others fade out.
+      '.xedge.feedback{stroke-linejoin:round;stroke-linecap:round;opacity:0.8;}' +
+      '.xedge.feedback.ehi,.xedge.feedback.sel{opacity:1;}' +
       '.xedge.edim{opacity:0.05;}' +
       '.xedge.ehi{stroke-width:2;stroke-opacity:0.9;}' +
       '.xedge.ehi[data-effect="enables"]{stroke:' + pal.edgeEnables + ';marker-end:url(#xarrow_enables);}' +
