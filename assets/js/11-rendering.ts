@@ -16,7 +16,7 @@
 import type { Category, GraphNode, NodePosition } from "./types";
 import { CATEGORIES, NODES, STAGES, STREAMS, layout, nodeById, stageById, state, streamById } from "./03-state";
 import { deselectAll, selectNode } from "./09-graph-selection";
-import { computeBackEdgeLanes, computeEdgeAnchorOffsets, deltaColorFor, edgeBezierPath, edgeFeedbackPath, effectMarkerName, escapeHtml, getMapTextScale, wrapLabel } from "./04-utils";
+import { computeEdgeAnchorOffsets, deltaColorFor, edgeBezierPath, effectMarkerName, escapeHtml, getMapTextScale, wrapLabel } from "./04-utils";
 import { COL_GAP, COL_HEADER_HEIGHT, LABEL_INSET, NODE_GAP_Y, NODE_HEIGHT, NODE_WIDTH, ROW_HEADER_WIDTH, ROW_PADDING, SVG_PADDING_TOP } from "./02-config";
 import { slotTopY } from "./08-layout";
 import { computeRenderEdges, type RenderEdge } from "./10a-collapsed-edges";
@@ -325,17 +325,6 @@ export function render(): void {
     edgeStyleOf,
   );
 
-  // Per-edge feedback-routing lanes. Backward edges route as orthogonal
-  // "returns" through stacked channels (see computeBackEdgeLanes / edgeFeedbackPath
-  // in 04-utils.js); forward edges keep the smooth cubic bezier. Parallel by
-  // index to renderEdges, computed once (we iterate the edges twice below).
-  const backLanes = computeBackEdgeLanes(
-    renderEdges,
-    layout.positions,
-    (re) => re.from,
-    (re) => re.to,
-  );
-
   // Two output buffers. Every edge's CASING (a wide background-coloured stroke)
   // is emitted first, then every coloured stroke + arrowhead. Drawing all
   // casings beneath all colours is what produces the transit-map "knockout" gap
@@ -354,19 +343,12 @@ export function render(): void {
     const toPos   = layout.positions[re.to];
     if (!fromPos || !toPos) continue;   // defensive — endpoints should be visible
 
-    // Forward edges: a smooth left-to-right cubic bezier from the source's
-    // right side to the target's left side. Backward / feedback edges: an
-    // orthogonal "return" through this edge's routing lane. Both are fanned by
-    // the per-edge anchor offsets so co-incident arrows separate (shared with
-    // the export — see 04-utils.js).
+    // Smooth cubic bezier between the two node faces — forward edges connect
+    // right→left, backward / feedback edges connect left→right (same style,
+    // mirrored faces; see edgeBezierPath). Fanned by the per-edge anchor offsets
+    // so co-incident arrows separate (shared with the export — see 04-utils.js).
     const off = anchorOffsets[i];
-    const lane = backLanes[i];
-    const pathD = lane.isBackward
-      ? edgeFeedbackPath(fromPos, toPos, lane.channelY, off.fromYOffset, off.toYOffset)
-      : edgeBezierPath(fromPos, toPos, off.fromYOffset, off.toYOffset);
-    // Tag feedback edges so CSS can give them a distinct resting look while they
-    // still share the casing/weight/arrowhead/colour finish of forward edges.
-    const fbClass = lane.isBackward ? ' feedback' : '';
+    const pathD = edgeBezierPath(fromPos, toPos, off.fromYOffset, off.toYOffset);
 
     if (re.synthetic) {
       // Honour the sidebar edge filters (re.dashed marks a re-routed chain that
@@ -397,7 +379,7 @@ export function render(): void {
       const synthDash = re.dashed ? ' stroke-dasharray="5 4"' : '';
       const effectClass = ' effect-' + re.effect;   // increases / decreases / neutral
       edgeCasings += casingPath(pathD, strokeWidth, dimmed);
-      edgeStrokes += '<path class="edge-path synthetic' + effectClass + fbClass + (dimmed ? ' dimmed' : '') +
+      edgeStrokes += '<path class="edge-path synthetic' + effectClass + (dimmed ? ' dimmed' : '') +
         '" d="' + pathD + '" stroke="' + strokeColor +
         '" stroke-width="' + strokeWidth + '" stroke-opacity="' + strokeOpacity +
         '"' + synthDash + ' marker-end="url(#arrow_' + markerName + ')"></path>';
@@ -461,7 +443,7 @@ export function render(): void {
     // without having to parse the inline stroke value.
     const effectClass = edge.effect ? ' effect-' + edge.effect : '';
     const isEdgeUndoFlashed = undoFlashEdgeIds && undoFlashEdgeIds.has(edge.id!);
-    const classAttr = ' class="edge-path' + effectClass + fbClass + (dimmed ? ' dimmed' : '') + (isEdgeFlashed ? ' flashed' : '') + (isEdgeUndoFlashed ? ' undo-flash' : '') + (isEdgeSelected ? ' selected' : '') + '"';
+    const classAttr = ' class="edge-path' + effectClass + (dimmed ? ' dimmed' : '') + (isEdgeFlashed ? ' flashed' : '') + (isEdgeUndoFlashed ? ' undo-flash' : '') + (isEdgeSelected ? ' selected' : '') + '"';
     // Dashed line style (inline, so it persists through every selection state).
     const dashAttr = edge.style === "dashed" ? ' stroke-dasharray="6 5"' : '';
     edgeStrokes += '<path' + classAttr + ' data-edge-id="' + edge.id + '" d="' + pathD + '" stroke="' + strokeColor + '" stroke-width="' + strokeWidth + '" stroke-opacity="' + strokeOpacity + '"' + dashAttr + markerEnd + '></path>';

@@ -203,25 +203,6 @@ body.panning * {
   opacity: 0.05;
 }
 
-/* Feedback / backward edges — routed as orthogonal "returns" (in 11-rendering.js).
- * They share the casing, weight, arrowhead and colour finish of forward edges;
- * a softly rounded line join matches the rounded corners, and a slightly lower
- * resting opacity lets the eye read them as returns without competing with the
- * forward flow. Selection / flash states still pull them to full strength. */
-.edge-path.feedback {
-  stroke-linejoin: round;
-  stroke-linecap: round;
-  opacity: 0.8;
-}
-.edge-path.feedback.dimmed {
-  opacity: 0.05;
-}
-.edge-path.feedback.selected,
-.edge-path.feedback.flashed,
-.edge-path.feedback.undo-flash {
-  opacity: 1;
-}
-
 /* Background-coloured stroke drawn UNDER each edge (in 11-rendering.js). Where
  * two edges cross or one runs under another, the upper edge's casing knocks out
  * a clean gap so it reads as passing over — transit-map style. Width is set
@@ -229,8 +210,6 @@ body.panning * {
 .edge-casing {
   fill: none;
   stroke: var(--edge-casing);
-  stroke-linejoin: round;
-  stroke-linecap: round;
   pointer-events: none;
 }
 

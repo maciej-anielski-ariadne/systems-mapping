@@ -7,9 +7,7 @@ import {
   nodeCategoryIds,
   splitCategoriesByClass,
   edgeBezierPath,
-  edgeFeedbackPath,
   isBackwardEdge,
-  computeBackEdgeLanes,
   computeEdgeAnchorOffsets,
   deltaColorFor,
   getMapTextScale,
@@ -89,21 +87,18 @@ describe("edgeBezierPath", () => {
     expect(path).toContain("300,100"); // endX,endY
   });
 
-  it("routes a backward edge as an orthogonal return, keeping the right→left anchors", () => {
-    // target directly LEFT, same row → routes up and around, but still exits
-    // the source's right and re-enters the target's left.
+  it("draws a backward edge from the source's LEFT face to the target's RIGHT face", () => {
+    // target directly LEFT, same row → a normal-style cubic curve, but mirrored:
+    // it exits the source's left and enters the target's right (arrow points left).
     const from: NodePosition = { x: 400, y: 100, width: 160, height: 48, labelLines: [] };
     const to: NodePosition = { x: 100, y: 100, width: 160, height: 48, labelLines: [] };
     const path = edgeBezierPath(from, to);
-    expect(path.startsWith("M 560,124")).toBe(true); // source RIGHT side, mid height
-    expect(path.endsWith("100,124")).toBe(true); // target LEFT side, mid height
-    // Orthogonal (rounded-corner) route, not a cubic bezier.
-    expect(path).not.toContain("C");
-    expect(path).toContain("L");
-    expect(path).toContain("Q");
-    // The channel runs above the endpoints (smaller y) for an upward return.
-    const ys = [...path.matchAll(/,(-?\d+(?:\.\d+)?)/g)].map((m) => Number(m[1]));
-    expect(Math.min(...ys)).toBeLessThan(124);
+    expect(path.startsWith("M 400,124")).toBe(true); // source LEFT side, mid height
+    expect(path.endsWith("260,124")).toBe(true); // target RIGHT side, mid height
+    // Same smooth cubic style as a forward edge — no orthogonal routing.
+    expect(path).toContain("C");
+    expect(path).not.toContain("L");
+    expect(path).not.toContain("Q");
   });
 
   it("shifts the anchors by the fan-out offsets", () => {
@@ -124,62 +119,6 @@ describe("isBackwardEdge", () => {
   it("is true at and inside the backward margin boundary", () => {
     expect(isBackwardEdge(from, { x: 123, y: 0, width: 100, height: 40, labelLines: [] })).toBe(true);
     expect(isBackwardEdge(from, { x: -50, y: 0, width: 100, height: 40, labelLines: [] })).toBe(true);
-  });
-});
-
-describe("edgeFeedbackPath", () => {
-  const from: NodePosition = { x: 400, y: 100, width: 160, height: 48, labelLines: [] };
-  const to: NodePosition = { x: 100, y: 100, width: 160, height: 48, labelLines: [] };
-  it("keeps the right→left anchors and routes through the given channel", () => {
-    const path = edgeFeedbackPath(from, to, 60);
-    expect(path.startsWith("M 560,124")).toBe(true);
-    expect(path.endsWith("100,124")).toBe(true);
-    expect(path).not.toContain("C"); // never a cubic — orthogonal only
-    expect(path).toContain("60"); // the channel Y appears in the route
-  });
-  it("shifts the anchors by the fan-out offsets", () => {
-    const path = edgeFeedbackPath(from, to, 60, -6, 4);
-    expect(path.startsWith("M 560,118")).toBe(true); // 124 + (-6)
-    expect(path.endsWith("100,128")).toBe(true); // 124 + 4
-  });
-});
-
-describe("computeBackEdgeLanes", () => {
-  const positions: Record<string, NodePosition> = {
-    a: { x: 0, y: 100, width: 100, height: 40, labelLines: [] },   // source (right)
-    b: { x: 0, y: 100, width: 100, height: 40, labelLines: [] },
-    near: { x: 200, y: 100, width: 100, height: 40, labelLines: [] }, // forward target
-    far: { x: -400, y: 100, width: 100, height: 40, labelLines: [] }, // wide backward target
-    mid: { x: -150, y: 100, width: 100, height: 40, labelLines: [] }, // narrow backward target
-  };
-  const acc = { from: (e: { from: string }) => e.from, to: (e: { to: string }) => e.to };
-
-  it("flags forward edges as not backward and leaves them at channel 0", () => {
-    const edges = [{ from: "a", to: "near" }];
-    const lanes = computeBackEdgeLanes(edges, positions, acc.from, acc.to);
-    expect(lanes[0]).toEqual({ isBackward: false, channelY: 0 });
-  });
-
-  it("stacks parallel backward edges on distinct channels, widest outermost", () => {
-    const edges = [
-      { from: "a", to: "mid" }, // narrow span
-      { from: "b", to: "far" }, // wide span
-    ];
-    const lanes = computeBackEdgeLanes(edges, positions, acc.from, acc.to);
-    expect(lanes[0].isBackward).toBe(true);
-    expect(lanes[1].isBackward).toBe(true);
-    expect(lanes[0].channelY).not.toBe(lanes[1].channelY); // no overlap
-    // Up-band (dir −1): smaller y is further out. The wide loop (far) sits above
-    // the narrow one (mid).
-    expect(lanes[1].channelY).toBeLessThan(lanes[0].channelY);
-  });
-
-  it("is independent of edge insertion order", () => {
-    const a = computeBackEdgeLanes([{ from: "a", to: "mid" }, { from: "b", to: "far" }], positions, acc.from, acc.to);
-    const b = computeBackEdgeLanes([{ from: "b", to: "far" }, { from: "a", to: "mid" }], positions, acc.from, acc.to);
-    // The 'far' edge gets the same channel regardless of where it appears.
-    expect(a[1].channelY).toBe(b[0].channelY);
-    expect(a[0].channelY).toBe(b[1].channelY);
   });
 });
 
