@@ -48,6 +48,31 @@ body.drag-active .drop-zone-inner {
   justify-content: center;
 }
 
+/* Brand eyebrow above the instruction — the product name + tagline, the one
+ * spot a first-time user meets the name before any data is loaded. The mono
+ * tagline echoes the sidebar section eyebrows. */
+.drop-zone-brand {
+  font-family: var(--font-display);
+  font-size: var(--fs-title);
+  font-weight: var(--fw-semibold);
+  color: var(--accent-purple);
+  letter-spacing: -0.01em;
+  margin-bottom: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.drop-zone-tagline {
+  font-family: var(--font-mono);
+  font-size: var(--fs-cap);
+  font-weight: 400;
+  letter-spacing: var(--tracking-cap);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
 .drop-zone-title {
   font-family: var(--font-display);
   font-size: var(--fs-title);

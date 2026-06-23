@@ -1,4 +1,4 @@
-# Canvas Editing Review — Systems Mapping App
+# Canvas Editing Review — Ariadne Maps
 
 ## Context
 

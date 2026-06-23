@@ -854,7 +854,7 @@ export function buildPublishHtml(
   return '<!DOCTYPE html>' +
     '<html lang="en"><head><meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-    '<title>Systems Map</title>' +
+    '<title>Ariadne Maps</title>' +
     '<style>' +
       '*{box-sizing:border-box;}' +
       'html,body{margin:0;height:100%;background:' + pal.bgDeepest + ';' +

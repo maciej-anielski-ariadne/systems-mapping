@@ -1,6 +1,6 @@
-# Systems Map
+# Ariadne Maps
 
-Spreadsheet-driven interactive systems map. Written in TypeScript as ES modules and bundled with Vite; `npm run build` produces a **single standalone HTML file** with no runtime dependencies, server, or network access. Open that file, drop in a spreadsheet, and get a layered cause-and-effect diagram with live what-if simulation.
+Spreadsheet-driven, interactive causal maps. Written in TypeScript as ES modules and bundled with Vite; `npm run build` produces a **single standalone HTML file** with no runtime dependencies, server, or network access. Open that file, drop in a spreadsheet, and get a layered cause-and-effect diagram with live what-if simulation.
 
 Domain-agnostic — any system you can express as boxes-with-rows-and-columns plus signed links will render. The default sample spreadsheet is a small neutral worked example (a three-team product company — 12 boxes, 12 links) that exercises every feature of the app while staying small enough to grok at a glance.
 

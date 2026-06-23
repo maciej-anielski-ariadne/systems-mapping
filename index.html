@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
 ================================================================================
- Systems Map — single-page web app
+ Ariadne Maps — single-page web app
 
  This is the only file you need to open in a browser. Everything else is loaded
  from the `assets/` folder next to it. The app is fully self-contained:
@@ -16,7 +16,7 @@
    assets/data/      The sample spreadsheet and the empty template, openable in
                      Excel or Google Sheets.
 
- ─── To edit the systems map ──────────────────────────────────────────────
+ ─── To edit the map ──────────────────────────────────────────────────────
    1. Open assets/data/sample.csv (or empty_template.csv) in Excel.
    2. Edit the rows.
    3. Save as a spreadsheet (.csv) file.
@@ -34,7 +34,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Systems Map</title>
+  <title>Ariadne Maps</title>
+
+  <!-- Favicon: inline SVG (no external file → survives the single-file build,
+       works offline). A thread weaving through three nodes — the product's
+       cause→effect motif. Drawn in the purple "enable" data-hue, not the
+       interactive blue, so it stays clear of the affordance palette. -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect width='24' height='24' rx='6' fill='%2314161d'/><path d='M4 17C8 17 8 8 12 8s4 9 8 9' fill='none' stroke='%23bfaede' stroke-width='1.6' stroke-linecap='round'/><circle cx='4' cy='17' r='2' fill='%23bfaede'/><circle cx='12' cy='8' r='2' fill='%23bfaede'/><circle cx='20' cy='17' r='2' fill='%23bfaede'/></svg>">
 
   <!-- ──────────────────────────────────────────────────────────────────────
        THEME — set <html data-theme> BEFORE any CSS paints, so there's no flash.
@@ -89,6 +95,19 @@
 
   <!-- ============== TOP HEADER ============== -->
   <header class="app-header">
+    <!-- Brand lockup: the thread-through-nodes mark + wordmark. Decorative
+         (not a link), drawn in the purple "enable" data-hue so it never reads
+         as the interactive blue. Styles in 03-app-shell.css. -->
+    <div class="app-brand" aria-label="Ariadne Maps">
+      <svg class="app-brand-mark" width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M4 17C8 17 8 8 12 8s4 9 8 9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path>
+        <circle cx="4" cy="17" r="2.1" fill="currentColor"></circle>
+        <circle cx="12" cy="8" r="2.1" fill="currentColor"></circle>
+        <circle cx="20" cy="17" r="2.1" fill="currentColor"></circle>
+      </svg>
+      <span class="app-brand-name">Ariadne Maps</span>
+    </div>
+
     <!-- Search box (icon + text input) — stretches to fill the row, with the
          action buttons pinned to the right. JS in 17a-search.js fills the
          #search-results dropdown below as the user types. -->
@@ -255,7 +274,8 @@
             <line x1="12" y1="3" x2="12" y2="15"></line>
           </svg>
         </div>
-        <div class="drop-zone-title">Drop a spreadsheet here to load a systems map</div>
+        <div class="drop-zone-brand">Ariadne Maps<span class="drop-zone-tagline">Map cause and effect</span></div>
+        <div class="drop-zone-title">Drop a spreadsheet here to build your map</div>
         <div class="drop-zone-subtitle">
           Drop a spreadsheet here, or use the buttons below. The map is driven by a spreadsheet
           defining rows, columns, categories, boxes, and links — build it
