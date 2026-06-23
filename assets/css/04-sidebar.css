@@ -375,7 +375,7 @@
   white-space: nowrap;
 }
 
-/* Compact monospace badge showing a stream's short label. Double-click to edit
+/* Compact monospace badge showing a stream's short label. Shift-click to edit
  * it inline (it carries .sidebar-inline-edit). */
 .sidebar-short-chip {
   flex: 0 0 auto;
@@ -393,6 +393,19 @@
 
 /* Inline rename/edit: the element becomes a contenteditable text box. Show a
  * clear edit affordance and let the text be selected/wrapped while editing. */
+/* Shift is the app-wide edit key: while it's held, reveal that sidebar labels
+ * are editable (mirrors the body.canvas-shift-edit affordances on the canvas).
+ * Skip elements already in edit mode so the .editing styling below wins. */
+body.canvas-shift-edit .sidebar-inline-edit:not(.editing) {
+  cursor: text;
+  border-radius: var(--radius-interactive);
+  box-shadow: inset 0 0 0 1px var(--border-subtle);
+}
+body.canvas-shift-edit .sidebar-inline-edit:not(.editing):hover {
+  color: var(--text-primary);
+  box-shadow: var(--focus-ring);
+}
+
 .sidebar-inline-edit.editing {
   cursor: text;
   overflow: visible;
