@@ -16,10 +16,10 @@
 import type { Category, GraphNode, NodePosition } from "./types";
 import { CATEGORIES, NODES, STAGES, STREAMS, layout, nodeById, stageById, state, streamById } from "./03-state";
 import { deselectAll, selectNode } from "./09-graph-selection";
-import { deltaColorFor, edgeBezierPath, effectMarkerName, escapeHtml, getMapTextScale, wrapLabel } from "./04-utils";
+import { computeEdgeAnchorOffsets, deltaColorFor, edgeBezierPath, effectMarkerName, escapeHtml, getMapTextScale, wrapLabel } from "./04-utils";
 import { COL_GAP, COL_HEADER_HEIGHT, LABEL_INSET, NODE_GAP_Y, NODE_HEIGHT, NODE_WIDTH, ROW_HEADER_WIDTH, ROW_PADDING, SVG_PADDING_TOP } from "./02-config";
 import { slotTopY } from "./08-layout";
-import { computeRenderEdges } from "./10a-collapsed-edges";
+import { computeRenderEdges, type RenderEdge } from "./10a-collapsed-edges";
 import { isEdgeVisible, isNodeVisible, toggleStage, toggleStream } from "./10-filters";
 import { formatNodeDelta, formatNodeValue, getOutcomeBorderColor } from "./07-simulation-engine";
 import { hideTooltip, moveTooltip, showTooltip } from "./12-tooltip";
@@ -306,14 +306,49 @@ export function render(): void {
                              "var(--edge-default)";
   const effectMarker = effectMarkerName;
 
-  for (const re of computeRenderEdges()) {
+  // Materialize once: we iterate the edges twice (anchor fan-out below, then the
+  // casing/colour passes) so we must not recompute the rerouting each time.
+  const renderEdges = computeRenderEdges();
+
+  // Per-edge vertical anchor offsets. Edges that share a node face fan out by
+  // (effect, line-style) bucket so differently-coloured arrows entering the
+  // same node stop landing on the same point. Parallel by index to renderEdges.
+  const edgeStyleOf = (re: RenderEdge): string =>
+    re.synthetic ? (re.dashed ? "dashed" : "solid")
+                 : (re.edge.style === "dashed" ? "dashed" : "solid");
+  const anchorOffsets = computeEdgeAnchorOffsets(
+    renderEdges,
+    layout.positions,
+    (re) => re.from,
+    (re) => re.to,
+    (re) => re.effect,
+    edgeStyleOf,
+  );
+
+  // Two output buffers. Every edge's CASING (a wide background-coloured stroke)
+  // is emitted first, then every coloured stroke + arrowhead. Drawing all
+  // casings beneath all colours is what produces the transit-map "knockout" gap
+  // where one edge crosses or runs under another, keeping the top edge legible.
+  // The casing inherits the edge's `dimmed` class so it fades with its edge.
+  const CASING_EXTRA = 2;   // casing is this many px wider than the colour stroke
+  let edgeCasings = "";
+  let edgeStrokes = "";
+  const casingPath = (pathD: string, strokeWidth: number, dimmed: boolean): string =>
+    '<path class="edge-casing' + (dimmed ? ' dimmed' : '') + '" d="' + pathD +
+    '" stroke-width="' + (strokeWidth + CASING_EXTRA) + '"></path>';
+
+  for (let i = 0; i < renderEdges.length; i++) {
+    const re = renderEdges[i];
     const fromPos = layout.positions[re.from];
     const toPos   = layout.positions[re.to];
     if (!fromPos || !toPos) continue;   // defensive — endpoints should be visible
 
     // Smooth left-to-right cubic bezier from source's right side to target's
-    // left side (shared with the export — see edgeBezierPath in 04-utils.js).
-    const pathD = edgeBezierPath(fromPos, toPos);
+    // left side, fanned by the per-edge anchor offsets so co-incident arrows
+    // separate (shared with the export — see edgeBezierPath /
+    // computeEdgeAnchorOffsets in 04-utils.js).
+    const off = anchorOffsets[i];
+    const pathD = edgeBezierPath(fromPos, toPos, off.fromYOffset, off.toYOffset);
 
     if (re.synthetic) {
       // Honour the sidebar edge filters (re.dashed marks a re-routed chain that
@@ -343,7 +378,8 @@ export function render(): void {
       }
       const synthDash = re.dashed ? ' stroke-dasharray="5 4"' : '';
       const effectClass = ' effect-' + re.effect;   // increases / decreases / neutral
-      content += '<path class="edge-path synthetic' + effectClass + (dimmed ? ' dimmed' : '') +
+      edgeCasings += casingPath(pathD, strokeWidth, dimmed);
+      edgeStrokes += '<path class="edge-path synthetic' + effectClass + (dimmed ? ' dimmed' : '') +
         '" d="' + pathD + '" stroke="' + strokeColor +
         '" stroke-width="' + strokeWidth + '" stroke-opacity="' + strokeOpacity +
         '"' + synthDash + ' marker-end="url(#arrow_' + markerName + ')"></path>';
@@ -395,9 +431,13 @@ export function render(): void {
       dimmed = false;
     }
 
-    // Wide invisible hit-path drawn UNDER the visible edge for easier clicking.
+    // Casing under the colour stroke (knockout gap at crossings / under-runs).
+    edgeCasings += casingPath(pathD, strokeWidth, dimmed);
+
+    // Wide invisible hit-path drawn UNDER the visible edge for easier clicking
+    // (uses the same fanned path so the hit region tracks the drawn edge).
     // pointer-events:stroke (set in CSS) limits hits to the stroked area.
-    content += '<path class="edge-hit" data-edge-id="' + edge.id + '" d="' + pathD + '"></path>';
+    edgeStrokes += '<path class="edge-hit" data-edge-id="' + edge.id + '" d="' + pathD + '"></path>';
 
     // Effect class lets CSS bind colour-based styles (selected-edge halo, etc)
     // without having to parse the inline stroke value.
@@ -406,8 +446,11 @@ export function render(): void {
     const classAttr = ' class="edge-path' + effectClass + (dimmed ? ' dimmed' : '') + (isEdgeFlashed ? ' flashed' : '') + (isEdgeUndoFlashed ? ' undo-flash' : '') + (isEdgeSelected ? ' selected' : '') + '"';
     // Dashed line style (inline, so it persists through every selection state).
     const dashAttr = edge.style === "dashed" ? ' stroke-dasharray="6 5"' : '';
-    content += '<path' + classAttr + ' data-edge-id="' + edge.id + '" d="' + pathD + '" stroke="' + strokeColor + '" stroke-width="' + strokeWidth + '" stroke-opacity="' + strokeOpacity + '"' + dashAttr + markerEnd + '></path>';
+    edgeStrokes += '<path' + classAttr + ' data-edge-id="' + edge.id + '" d="' + pathD + '" stroke="' + strokeColor + '" stroke-width="' + strokeWidth + '" stroke-opacity="' + strokeOpacity + '"' + dashAttr + markerEnd + '></path>';
   }
+
+  // Casings first (so they sit under every colour stroke), then the colours.
+  content += edgeCasings + edgeStrokes;
 
   // Pre-compute the set of search-match ids once so the per-node check
   // below is O(1) instead of O(matches). Tiny optimisation for 73 nodes,

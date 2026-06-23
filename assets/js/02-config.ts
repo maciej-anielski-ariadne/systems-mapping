@@ -44,6 +44,16 @@ export const COLLAPSED_COL_WIDTH = 28;
 // Horizontal gap between the columns of nodes.
 export const COL_GAP = 64;   // Compact (was 90)
 
+// Edge anchor fan-out. When several edges enter (or leave) the same node, they
+// no longer all land on the vertical centre of the face — they fan out, one
+// landing point per (effect, line-style) bucket, so differently-coloured arrows
+// stop merging into one another. FAN_SPACING is the ideal vertical gap between
+// adjacent buckets; the actual gap is clamped so all anchors stay inside the
+// node face (height minus 2×FAN_MARGIN at top and bottom). See
+// computeEdgeAnchorOffsets in 04-utils.ts.
+export const FAN_SPACING = 9;
+export const FAN_MARGIN  = 8;
+
 // Width of the row-label strip (e.g. "AIR", "RORO") on the left.
 export const ROW_HEADER_WIDTH = 96;   // Compact (was 110)
 

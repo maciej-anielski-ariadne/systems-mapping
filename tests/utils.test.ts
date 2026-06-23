@@ -7,6 +7,7 @@ import {
   nodeCategoryIds,
   splitCategoriesByClass,
   edgeBezierPath,
+  computeEdgeAnchorOffsets,
   deltaColorFor,
   getMapTextScale,
   pickTextColor,
@@ -94,6 +95,72 @@ describe("edgeBezierPath", () => {
     expect(path.endsWith("100,124")).toBe(true); // target LEFT side, mid height
     const ctrlYs = [...path.matchAll(/,(-?\d+(?:\.\d+)?)/g)].map((m) => Number(m[1]));
     expect(Math.min(...ctrlYs)).toBeLessThan(124); // real upward bow
+  });
+
+  it("shifts the anchors by the fan-out offsets", () => {
+    const from: NodePosition = { x: 0, y: 0, width: 100, height: 40, labelLines: [] };
+    const to: NodePosition = { x: 300, y: 80, width: 100, height: 40, labelLines: [] };
+    const path = edgeBezierPath(from, to, -6, 4);
+    expect(path.startsWith("M 100,14")).toBe(true); // 20 + (-6)
+    expect(path).toContain("300,104"); // endY 100 + 4
+  });
+});
+
+describe("computeEdgeAnchorOffsets", () => {
+  const positions: Record<string, NodePosition> = {
+    a: { x: 0, y: 0, width: 100, height: 40, labelLines: [] },
+    b: { x: 0, y: 100, width: 100, height: 40, labelLines: [] },
+    t: { x: 300, y: 0, width: 100, height: 40, labelLines: [] },
+  };
+  const acc = {
+    from: (e: { from: string }) => e.from,
+    to: (e: { to: string }) => e.to,
+    effect: (e: { effect: string }) => e.effect,
+    style: (e: { style: string }) => e.style,
+  };
+
+  it("leaves a single (effect, style) bucket centred (offset 0)", () => {
+    const edges = [
+      { from: "a", to: "t", effect: "increases", style: "solid" },
+      { from: "b", to: "t", effect: "increases", style: "solid" },
+    ];
+    const off = computeEdgeAnchorOffsets(edges, positions, acc.from, acc.to, acc.effect, acc.style);
+    expect(off.map((o) => o.toYOffset)).toEqual([0, 0]);
+  });
+
+  it("fans distinct effect buckets into symmetric offsets on the shared face", () => {
+    const edges = [
+      { from: "a", to: "t", effect: "increases", style: "solid" },
+      { from: "b", to: "t", effect: "decreases", style: "solid" },
+    ];
+    const off = computeEdgeAnchorOffsets(edges, positions, acc.from, acc.to, acc.effect, acc.style);
+    // increases ranks before decreases → negative (up) then positive (down), symmetric
+    expect(off[0].toYOffset).toBeLessThan(0);
+    expect(off[1].toYOffset).toBeGreaterThan(0);
+    expect(off[0].toYOffset).toBeCloseTo(-off[1].toYOffset);
+  });
+
+  it("merges same-effect-same-style edges into one shared anchor", () => {
+    const edges = [
+      { from: "a", to: "t", effect: "increases", style: "solid" },
+      { from: "b", to: "t", effect: "increases", style: "solid" },
+      { from: "a", to: "t", effect: "decreases", style: "solid" },
+    ];
+    const off = computeEdgeAnchorOffsets(edges, positions, acc.from, acc.to, acc.effect, acc.style);
+    expect(off[0].toYOffset).toBe(off[1].toYOffset); // both increases → same anchor
+    expect(off[2].toYOffset).not.toBe(off[0].toYOffset); // decreases → its own anchor
+  });
+
+  it("clamps anchors inside the node face for many buckets", () => {
+    const edges = [
+      { from: "a", to: "t", effect: "increases", style: "solid" },
+      { from: "a", to: "t", effect: "decreases", style: "solid" },
+      { from: "a", to: "t", effect: "enables", style: "solid" },
+      { from: "a", to: "t", effect: "increases", style: "dashed" },
+    ];
+    const off = computeEdgeAnchorOffsets(edges, positions, acc.from, acc.to, acc.effect, acc.style);
+    const half = positions.t.height / 2;
+    for (const o of off) expect(Math.abs(o.toYOffset)).toBeLessThanOrEqual(half);
   });
 });
 

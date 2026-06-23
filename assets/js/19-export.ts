@@ -55,6 +55,7 @@ import {
   streamById,
 } from "./03-state";
 import {
+  computeEdgeAnchorOffsets,
   deltaColorFor,
   edgeBezierPath,
   effectMarkerName,
@@ -534,26 +535,51 @@ export function renderExportSvg(
   // style — gray, thin, semi-transparent, no arrowhead (exactly how the live
   // map draws an edge when nothing is selected). Effect colours and arrowheads
   // are the app's *highlight* state, so they are deliberately not used here.
-  for (const edge of model.edges) {
+  // Fan the anchors so several edges into/out of one node don't all land on the
+  // same point — one anchor per (effect, style) bucket, matching the live map
+  // (computeEdgeAnchorOffsets in 04-utils.js). Parallel by index to model.edges.
+  const edgeOffsets = computeEdgeAnchorOffsets(
+    model.edges,
+    lay.positions,
+    (e) => e.from,
+    (e) => e.to,
+    (e) => e.effect || "default",
+    (e) => (e.style === "dashed" ? "dashed" : "solid"),
+  );
+  // Two buffers so every casing sits under every colour stroke (the transit-map
+  // knockout gap at crossings / under-runs). The transparent slide has no
+  // background to knock out against, so it gets fan-out only — a solid casing
+  // would show as opaque halos on the transparent PNG; the published viewer
+  // (drawn over pal.bgDeepest) gets both.
+  let edgeCasings = "";
+  let edgeStrokes = "";
+  for (let i = 0; i < model.edges.length; i++) {
+    const edge = model.edges[i];
     // Visibility / sidebar-filter culling already happened in getExportSelection
     // (which also added the synthetic through-edges for collapsed stages).
     const fromPos = lay.positions[edge.from], toPos = lay.positions[edge.to];
     if (!fromPos || !toPos) continue;
+    const off = edgeOffsets[i];
+    const pathD = edgeBezierPath(fromPos, toPos, off.fromYOffset, off.toYOffset);
     const dashAttr = edge.style === "dashed" ? ' stroke-dasharray="6 5"' : '';
     if (transparent) {
       // Full-colour, full-opacity edges with a directional arrowhead — the live
       // map's highlighted style, so the slide image reads effect and direction.
-      s += '<path d="' + edgeBezierPath(fromPos, toPos) + '" fill="none" stroke="' + effectEdge(edge.effect) +
+      edgeStrokes += '<path d="' + pathD + '" fill="none" stroke="' + effectEdge(edge.effect) +
            '" stroke-width="1.5" stroke-opacity="1" marker-end="url(#xarrow_' + effectMarker(edge.effect) + ')"' + dashAttr + '></path>';
     } else {
+      // Background-coloured casing under the resting stroke (knockout gap).
+      edgeCasings += '<path fill="none" stroke="' + pal.bgDeepest + '" stroke-width="3" d="' + pathD + '"></path>';
       // Neutral resting style + data-* attributes that drive the interactive
       // published viewer's re-tracing (inert for the static PNG export).
-      s += '<path class="xedge" data-edge-id="' + escapeHtml(edge.id!) + '" data-from="' + escapeHtml(edge.from) +
+      edgeStrokes += '<path class="xedge" data-edge-id="' + escapeHtml(edge.id!) + '" data-from="' + escapeHtml(edge.from) +
            '" data-to="' + escapeHtml(edge.to) + '" data-effect="' + escapeHtml(edge.effect || "") +
-           '" d="' + edgeBezierPath(fromPos, toPos) + '" fill="none" stroke="' + pal.edgeDefault +
+           '" d="' + pathD + '" fill="none" stroke="' + pal.edgeDefault +
            '" stroke-width="1" stroke-opacity="0.45"' + dashAttr + '></path>';
     }
   }
+  // Casings first (under every colour stroke), then the colours.
+  s += edgeCasings + edgeStrokes;
 
   // Nodes.
   for (const node of NODES) {

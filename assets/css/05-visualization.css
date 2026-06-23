@@ -203,6 +203,20 @@ body.panning * {
   opacity: 0.05;
 }
 
+/* Background-coloured stroke drawn UNDER each edge (in 11-rendering.js). Where
+ * two edges cross or one runs under another, the upper edge's casing knocks out
+ * a clean gap so it reads as passing over — transit-map style. Width is set
+ * inline (the colour stroke's width + a couple px). No arrowhead, not clickable. */
+.edge-casing {
+  fill: none;
+  stroke: var(--edge-casing);
+  pointer-events: none;
+}
+
+.edge-casing.dimmed {
+  opacity: 0.05;
+}
+
 /* Synthetic "through" edges — re-routed causal effects that span one or more
  * collapsed stages. Drawn thinner than real edges (in 11-rendering.js) so they
  * read as derived; the dash is applied inline only when the re-routed chain

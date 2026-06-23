@@ -75,6 +75,10 @@
   --edge-increases:  var(--accent-green);
   --edge-decreases:  var(--accent-red);
   --edge-enables:    var(--accent-purple);
+  /* Background-coloured "casing" drawn under each edge so overlapping arrows
+   * read as over/under (a clean knockout gap where they cross). Matches the map
+   * canvas (--bg-deepest), so it follows the theme automatically. */
+  --edge-casing:     var(--bg-deepest);
 
   /* ===== Focus ring ===================================================== */
   --focus-ring: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 55%, transparent);

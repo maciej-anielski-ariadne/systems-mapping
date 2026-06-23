@@ -8,7 +8,7 @@
 //   • getMapTextScale – font-scale multiplier for the map when zoomed out
 // =============================================================================
 
-import { TEXT_SCALE_MAX, TEXT_SCALE_RATIO } from "./02-config";
+import { TEXT_SCALE_MAX, TEXT_SCALE_RATIO, FAN_SPACING, FAN_MARGIN } from "./02-config";
 import { CATEGORIES } from "./03-state";
 import type { GraphNode, Edge, CategoryMap, NodePosition } from "./types";
 
@@ -149,9 +149,18 @@ export function splitCategoriesByClass(
 // orient="auto-start-reverse" (see 11-rendering.ts) so the arrowhead follows the
 // horizontal end tangent for free — do NOT touch the marker. Shared by the live
 // renderer and the export so the curve math lives in one place.
-export function edgeBezierPath(fromPos: NodePosition, toPos: NodePosition): string {
-  const fromMidY = fromPos.y + fromPos.height / 2;
-  const toMidY   = toPos.y + toPos.height / 2;
+export function edgeBezierPath(
+  fromPos: NodePosition,
+  toPos: NodePosition,
+  fromYOffset = 0,
+  toYOffset = 0,
+): string {
+  // fromYOffset / toYOffset fan the anchors up/down the node face so several
+  // edges into (or out of) one node don't all land on the same point — see
+  // computeEdgeAnchorOffsets. They default to 0, so callers that don't fan out
+  // (and the export's center-anchored modes) are unaffected.
+  const fromMidY = fromPos.y + fromPos.height / 2 + fromYOffset;
+  const toMidY   = toPos.y + toPos.height / 2 + toYOffset;
 
   const startXfwd = fromPos.x + fromPos.width;   // source right side (forward anchor)
   const endXfwd   = toPos.x;                      // target left side (forward anchor)
@@ -204,6 +213,76 @@ export function edgeBezierPath(fromPos: NodePosition, toPos: NodePosition): stri
          " C " + c1x + "," + c1y +
          " " + c2x + "," + c2y +
          " " + endX + "," + endY;
+}
+
+// Per-edge vertical anchor offsets, used to fan the edges that share a node
+// face. Parallel by index to the edge array passed in.
+export interface AnchorOffset { fromYOffset: number; toYOffset: number; }
+
+// Fixed bucket order so the fan is deterministic across re-renders (it must not
+// depend on edge insertion order). Effects rank first, then solid before dashed.
+const EFFECT_FAN_ORDER: Record<string, number> = {
+  increases: 0, decreases: 1, enables: 2, neutral: 3, default: 4,
+};
+
+// Decide where each edge should attach to its source/target node face so that
+// differently-coloured arrows stop piling onto the single vertical-centre point.
+//
+// Edges sharing a node face are bucketed by (effect, line-style): every edge in
+// a bucket shares one anchor (same colour merging is fine and expected), while
+// distinct buckets fan out to their own landing points. So a node shows at most
+// a handful of anchors (≤ effects × styles), never one-per-edge — no cramping.
+// A face with a single bucket keeps the centred anchor (offset 0), so simple
+// maps look exactly as before. Spacing clamps inside the face (FAN_MARGIN top
+// and bottom) so an anchor never escapes the box.
+//
+// Returns an array of {fromYOffset, toYOffset} parallel by index to `edges`, so
+// the same call works for any edge-like list (real, synthetic, export model)
+// via the accessor callbacks. Shared by the live renderer (11) and export (19).
+export function computeEdgeAnchorOffsets<T>(
+  edges: T[],
+  positions: Record<string, NodePosition>,
+  getFrom: (e: T) => string,
+  getTo: (e: T) => string,
+  getEffect: (e: T) => string,
+  getStyle: (e: T) => string,           // "solid" | "dashed"
+): AnchorOffset[] {
+  const result: AnchorOffset[] = edges.map(() => ({ fromYOffset: 0, toYOffset: 0 }));
+
+  const bucketKey  = (e: T): string => getEffect(e) + "|" + getStyle(e);
+  const bucketRank = (key: string): number => {
+    const sep   = key.indexOf("|");
+    const eff   = key.slice(0, sep);
+    const style = key.slice(sep + 1);
+    return (EFFECT_FAN_ORDER[eff] ?? 99) * 2 + (style === "dashed" ? 1 : 0);
+  };
+
+  // Fan one node face: spread the distinct buckets present across the face and
+  // write the chosen offset back onto every edge in each bucket.
+  const fanFace = (nodeId: string, idxs: number[], field: "fromYOffset" | "toYOffset"): void => {
+    const pos = positions[nodeId];
+    if (!pos) return;
+    const buckets = Array.from(new Set(idxs.map((i) => bucketKey(edges[i]))))
+      .sort((a, b) => bucketRank(a) - bucketRank(b));
+    const m = buckets.length;
+    if (m <= 1) return;                 // single bucket → centred (offset 0)
+    const span = Math.max(0, pos.height - 2 * FAN_MARGIN);
+    const step = Math.min(FAN_SPACING, span / (m - 1));
+    const offsetOf: Record<string, number> = {};
+    buckets.forEach((key, j) => { offsetOf[key] = (j - (m - 1) / 2) * step; });
+    for (const i of idxs) result[i][field] = offsetOf[bucketKey(edges[i])];
+  };
+
+  const incoming: Record<string, number[]> = {};
+  const outgoing: Record<string, number[]> = {};
+  edges.forEach((e, i) => {
+    (outgoing[getFrom(e)] ||= []).push(i);
+    (incoming[getTo(e)]   ||= []).push(i);
+  });
+  for (const n in outgoing) fanFace(n, outgoing[n], "fromYOffset");
+  for (const n in incoming) fanFace(n, incoming[n], "toYOffset");
+
+  return result;
 }
 
 // effect → arrow-marker name. The four edge effects map to their own markers
