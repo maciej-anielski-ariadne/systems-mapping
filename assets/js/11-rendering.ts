@@ -206,11 +206,19 @@ function edgeGeometry(): EdgeGeometry {
 // small maps and the test suite are unaffected.
 export const VIRTUALIZE_MIN_NODES = 400;   // below this, never cull
 export const CULL_MARGIN = 600;            // layout px drawn beyond each viewport edge
+// How close (layout px) the viewport may come to the edge of the already-drawn
+// region before we redraw a fresh, re-centred slice. Must be < CULL_MARGIN so
+// there is always drawn content between the trigger line and the drawn edge.
+// Effect: a fresh slice is drawn roughly every (CULL_MARGIN − RERENDER_BUFFER)
+// px of scroll; in between, the browser scrolls the existing SVG natively (no
+// rebuild) — which is what keeps panning a large map smooth.
+export const RERENDER_BUFFER = 250;
 
 export interface CullRect { minX: number; minY: number; maxX: number; maxY: number; }
 
-// The layout-coordinate rectangle to draw, or null to draw everything.
-export function computeCullRect(): CullRect | null {
+// The visible viewport in layout coordinates, or null when virtualization is
+// inactive (small map, or a container with no laid-out size — e.g. jsdom).
+function computeViewportRect(): CullRect | null {
   if (NODES.length < VIRTUALIZE_MIN_NODES) return null;
   const scroller = document.getElementById("viz-scroll");
   if (!scroller) return null;
@@ -218,11 +226,47 @@ export function computeCullRect(): CullRect | null {
   if (!vw || !vh) return null;   // not laid out (jsdom) → draw everything
   const zoom = (state.zoomLevel && !isNaN(state.zoomLevel)) ? state.zoomLevel : 1.0;
   return {
-    minX: scroller.scrollLeft / zoom - CULL_MARGIN,
-    minY: scroller.scrollTop  / zoom - CULL_MARGIN,
-    maxX: (scroller.scrollLeft + vw) / zoom + CULL_MARGIN,
-    maxY: (scroller.scrollTop  + vh) / zoom + CULL_MARGIN,
+    minX: scroller.scrollLeft / zoom,
+    minY: scroller.scrollTop  / zoom,
+    maxX: (scroller.scrollLeft + vw) / zoom,
+    maxY: (scroller.scrollTop  + vh) / zoom,
   };
+}
+
+// The layout-coordinate rectangle to draw (viewport + margin), or null to draw
+// everything.
+export function computeCullRect(): CullRect | null {
+  const vp = computeViewportRect();
+  if (!vp) return null;
+  return {
+    minX: vp.minX - CULL_MARGIN,
+    minY: vp.minY - CULL_MARGIN,
+    maxX: vp.maxX + CULL_MARGIN,
+    maxY: vp.maxY + CULL_MARGIN,
+  };
+}
+
+// The cull rect of the most recent render (null when nothing was culled). Used
+// by maybeRenderForViewport to decide whether a scroll/zoom has moved far enough
+// to need a fresh slice.
+let _renderedCull: CullRect | null = null;
+
+// Called on scroll / pan / zoom. Only schedules a render when virtualization is
+// active AND the viewport has scrolled within RERENDER_BUFFER of the edge of the
+// slice we last drew. Otherwise it's a no-op: the browser scrolls the existing
+// (viewport + margin) SVG content on its own, with no rebuild and no jank. On
+// small maps computeViewportRect() is null, so scrolling stays entirely free.
+export function maybeRenderForViewport(): void {
+  const vp = computeViewportRect();
+  if (!vp) return;                       // virtualization inactive → native scroll only
+  if (!_renderedCull) { scheduleRender(); return; }
+  const c = _renderedCull;
+  if (vp.minX < c.minX + RERENDER_BUFFER ||
+      vp.minY < c.minY + RERENDER_BUFFER ||
+      vp.maxX > c.maxX - RERENDER_BUFFER ||
+      vp.maxY > c.maxY - RERENDER_BUFFER) {
+    scheduleRender();
+  }
 }
 
 // AABB overlap test: does the box [x1,y1]–[x2,y2] intersect the cull rect?
@@ -558,7 +602,10 @@ export function render(): void {
   const { renderEdges, anchorOffsets } = edgeGeometry();
 
   // Viewport cull rect (null on small maps / unlaid-out containers → draw all).
+  // Remember it so maybeRenderForViewport knows how far the user can scroll on
+  // the already-drawn slice before a fresh one is needed.
   const cull = computeCullRect();
+  _renderedCull = cull;
 
   // Two output buffers. Every edge's CASING (a wide background-coloured stroke)
   // is emitted first, then every coloured stroke + arrowhead. Drawing all

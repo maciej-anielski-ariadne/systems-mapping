@@ -11,7 +11,7 @@ import { getMapTextScale } from "./04-utils";
 import { clearCsvFromStorage, saveUiStateToStorage, scheduleUiStateSave } from "./04a-storage";
 import { refreshNeighborHighlight } from "./09-graph-selection";
 import { computeLayout } from "./08-layout";
-import { render, scheduleRender, computeCullRect } from "./11-rendering";
+import { render, maybeRenderForViewport } from "./11-rendering";
 import { toggleSimulationMode } from "./14-simulation-panel";
 import { downloadCsvBlob, readCsvFile } from "./16-file-io";
 import { closeBuilder, openBuilder } from "./16a-builder-state";
@@ -310,6 +310,12 @@ export function applyZoom(): void {
     _lastTextScale = textScale;
     setLayout(computeLayout());
     render();
+  } else {
+    // Zoom that didn't cross a text-scale band still changes which layout-area
+    // is visible. On a virtualized map that means the drawn slice may no longer
+    // cover the viewport (e.g. zooming out reveals area beyond it), so refresh
+    // it on demand. No-op on small maps.
+    maybeRenderForViewport();
   }
 }
 
@@ -446,13 +452,14 @@ if (vizScroll) {
     zoomBy(factor, event.clientX, event.clientY);
   }, { passive: false });
 
-  // Viewport virtualization: when the map is large enough to be culled to the
-  // visible scroll rect (computeCullRect returns non-null), redraw the newly
-  // visible slice as the user scrolls/pans. Coalesced to one render per frame.
-  // On small maps computeCullRect returns null, so this is a no-op and scrolling
-  // keeps its old zero-cost behaviour.
+  // Viewport virtualization: on a large (culled) map, redraw a fresh slice only
+  // once the user has scrolled/panned close to the edge of the slice already
+  // drawn — NOT on every scroll frame. Between those redraws the browser scrolls
+  // the existing (viewport + margin) SVG natively, which is what keeps panning
+  // snappy. On small maps maybeRenderForViewport is a no-op (scrolling stays
+  // entirely free).
   vizScroll.addEventListener("scroll", () => {
-    if (computeCullRect()) scheduleRender();
+    maybeRenderForViewport();
   }, { passive: true });
 }
 

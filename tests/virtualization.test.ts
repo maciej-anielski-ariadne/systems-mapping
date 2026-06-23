@@ -1,7 +1,18 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { loadDataFromCsv } from "../assets/js/06-data-loader";
-import { render, VIRTUALIZE_MIN_NODES, computeCullRect } from "../assets/js/11-rendering";
+import {
+  render,
+  maybeRenderForViewport,
+  VIRTUALIZE_MIN_NODES,
+  CULL_MARGIN,
+  computeCullRect,
+} from "../assets/js/11-rendering";
 import { NODES } from "../assets/js/03-state";
+
+// Run any render() scheduled via requestAnimationFrame (scheduleRender).
+function flushFrame(): Promise<void> {
+  return new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(() => res())));
+}
 
 // Build a CSV with `n` nodes spread across many stages in one stream, so the
 // map is far wider/taller than any small viewport.
@@ -101,5 +112,36 @@ describe("viewport virtualization", () => {
     const sameAsTopLeft = farIds.size === topLeftIds.size &&
       [...farIds].every((id) => topLeftIds.has(id));
     expect(sameAsTopLeft).toBe(false);
+  });
+
+  it("does NOT rebuild on a small scroll within the already-drawn margin", async () => {
+    loadDataFromCsv(bigCsv(VIRTUALIZE_MIN_NODES + 200));
+    mockViewport(400, 400, 0, 0);
+    render();
+    const elBefore = document.querySelector(".ml-static-layer .node-group")!;
+    expect(elBefore.isConnected).toBe(true);
+
+    // Scroll a fraction of the margin — still well inside the drawn slice, so the
+    // browser can scroll natively and we must NOT rebuild (the element stays put).
+    const smallStep = Math.floor((CULL_MARGIN - 250) / 2); // comfortably below the trigger
+    mockViewport(400, 400, smallStep, smallStep);
+    maybeRenderForViewport();
+    await flushFrame();
+    expect(elBefore.isConnected).toBe(true); // same DOM node → no rebuild
+  });
+
+  it("rebuilds once the viewport nears the edge of the drawn slice", async () => {
+    loadDataFromCsv(bigCsv(VIRTUALIZE_MIN_NODES + 200));
+    mockViewport(400, 400, 0, 0);
+    render();
+    const elBefore = document.querySelector(".ml-static-layer .node-group")!;
+    expect(elBefore.isConnected).toBe(true);
+
+    // Scroll past the margin so the viewport reaches the drawn edge → rebuild.
+    mockViewport(400, 400, CULL_MARGIN + 1000, CULL_MARGIN + 1000);
+    maybeRenderForViewport();
+    await flushFrame();
+    // The old slice's nodes were detached when innerHTML was rewritten.
+    expect(elBefore.isConnected).toBe(false);
   });
 });
