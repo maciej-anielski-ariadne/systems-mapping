@@ -484,7 +484,10 @@ document.addEventListener("keydown", event => {
 //     does not also select it).
 //   • mousedown directly over a .node-group is ignored — node clicks must
 //     still select. The user pans by grabbing empty SVG space (the grid,
-//     column dividers, row labels).
+//     column dividers, row labels) OR by dragging from an edge (so that
+//     dense edge-laden areas don't trap the user). A still-click on an
+//     edge still selects it — only a drag past the threshold pans, and the
+//     trailing click is swallowed so the pan-end doesn't also select.
 //
 // mousemove + mouseup are bound to window so the gesture survives the
 // cursor leaving the SVG (and even leaving the browser viewport).
@@ -497,7 +500,7 @@ if (_vizSvgEl && vizScrollEl) {
   _vizSvgEl.addEventListener("mousedown", event => {
     if (event.button !== 0) return;                            // left button only
     if (event.shiftKey) return;                                // shift+drag = marquee select (16e), not pan
-    if ((event.target as Element).closest && (event.target as Element).closest(".node-group, .row-label-group, .ghost-cell, .edge-handle, .edge-hit, .edge-path")) return;
+    if ((event.target as Element).closest && (event.target as Element).closest(".node-group, .row-label-group, .ghost-cell, .edge-handle")) return;
     panStart = {
       clientX:    event.clientX,
       clientY:    event.clientY,
