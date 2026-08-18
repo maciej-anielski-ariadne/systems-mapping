@@ -94,6 +94,30 @@ body.panning * {
   filter: saturate(0.32) brightness(1.12);
 }
 
+/* === Very large maps: pre-desaturated fills instead of a per-box filter ===
+ * `filter: saturate(0.32)` above is one rasterization pass PER BOX — thousands
+ * of them once a map gets big. Above a drawn-box threshold the renderer
+ * (11-rendering.ts, PRE_DESATURATE_MIN_BOXES) instead emits fills that ALREADY
+ * carry the same sRGB saturate(0.32) transform and tags the group `.pre-desat`,
+ * so these rules switch the filter off and the box paints in one pass. The
+ * pixels are identical; only where the desaturation happens changes.
+ *
+ * Only plain resting boxes are tagged. Anything whose filter is something other
+ * than the resting saturate() — selected / ancestor / descendant / hovered /
+ * search-match / undo-flash — and any box with a gradient fill keeps its literal
+ * colours and every rule above, untouched. Below the threshold no box is ever
+ * tagged, so small and mid-size maps render exactly as they always have. */
+.node-group.pre-desat .node-rect,
+.node-group.pre-desat .node-stripe {
+  filter: none;
+}
+
+/* Hover brightening for a pre-desaturated box: same brightness step, minus the
+ * saturate() that is already baked into the fill. */
+.node-group.pre-desat:hover:not(.selected):not(.ancestor):not(.descendant) .node-rect {
+  filter: brightness(1.12);
+}
+
 .node-group.dimmed {
   opacity: 0.18;
 }

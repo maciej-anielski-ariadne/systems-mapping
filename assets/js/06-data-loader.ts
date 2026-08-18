@@ -110,7 +110,21 @@ let _edgeIdSeq = 0;
 // to propagate values correctly.
 // (Plain-language definitions of "topological order" and "Cobb-Douglas":
 //  see docs/GLOSSARY.md.)
+// ───── Derived-index revision ───────────────────────────────────────────────
+// Bumped by every rebuildIndexes(). Consumers that cache something derived from
+// the node/stream/stage data — the search corpus in 17a-search, which folds each
+// node's searchable text down to one pre-lowercased list — key their cache on it
+// and rebuild only when the underlying data really changed. NODES array identity
+// isn't enough on its own: a label edit mutates the node object in place, and
+// renaming a stream changes the text a node matches on without touching NODES.
+// Every such edit routes through rebuildIndexes, so one counter covers them all.
+let _dataRevision = 0;
+export function dataRevision(): number {
+  return _dataRevision;
+}
+
 export function rebuildIndexes(): void {
+  _dataRevision++;
   setNodeById({});
   setStreamNodeCount({});
   setCategoryNodeCount({});

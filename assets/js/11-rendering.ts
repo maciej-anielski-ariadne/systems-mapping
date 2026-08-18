@@ -14,11 +14,11 @@
 // =============================================================================
 
 import type { Category, GraphNode, NodePosition } from "./types";
-import { CATEGORIES, EDGES, NODES, STAGES, STREAMS, layout, nodeById, stageById, state, streamById } from "./03-state";
+import { CATEGORIES, EDGES, NODES, STAGES, STREAMS, layout, nodeById, setLayout, stageById, state, streamById } from "./03-state";
 import { deselectAll, selectNode } from "./09-graph-selection";
-import { computeEdgeAnchorOffsets, deltaColorFor, edgeBezierPath, effectMarkerName, escapeHtml, getMapTextScale, wrapLabel, type AnchorOffset } from "./04-utils";
+import { computeEdgeAnchorOffsets, deltaColorFor, edgeBezierPath, effectMarkerName, escapeHtml, getMapTextScale, isBackwardEdge, wrapLabel, type AnchorOffset } from "./04-utils";
 import { COL_GAP, COL_HEADER_HEIGHT, LABEL_INSET, NODE_GAP_Y, NODE_HEIGHT, NODE_WIDTH, ROW_HEADER_WIDTH, ROW_PADDING, SVG_PADDING_TOP } from "./02-config";
-import { slotTopY } from "./08-layout";
+import { computeLayout, layoutGeometryRevision, slotTopY } from "./08-layout";
 import { computeRenderEdges, type RenderEdge } from "./10a-collapsed-edges";
 import { isEdgeVisible, isNodeVisible, toggleStage, toggleStream } from "./10-filters";
 import { formatNodeDelta, formatNodeValue, getOutcomeBorderColor } from "./07-simulation-engine";
@@ -161,13 +161,18 @@ export function nodeSecondaryChips(node: GraphNode, pos: NodePosition): { svg: s
 // simulation renders re-run them for nothing, which is wasteful on dense maps
 // (E ≫ N). Cache the geometry and reuse it until one of its real inputs changes:
 //   • NODES / EDGES array identity — reassigned on every data load / mutation.
-//   • layout identity — reassigned by setLayout (geometry + stream/stage hide).
+//   • the layout GEOMETRY REVISION (08-layout) — bumped only when some node
+//     actually moved / resized or a row/column changed. Keying on the layout
+//     object identity instead (as this cache first did) meant a guaranteed miss
+//     on every setLayout, and the hot paths call computeLayout() per frame — a
+//     node drag, an inline-rename keystroke, a hover-cell crossing — while
+//     producing byte-identical geometry. The revision turns those into hits.
 //   • the node-visibility hidden sets — hiddenCategories toggles change
 //     isNodeVisible WITHOUT a setLayout, so they're keyed explicitly.
 // Selection/hover/sim renders don't touch any of these, so they hit the cache.
 interface EdgeGeometry { renderEdges: RenderEdge[]; anchorOffsets: AnchorOffset[]; }
 let _edgeGeomCache: (EdgeGeometry & {
-  nodes: typeof NODES; edges: typeof EDGES; layout: typeof layout; hiddenKey: string;
+  nodes: typeof NODES; edges: typeof EDGES; geometryRevision: number; hiddenKey: string;
 }) | null = null;
 
 const _edgeStyleOf = (re: RenderEdge): string =>
@@ -179,8 +184,9 @@ function edgeGeometry(): EdgeGeometry {
     [...state.hiddenStreams].sort().join(",") + "|" +
     [...state.hiddenStages].sort().join(",") + "|" +
     [...state.hiddenCategories].sort().join(",");
+  const geometryRevision = layoutGeometryRevision();
   const c = _edgeGeomCache;
-  if (c && c.nodes === NODES && c.edges === EDGES && c.layout === layout && c.hiddenKey === hiddenKey) {
+  if (c && c.nodes === NODES && c.edges === EDGES && c.geometryRevision === geometryRevision && c.hiddenKey === hiddenKey) {
     return c;
   }
   const renderEdges = computeRenderEdges();
@@ -192,7 +198,7 @@ function edgeGeometry(): EdgeGeometry {
     (re) => re.effect,
     _edgeStyleOf,
   );
-  _edgeGeomCache = { renderEdges, anchorOffsets, nodes: NODES, edges: EDGES, layout, hiddenKey };
+  _edgeGeomCache = { renderEdges, anchorOffsets, nodes: NODES, edges: EDGES, geometryRevision, hiddenKey };
   return _edgeGeomCache;
 }
 
@@ -221,6 +227,21 @@ export const CULL_MARGIN = 600;            // layout px drawn beyond each viewpo
 // rebuild) — which is what keeps panning a large map smooth.
 export const RERENDER_BUFFER = 250;
 
+// The margin scales with the viewport: on a large display a fixed 600px band is
+// only a fraction of a screen, so a fast pan crosses it (and rebuilds a slice)
+// several times a second. Drawing 0.75 of a viewport beyond each edge keeps the
+// rebuild cadence roughly constant whatever the window size. Never below the
+// historical 600 — small viewports (and every test) keep exactly today's
+// numbers. RERENDER_BUFFER scales by the same ratio so the "how close to the
+// drawn edge before we redraw" line stays proportionally where it was.
+const CULL_MARGIN_VIEWPORT_FRACTION = 0.75;
+export function cullMarginFor(viewportSpan: number): number {
+  return Math.max(CULL_MARGIN, CULL_MARGIN_VIEWPORT_FRACTION * viewportSpan);
+}
+function rerenderBufferFor(margin: number): number {
+  return margin * (RERENDER_BUFFER / CULL_MARGIN);
+}
+
 export interface CullRect { minX: number; minY: number; maxX: number; maxY: number; }
 
 // The visible viewport in layout coordinates, or null when virtualization is
@@ -246,12 +267,17 @@ function computeViewportRect(): CullRect | null {
 // everything.
 export function computeCullRect(): CullRect | null {
   const vp = computeViewportRect();
-  if (!vp) return null;
+  return vp ? cullFromViewport(vp) : null;
+}
+
+function cullFromViewport(vp: CullRect): CullRect {
+  const marginX = cullMarginFor(vp.maxX - vp.minX);
+  const marginY = cullMarginFor(vp.maxY - vp.minY);
   return {
-    minX: vp.minX - CULL_MARGIN,
-    minY: vp.minY - CULL_MARGIN,
-    maxX: vp.maxX + CULL_MARGIN,
-    maxY: vp.maxY + CULL_MARGIN,
+    minX: vp.minX - marginX,
+    minY: vp.minY - marginY,
+    maxX: vp.maxX + marginX,
+    maxY: vp.maxY + marginY,
   };
 }
 
@@ -270,10 +296,12 @@ export function maybeRenderForViewport(): void {
   if (!vp) return;                       // virtualization inactive → native scroll only
   if (!_renderedCull) { scheduleRender(); return; }
   const c = _renderedCull;
-  if (vp.minX < c.minX + RERENDER_BUFFER ||
-      vp.minY < c.minY + RERENDER_BUFFER ||
-      vp.maxX > c.maxX - RERENDER_BUFFER ||
-      vp.maxY > c.maxY - RERENDER_BUFFER) {
+  const bufferX = rerenderBufferFor(cullMarginFor(vp.maxX - vp.minX));
+  const bufferY = rerenderBufferFor(cullMarginFor(vp.maxY - vp.minY));
+  if (vp.minX < c.minX + bufferX ||
+      vp.minY < c.minY + bufferY ||
+      vp.maxX > c.maxX - bufferX ||
+      vp.maxY > c.maxY - bufferY) {
     scheduleRender();
   }
 }
@@ -281,6 +309,92 @@ export function maybeRenderForViewport(): void {
 // AABB overlap test: does the box [x1,y1]–[x2,y2] intersect the cull rect?
 function boxInCull(x1: number, y1: number, x2: number, y2: number, c: CullRect): boolean {
   return x1 <= c.maxX && x2 >= c.minX && y1 <= c.maxY && y2 >= c.minY;
+}
+
+// ───── Does a link's CURVE reach the viewport? ────────────────────────────
+// The old test asked whether the box around an edge's two END NODES overlapped
+// the cull rect. On a hairball map that keeps every long link alive everywhere:
+// a link from the top-left of the map to the bottom-right has a bounding box
+// covering the whole map, so it was drawn into every slice — 51% of the links
+// survived culling while only 6% of the boxes did, and the links are where the
+// DOM bytes are. Bounding the four bezier control points instead doesn't help:
+// edgeBezierPath gives both control points the y of their own endpoint, so
+// their box IS the endpoint box.
+//
+// What does help is asking about the curve itself. A cubic bezier lies inside
+// the convex hull of its control points, and de Casteljau splits it into two
+// sub-curves with their own (much tighter) hulls. So: test the whole hull first
+// — that rejects most links outright, cheaply — and for the survivors, split
+// down a few levels and test the pieces. A link is drawn if ANY piece's hull
+// still overlaps, which can only ever over-approximate: a curve that really does
+// enter the rect is never dropped.
+//
+// The rect is padded so a stroke (≤3px wide) and its arrowhead can't peek in
+// from a curve that passes just outside. The pad is tiny next to the cull margin
+// (≥600px), and the viewport is always ≥ RERENDER_BUFFER inside the drawn rect,
+// so this can't produce a visible gap.
+const CURVE_PAD = 24;
+const CURVE_SUBDIVISION_DEPTH = 3;   // up to 8 leaf pieces per curve
+
+// Scratch control points, reused across edges — this runs per edge per render
+// and allocating a fresh object each time is pure garbage.
+const _cp = { x0: 0, y0: 0, x1: 0, y1: 0, x2: 0, y2: 0, x3: 0, y3: 0 };
+
+// The four control points edgeBezierPath (04-utils) derives from the same
+// inputs, anchor fan offsets included, so the two can't disagree about where a
+// link goes.
+function edgeControlPoints(
+  fromPos: NodePosition,
+  toPos: NodePosition,
+  fromYOffset: number,
+  toYOffset: number,
+): typeof _cp {
+  const startY = fromPos.y + fromPos.height / 2 + fromYOffset;
+  const endY   = toPos.y + toPos.height / 2 + toYOffset;
+  const backward = isBackwardEdge(fromPos, toPos);
+  const startX = backward ? fromPos.x : fromPos.x + fromPos.width;
+  const endX   = backward ? toPos.x + toPos.width : toPos.x;
+  const dir = backward ? -1 : 1;
+  const ctrlOffset = Math.max(40, Math.abs(endX - startX) * 0.5);
+  _cp.x0 = startX; _cp.y0 = startY;
+  _cp.x1 = startX + dir * ctrlOffset; _cp.y1 = startY;
+  _cp.x2 = endX - dir * ctrlOffset;   _cp.y2 = endY;
+  _cp.x3 = endX; _cp.y3 = endY;
+  return _cp;
+}
+
+function cubicIntersectsRect(
+  x0: number, y0: number, x1: number, y1: number,
+  x2: number, y2: number, x3: number, y3: number,
+  c: CullRect, depth: number,
+): boolean {
+  const minX = Math.min(x0, x1, x2, x3), maxX = Math.max(x0, x1, x2, x3);
+  const minY = Math.min(y0, y1, y2, y3), maxY = Math.max(y0, y1, y2, y3);
+  if (minX > c.maxX + CURVE_PAD || maxX < c.minX - CURVE_PAD ||
+      minY > c.maxY + CURVE_PAD || maxY < c.minY - CURVE_PAD) return false;
+  if (depth <= 0) return true;
+  // de Casteljau split at t = 0.5 → two halves with the same shape.
+  const x01 = (x0 + x1) / 2, y01 = (y0 + y1) / 2;
+  const x12 = (x1 + x2) / 2, y12 = (y1 + y2) / 2;
+  const x23 = (x2 + x3) / 2, y23 = (y2 + y3) / 2;
+  const xa = (x01 + x12) / 2, ya = (y01 + y12) / 2;
+  const xb = (x12 + x23) / 2, yb = (y12 + y23) / 2;
+  const xm = (xa + xb) / 2, ym = (ya + yb) / 2;
+  return cubicIntersectsRect(x0, y0, x01, y01, xa, ya, xm, ym, c, depth - 1) ||
+         cubicIntersectsRect(xm, ym, xb, yb, x23, y23, x3, y3, c, depth - 1);
+}
+
+// Public for the tests: does the link drawn between these two boxes come near
+// `rect` at all?
+export function edgeCurveIntersectsRect(
+  fromPos: NodePosition,
+  toPos: NodePosition,
+  rect: CullRect,
+  fromYOffset = 0,
+  toYOffset = 0,
+): boolean {
+  const p = edgeControlPoints(fromPos, toPos, fromYOffset, toYOffset);
+  return cubicIntersectsRect(p.x0, p.y0, p.x1, p.y1, p.x2, p.y2, p.x3, p.y3, rect, CURVE_SUBDIVISION_DEPTH);
 }
 
 // ───── Coalesced render scheduling ────────────────────────────────────────
@@ -306,6 +420,19 @@ export function scheduleRender(): void {
   if (_renderQueued) return;
   _renderQueued = true;
   _renderRAF = _raf(() => { _renderQueued = false; _renderRAF = 0; render(); });
+}
+
+// Like scheduleRender(), but the layout is recomputed inside the animation
+// frame too. Callers that change something the layout depends on (the zoom
+// text-scale band, an inline rename that re-wraps a label) used to run
+// computeLayout() + render() synchronously inside a wheel / keydown handler —
+// the single most expensive thing you can do on the input path. The dirty flag
+// is honoured by render() itself, so a synchronous render() that supersedes the
+// frame still picks the recompute up rather than drawing a stale layout.
+let _layoutDirty = false;
+export function scheduleLayoutRender(): void {
+  _layoutDirty = true;
+  scheduleRender();
 }
 
 // Single owner of the `--map-text-scale` CSS variable. Writing a custom
@@ -477,12 +604,239 @@ export function scheduleOverlayRender(): void {
   _overlayRAF = _raf(() => { _overlayQueued = false; _overlayRAF = 0; renderOverlay(); });
 }
 
+// ───── Shared node / edge presentation ────────────────────────────────────
+// Everything selection-dependent about a drawn element is decided in ONE place
+// so the full render() and the incremental selection patch
+// (refreshSelectionStyling) can never drift: they call the same functions and
+// therefore always produce the same classes and attributes for a given state.
+
+// The per-render selection context, gathered once (these are the same reads the
+// node / edge loops used to do inline, hoisted so the patch path can share them).
+interface StyleContext {
+  searchMatchIds: Set<string> | null;
+  undoFlashNodeIds: Set<string> | null | undefined;
+  undoFlashEdgeIds: Set<string> | null | undefined;
+  flashedEdgeId: string | null | undefined;
+  dragNodeId: string | null;
+  showOutcomeBorders: boolean;
+  singleSelection: boolean;      // exactly one node selected → highlight / dim edges
+  preDesaturate: boolean;        // H5: emit pre-desaturated fills (large maps only)
+}
+
+function styleContext(preDesaturate: boolean): StyleContext {
+  const ce = state.canvasEdit;
+  const drag = (ce && ce.draggingNode) || null;
+  return {
+    searchMatchIds: (state.searchMatches && state.searchMatches.length > 0)
+      ? new Set(state.searchMatches.map(m => m.node.id))
+      : null,
+    undoFlashNodeIds: ce && ce.flashedNodeIds,
+    undoFlashEdgeIds: ce && ce.flashedEdgeIds,
+    flashedEdgeId: ce && ce.flashedEdgeId,
+    dragNodeId: drag ? drag.nodeId : null,
+    showOutcomeBorders: !state.selectedNodeId && !state.selectedNodeIds.size,
+    singleSelection: !!state.selectedNodeId && state.selectedNodeIds.size <= 1,
+    preDesaturate,
+  };
+}
+
+// Class list for a node's <g> wrapper — see 05-visualization.css (state glows)
+// + 13-search.css (search halo).
+function nodeGroupClasses(nodeId: string, ctx: StyleContext): string {
+  let classes = "node-group";
+  if (state.selectedNodeIds.has(nodeId)) {
+    classes += " selected";
+  } else if (ctx.singleSelection) {
+    if      (state.ancestorSet.has(nodeId))    classes += " ancestor";
+    else if (state.descendantSet.has(nodeId))  classes += " descendant";
+    else                                       classes += " dimmed";
+  }
+  if (state.hoveredNodeId === nodeId) classes += " hovered";
+  if (ctx.searchMatchIds && ctx.searchMatchIds.has(nodeId)) classes += " search-match";
+  if (ctx.undoFlashNodeIds && ctx.undoFlashNodeIds.has(nodeId)) classes += " undo-flash";
+  if (ctx.dragNodeId === nodeId) classes += " dragging-source";
+  return classes;
+}
+
+// The node rect's border. NOTE the flat look: `.node-rect { stroke: transparent }`
+// in 05-visualization.css wins over this presentation attribute, so the value is
+// invisible on the live map — the selection / trace states read as the drop-shadow
+// glows keyed off the group classes above. It is still emitted (and patched)
+// verbatim because the export and the in-place simulation patch both read it,
+// and because moving it into CSS would make these borders visible for the first
+// time — a pixel change, which is exactly what we must not do.
+function nodeRectStroke(nodeId: string, ctx: StyleContext): { stroke: string; width: string } {
+  if (state.selectedNodeIds.has(nodeId))  return { stroke: "#ffffff", width: "2.5" };
+  if (state.ancestorSet.has(nodeId))      return { stroke: "var(--edge-ancestor)", width: "2" };
+  if (state.descendantSet.has(nodeId))    return { stroke: "var(--edge-descendant)", width: "2" };
+  if (ctx.showOutcomeBorders) {
+    // Show good/bad colour around outcome nodes when nothing is selected. Only
+    // computed on this branch — getOutcomeBorderColor runs the delta formatting
+    // internally, and calling it for every box whenever a selection is active
+    // was pure waste.
+    const outcome = getOutcomeBorderColor(nodeId);
+    if (outcome) return { stroke: outcome, width: "2" };
+  }
+  return { stroke: "rgba(0,0,0,0.4)", width: "1" };
+}
+
+// Does this node carry a CSS rule that REPLACES the resting
+// `filter: saturate(0.32)` on its rect / stripe? Those nodes must keep their
+// literal colours (H5 only pre-desaturates the plain resting ones).
+function hasNonRestingFilter(nodeId: string, ctx: StyleContext): boolean {
+  return state.selectedNodeIds.has(nodeId) ||
+         state.ancestorSet.has(nodeId) ||
+         state.descendantSet.has(nodeId) ||
+         state.hoveredNodeId === nodeId ||
+         !!(ctx.searchMatchIds && ctx.searchMatchIds.has(nodeId)) ||
+         !!(ctx.undoFlashNodeIds && ctx.undoFlashNodeIds.has(nodeId));
+}
+
+// Effect → stroke colour, shared by the render and the patch.
+const effectStroke = (effect: string): string =>
+  effect === "increases" ? "var(--edge-increases)" :
+  effect === "decreases" ? "var(--edge-decreases)" :
+  effect === "enables"   ? "var(--edge-enables)"   :
+                           "var(--edge-default)";
+
+// Everything selection-dependent about one drawn edge.
+interface EdgeStyle {
+  classes: string;        // full class attribute value for the coloured stroke
+  casingClasses: string;  // …and for its casing
+  stroke: string;
+  strokeWidth: number;
+  strokeOpacity: number;
+  marker: string;         // "" when no arrowhead, else the marker name
+}
+
+function edgeStyleFor(re: RenderEdge, ctx: StyleContext): EdgeStyle {
+  if (re.synthetic) {
+    // Synthetic "through" edge — presentation only: not selectable/editable.
+    // Drawn THINNER than a real edge so it reads as derived. Bold + coloured
+    // when incident to the selected node (highlightedEdgeIds only holds real
+    // edge ids, so we check incidence directly); dimmed when some OTHER node
+    // is the sole selection.
+    let strokeWidth = 1, strokeOpacity = 0.6, dimmed = false;
+    let stroke = "var(--edge-default)", marker = "default";
+    if (ctx.singleSelection) {
+      if (state.selectedNodeId === re.from || state.selectedNodeId === re.to) {
+        strokeWidth = 1.5; strokeOpacity = 0.95;   // still thinner than a real highlighted edge (2)
+        stroke = effectStroke(re.effect);
+        marker = effectMarkerName(re.effect);
+      } else {
+        dimmed = true;
+      }
+    }
+    return {
+      classes: "edge-path synthetic effect-" + re.effect + (dimmed ? " dimmed" : ""),
+      casingClasses: "edge-casing" + (dimmed ? " dimmed" : ""),
+      stroke, strokeWidth, strokeOpacity, marker,
+    };
+  }
+
+  const edge = re.edge;
+  let stroke = "var(--edge-default)";
+  let strokeWidth = 1;
+  let strokeOpacity = 0.45;
+  let marker = "";
+  let dimmed = false;
+  const isEdgeFlashed = edge.id === ctx.flashedEdgeId;
+
+  // Only a single-node selection highlights/dims edges — a multi-selection
+  // suppresses neighbour highlighting (highlightedEdgeIds is empty), so leave
+  // every edge at its default styling rather than dimming them all.
+  if (ctx.singleSelection) {
+    if (state.highlightedEdgeIds.has(edge.id!)) {
+      stroke = effectStroke(edge.effect);
+      strokeWidth = 2;
+      strokeOpacity = 0.9;
+      marker = edge.effect;
+    } else {
+      dimmed = true;
+    }
+  }
+  if (isEdgeFlashed) {
+    // Edge was just clicked — paint it boldly until the flash flag clears.
+    stroke = effectStroke(edge.effect);
+    strokeWidth = 2.5;
+    strokeOpacity = 1;
+    marker = edge.effect;
+    dimmed = false;
+  }
+  // The currently-selected edge always renders in its effect colour, bold and
+  // undimmed — so creation (auto-select) and arrow-key effect cycling both show
+  // an unambiguous colour change whether or not its from-node is selected too.
+  const isEdgeSelected = edge.id === state.selectedEdgeId;
+  if (isEdgeSelected) {
+    stroke = effectStroke(edge.effect);
+    strokeWidth = 3;
+    strokeOpacity = 1;
+    marker = edge.effect;
+    dimmed = false;
+  }
+
+  const effectClass = edge.effect ? " effect-" + edge.effect : "";
+  const isEdgeUndoFlashed = !!(ctx.undoFlashEdgeIds && ctx.undoFlashEdgeIds.has(edge.id!));
+  return {
+    classes: "edge-path" + effectClass + (dimmed ? " dimmed" : "") + (isEdgeFlashed ? " flashed" : "") +
+             (isEdgeUndoFlashed ? " undo-flash" : "") + (isEdgeSelected ? " selected" : ""),
+    casingClasses: "edge-casing" + (dimmed ? " dimmed" : ""),
+    stroke, strokeWidth, strokeOpacity, marker,
+  };
+}
+
+// ───── H5: pre-desaturated fills on very large maps ───────────────────────
+// `.node-rect` / `.node-stripe` each carry `filter: saturate(0.32)`
+// (05-visualization.css). That is one rasterization pass PER ELEMENT — fine for
+// a few hundred boxes, thousands of passes on a big map. Above the threshold we
+// instead bake the same desaturation into the emitted fill colours and tag the
+// group with `.pre-desat`, which switches the CSS filter off (the class rules
+// live next to the originals in 05-visualization.css). Below the threshold not
+// a single byte changes.
+//
+// Only plain resting boxes qualify: a node whose CSS filter is something else
+// (selected / trace / hovered / search-match / undo-flash) and any node with a
+// GRADIENT fill keep their literal colours and the CSS filter, so their look is
+// untouched. A theme switch re-renders the map, which re-derives these colours.
+export const PRE_DESATURATE_MIN_BOXES = 800;
+const SATURATE_AMOUNT = 0.32;
+const _desaturatedColorCache = new Map<string, string>();
+
+// The sRGB saturate() matrix the CSS filter applies, evaluated once per colour.
+// Non-hex inputs (CSS variables, rgba(), gradients) are returned untouched —
+// callers only pass literal category / stream colours.
+export function desaturateColor(color: string, amount = SATURATE_AMOUNT): string {
+  const cached = _desaturatedColorCache.get(color);
+  if (cached !== undefined) return cached;
+  let out = color;
+  const hex = color.trim().replace(/^#/, "");
+  let r = NaN, g = NaN, b = NaN;
+  if (/^[0-9a-fA-F]{3}$/.test(hex)) {
+    r = parseInt(hex[0] + hex[0], 16); g = parseInt(hex[1] + hex[1], 16); b = parseInt(hex[2] + hex[2], 16);
+  } else if (/^[0-9a-fA-F]{6}$/.test(hex)) {
+    r = parseInt(hex.slice(0, 2), 16); g = parseInt(hex.slice(2, 4), 16); b = parseInt(hex.slice(4, 6), 16);
+  }
+  if (!isNaN(r) && !isNaN(g) && !isNaN(b)) {
+    const s = amount;
+    const clamp = (v: number): number => Math.max(0, Math.min(255, Math.round(v)));
+    const nr = clamp((0.213 + 0.787 * s) * r + (0.715 - 0.715 * s) * g + (0.072 - 0.072 * s) * b);
+    const ng = clamp((0.213 - 0.213 * s) * r + (0.715 + 0.285 * s) * g + (0.072 - 0.072 * s) * b);
+    const nb = clamp((0.213 - 0.213 * s) * r + (0.715 - 0.715 * s) * g + (0.072 + 0.928 * s) * b);
+    const hx = (v: number): string => v.toString(16).padStart(2, "0");
+    out = "#" + hx(nr) + hx(ng) + hx(nb);
+  }
+  _desaturatedColorCache.set(color, out);
+  return out;
+}
+
 export function render(): void {
   // A synchronous render makes any queued full OR overlay render redundant.
   if (_renderRAF)  { _cancelRaf(_renderRAF);  _renderRAF = 0; }
   if (_overlayRAF) { _cancelRaf(_overlayRAF); _overlayRAF = 0; }
   _renderQueued = false;
   _overlayQueued = false;
+  // A caller deferred a layout recompute onto this frame (scheduleLayoutRender).
+  if (_layoutDirty) { _layoutDirty = false; setLayout(computeLayout()); }
   _nodeGradSeq = 0;   // restart per render — the SVG is rebuilt wholesale
   // When no CSV is loaded at all, blank the SVG. The empty-state grid path
   // boots via bootEmptyStateGrid() which sets state.dataLoaded = true and
@@ -500,7 +854,8 @@ export function render(): void {
   // synchronous layout of the whole document mid-render (write→read thrash).
   // Remember it so maybeRenderForViewport knows how far the user can scroll
   // on the already-drawn slice before a fresh one is needed.
-  const cull = computeCullRect();
+  const viewport = computeViewportRect();
+  const cull = viewport ? cullFromViewport(viewport) : null;
   _renderedCull = cull;
 
   // Size the SVG canvas to fit the layout, scaled by the current zoom level
@@ -589,9 +944,20 @@ export function render(): void {
   // (The transient interaction affordances that used to be emitted here — the
   // keyboard cursor slot, the hover "+ add box" ghost, and the drag drop-slot —
   // now live in the overlay layer; see buildOverlayContent(). The dragged node
-  // still needs a static "dragging-source" class in the node loop below, so we
-  // keep a reference to the current drag.)
-  const drag = state.canvasEdit && state.canvasEdit.draggingNode;
+  // still needs a static "dragging-source" class in the node loop below, which
+  // styleContext() picks up from the live drag.)
+
+  // Which boxes this render will draw. On a culled render we don't scan NODES at
+  // all: layout.cells already groups the nodes by (stream, stage), and a cell's
+  // rect is known from the row/column maps — so only the cells the cull rect
+  // touches are visited. The candidates come back in NODES order so the DOM
+  // order (and with it the paint order of any overlapping glow) is exactly what
+  // the plain scan produced.
+  const drawList = cull ? culledNodeCandidates(cull) : NODES;
+
+  // Everything selection-dependent, resolved once and shared by the edge loop,
+  // the node loop, and (later, on a selection change) refreshSelectionStyling.
+  const ctx = styleContext(drawList.length >= PRE_DESATURATE_MIN_BOXES);
 
   // ───── Row label strip on the left (per stream) ───────────────────────
   // Hidden streams keep their label so the user can click to expand again;
@@ -618,18 +984,6 @@ export function render(): void {
   // the SYNTHETIC "through" edges that re-route causal effects across hidden
   // stages/streams/categories. Both endpoints of every returned edge are
   // guaranteed visible, so their layout positions always exist.
-  const flashedEdgeId = state.canvasEdit && state.canvasEdit.flashedEdgeId;
-  // Edges changed by the most recent undo/redo — pulsed briefly so the user
-  // sees what the operation touched. Cleared on a timer (16g-canvas-undo.js).
-  const undoFlashEdgeIds = state.canvasEdit && state.canvasEdit.flashedEdgeIds;
-  // Helper: effect → stroke colour + arrow marker name.
-  const effectStroke = (effect: string): string =>
-    effect === "increases" ? "var(--edge-increases)" :
-    effect === "decreases" ? "var(--edge-decreases)" :
-    effect === "enables"   ? "var(--edge-enables)"   :
-                             "var(--edge-default)";
-  const effectMarker = effectMarkerName;
-
   // The edge re-routing + anchor fan are cached (edgeGeometry) — they depend only
   // on topology / visibility / positions, so selection / hover / sim renders reuse
   // the previous result instead of recomputing. anchorOffsets stays parallel by
@@ -650,9 +1004,10 @@ export function render(): void {
   const CASING_EXTRA = 2;   // casing is this many px wider than the colour stroke
   let edgeCasings = "";
   let edgeStrokes = "";
-  const casingPath = (pathD: string, strokeWidth: number, dimmed: boolean): string =>
-    '<path class="edge-casing' + (dimmed ? ' dimmed' : '') + '" d="' + pathD +
-    '" stroke-width="' + (strokeWidth + CASING_EXTRA) + '"></path>';
+  // The drawn slice's edges, in emission order, so the incremental selection
+  // patch can walk the DOM and the model side by side (see
+  // refreshSelectionStyling). Rebuilt from scratch by every render.
+  const drawnEdges: RenderEdge[] = [];
 
   for (let i = 0; i < renderEdges.length; i++) {
     const re = renderEdges[i];
@@ -660,22 +1015,17 @@ export function render(): void {
     const toPos   = layout.positions[re.to];
     if (!fromPos || !toPos) continue;   // defensive — endpoints should be visible
 
-    // Virtualization: skip edges whose endpoint bounding box is well outside the
-    // viewport. Uses both endpoints, so an edge spanning across the viewport
-    // between two off-screen nodes is still drawn (its bbox overlaps the rect).
-    if (cull) {
-      const ex1 = Math.min(fromPos.x, toPos.x);
-      const ey1 = Math.min(fromPos.y, toPos.y);
-      const ex2 = Math.max(fromPos.x + fromPos.width, toPos.x + toPos.width);
-      const ey2 = Math.max(fromPos.y + fromPos.height, toPos.y + toPos.height);
-      if (!boxInCull(ex1, ey1, ex2, ey2, cull)) continue;
-    }
+    const off = anchorOffsets[i];
+
+    // Virtualization: skip links whose CURVE never comes near the viewport —
+    // see edgeCurveIntersectsRect. Links that do reach it are drawn exactly as
+    // before, down to the byte.
+    if (cull && !edgeCurveIntersectsRect(fromPos, toPos, cull, off.fromYOffset, off.toYOffset)) continue;
 
     // Smooth cubic bezier between the two node faces — forward edges connect
     // right→left, backward / feedback edges connect left→right (same style,
     // mirrored faces; see edgeBezierPath). Fanned by the per-edge anchor offsets
     // so co-incident arrows separate (shared with the export — see 04-utils.js).
-    const off = anchorOffsets[i];
     const pathD = edgeBezierPath(fromPos, toPos, off.fromYOffset, off.toYOffset);
 
     if (re.synthetic) {
@@ -683,120 +1033,49 @@ export function render(): void {
       // contains a dashed link).
       if (state.hiddenEffects.has(re.effect)) continue;
       if (state.hiddenStyles.has(re.dashed ? "dashed" : "solid")) continue;
-      // Synthetic "through" edge — presentation only: not selectable/editable.
-      // Drawn THINNER than a real edge so it reads as derived, and dashed only
-      // when it re-routes a dashed link (re.dashed, set in 10a). Bold + coloured
-      // when incident to the selected node (highlightedEdgeIds only holds real
-      // edge ids, so we check incidence directly); dimmed when some OTHER node
-      // is the sole selection.
-      const incident = state.selectedNodeId === re.from || state.selectedNodeId === re.to;
-      let strokeWidth   = 1;
-      let strokeOpacity = 0.6;
-      let dimmed        = false;
-      let strokeColor   = "var(--edge-default)";
-      let markerName    = "default";
-      if (state.selectedNodeId && state.selectedNodeIds.size <= 1) {
-        if (incident) {
-          strokeWidth = 1.5; strokeOpacity = 0.95;   // still thinner than a real highlighted edge (2)
-          strokeColor = effectStroke(re.effect);
-          markerName  = effectMarker(re.effect);
-        } else {
-          dimmed = true;
-        }
-      }
+      const style = edgeStyleFor(re, ctx);
       const synthDash = re.dashed ? ' stroke-dasharray="5 4"' : '';
-      const effectClass = ' effect-' + re.effect;   // increases / decreases / neutral
-      edgeCasings += casingPath(pathD, strokeWidth, dimmed);
-      edgeStrokes += '<path class="edge-path synthetic' + effectClass + (dimmed ? ' dimmed' : '') +
-        '" d="' + pathD + '" stroke="' + strokeColor +
-        '" stroke-width="' + strokeWidth + '" stroke-opacity="' + strokeOpacity +
-        '"' + synthDash + ' marker-end="url(#arrow_' + markerName + ')"></path>';
+      edgeCasings += '<path class="' + style.casingClasses + '" d="' + pathD +
+        '" stroke-width="' + (style.strokeWidth + CASING_EXTRA) + '"></path>';
+      edgeStrokes += '<path class="' + style.classes +
+        '" d="' + pathD + '" stroke="' + style.stroke +
+        '" stroke-width="' + style.strokeWidth + '" stroke-opacity="' + style.strokeOpacity +
+        '"' + synthDash + ' marker-end="url(#arrow_' + (style.marker || "default") + ')"></path>';
+      drawnEdges.push(re);
       continue;
     }
 
     const edge = re.edge;
     if (!isEdgeVisible(edge)) continue;   // hidden via the sidebar edge filters
-    // Default styling — overridden if the edge is highlighted by a selection.
-    let strokeColor   = "var(--edge-default)";
-    let strokeWidth   = 1;
-    let strokeOpacity = 0.45;
-    let markerEnd     = "";
-    let dimmed        = false;
-    const isEdgeFlashed = edge.id === flashedEdgeId;
-
-    // Only a single-node selection highlights/dims edges — a multi-selection
-    // suppresses neighbour highlighting (highlightedEdgeIds is empty), so leave
-    // every edge at its default styling rather than dimming them all.
-    if (state.selectedNodeId && state.selectedNodeIds.size <= 1) {
-      const isHighlighted = state.highlightedEdgeIds.has(edge.id!);
-      if (isHighlighted) {
-        strokeColor = effectStroke(edge.effect);
-        strokeWidth = 2;
-        strokeOpacity = 0.9;
-        markerEnd = ' marker-end="url(#arrow_' + edge.effect + ')"';
-      } else {
-        dimmed = true;
-      }
-    }
-    if (isEdgeFlashed) {
-      // Edge was just clicked — paint it boldly until the flash flag clears.
-      strokeColor = effectStroke(edge.effect);
-      strokeWidth = 2.5;
-      strokeOpacity = 1;
-      markerEnd = ' marker-end="url(#arrow_' + edge.effect + ')"';
-      dimmed = false;
-    }
-    const isEdgeSelected = edge.id === state.selectedEdgeId;
-    // The currently-selected edge always renders in its effect colour, bold
-    // and undimmed — so creation (auto-select) and arrow-key effect cycling
-    // both show an unambiguous colour change without depending on whether
-    // the from-node is also selected.
-    if (isEdgeSelected) {
-      strokeColor = effectStroke(edge.effect);
-      strokeWidth = 3;
-      strokeOpacity = 1;
-      markerEnd = ' marker-end="url(#arrow_' + edge.effect + ')"';
-      dimmed = false;
-    }
+    const style = edgeStyleFor(re, ctx);
 
     // Casing under the colour stroke (knockout gap at crossings / under-runs).
-    edgeCasings += casingPath(pathD, strokeWidth, dimmed);
+    edgeCasings += '<path class="' + style.casingClasses + '" d="' + pathD +
+      '" stroke-width="' + (style.strokeWidth + CASING_EXTRA) + '"></path>';
 
     // Wide invisible hit-path drawn UNDER the visible edge for easier clicking
     // (uses the same fanned path so the hit region tracks the drawn edge).
     // pointer-events:stroke (set in CSS) limits hits to the stroked area.
-    edgeStrokes += '<path class="edge-hit" data-edge-id="' + edge.id + '" d="' + pathD + '"></path>';
+    // It paints nothing, so it is only worth emitting where the pointer can
+    // actually reach it: inside the real viewport, not out in the cull margin.
+    if (!viewport || edgeCurveIntersectsRect(fromPos, toPos, viewport, off.fromYOffset, off.toYOffset)) {
+      edgeStrokes += '<path class="edge-hit" data-edge-id="' + edge.id + '" d="' + pathD + '"></path>';
+    }
 
-    // Effect class lets CSS bind colour-based styles (selected-edge halo, etc)
-    // without having to parse the inline stroke value.
-    const effectClass = edge.effect ? ' effect-' + edge.effect : '';
-    const isEdgeUndoFlashed = undoFlashEdgeIds && undoFlashEdgeIds.has(edge.id!);
-    const classAttr = ' class="edge-path' + effectClass + (dimmed ? ' dimmed' : '') + (isEdgeFlashed ? ' flashed' : '') + (isEdgeUndoFlashed ? ' undo-flash' : '') + (isEdgeSelected ? ' selected' : '') + '"';
     // Dashed line style (inline, so it persists through every selection state).
     const dashAttr = edge.style === "dashed" ? ' stroke-dasharray="6 5"' : '';
-    edgeStrokes += '<path' + classAttr + ' data-edge-id="' + edge.id + '" d="' + pathD + '" stroke="' + strokeColor + '" stroke-width="' + strokeWidth + '" stroke-opacity="' + strokeOpacity + '"' + dashAttr + markerEnd + '></path>';
+    const markerEnd = style.marker ? ' marker-end="url(#arrow_' + style.marker + ')"' : '';
+    edgeStrokes += '<path class="' + style.classes + '" data-edge-id="' + edge.id + '" d="' + pathD +
+      '" stroke="' + style.stroke + '" stroke-width="' + style.strokeWidth +
+      '" stroke-opacity="' + style.strokeOpacity + '"' + dashAttr + markerEnd + '></path>';
+    drawnEdges.push(re);
   }
 
   // Casings first (so they sit under every colour stroke), then the colours.
   content += edgeCasings + edgeStrokes;
 
-  // Pre-compute the set of search-match ids once so the per-node check
-  // below is O(1) instead of O(matches). Tiny optimisation for 73 nodes,
-  // but it also makes the inner loop easier to read.
-  const searchMatchIds = (state.searchMatches && state.searchMatches.length > 0)
-    ? new Set(state.searchMatches.map(m => m.node.id))
-    : null;
-
-  // Nodes changed by the most recent undo/redo — pulsed briefly (and forced
-  // un-dimmed by CSS) so the user sees what the operation touched.
-  const undoFlashNodeIds = state.canvasEdit && state.canvasEdit.flashedNodeIds;
-
-  // Outcome borders only show when nothing at all is selected — hoisted out
-  // of the loop so the per-node branch is a boolean test.
-  const showOutcomeBorders = !state.selectedNodeId && !state.selectedNodeIds.size;
-
   // ───── Nodes ──────────────────────────────────────────────────────────
-  for (const node of NODES) {
+  for (const node of drawList) {
     if (!isNodeVisible(node)) continue;
     const pos = layout.positions[node.id];
     if (!pos) continue;
@@ -813,50 +1092,22 @@ export function render(): void {
     // ancestor/descendant/dimmed neighbour treatment only applies in
     // single-select (refreshNeighborHighlight empties those sets when >1 is
     // selected, so multi-select renders un-selected nodes plainly — no noise).
-    let nodeClasses = "node-group";
-    if (state.selectedNodeIds.has(node.id)) {
-      nodeClasses += " selected";
-    } else if (state.selectedNodeId && state.selectedNodeIds.size <= 1) {
-      if      (state.ancestorSet.has(node.id))    nodeClasses += " ancestor";
-      else if (state.descendantSet.has(node.id))  nodeClasses += " descendant";
-      else                                        nodeClasses += " dimmed";
-    }
-    if (state.hoveredNodeId === node.id) nodeClasses += " hovered";
-    if (searchMatchIds && searchMatchIds.has(node.id)) nodeClasses += " search-match";
-    if (undoFlashNodeIds && undoFlashNodeIds.has(node.id)) nodeClasses += " undo-flash";
-    // Ghost the source node while it's being dragged — the live preview
-    // (rendered below the node loop) follows the cursor.
-    if (drag && drag.nodeId === node.id) nodeClasses += " dragging-source";
+    let nodeClasses = nodeGroupClasses(node.id, ctx);
+
+    // H5: bake the resting desaturation into the colours instead of paying for a
+    // per-element CSS filter pass. Only plain solid-filled resting boxes qualify.
+    const preDesat = ctx.preDesaturate && !fillInfo.defs && !hasNonRestingFilter(node.id, ctx);
+    if (preDesat) nodeClasses += " pre-desat";
+    const rectFill   = preDesat ? desaturateColor(fillInfo.fill)  : fillInfo.fill;
+    const stripeFill = preDesat ? desaturateColor(stream.color) : stream.color;
 
     content += '<g class="' + nodeClasses + '" data-node-id="' + node.id + '">';
     content += fillInfo.defs;   // per-node gradient def (empty unless multi-primary)
 
     // ── Background rect with conditional border ──
-    let strokeColor = "rgba(0,0,0,0.4)";
-    let strokeWidth = 1;
+    const border = nodeRectStroke(node.id, ctx);
 
-    if (state.selectedNodeIds.has(node.id)) {
-      strokeColor = "#ffffff";
-      strokeWidth = 2.5;
-    } else if (state.ancestorSet.has(node.id)) {
-      strokeColor = "var(--edge-ancestor)";
-      strokeWidth = 2;
-    } else if (state.descendantSet.has(node.id)) {
-      strokeColor = "var(--edge-descendant)";
-      strokeWidth = 2;
-    } else if (showOutcomeBorders) {
-      // Show good/bad colour around outcome nodes when nothing is selected.
-      // Only computed on this branch — getOutcomeBorderColor runs the delta
-      // formatting internally, and calling it unconditionally for every box
-      // was pure waste whenever a selection was active.
-      const outcomeStatusColor = getOutcomeBorderColor(node.id);
-      if (outcomeStatusColor) {
-        strokeColor = outcomeStatusColor;
-        strokeWidth = 2;
-      }
-    }
-
-    content += '<rect class="node-rect" x="' + pos.x + '" y="' + pos.y + '" width="' + pos.width + '" height="' + pos.height + '" rx="5" fill="' + fillInfo.fill + '" stroke="' + strokeColor + '" stroke-width="' + strokeWidth + '"></rect>';
+    content += '<rect class="node-rect" x="' + pos.x + '" y="' + pos.y + '" width="' + pos.width + '" height="' + pos.height + '" rx="5" fill="' + rectFill + '" stroke="' + border.stroke + '" stroke-width="' + border.width + '"></rect>';
 
     // ── Coloured stripe down the left edge (the stream colour) ──
     // We draw it as a path so only the left corners are rounded — the right
@@ -881,7 +1132,7 @@ export function render(): void {
       " L " + barLeft + "," + (barTop + barRadius) +
       " A " + barRadius + "," + barRadius + " 0 0 1 " + (barLeft + barRadius) + "," + barTop +
       " Z";
-    content += '<path class="node-stripe" d="' + barPath + '" fill="' + stream.color + '"></path>';
+    content += '<path class="node-stripe" d="' + barPath + '" fill="' + stripeFill + '"></path>';
 
     // ── Label (wrapped to up to 2 lines) ──
     // One <text> with one or two <tspan> children. Using `dy="1.083em"` (the
@@ -948,6 +1199,180 @@ export function render(): void {
     '<g class="' + STATIC_LAYER_CLASS + '">' + content + '</g>' +
     '<g class="' + OVERLAY_LAYER_CLASS + '">' + buildOverlayContent() + '</g>';
   attachSvgEventHandlers();
+
+  // Remember what this render drew so a later selection change can patch the
+  // live elements instead of rebuilding the whole string (see
+  // refreshSelectionStyling). Anything that invalidates these — a data
+  // mutation, a filter, a layout move — forces the patch back to a full render.
+  _drawnEdges = drawnEdges;
+  _drawnNodesIdentity = NODES;
+  _drawnEdgesIdentity = EDGES;
+  _drawnNodesLength = NODES.length;
+  _drawnEdgesLength = EDGES.length;
+  _drawnGeometryRevision = layoutGeometryRevision();
+  _drawnPreDesaturate = ctx.preDesaturate;
+}
+
+// ───── Incremental selection repaint ──────────────────────────────────────
+// Selecting a node changes NOTHING structural: the same boxes and links are
+// drawn in the same places. Only class names, the node-rect border, and each
+// link's stroke / width / opacity / arrowhead differ. Rebuilding the entire SVG
+// string for that — on every click, every arrow key, every search keystroke —
+// is what made selection feel heavy on a big map.
+//
+// refreshSelectionStyling() walks the slice that is already on screen ONCE and
+// patches those attributes in place. Because it derives every value from the
+// same helpers render() uses (nodeGroupClasses / nodeRectStroke / edgeStyleFor),
+// the result is by construction identical to what a full render would have
+// produced. It returns false when the drawn slice can no longer be trusted
+// (nothing rendered yet, the data or layout moved underneath it, the element
+// counts don't line up) — callers then fall back to render().
+let _drawnEdges: RenderEdge[] = [];
+let _drawnNodesIdentity: typeof NODES | null = null;
+let _drawnEdgesIdentity: typeof EDGES | null = null;
+let _drawnGeometryRevision = -1;
+let _drawnPreDesaturate = false;
+// Lengths as well as identities: a mutation that pushes into the LIVE arrays
+// (commitNewEdge, a splice-based reorder) leaves the identity alone.
+let _drawnNodesLength = -1;
+let _drawnEdgesLength = -1;
+
+export function refreshSelectionStyling(): boolean {
+  if (!state.dataLoaded) return false;
+  // A full render is already owed (something structural changed and deferred its
+  // repaint onto the next frame) — the drawn slice is known-stale, so patching
+  // it would leave the map showing the pre-change markup. Let the caller render.
+  if (_renderQueued || _layoutDirty) return false;
+  const staticLayer = svg.querySelector("." + STATIC_LAYER_CLASS);
+  if (!staticLayer) return false;
+  // Stale slice → the caller must do a full render.
+  if (_drawnNodesIdentity !== NODES || _drawnEdgesIdentity !== EDGES) return false;
+  if (_drawnNodesLength !== NODES.length || _drawnEdgesLength !== EDGES.length) return false;
+  if (_drawnGeometryRevision !== layoutGeometryRevision()) return false;
+
+  const casings = staticLayer.querySelectorAll(".edge-casing");
+  const paths   = staticLayer.querySelectorAll(".edge-path");
+  if (casings.length !== _drawnEdges.length || paths.length !== _drawnEdges.length) return false;
+
+  const ctx = styleContext(_drawnPreDesaturate);
+
+  for (let i = 0; i < _drawnEdges.length; i++) {
+    const style = edgeStyleFor(_drawnEdges[i], ctx);
+    const path = paths[i];
+    setIfChanged(path, "class", style.classes);
+    setIfChanged(path, "stroke", style.stroke);
+    setIfChanged(path, "stroke-width", String(style.strokeWidth));
+    setIfChanged(path, "stroke-opacity", String(style.strokeOpacity));
+    if (style.marker) setIfChanged(path, "marker-end", "url(#arrow_" + style.marker + ")");
+    else if (path.hasAttribute("marker-end")) path.removeAttribute("marker-end");
+    const casing = casings[i];
+    setIfChanged(casing, "class", style.casingClasses);
+    setIfChanged(casing, "stroke-width", String(style.strokeWidth + 2));
+  }
+
+  const groups = staticLayer.querySelectorAll(".node-group");
+  for (let i = 0; i < groups.length; i++) {
+    const group = groups[i];
+    const id = group.getAttribute("data-node-id");
+    if (!id) continue;
+    const node = nodeById[id];
+    if (!node) return false;                 // slice describes nodes we no longer have
+    let classes = nodeGroupClasses(id, ctx);
+    // H5: a box that gains a selection / trace / halo state needs its literal
+    // colours back (its CSS filter is no longer the resting saturate()), and one
+    // that loses them goes back to the baked-in desaturated pair.
+    const rect = group.querySelector(".node-rect");
+    const stripe = group.querySelector(".node-stripe");
+    // A gradient (multi-primary) box paints through a per-render <defs> id and
+    // is never pre-desaturated, so its fills are left exactly as rendered.
+    const gradientFilled = !!rect && (rect.getAttribute("fill") || "").startsWith("url(");
+    if (ctx.preDesaturate && rect && !gradientFilled) {
+      const preDesat = !hasNonRestingFilter(id, ctx);
+      if (preDesat) classes += " pre-desat";
+      const solidFill = nodePrimaryFill(node, "").fill;
+      const stream = streamById[node.stream];
+      setIfChanged(rect, "fill", preDesat ? desaturateColor(solidFill) : solidFill);
+      if (stripe && stream) {
+        setIfChanged(stripe, "fill", preDesat ? desaturateColor(stream.color) : stream.color);
+      }
+    }
+    setIfChanged(group, "class", classes);
+    if (rect) {
+      const border = nodeRectStroke(id, ctx);
+      setIfChanged(rect, "stroke", border.stroke);
+      setIfChanged(rect, "stroke-width", border.width);
+    }
+  }
+  return true;
+}
+
+function setIfChanged(el: Element, name: string, value: string): void {
+  if (el.getAttribute(name) !== value) el.setAttribute(name, value);
+}
+
+// rAF-coalesced form, for callers that fire faster than the screen refreshes
+// (search keystrokes, marquee drags). A full render already pending supersedes
+// it — render() repaints the selection styling anyway.
+let _selectionStyleQueued = false;
+let _selectionStyleRAF = 0;
+export function scheduleSelectionStyling(): void {
+  if (_renderQueued || _selectionStyleQueued) return;
+  _selectionStyleQueued = true;
+  _selectionStyleRAF = _raf(() => {
+    _selectionStyleQueued = false;
+    _selectionStyleRAF = 0;
+    if (!refreshSelectionStyling()) render();
+  });
+}
+
+// Repaint the current selection state as cheaply as the drawn slice allows:
+// a class/attribute patch when it's still valid, a full render otherwise. This
+// is what the selection entry points in 09-graph-selection call instead of
+// render().
+export function renderSelectionChange(): void {
+  if (_selectionStyleRAF) { _cancelRaf(_selectionStyleRAF); _selectionStyleRAF = 0; _selectionStyleQueued = false; }
+  if (!refreshSelectionStyling()) render();
+}
+
+// The nodes that could fall inside `cull`, in NODES order. Walks the (stream,
+// stage) cells rather than every node: a cell's bounds come straight from the
+// row/column maps, so whole columns and rows are rejected at once.
+function culledNodeCandidates(cull: CullRect): GraphNode[] {
+  const cells = layout.cells;
+  if (!cells) return NODES;
+  const order = nodeOrderIndex();
+  const out: GraphNode[] = [];
+  for (const stream of STREAMS) {
+    if (state.hiddenStreams.has(stream.id)) continue;
+    const top = layout.rowY[stream.id];
+    if (top === undefined) continue;
+    const bottom = top + (layout.rowHeights[stream.id] || 0);
+    if (top > cull.maxY || bottom < cull.minY) continue;
+    for (const stage of STAGES) {
+      if (state.hiddenStages.has(stage.id)) continue;
+      const left = layout.colX[stage.id];
+      if (left === undefined) continue;
+      const right = left + ((layout.colWidths && layout.colWidths[stage.id]) || NODE_WIDTH);
+      if (left > cull.maxX || right < cull.minX) continue;
+      const cellNodes = cells[stream.id + ":" + stage.id];
+      if (cellNodes) for (const n of cellNodes) out.push(n);
+    }
+  }
+  out.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+  return out;
+}
+
+// id → position in NODES, cached per NODES identity (it is reassigned by every
+// mutation) so the culled path doesn't pay an O(N) index rebuild per render.
+let _nodeOrderIndex: Map<string, number> | null = null;
+let _nodeOrderIndexFor: typeof NODES | null = null;
+function nodeOrderIndex(): Map<string, number> {
+  if (_nodeOrderIndex && _nodeOrderIndexFor === NODES) return _nodeOrderIndex;
+  const map = new Map<string, number>();
+  for (let i = 0; i < NODES.length; i++) map.set(NODES[i].id, i);
+  _nodeOrderIndex = map;
+  _nodeOrderIndexFor = NODES;
+  return map;
 }
 
 // Patch only the value / delta / border of quantified nodes in place, skipping a

@@ -38,10 +38,10 @@
 //   the pre-rename state. One undo rewinds the whole rename.
 // =============================================================================
 
-import { state, nodeById, setLayout } from "./03-state";
+import { state, layout, nodeById, setLayout } from "./03-state";
 import { applyCanvasMutation } from "./16f-canvas-mutations";
-import { computeLayout } from "./08-layout";
-import { render } from "./11-rendering";
+import { computeLayout, measureNode } from "./08-layout";
+import { scheduleRender } from "./11-rendering";
 import { renderDetailPanel } from "./15-detail-panel";
 
 // True if Backspace / Delete on the canvas should edit the label instead of
@@ -123,6 +123,7 @@ export function commitInlineRename(options?: { skipDetailRender?: boolean }): bo
   // No characters were ever typed — treat as a no-op so "select then click
   // away" doesn't pollute history with a snapshot that didn't change anything.
   if (!ir.started) return false;
+  cancelDetailPanelRefresh();
   const trimmed = String(node.label || "").trim();
   node.label = trimmed || "Untitled";
   if (typeof applyCanvasMutation === "function") {
@@ -144,15 +145,58 @@ export function revertInlineRename(): boolean {
 }
 
 // Internal — repaint the canvas + detail panel so the live label change shows
-// up. We recompute layout first: under grow-to-fit the wrapped lines and box
-// height are baked into layout.positions by computeLayout, so without this the
-// canvas would keep drawing the stale label (and stale height) until commit.
-// Cheap per-keystroke — measureLabelLines is cached by text, so only the one
-// renamed node re-measures; every other node is a cache hit.
+// up. Under grow-to-fit the wrapped lines and box height are baked into
+// layout.positions, so the canvas would otherwise keep drawing the stale label
+// (and stale height) until commit.
+//
+// Only ONE node's label can change per keystroke, and its box only MOVES
+// anything when the line count changes. So the common keystroke re-measures
+// just that node and patches its entry in layout.positions — no full
+// computeLayout (which measures every node and rebuilds every map), no
+// synchronous render (the repaint is coalesced onto the next frame), and the
+// detail panel — which rebuilds a large form for a label the user is still
+// typing — is debounced. The rarer line-count change still runs the full
+// layout, because every box below it in the cell has to move.
+const DETAIL_PANEL_RENAME_DEBOUNCE_MS = 150;
+let _detailPanelTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleDetailPanelRefresh(): void {
+  if (_detailPanelTimer !== null) clearTimeout(_detailPanelTimer);
+  _detailPanelTimer = setTimeout(() => {
+    _detailPanelTimer = null;
+    if (typeof renderDetailPanel === "function") renderDetailPanel();
+  }, DETAIL_PANEL_RENAME_DEBOUNCE_MS);
+}
+
+// Drop a pending debounced panel refresh — the commit path renders the panel
+// itself (through applyCanvasMutation), so a late timer would be redundant.
+function cancelDetailPanelRefresh(): void {
+  if (_detailPanelTimer !== null) {
+    clearTimeout(_detailPanelTimer);
+    _detailPanelTimer = null;
+  }
+}
+
 export function refreshAfterInlineRenameKey(): void {
-  if (typeof computeLayout === "function") setLayout(computeLayout());
-  if (typeof render === "function") render();
-  if (typeof renderDetailPanel === "function") renderDetailPanel();
+  const ir = state.canvasEdit && state.canvasEdit.inlineRename;
+  const node = ir ? nodeById[ir.nodeId] : null;
+  const pos = node && layout.positions ? layout.positions[node.id] : null;
+
+  let patched = false;
+  if (node && pos && typeof measureNode === "function") {
+    const measured = measureNode(node);
+    const sameShape = measured.height === pos.height &&
+                      measured.lines.length === (pos.labelLines ? pos.labelLines.length : 0);
+    if (sameShape) {
+      // Same box, new words — geometry is untouched, so nothing else on the map
+      // moves and every cached geometry consumer stays valid.
+      pos.labelLines = measured.lines;
+      patched = true;
+    }
+  }
+  if (!patched && typeof computeLayout === "function") setLayout(computeLayout());
+  if (typeof scheduleRender === "function") scheduleRender();
+  scheduleDetailPanelRefresh();
 }
 
 // Decide whether a keydown is a printable character we should route into the

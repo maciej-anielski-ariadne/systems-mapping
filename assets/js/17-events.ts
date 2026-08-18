@@ -11,7 +11,7 @@ import { getMapTextScale } from "./04-utils";
 import { clearCsvFromStorage, saveUiStateToStorage, scheduleUiStateSave } from "./04a-storage";
 import { refreshNeighborHighlight } from "./09-graph-selection";
 import { computeLayout } from "./08-layout";
-import { render, maybeRenderForViewport, setMapTextScaleVar } from "./11-rendering";
+import { maybeRenderForViewport, renderSelectionChange, scheduleLayoutRender, setMapTextScaleVar } from "./11-rendering";
 import { toggleSimulationMode } from "./14-simulation-panel";
 import { downloadCsvBlob, readCsvFile } from "./16-file-io";
 import { closeBuilder, openBuilder } from "./16a-builder-state";
@@ -310,8 +310,13 @@ export function applyZoom(): void {
   // render() re-applies the zoom-scaled SVG width/height + --map-text-scale itself.
   if (textScale !== _lastTextScale) {
     _lastTextScale = textScale;
-    setLayout(computeLayout());
-    render();
+    // Both the re-layout (every label re-wrapped at the new scale) and the
+    // redraw are deferred to the next animation frame instead of running inside
+    // the wheel handler — a wheel burst crosses a band once but fires dozens of
+    // events, and a synchronous computeLayout + render on the input path is what
+    // made zooming across a band stutter. scheduleLayoutRender owns the
+    // recompute, so the render can never draw a stale layout.
+    scheduleLayoutRender();
   } else {
     // Zoom that didn't cross a text-scale band still changes which layout-area
     // is visible. On a virtualized map that means the drawn slice may no longer
@@ -328,6 +333,9 @@ export function scheduleZoomSave(): void {
 }
 
 export function setZoom(level: number): void {
+  // A discrete zoom supersedes any wheel/pinch factor still waiting for its
+  // frame — otherwise that factor would land on top of the level just set.
+  cancelPendingZoom();
   state.zoomLevel = clampZoom(level);
   applyZoom();
   scheduleZoomSave();
@@ -335,7 +343,45 @@ export function setZoom(level: number): void {
 
 // Multiply the current zoom by `factor`, optionally anchored to a viewport
 // pixel coordinate so that pinching keeps the point under the cursor still.
+//
+// A trackpad pinch or a wheel spin delivers many events per frame. Each one used
+// to resize the SVG and re-anchor the scroll immediately, so all but the last
+// were overwritten before the screen ever showed them. The factors are
+// multiplied together instead and applied ONCE per frame, anchored to the most
+// recent cursor position — the net zoom is identical (zoom composes by
+// multiplication) for a fraction of the work. Discrete callers (the +/− buttons,
+// keyboard, restore-from-storage) go through setZoom, which stays immediate.
+let _pendingZoomFactor = 1;
+let _pendingZoomAnchor: { x: number; y: number } | undefined;
+let _zoomRAF = 0;
+const _zoomRaf: (cb: FrameRequestCallback) => number =
+  typeof requestAnimationFrame === "function" ? requestAnimationFrame : (cb => setTimeout(() => cb(0), 16) as unknown as number);
+
+function cancelPendingZoom(): void {
+  if (_zoomRAF && typeof cancelAnimationFrame === "function") cancelAnimationFrame(_zoomRAF);
+  else if (_zoomRAF) clearTimeout(_zoomRAF);
+  _zoomRAF = 0;
+  _pendingZoomFactor = 1;
+  _pendingZoomAnchor = undefined;
+}
+
 export function zoomBy(factor: number, anchorClientX?: number, anchorClientY?: number): void {
+  _pendingZoomFactor *= factor;
+  if (typeof anchorClientX === "number" && typeof anchorClientY === "number") {
+    _pendingZoomAnchor = { x: anchorClientX, y: anchorClientY };
+  }
+  if (_zoomRAF) return;
+  _zoomRAF = _zoomRaf(() => {
+    _zoomRAF = 0;
+    const f = _pendingZoomFactor;
+    const anchor = _pendingZoomAnchor;
+    _pendingZoomFactor = 1;
+    _pendingZoomAnchor = undefined;
+    applyZoomBy(f, anchor && anchor.x, anchor && anchor.y);
+  });
+}
+
+export function applyZoomBy(factor: number, anchorClientX?: number, anchorClientY?: number): void {
   const oldZoom = state.zoomLevel;
   const newZoom = clampZoom(oldZoom * factor);
   if (newZoom === oldZoom) return;
@@ -401,8 +447,10 @@ export function setHighlightDepth(level: number): void {
   state.highlightDepth = clamped;
   applyHighlightDepth();
   if (state.selectedNodeId) {
+    // Depth only changes which nodes/edges are in the trace sets — a selection
+    // repaint, not a structural one.
     refreshNeighborHighlight();
-    render();
+    renderSelectionChange();
   }
   saveUiStateToStorage();
 }

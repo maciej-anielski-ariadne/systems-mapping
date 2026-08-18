@@ -29,7 +29,9 @@ import {
 } from "./03-state";
 import { commitInlineRename } from "./16h-canvas-inline-rename";
 import { endEdgeCycleSession } from "./16e-canvas-edit";
-import { render } from "./11-rendering";
+// Selection changes are a class/attribute patch on the slice already drawn —
+// renderSelectionChange falls back to a full render() when it can't be.
+import { renderSelectionChange } from "./11-rendering";
 import { renderDetailPanel } from "./15-detail-panel";
 import { renderMultiSelectBar } from "./16j-multi-select-bar";
 import { scheduleUiStateSave } from "./04a-storage";
@@ -232,7 +234,7 @@ export function selectNode(nodeId: string): void {
   state.selectedNodeIds = new Set([nodeId]);
   state.selectedEdgeId = null;   // node and edge selection are mutually exclusive
   refreshNeighborHighlight();
-  render();
+  renderSelectionChange();
   renderDetailPanel();
   if (typeof renderMultiSelectBar === "function") renderMultiSelectBar();
   scheduleUiStateSave();
@@ -257,7 +259,7 @@ export function toggleNodeInSelection(nodeId: string): void {
     state.selectedNodeId = nodeId;   // newest becomes primary
   }
   refreshNeighborHighlight();
-  render();
+  renderSelectionChange();
   renderDetailPanel();
   if (typeof renderMultiSelectBar === "function") renderMultiSelectBar();
   scheduleUiStateSave();
@@ -289,7 +291,7 @@ export function deselectNode(): void {
   state.ancestorSet = new Set();
   state.descendantSet = new Set();
   state.highlightedEdgeIds = new Set();
-  render();
+  renderSelectionChange();
   renderDetailPanel();
   if (typeof renderMultiSelectBar === "function") renderMultiSelectBar();
   scheduleUiStateSave();
@@ -322,14 +324,14 @@ export function selectEdge(edgeId: string): void {
   if (typeof renderMultiSelectBar === "function") renderMultiSelectBar();
 
   if (state.selectedNodeId === edge.from) {
-    render();
+    renderSelectionChange();
     renderDetailPanel();
   } else {
     // selectNode toggles when called with the current id; we already handled
     // that above so it's safe to set directly here.
     state.selectedNodeId = edge.from;
     Object.assign(state, computeTraceFor(edge.from));
-    render();
+    renderSelectionChange();
     renderDetailPanel();
     scheduleUiStateSave();
   }
@@ -362,19 +364,22 @@ export function deselectAll(): void {
   state.descendantSet = new Set();
   state.highlightedEdgeIds = new Set();
   if (state.canvasEdit) state.canvasEdit.flashedEdgeId = null;
-  render();
+  renderSelectionChange();
   renderDetailPanel();
   if (typeof renderMultiSelectBar === "function") renderMultiSelectBar();
   scheduleUiStateSave();
 }
 
-// Smoothly scroll the visualization so the given node is centred on screen.
-export function scrollNodeIntoView(nodeId: string): void {
+// Scroll the visualization so the given node is centred on screen. Smooth by
+// default; callers that fire faster than an animation can finish (search
+// select-as-you-type) pass "auto" so each keystroke lands the map on its target
+// instead of restarting a glide toward the previous one.
+export function scrollNodeIntoView(nodeId: string, behavior: ScrollBehavior = "smooth"): void {
   const pos = layout.positions[nodeId];
   if (!pos) return;
   const container = document.getElementById("viz-scroll");
   if (!container) return;
   const targetX = pos.x + pos.width / 2 - container.clientWidth / 2;
   const targetY = pos.y + pos.height / 2 - container.clientHeight / 2;
-  container.scrollTo({ left: targetX, top: targetY, behavior: "smooth" });
+  container.scrollTo({ left: targetX, top: targetY, behavior });
 }

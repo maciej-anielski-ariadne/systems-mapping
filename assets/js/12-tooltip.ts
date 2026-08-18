@@ -41,26 +41,75 @@ export function showTooltip(node: GraphNode | null | undefined, event: MouseEven
     '<div class="tooltip-desc">' + escapeHtml(node.description || "") + '</div>';
 
   tooltip.classList.add("visible");
-  moveTooltip(event);
+  invalidateTooltipSize();
+  positionTooltip(event.clientX, event.clientY);
 }
 
-// Keep the tooltip near the cursor, but flip to the other side if it would
-// overflow the screen edge.
-export function moveTooltip(event: MouseEvent): void {
-  const offset = 12;
-  let x = event.clientX + offset;
-  let y = event.clientY + offset;
+// ───── Position + size ────────────────────────────────────────────────────
+// Two costs used to be paid on EVERY mousemove while a tooltip was up:
+//   • getBoundingClientRect() — a forced synchronous layout of the page, in the
+//     middle of a pointer-move handler, on a page whose SVG can hold tens of
+//     thousands of elements. The tooltip's size only changes when its CONTENT
+//     does, so it is measured once per content and cached.
+//   • two style writes per event — mousemoves arrive faster than the screen
+//     refreshes, so all but the last were invisible. Moves are coalesced onto
+//     the next animation frame; the first placement (on show) stays synchronous
+//     so the tooltip never appears at the previous cursor position.
+let _tipW = 0, _tipH = 0, _tipSizeValid = false;
 
-  const rect = tooltip.getBoundingClientRect();
-  if (x + rect.width  > window.innerWidth  - 10) x = event.clientX - rect.width  - offset;
-  if (y + rect.height > window.innerHeight - 10) y = event.clientY - rect.height - offset;
+function invalidateTooltipSize(): void {
+  _tipSizeValid = false;
+}
+
+function tooltipSize(): { w: number; h: number } {
+  if (!_tipSizeValid) {
+    const rect = tooltip.getBoundingClientRect();
+    _tipW = rect.width;
+    _tipH = rect.height;
+    _tipSizeValid = true;
+  }
+  return { w: _tipW, h: _tipH };
+}
+
+// A resize changes the wrap width the CSS gives the tooltip, so re-measure.
+if (typeof window !== "undefined") {
+  window.addEventListener("resize", invalidateTooltipSize);
+}
+
+function positionTooltip(clientX: number, clientY: number): void {
+  const offset = 12;
+  let x = clientX + offset;
+  let y = clientY + offset;
+
+  const size = tooltipSize();
+  if (x + size.w > window.innerWidth  - 10) x = clientX - size.w - offset;
+  if (y + size.h > window.innerHeight - 10) y = clientY - size.h - offset;
 
   tooltip.style.left = x + "px";
   tooltip.style.top  = y + "px";
 }
 
+// Keep the tooltip near the cursor, but flip to the other side if it would
+// overflow the screen edge. Coalesced onto the next frame — see above.
+let _pendingMove: { x: number; y: number } | null = null;
+let _moveRAF = 0;
+const _raf: (cb: FrameRequestCallback) => number =
+  typeof requestAnimationFrame === "function" ? requestAnimationFrame : (cb => setTimeout(() => cb(0), 16) as unknown as number);
+
+export function moveTooltip(event: MouseEvent): void {
+  _pendingMove = { x: event.clientX, y: event.clientY };
+  if (_moveRAF) return;
+  _moveRAF = _raf(() => {
+    _moveRAF = 0;
+    const pt = _pendingMove;
+    _pendingMove = null;
+    if (pt && tooltip.classList.contains("visible")) positionTooltip(pt.x, pt.y);
+  });
+}
+
 export function hideTooltip(): void {
   tooltip.classList.remove("visible");
+  _pendingMove = null;
 }
 
 // ───── Generic UI tooltip ────────────────────────────────────────────────
@@ -71,7 +120,8 @@ export function showUiTooltip(text: string, event: MouseEvent): void {
   if (!text) return;
   tooltip.innerHTML = '<div class="tooltip-text">' + escapeHtml(text) + '</div>';
   tooltip.classList.add("visible");
-  moveTooltip(event);
+  invalidateTooltipSize();   // new content → new measured size
+  positionTooltip(event.clientX, event.clientY);
 }
 
 // ───── Delegated data-tooltip handling ────────────────────────────────────
@@ -83,10 +133,25 @@ export function showUiTooltip(text: string, event: MouseEvent): void {
 // can never overlap). mouseover/mouseout bubble (unlike mouseenter/mouseleave),
 // which is what makes the delegation work.
 let activeTipEl: Element | null = null;
+// The event target the last mousemove resolved, and what it resolved TO. While
+// the cursor travels across one element (the overwhelming majority of moves)
+// the answer cannot change, so the closest() ancestor walk — which on the map
+// climbs out of a node group through the SVG on every single event — is skipped
+// entirely and only the cheap reposition runs.
+let _lastMoveTarget: EventTarget | null = null;
+let _lastMoveResult: Element | null = null;
 
 function tipTargetFrom(event: Event): Element | null {
   const target = event.target as Element | null;
   return target && typeof target.closest === "function" ? target.closest("[data-tooltip]") : null;
+}
+
+function tipTargetCached(event: Event): Element | null {
+  if (event.target === _lastMoveTarget) return _lastMoveResult;
+  const el = tipTargetFrom(event);
+  _lastMoveTarget = event.target;
+  _lastMoveResult = el;
+  return el;
 }
 
 document.addEventListener("mouseover", event => {
@@ -98,7 +163,7 @@ document.addEventListener("mouseover", event => {
 
 document.addEventListener("mousemove", event => {
   if (!activeTipEl) return;
-  const el = tipTargetFrom(event);
+  const el = tipTargetCached(event);
   if (el && el !== activeTipEl) {            // moved onto a nested / different target
     activeTipEl = el;
     showUiTooltip(el.getAttribute("data-tooltip") || "", event as MouseEvent);

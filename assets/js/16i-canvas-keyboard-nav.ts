@@ -76,23 +76,53 @@ import {
   NODE_WIDTH,
 } from "./02-config";
 
+// ───── Cell / slot lookups ────────────────────────────────────────────────
+// Every question this file asks about the grid — "how many slots does this
+// stream have?", "what's in this cell?", "which slot is this node in?" — used to
+// be answered by scanning the whole NODES array, several times per arrow key
+// (streamRowCount alone is O(stages × nodes)). computeLayout already indexes
+// every node by cell, so these read that index instead, and the per-stream slot
+// counts are memoized against the layout object that produced them (a fresh
+// layout means fresh counts, automatically).
+
+// The nodes stacked in one cell, in NODES order.
+export function cellNodes(streamId: string, stageId: string): GraphNode[] {
+  if (layout.cells) return layout.cells[streamId + ":" + stageId] || [];
+  return NODES.filter(n => n.stream === streamId && n.stage === stageId);
+}
+
+const _slotCountCache = new WeakMap<object, Record<string, number>>();
+
+function streamSlotCounts(): Record<string, number> {
+  const key = layout as unknown as object;
+  const cached = _slotCountCache.get(key);
+  if (cached) return cached;
+  const counts: Record<string, number> = {};
+  for (const stream of STREAMS) {
+    let max = 0;
+    for (const stage of STAGES) {
+      const count = cellNodes(stream.id, stage.id).length;
+      if (count > max) max = count;
+    }
+    counts[stream.id] = max;
+  }
+  _slotCountCache.set(key, counts);
+  return counts;
+}
+
 // How many navigable slots does a stream have? The max number of nodes in any
 // of its cells, or 1 when every cell is empty (so an empty stream still has
 // one row the cursor can land on).
 export function streamRowCount(streamId: string): number {
-  let max = 0;
-  for (const stage of STAGES) {
-    let count = 0;
-    for (const n of NODES) {
-      if (n.stream === streamId && n.stage === stage.id) count++;
-    }
-    if (count > max) max = count;
-  }
-  return Math.max(1, max);
+  return Math.max(1, streamSlotCounts()[streamId] || 0);
 }
 
 // The slot index of `node` within its (stream, stage) cell, or 0 if unknown.
 export function slotIndexOfNode(node: GraphNode): number {
+  const inCell = cellNodes(node.stream, node.stage);
+  for (let i = 0; i < inCell.length; i++) if (inCell[i].id === node.id) return i;
+  // The cell index predates this node (mutation not yet laid out) — fall back
+  // to the authoritative NODES order.
   let idx = 0;
   for (const n of NODES) {
     if (n.stream !== node.stream || n.stage !== node.stage) continue;
@@ -134,11 +164,11 @@ export function moveCursorToSlot(streamId: string, stageId: string, slotIndex: n
   if (state.hiddenStages.has(stageId)) return;   // can't land in a collapsed column
   const rowCount = streamRowCount(streamId);
   const slot = Math.max(0, Math.min(rowCount - 1, slotIndex | 0));
-  const cellNodes = NODES.filter(n => n.stream === streamId && n.stage === stageId);
-  if (slot < cellNodes.length) {
+  const inCell = cellNodes(streamId, stageId);
+  if (slot < inCell.length) {
     if (state.canvasEdit) state.canvasEdit.cursorCell = null;
-    selectNode(cellNodes[slot].id);
-    if (typeof scrollNodeIntoView === "function") scrollNodeIntoView(cellNodes[slot].id);
+    selectNode(inCell[slot].id);
+    if (typeof scrollNodeIntoView === "function") scrollNodeIntoView(inCell[slot].id);
   } else {
     // Empty slot — clear any node selection (commits any pending rename via
     // the deselectAll → commitInlineRename hook), then park the cursor at
@@ -176,8 +206,8 @@ export function scrollCellIntoView(streamId: string, stageId: string, slotIndex:
   const topLayout = (typeof slotTopY === "function")
     ? slotTopY(streamId, stageId, slot)
     : (y + ROW_PADDING + slot * (NODE_HEIGHT + NODE_GAP_Y));
-  const cellNodes = (layout.cells && layout.cells[streamId + ":" + stageId]) || [];
-  const atSlot = cellNodes[slot];
+  const inCell = cellNodes(streamId, stageId);
+  const atSlot = inCell[slot];
   const slotH = (atSlot && layout.positions[atSlot.id]) ? layout.positions[atSlot.id].height : NODE_HEIGHT;
   const slotTop    = topLayout! * zoom;
   const slotBottom = slotTop + slotH * zoom;
@@ -291,11 +321,11 @@ export function handleCanvasTab(direction: string): boolean {
   const targetCIdx = nextVisibleStageIndex(cIdx, direction === "next" ? 1 : -1);
   if (targetCIdx < 0) return false;
   const targetStage = STAGES[targetCIdx];
-  const cellNodes = NODES.filter(n => n.stream === pos.streamId && n.stage === targetStage.id);
+  const inCell = cellNodes(pos.streamId, targetStage.id);
   if (typeof commitInlineRename === "function") commitInlineRename();
-  if (pos.slotIndex < cellNodes.length) {
-    selectNode(cellNodes[pos.slotIndex].id);
-    if (typeof scrollNodeIntoView === "function") scrollNodeIntoView(cellNodes[pos.slotIndex].id);
+  if (pos.slotIndex < inCell.length) {
+    selectNode(inCell[pos.slotIndex].id);
+    if (typeof scrollNodeIntoView === "function") scrollNodeIntoView(inCell[pos.slotIndex].id);
   } else {
     if (state.canvasEdit) state.canvasEdit.cursorCell = null;
     createNodeInCell(pos.streamId, targetStage.id);

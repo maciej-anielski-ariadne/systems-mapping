@@ -84,7 +84,7 @@ import {
   toggleNodeInSelection,
 } from "./09-graph-selection";
 import { isNodeVisible } from "./10-filters";
-import { render, scheduleRender, scheduleOverlayRender } from "./11-rendering";
+import { render, scheduleRender, scheduleOverlayRender, scheduleSelectionStyling } from "./11-rendering";
 import { renderSidebar } from "./13-sidebar";
 import { renderDetailPanel } from "./15-detail-panel";
 import { hideDropZone } from "./16-file-io";
@@ -877,8 +877,15 @@ export function cancelDraftEdge(): boolean {
 }
 
 // Find the visible node whose bounding rect contains (x, y) in layout coords.
+// Resolves the (stream, stage) cell first and then tests only that cell's
+// stack: a point can only be inside a box that lives in the cell containing it,
+// so scanning every node in the map (per mousemove, on the edge-drag path) was
+// buying nothing. Falls back to the full scan when the layout has no cell index
+// yet (first paint).
 export function nodeAtLayoutPoint(x: number, y: number): string | null {
-  for (const node of NODES) {
+  const cellNodes = nodesInCellAt(x, y);
+  if (!cellNodes) return null;
+  for (const node of cellNodes) {
     if (!isNodeVisible(node)) continue;
     const pos = layout.positions[node.id];
     if (!pos) continue;
@@ -887,6 +894,25 @@ export function nodeAtLayoutPoint(x: number, y: number): string | null {
     }
   }
   return null;
+}
+
+// The nodes stacked in the cell under a layout point, or null when the point
+// isn't over a cell at all. `undefined` cells (no nodes there) come back as an
+// empty list. When the layout predates the cell index, the whole NODES array is
+// returned so callers behave exactly as they did before.
+function nodesInCellAt(x: number, y: number): GraphNode[] | null {
+  if (!layout.cells) return NODES;
+  const found = cellAtLayoutPoint(x, y);
+  if (!found) return null;
+  return layout.cells[found.stream.id + ":" + found.stage.id] || [];
+}
+
+// The nodes in one (stream, stage) cell, in NODES order — straight from the
+// layout's cell index, with a scan as the fallback. Shared by the drag / hover
+// hit-tests below, which all used to walk the whole NODES array per mousemove.
+function cellNodesFor(streamId: string, stageId: string): GraphNode[] {
+  if (layout.cells) return layout.cells[streamId + ":" + stageId] || [];
+  return NODES.filter(n => n.stream === streamId && n.stage === stageId);
 }
 
 // ───── Node drag (move between cells + reorder within a cell) ────────────
@@ -948,9 +974,25 @@ export function cleanupPendingNodeDrag(_event?: MouseEvent): void {
   }
 }
 
+// The ids moving together in the current drag. Built ONCE at drag start (the
+// membership can't change mid-gesture) instead of allocating a fresh Set inside
+// every dropCellForDrag call — i.e. on every mousemove.
+let _dragGroupSet: Set<string> | null = null;
+
+function dragGroupSet(draggedNodeId: string): Set<string> {
+  if (_dragGroupSet && _dragGroupSet.has(draggedNodeId)) return _dragGroupSet;
+  const drag = state.canvasEdit && state.canvasEdit.draggingNode;
+  return new Set((drag && drag.groupIds && drag.groupIds.length) ? drag.groupIds : [draggedNodeId]);
+}
+
 export function startNodeDrag(nodeId: string, event: MouseEvent): void {
   const point = clientPointToLayout(event.clientX, event.clientY);
   if (!point) return;
+  _dragGroupSet = new Set(
+    (state.selectedNodeIds.size > 1 && state.selectedNodeIds.has(nodeId))
+      ? [...state.selectedNodeIds]
+      : [nodeId],
+  );
   // Suspend hover-cell tracking so the ghost preview doesn't compete.
   state.canvasEdit.hoverCell = null;
   // When the grabbed node is part of a multi-selection, drag the whole group;
@@ -1018,6 +1060,7 @@ export function endNodeDrag(event: MouseEvent): void {
   const target = point ? dropCellForDrag(point.x, point.y, drag.nodeId) : null;
   const node = nodeById[drag.nodeId];
   state.canvasEdit.draggingNode = null;
+  _dragGroupSet = null;
 
   if (!node || !target) {
     setLayout(computeLayout());
@@ -1043,6 +1086,7 @@ export function endNodeDrag(event: MouseEvent): void {
 export function cancelDraftNodeDrag(): boolean {
   if (!state.canvasEdit || !state.canvasEdit.draggingNode) return false;
   state.canvasEdit.draggingNode = null;
+  _dragGroupSet = null;
   stopAutoPan();
   if (_nodeDragMoveBound) {
     window.removeEventListener("mousemove", _nodeDragMoveBound);
@@ -1122,6 +1166,45 @@ export function cleanupPendingMarquee(_event?: MouseEvent): void {
   }
 }
 
+// ───── Marquee hit-testing buckets ────────────────────────────────────────
+// Neither the map's geometry nor node visibility can change while the user is
+// dragging a selection box, so both are resolved ONCE at gesture start: one
+// bucket per (stream, stage) cell, holding the visible nodes' rects and their
+// NODES-order index. A move then tests only the cells the box actually touches,
+// instead of re-walking every node (and re-running isNodeVisible on each) per
+// mousemove. Hits are re-sorted into NODES order so the primary selection —
+// the last hit — is exactly the one the old full scan picked.
+interface MarqueeBucket {
+  x1: number; y1: number; x2: number; y2: number;
+  nodes: { id: string; idx: number; x: number; y: number; w: number; h: number }[];
+}
+let _marqueeBuckets: MarqueeBucket[] | null = null;
+
+function buildMarqueeBuckets(): MarqueeBucket[] | null {
+  if (!layout.cells) return null;
+  const orderOf = new Map<string, number>();
+  for (let i = 0; i < NODES.length; i++) orderOf.set(NODES[i].id, i);
+  const buckets: MarqueeBucket[] = [];
+  for (const key of Object.keys(layout.cells)) {
+    const cellNodes = layout.cells[key];
+    if (!cellNodes || !cellNodes.length) continue;
+    const nodes: MarqueeBucket["nodes"] = [];
+    let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+    for (const node of cellNodes) {
+      if (!isNodeVisible(node)) continue;
+      const p = layout.positions[node.id];
+      if (!p) continue;
+      nodes.push({ id: node.id, idx: orderOf.get(node.id) ?? 0, x: p.x, y: p.y, w: p.width, h: p.height });
+      if (p.x < x1) x1 = p.x;
+      if (p.y < y1) y1 = p.y;
+      if (p.x + p.width  > x2) x2 = p.x + p.width;
+      if (p.y + p.height > y2) y2 = p.y + p.height;
+    }
+    if (nodes.length) buckets.push({ x1, y1, x2, y2, nodes });
+  }
+  return buckets;
+}
+
 export function startMarquee(startPt: { x: number; y: number }, event: MouseEvent): void {
   // A marquee is its own gesture — drop any hover ghost so it doesn't render
   // underneath the selection box.
@@ -1133,6 +1216,7 @@ export function startMarquee(startPt: { x: number; y: number }, event: MouseEven
   _marqueeUpBound   = (e) => endMarquee(e);
   window.addEventListener("mousemove", _marqueeMoveBound);
   window.addEventListener("mouseup",   _marqueeUpBound);
+  _marqueeBuckets = buildMarqueeBuckets();
   updateMarqueeSelection();
   render();
 }
@@ -1145,23 +1229,39 @@ export function updateMarquee(event: MouseEvent): void {
   m.currentX = pt.x;
   m.currentY = pt.y;
   updateMarqueeSelection();
-  render();
+  // Nothing structural moves while the box is dragged: the rubber-band rect
+  // lives in the overlay layer, and the covered set only changes node classes /
+  // edge highlighting. Repaint those two, not the whole map.
+  scheduleOverlayRender();
+  scheduleSelectionStyling();
 }
 
 // Recompute the selection from the current marquee rect: any VISIBLE node whose
 // position rect intersects the box is selected. Uses setSelection (no render) —
-// the caller renders once.
+// the caller repaints once.
 export function updateMarqueeSelection(): void {
   const m = state.canvasEdit && state.canvasEdit.marquee;
   if (!m) return;
   const x1 = Math.min(m.startX, m.currentX), x2 = Math.max(m.startX, m.currentX);
   const y1 = Math.min(m.startY, m.currentY), y2 = Math.max(m.startY, m.currentY);
   const hits: string[] = [];
-  for (const node of NODES) {
-    if (!isNodeVisible(node)) continue;
-    const p = layout.positions[node.id];
-    if (!p) continue;
-    if (p.x < x2 && p.x + p.width > x1 && p.y < y2 && p.y + p.height > y1) hits.push(node.id);
+  if (_marqueeBuckets) {
+    const found: { id: string; idx: number }[] = [];
+    for (const bucket of _marqueeBuckets) {
+      if (bucket.x1 >= x2 || bucket.x2 <= x1 || bucket.y1 >= y2 || bucket.y2 <= y1) continue;
+      for (const n of bucket.nodes) {
+        if (n.x < x2 && n.x + n.w > x1 && n.y < y2 && n.y + n.h > y1) found.push(n);
+      }
+    }
+    found.sort((a, b) => a.idx - b.idx);
+    for (const n of found) hits.push(n.id);
+  } else {
+    for (const node of NODES) {
+      if (!isNodeVisible(node)) continue;
+      const p = layout.positions[node.id];
+      if (!p) continue;
+      if (p.x < x2 && p.x + p.width > x1 && p.y < y2 && p.y + p.height > y1) hits.push(node.id);
+    }
   }
   setSelection(hits, hits.length ? hits[hits.length - 1] : null);
 }
@@ -1173,6 +1273,7 @@ export function endMarquee(_event?: MouseEvent): void {
   _marqueeUpBound   = null;
   document.body.classList.remove("marquee-selecting");
   state.canvasEdit.marquee = null;
+  _marqueeBuckets = null;
   render();
   renderDetailPanel();
   if (typeof renderMultiSelectBar === "function") renderMultiSelectBar();
@@ -1186,6 +1287,7 @@ export function endMarquee(_event?: MouseEvent): void {
 export function cancelMarquee(): boolean {
   if (!state.canvasEdit || !state.canvasEdit.marquee) return false;
   state.canvasEdit.marquee = null;
+  _marqueeBuckets = null;
   if (_marqueeMoveBound) {
     window.removeEventListener("mousemove", _marqueeMoveBound);
     window.removeEventListener("mouseup",   _marqueeUpBound!);
@@ -1240,12 +1342,10 @@ export function dropCellForDrag(x: number, y: number, draggedNodeId: string): { 
   // computeLayout's parted stack, and moveNodesToCell all use — otherwise a
   // group member sitting above the cursor in the target cell throws the index
   // (and the live gap / final order) off by one.
-  const drag = state.canvasEdit && state.canvasEdit.draggingNode;
-  const groupSet = new Set((drag && drag.groupIds && drag.groupIds.length) ? drag.groupIds : [draggedNodeId]);
+  const groupSet = dragGroupSet(draggedNodeId);
   const siblings: GraphNode[] = [];
-  for (const n of NODES) {
-    if (groupSet.has(n.id)) continue;
-    if (n.stream === foundStream.id && n.stage === foundStage.id) siblings.push(n);
+  for (const n of cellNodesFor(foundStream.id, foundStage.id)) {
+    if (!groupSet.has(n.id)) siblings.push(n);
   }
 
   // Insertion index = position before the first sibling whose vertical mid is
@@ -1276,7 +1376,7 @@ export function insertionGapCell(x: number, y: number): { streamId: string; stag
   if (!found) return null;
   const { stream: foundStream, stage: foundStage } = found;
 
-  const siblings = NODES.filter(n => n.stream === foundStream.id && n.stage === foundStage.id);
+  const siblings = cellNodesFor(foundStream.id, foundStage.id);
 
   // Empty cell — the whole cell is a gap.
   if (siblings.length === 0) {

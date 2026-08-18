@@ -27,7 +27,7 @@
 // =============================================================================
 
 import type { Edge } from "./types";
-import { NODES, EDGES, outgoingEdges } from "./03-state";
+import { NODES, EDGES, nodeById, outgoingEdges, state } from "./03-state";
 import { isNodeVisible } from "./10-filters";
 import { resolveEdgeElasticity } from "./07-simulation-engine";
 
@@ -58,7 +58,33 @@ export interface SynthAccum {
   dashed: boolean;
 }
 
+// Sign bitmask helpers for the hidden-subgraph expansion below: a hidden node
+// is reached with a SET of signs (a positive chain and a negative chain can
+// both land on it), tracked as 3 bits so "have I already expanded this node
+// with this sign?" is one integer test.
+const SIGN_POS = 1, SIGN_NEG = 2, SIGN_ZERO = 4;
+const signBit = (product: number): number => product > 0 ? SIGN_POS : product < 0 ? SIGN_NEG : SIGN_ZERO;
+const signOfBit = (bit: number): 1 | -1 | 0 => bit === SIGN_POS ? 1 : bit === SIGN_NEG ? -1 : 0;
+
 export function computeRenderEdges(): RenderEdge[] {
+  // ───── Fast path: nothing is hidden ──────────────────────────────────────
+  // With no hidden streams / stages / categories every node is visible, so
+  // every edge is a real visible→visible edge and there are no synthetic
+  // re-routes to derive. That is the overwhelmingly common case, and the
+  // general path below still pays for a full visibility sweep plus an outgoing
+  // walk per node to discover there is nothing to re-route. Same output, same
+  // order (real edges are emitted in EDGES order either way).
+  if (state.hiddenStreams.size === 0 && state.hiddenStages.size === 0 && state.hiddenCategories.size === 0) {
+    const out: RenderEdge[] = [];
+    for (const edge of EDGES) {
+      // Same endpoint guard the general path gets for free from its
+      // visible-id set: an edge naming a node that isn't in NODES is dropped.
+      if (!nodeById[edge.from] || !nodeById[edge.to]) continue;
+      out.push({ synthetic: false, edge, from: edge.from, to: edge.to, effect: edge.effect });
+    }
+    return out;
+  }
+
   const renderEdges: RenderEdge[] = [];
   const realPairKey = new Set<string>();   // pairKey() of emitted real visible→visible edges
   const synthAccum  = new Map<string, SynthAccum>();   // pairKey() → { from, to, signs:Set<-1|0|1> }
@@ -93,21 +119,53 @@ export function computeRenderEdges(): RenderEdge[] {
     if (dashed) acc.dashed = true;
   }
 
-  // Walk forward from a hidden node, multiplying signed elasticities. `pathHidden`
-  // is the set of hidden node ids on the CURRENT path; backtracking on return
-  // lets two distinct branches each pass through a shared hidden node (diamonds)
-  // while still preventing infinite recursion around hidden cycles.
-  function dfsThroughHidden(srcVisibleId: string, hiddenEdge: Edge, product: number, pathHidden: Set<string>, pathDashed: boolean): void {
-    const mid = hiddenEdge.to;                      // hidden by construction
-    for (const next of outgoingEdges[mid]) {
-      const p = product * resolveEdgeElasticity(next);
-      const d = pathDashed || next.style === "dashed";
-      if (isVisibleId(next.to)) {
-        recordSynth(srcVisibleId, next.to, p, d);    // reached the far visible side
-      } else if (!pathHidden.has(next.to)) {
-        pathHidden.add(next.to);
-        dfsThroughHidden(srcVisibleId, next, p, pathHidden, d);
-        pathHidden.delete(next.to);
+  // Walk forward through the hidden subgraph from one visible source, carrying
+  // the SIGN of the product of signed elasticities (and whether any link along
+  // the way was dashed).
+  //
+  // The original version enumerated every simple path, which is exponential in
+  // the size of the hidden region — collapsing one dense column could hang the
+  // tab for minutes. What actually reaches the far side, though, is only the
+  // SET of signs (+ / − / 0) that can arrive at each hidden node: two chains
+  // with the same sign produce the same synthetic edge, so re-walking the
+  // second one is pure waste. So each (source, hidden node) pair is expanded at
+  // most once per sign — three times worst case — which bounds the walk at
+  // O(3 · hidden edges) per source instead of O(paths).
+  //
+  // Where two chains reach one hidden node with CONFLICTING signs, both signs
+  // propagate onward and recordSynth sees both, so the pair resolves to the
+  // same `neutral` connector the exhaustive walk produced ("a pathway exists,
+  // net direction unclear"). Dashedness is a plain OR — any chain reaching a
+  // hidden node continues to everything downstream of it — so it stays exact.
+  //
+  // `seen` maps hidden node id → bitmask of signs already expanded from it;
+  // `dashedSeen` marks the ones already expanded with a dashed chain (a dashed
+  // arrival has to re-expand so the dash reaches the far side).
+  function walkHidden(srcVisibleId: string, firstEdge: Edge): void {
+    const seen = new Map<string, number>();
+    const dashedSeen = new Set<string>();
+    // Frontier entries: [hidden node id, sign bit, dashed so far]
+    const stack: Array<[string, number, boolean]> = [
+      [firstEdge.to, signBit(resolveEdgeElasticity(firstEdge)), firstEdge.style === "dashed"],
+    ];
+    while (stack.length) {
+      const [mid, bit, dashed] = stack.pop()!;
+      const mask = seen.get(mid) || 0;
+      const newSign = (mask & bit) === 0;
+      const newDash = dashed && !dashedSeen.has(mid);
+      if (!newSign && !newDash) continue;           // nothing new to propagate
+      seen.set(mid, mask | bit);
+      if (dashed) dashedSeen.add(mid);
+
+      const sign = signOfBit(bit);
+      for (const next of outgoingEdges[mid] || []) {
+        const p = sign * resolveEdgeElasticity(next);
+        const d = dashed || next.style === "dashed";
+        if (isVisibleId(next.to)) {
+          recordSynth(srcVisibleId, next.to, p, d);  // reached the far visible side
+        } else {
+          stack.push([next.to, signBit(p), d]);
+        }
       }
     }
   }
@@ -116,7 +174,7 @@ export function computeRenderEdges(): RenderEdge[] {
     if (!visibleNodeIds.has(a.id)) continue;
     for (const e0 of outgoingEdges[a.id]) {
       if (isVisibleId(e0.to)) continue;            // direct visible→visible handled in (a)
-      dfsThroughHidden(a.id, e0, resolveEdgeElasticity(e0), new Set([e0.to]), e0.style === "dashed");
+      walkHidden(a.id, e0);
     }
   }
 

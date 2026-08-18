@@ -138,7 +138,71 @@ export function packRows(
   return { rowY, totalHeight: cursorY + SVG_PADDING_BOTTOM };
 }
 
+// ───── Geometry revision ────────────────────────────────────────────────────
+// Consumers that cache geometry-derived work (the renderer's edge re-routing +
+// anchor fan) used to key their cache on the layout OBJECT identity. But
+// computeLayout() returns a fresh object on every call — and the hot paths call
+// it constantly (a node drag recomputes it per mousemove, an inline rename per
+// keystroke) while producing byte-identical geometry. Keying on identity meant
+// a guaranteed cache miss per frame.
+//
+// So computeLayout also maintains a REVISION counter that only advances when the
+// geometry actually changed: any node's x / y / width / height, the set of
+// positioned nodes, or the row/column maps. Callers key their caches on
+// layoutGeometryRevision() instead of the object, and a drag that doesn't move
+// anything reuses the previous result.
+let _geometryRevision = 0;
+let _lastGeometry: Layout | null = null;
+
+export function layoutGeometryRevision(): number {
+  return _geometryRevision;
+}
+
+// Force the next geometry comparison to count as a change. For callers that
+// patch `layout.positions` in place (see 16h's per-keystroke rename fast path)
+// in a way that DOES move geometry.
+export function bumpLayoutGeometryRevision(): void {
+  _geometryRevision++;
+  _lastGeometry = null;
+}
+
+// Shallow numeric-map comparison — same keys, same values.
+function sameNumberMap(a: Record<string, number>, b: Record<string, number>): boolean {
+  const aKeys = Object.keys(a);
+  if (aKeys.length !== Object.keys(b).length) return false;
+  for (const k of aKeys) if (a[k] !== b[k]) return false;
+  return true;
+}
+
+// Does `next` place every node exactly where `prev` did, with the same rows and
+// columns? Only geometry is compared — labelLines are presentation, and the
+// renderer re-reads them from the live layout every time.
+function sameGeometry(prev: Layout, next: Layout): boolean {
+  const prevPos = prev.positions, nextPos = next.positions;
+  const prevIds = Object.keys(prevPos);
+  if (prevIds.length !== Object.keys(nextPos).length) return false;
+  for (const id of prevIds) {
+    const p = prevPos[id], n = nextPos[id];
+    if (!n) return false;
+    if (p.x !== n.x || p.y !== n.y || p.width !== n.width || p.height !== n.height) return false;
+  }
+  return prev.totalWidth === next.totalWidth &&
+         prev.totalHeight === next.totalHeight &&
+         sameNumberMap(prev.rowY, next.rowY) &&
+         sameNumberMap(prev.rowHeights, next.rowHeights) &&
+         sameNumberMap(prev.colX, next.colX) &&
+         sameNumberMap(prev.colWidths, next.colWidths);
+}
+
 export function computeLayout(): Layout {
+  const result = computeLayoutGeometry();
+  // Advance the revision only when the geometry really moved (see above).
+  if (!_lastGeometry || !sameGeometry(_lastGeometry, result)) _geometryRevision++;
+  _lastGeometry = result;
+  return result;
+}
+
+function computeLayoutGeometry(): Layout {
   // ───── Group nodes into (stream, stage) cells ─────────────────────────
   const cells: Record<string, GraphNode[]> = {};
   for (const node of NODES) {

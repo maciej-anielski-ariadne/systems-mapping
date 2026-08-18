@@ -27,6 +27,7 @@ import type { GraphNode, SearchMatch } from "./types";
 import { escapeHtml } from "./04-utils";
 import { CATEGORIES, NODES, stageById, state, streamById } from "./03-state";
 import { deselectNode, scrollNodeIntoView, selectNode } from "./09-graph-selection";
+import { dataRevision } from "./06-data-loader";
 
 export const SEARCH_MAX_RESULTS = 8;
 // Every text-bearing field on a node is searchable. Weights set the priority
@@ -50,10 +51,13 @@ export const SEARCH_FIELD_WEIGHTS: Record<string, number> = {
 // Returns { score, positions } where positions are the indices in `target`
 // matched by `query`'s characters (used for the dropdown's <mark> highlights).
 // score = 0 means no match.
-export function scoreMatch(query: string, target: string): { score: number; positions: number[] } {
+// `targetLower` lets a caller that already holds the lower-cased form (the
+// pre-built search corpus below) skip re-lowercasing the field on every
+// keystroke. Omit it and the function behaves exactly as before.
+export function scoreMatch(query: string, target: string, targetLower?: string): { score: number; positions: number[] } {
   if (!query || !target) return { score: 0, positions: [] };
   const q = query.toLowerCase();
-  const t = target.toLowerCase();
+  const t = targetLower !== undefined ? targetLower : target.toLowerCase();
 
   if (t === q) {
     return { score: 1000, positions: range(t.length) };
@@ -124,21 +128,68 @@ export function nodeSearchFields(node: GraphNode): { field: string; text: string
   ];
 }
 
+// ───── Search corpus ──────────────────────────────────────────────────────
+// The searchable text of every node, resolved and lower-cased ONCE. Rebuilding
+// it per keystroke (nodeSearchFields allocates 7 objects per node, and
+// scoreMatch lower-cased each field again) meant every character typed
+// allocated tens of thousands of short-lived strings on a large map. The corpus
+// is keyed on the NODES array identity plus the data revision (06-data-loader),
+// which every edit path bumps through rebuildIndexes — so a rename or a stream
+// re-label invalidates it, and plain typing never does.
+interface CorpusField { field: string; text: string; lower: string; weight: number }
+let _corpus: CorpusField[][] | null = null;
+let _corpusNodes: typeof NODES | null = null;
+let _corpusRevision = -1;
+
+function searchCorpus(): CorpusField[][] {
+  if (_corpus && _corpusNodes === NODES && _corpusRevision === dataRevision()) return _corpus;
+  const corpus: CorpusField[][] = new Array(NODES.length);
+  for (let i = 0; i < NODES.length; i++) {
+    const fields: CorpusField[] = [];
+    for (const f of nodeSearchFields(NODES[i])) {
+      if (!f.text) continue;
+      fields.push({
+        field: f.field,
+        text: f.text,
+        lower: f.text.toLowerCase(),
+        weight: SEARCH_FIELD_WEIGHTS[f.field] || 0,
+      });
+    }
+    corpus[i] = fields;
+  }
+  _corpus = corpus;
+  _corpusNodes = NODES;
+  _corpusRevision = dataRevision();
+  return corpus;
+}
+
 // ───── Find matches ───────────────────────────────────────────────────────
 // Scores every node against `query` across all searchable fields, keeps the
 // best-weighted field per node, and returns the top SEARCH_MAX_RESULTS by
 // score desc.
+//
+// Only the top SEARCH_MAX_RESULTS are kept, so the results are collected into a
+// small insertion-sorted array instead of pushing every match and sorting the
+// lot: on a map where thousands of nodes match a one-character query, the sort
+// was the dominant cost and 99.8% of its work was thrown away.
 export function findMatches(query: string): SearchMatch[] {
   if (!query) return [];
+  const corpus = searchCorpus();
+  const q = query.toLowerCase();
   const results: SearchMatch[] = [];
-  for (const node of NODES) {
+  let cutoff = 0;   // score of the weakest kept result once the list is full
+  for (let i = 0; i < NODES.length; i++) {
+    const fields = corpus[i];
+    if (!fields) continue;
     let best = 0;
     let bestField: string | null = null;
     let bestPositions: number[] = [];
-    for (const f of nodeSearchFields(node)) {
-      if (!f.text) continue;
-      const s = scoreMatch(query, f.text);
-      const weighted = s.score * (SEARCH_FIELD_WEIGHTS[f.field] || 0);
+    for (const f of fields) {
+      // The weighted score can't beat the cutoff if a PERFECT match on this
+      // field wouldn't — skip scoring it at all.
+      if (f.weight === 0) continue;
+      const s = scoreMatch(q, f.text, f.lower);
+      const weighted = s.score * f.weight;
       if (weighted > best) {
         best = weighted;
         bestField = f.field;
@@ -146,10 +197,16 @@ export function findMatches(query: string): SearchMatch[] {
       }
     }
     if (best <= 0) continue;
-    results.push({ node, score: best, bestField: bestField as string | undefined, bestPositions });
+    if (results.length === SEARCH_MAX_RESULTS && best <= cutoff) continue;
+    const match: SearchMatch = { node: NODES[i], score: best, bestField: bestField as string | undefined, bestPositions };
+    // Insert into the (short, descending) keep-list.
+    let at = results.length;
+    while (at > 0 && results[at - 1].score < best) at--;
+    results.splice(at, 0, match);
+    if (results.length > SEARCH_MAX_RESULTS) results.pop();
+    if (results.length === SEARCH_MAX_RESULTS) cutoff = results[results.length - 1].score;
   }
-  results.sort((a, b) => b.score - a.score);
-  return results.slice(0, SEARCH_MAX_RESULTS);
+  return results;
 }
 
 // ───── Snippet window around a match ────────────────────────────────────────
@@ -282,26 +339,56 @@ export function clearSearch(): void {
 // state.searchMatches (see 11-rendering.js). This helper is for incremental
 // updates that don't go through render() — e.g. when the user is typing
 // and we want immediate visual feedback before selectNode triggers render.
+// Only the nodes that ENTERED or LEFT the match set are touched: the previous
+// set is remembered, so a keystroke that changes one match doesn't walk (and
+// write to) every drawn box. A full render resets the memo, since the fresh
+// markup already carries the right classes.
+let _appliedMatchIds: Set<string> = new Set();
+
+export function resetSearchMatchClassMemo(): void {
+  _appliedMatchIds = new Set(state.searchMatches.map((m: SearchMatch) => m.node.id));
+}
+
 export function applySearchMatchClasses(): void {
   const ids = new Set(state.searchMatches.map((m: SearchMatch) => m.node.id));
-  document.querySelectorAll("#viz-svg .node-group").forEach(group => {
-    const id = group.getAttribute("data-node-id");
-    group.classList.toggle("search-match", ids.has(id!));
-  });
+  let unchanged = ids.size === _appliedMatchIds.size;
+  if (unchanged) for (const id of ids) if (!_appliedMatchIds.has(id)) { unchanged = false; break; }
+  if (unchanged) return;
+
+  const changed = new Set<string>();
+  for (const id of ids) if (!_appliedMatchIds.has(id)) changed.add(id);
+  for (const id of _appliedMatchIds) if (!ids.has(id)) changed.add(id);
+  for (const id of changed) {
+    const group = document.querySelector('#viz-svg .node-group[data-node-id="' + cssEscapeForSearch(id) + '"]');
+    if (group) group.classList.toggle("search-match", ids.has(id));
+  }
+  _appliedMatchIds = ids;
+}
+
+// Minimal CSS.escape shim (older Safari / some test environments lack it).
+function cssEscapeForSearch(value: string): string {
+  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") return CSS.escape(value);
+  return String(value).replace(/[^a-zA-Z0-9_-]/g, ch => "\\" + ch);
 }
 
 // ───── Commit focus → auto-select + scroll ────────────────────────────────
-export function commitSearchFocus(index: number): void {
+export function commitSearchFocus(index: number, options?: { typing?: boolean }): void {
   if (!state.searchMatches.length) return;
   const clamped = Math.max(0, Math.min(index, state.searchMatches.length - 1));
   state.searchFocusIndex = clamped;
   const targetId = state.searchMatches[clamped].node.id;
-  // selectNode renders the SVG (which picks up search-match classes) and
-  // the detail panel. scrollNodeIntoView brings it on screen.
+  // selectNode repaints the selection (a class/attribute patch on the drawn
+  // slice — 11-rendering's renderSelectionChange) and the detail panel.
+  // scrollNodeIntoView brings the node on screen.
   if (state.selectedNodeId !== targetId) {
     selectNode(targetId);
+    resetSearchMatchClassMemo();
   }
-  scrollNodeIntoView(targetId);
+  // While the user is still typing, jump instead of animating: a smooth scroll
+  // started on the previous keystroke is still running when the next one
+  // arrives, so the map chases a stale target and never settles. A discrete
+  // pick (arrow keys / clicking a result) keeps the smooth glide.
+  scrollNodeIntoView(targetId, options && options.typing ? "auto" : "smooth");
   // Update the dropdown's .focused class without rebuilding all rows.
   const dropdown = document.getElementById("search-results");
   if (dropdown) {
@@ -337,7 +424,7 @@ export function handleSearchInput(): void {
   renderSearchDropdown();
 
   if (state.searchMatches.length > 0) {
-    commitSearchFocus(0);
+    commitSearchFocus(0, { typing: true });
   } else {
     applySearchMatchClasses();
     // Deliberate UX choice: an in-progress query that doesn't *yet* match
@@ -349,6 +436,11 @@ export function handleSearchInput(): void {
 }
 
 export function handleSearchKeydown(event: KeyboardEvent): void {
+  // These keys act on the current match list, so make sure a debounced search
+  // from the last keystrokes has actually run.
+  if (event.key === "ArrowDown" || event.key === "ArrowUp" || event.key === "Enter") {
+    flushPendingSearchInput();
+  }
   if (event.key === "ArrowDown") {
     if (state.searchMatches.length === 0) return;
     event.preventDefault();
@@ -364,6 +456,7 @@ export function handleSearchKeydown(event: KeyboardEvent): void {
     if (input) input.blur();
   } else if (event.key === "Escape") {
     event.preventDefault();
+    if (_searchInputTimer !== null) { clearTimeout(_searchInputTimer); _searchInputTimer = null; }
     const input = document.getElementById("search-input") as HTMLInputElement | null;
     if (input) input.value = "";
     state.searchQuery = "";
@@ -375,11 +468,36 @@ export function handleSearchKeydown(event: KeyboardEvent): void {
   }
 }
 
+// Typing is far faster than a search is worth running: every character
+// re-scores the whole map, rebuilds the dropdown, moves the selection and
+// scrolls the canvas. Coalesce a burst of keystrokes into one search shortly
+// after the user pauses. The select-as-you-type behaviour this file documents is
+// unchanged — it just happens once per pause instead of once per character.
+export const SEARCH_INPUT_DEBOUNCE_MS = 120;
+let _searchInputTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function handleSearchInputDebounced(): void {
+  if (_searchInputTimer !== null) clearTimeout(_searchInputTimer);
+  _searchInputTimer = setTimeout(() => {
+    _searchInputTimer = null;
+    handleSearchInput();
+  }, SEARCH_INPUT_DEBOUNCE_MS);
+}
+
+// Run any pending debounced search NOW — for the keys that act on the current
+// results (Enter / arrows) so they never operate on a stale match list.
+export function flushPendingSearchInput(): void {
+  if (_searchInputTimer === null) return;
+  clearTimeout(_searchInputTimer);
+  _searchInputTimer = null;
+  handleSearchInput();
+}
+
 // ───── Wire up ────────────────────────────────────────────────────────────
 (function attachSearchHandlers() {
   const input = document.getElementById("search-input") as HTMLInputElement | null;
   if (!input) return;
-  input.addEventListener("input",   handleSearchInput);
+  input.addEventListener("input",   handleSearchInputDebounced);
   input.addEventListener("keydown", handleSearchKeydown as EventListener);
 
   // Hide dropdown when the input loses focus, but use a tiny delay so a
