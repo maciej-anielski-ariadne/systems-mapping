@@ -2,7 +2,7 @@
 // BUILDER PANEL — render functions
 // -----------------------------------------------------------------------------
 // HTML output for the wizard overlay: top dispatch (`renderBuilder`), the
-// header / footer / step indicator, six step renderers, and tiny helpers
+// header / footer / step indicator, one renderer per step, and tiny helpers
 // (`reviewTile`, `optionList`, `refreshBuilderFooter`).
 //
 // Reads state from `state.builder` (set up in 16a-builder-state.js) and
@@ -16,12 +16,13 @@
 // long row lists scroll while the heading stays anchored.
 // =============================================================================
 
-import { DIRECTION_OPTIONS, EFFECT_OPTIONS } from "./02-config";
+import { COMBINE_OPTIONS, DIRECTION_OPTIONS, EFFECT_OPTIONS } from "./02-config";
 import { state } from "./03-state";
 import { escapeHtml } from "./04-utils";
 import { saveBuilderToStorage } from "./04a-storage";
 import { upgradeSelectsIn } from "./04b-typeable-dropdown";
 import {
+  BUILDER_LAST_STEP,
   BUILDER_SPLIT,
   BUILDER_STEPS,
   rowActionsHtml,
@@ -74,7 +75,8 @@ export function renderBuilder(): void {
     case 3: body = renderBuilderCategoriesStep(); break;
     case 4: body = renderBuilderNodesStep();      break;
     case 5: body = renderBuilderEdgesStep();      break;
-    case 6: body = renderBuilderReviewStep();     break;
+    case 6: body = renderBuilderParamsStep();     break;
+    case 7: body = renderBuilderReviewStep();     break;
   }
 
   const splitIdx = body.indexOf(BUILDER_SPLIT);
@@ -190,7 +192,7 @@ export function renderBuilderFooter(): string {
   }
 
   const backDisabled  = step === 1 ? ' disabled' : '';
-  const nextDisabled  = step === 6 ? ' disabled' : '';
+  const nextDisabled  = step === BUILDER_LAST_STEP ? ' disabled' : '';
   // Apply is intentionally NOT gated on validation — the user can apply a
   // partially-built map and the canvas will render blanks for missing data.
   // The issue-count warning above stays as informational feedback.
@@ -279,9 +281,13 @@ export function renderBuilderBulkBar(section: string): string {
     fields += builderBulkFieldMarkup(section, "stream",       "Set row…",   streamOpts);
     fields += builderBulkFieldMarkup(section, "stage",        "Set column…",    stageOpts);
     fields += builderBulkFieldMarkup(section, "category",     "Set category…", catOpts);
+    const combineOpts = COMBINE_OPTIONS.filter(o => o !== "").map(o => ({ value: o, label: o }));
     fields += builderBulkFieldMarkup(section, "direction",    "Set direction…", dirOpts);
     fields += builderBulkFieldMarkup(section, "controllable", "Set slider…",
                 [{ value: "true", label: "On" }, { value: "false", label: "Off" }]);
+    // Same shape as the direction setter: the placeholder is "no change", so
+    // bulk-setting can pick a rule but never clear one back to the default.
+    fields += builderBulkFieldMarkup(section, "combine",      "Set combine…", combineOpts);
   } else if (section === "edges") {
     const effectOpts = EFFECT_OPTIONS.map(o => ({ value: o, label: o }));
     fields += builderBulkFieldMarkup(section, "effect", "Set effect…", effectOpts);
@@ -510,6 +516,22 @@ export function renderBuilderNodesStep(): string {
           'Tick <b>adjustable</b> to expose a slider in Simulation mode. ' +
           '<b>direction</b> sets outcome colouring on metric boxes (higher_better / lower_better).' +
           '</div>';
+  // The four calculation columns at the far right of the table are the opt-in
+  // half of the model — a map that leaves them blank behaves exactly as it did
+  // before they existed, so they get their own note rather than crowding the
+  // one above. Everything here is checked properly on "Apply to map"; the
+  // wizard only states the rules.
+  html += '<div class="builder-step-help">' +
+          '<b>Optional calculation rules</b> (last four columns, scroll right). ' +
+          '<b>combine</b> — how the links pointing INTO this box add up: ' +
+          '<i>multiplicative</i> (the default: effects compound), <i>additive</i> (effects add, so related ' +
+          'inputs don\'t overstate the result), or <i>min</i> (the weakest input gates the outcome). ' +
+          '<b>formula</b> — an expression in the boxes\' own units, e.g. <code>min(demand, capacity)</code>, ' +
+          'using box ids, constant ids from Step 6, <code>+ − * / ( )</code> and ' +
+          '<code>min / max / clamp / delay</code>. A formula <b>wins over combine</b>, and a box with an ' +
+          'adjustable slider ignores both. Every box a formula names must also have a link drawn from it. ' +
+          '<b>min / max</b> — hard limits in the box\'s own units (not multipliers), applied after the rule runs.' +
+          '</div>';
 
   if (state.builder.streams.length === 0 || state.builder.stages.length === 0 || state.builder.categories.length === 0) {
     html += '<div class="builder-validation errors">' +
@@ -525,7 +547,10 @@ export function renderBuilderNodesStep(): string {
   html += renderBuilderBulkBar("nodes");
 
   html += BUILDER_SPLIT;
-  html += '<table class="builder-table">';
+  // `builder-table-wide`: 17 columns don't fit a narrow window, so this table
+  // keeps a minimum width and the step area scrolls sideways rather than
+  // crushing every cell (see 11-builder.css).
+  html += '<table class="builder-table builder-table-wide">';
   html +=   '<thead><tr>' +
               selectAllTh("nodes") +
               sortableTh("nodes", "id",           "ID",         ' style="width:160px"') +
@@ -539,11 +564,25 @@ export function renderBuilderNodesStep(): string {
               sortableTh("nodes", "controllable", "Slider",     ' style="width:50px"') +
               sortableTh("nodes", "direction",    "Direction",  ' style="width:120px"') +
               sortableTh("nodes", "sliderMax",    "Slider max", ' style="width:80px"') +
+              // The four calculation-rule columns. `sortableTh`'s last argument
+              // is raw attribute text, so the per-column hint rides along with
+              // the width here — see the shared data-tooltip handling in
+              // 12-tooltip.js.
+              sortableTh("nodes", "combine",  "Combine", ' style="width:130px"' +
+                ' data-tooltip="How the links INTO this box combine: multiplicative (default) / additive / min.' +
+                ' Ignored when the box has a formula."') +
+              sortableTh("nodes", "formula",  "Formula", ' style="width:200px"' +
+                ' data-tooltip="Expression in the boxes\' own units, e.g. min(demand, capacity). Beats combine,' +
+                ' and is ignored on a slider box. Every box id it names also needs a link drawn from that box."') +
+              sortableTh("nodes", "minValue", "Min",     ' style="width:80px"' +
+                ' data-tooltip="Hard lower limit in this box\'s own units (not a multiplier), applied after the rule runs."') +
+              sortableTh("nodes", "maxValue", "Max",     ' style="width:80px"' +
+                ' data-tooltip="Hard upper limit in this box\'s own units (not a multiplier), applied after the rule runs."') +
               '<th style="width:90px"></th>' +
             '</tr></thead><tbody>';
 
   if (state.builder.nodes.length === 0) {
-    html += tableEmptyRow(13, 'No boxes yet. Click "+ Add box" to create one.');
+    html += tableEmptyRow(17, 'No boxes yet. Click "+ Add box" to create one.');
   } else {
     sortedBuilderIndices("nodes").forEach((i) => {
       const n = state.builder.nodes[i];
@@ -569,6 +608,17 @@ export function renderBuilderNodesStep(): string {
                   ).join("") +
                 '</select></td>';
       html +=   '<td><input type="number" step="any" data-section="nodes" data-field="sliderMax" data-index="' + i + '" value="' + escapeHtml(n.sliderMax === undefined ? "" : n.sliderMax) + '" placeholder="2.0" /></td>';
+      // Calculation rules. `combine` is an enum cell exactly like `direction`
+      // (blank first entry = the default rule); `formula` is free text; min /
+      // max are plain numbers in the box's own units.
+      html +=   '<td><select data-section="nodes" data-field="combine" data-index="' + i + '">' +
+                  COMBINE_OPTIONS.map(opt =>
+                    '<option value="' + opt + '"' + (opt === (n.combine || "") ? " selected" : "") + '>' + (opt || "—") + '</option>'
+                  ).join("") +
+                '</select></td>';
+      html +=   '<td><input type="text" data-section="nodes" data-field="formula" data-index="' + i + '" value="' + escapeHtml(n.formula) + '" placeholder="min(demand, capacity)" /></td>';
+      html +=   '<td><input type="number" step="any" data-section="nodes" data-field="minValue" data-index="' + i + '" value="' + escapeHtml(n.minValue === undefined ? "" : n.minValue) + '" placeholder="no limit" /></td>';
+      html +=   '<td><input type="number" step="any" data-section="nodes" data-field="maxValue" data-index="' + i + '" value="' + escapeHtml(n.maxValue === undefined ? "" : n.maxValue) + '" placeholder="no limit" /></td>';
       html +=   rowActionsHtml("nodes", i);
       html += '</tr>';
     });
@@ -658,7 +708,70 @@ export function renderBuilderEdgesStep(): string {
   return html;
 }
 
-// ───── Step 6: Review ─────────────────────────────────────────────────────
+// ───── Step 6: Params (hidden calculation constants) ──────────────────────
+// Named scalars that belong to the calculation model but never draw as boxes:
+// route shares, detection rates, unit conversions. Keeping them off the map is
+// the point — a box formula can reach them by id, and the picture stays
+// readable. (See docs/CALCULATION-ENGINE-DESIGN.md §3.3.)
+export function renderBuilderParamsStep(): string {
+  const v = validateBuilder();
+  const params = state.builder.params || [];
+
+  let html = "";
+  html += '<h2 class="builder-step-heading">Constants for the calculation</h2>';
+  html += '<p class="builder-step-blurb">Optional. Constants are named numbers a box <b>formula</b> can use — ' +
+          'shares, rates and conversion factors that matter to the maths but would clutter the map as boxes. ' +
+          'They never render; nothing here changes a map that uses no formulas.</p>';
+  html += '<div class="builder-step-help">' +
+          '<b>id</b> — the name a formula refers to, lowercase, no spaces (e.g. <code>share_air</code>). ' +
+          'It must not be the same as a box id — a formula has to know which one you meant. ' +
+          '<b>value</b> — a plain number. ' +
+          '<b>description</b> — what the constant means and where the number came from, for the next reader. ' +
+          'Example: <code>share_air, 0.35, Share of traffic routed by air</code>, used from a box formula as ' +
+          '<code>attempted_importation * share_air</code>.' +
+          '</div>';
+
+  html += renderBuilderBulkBar("params");
+
+  html += BUILDER_SPLIT;
+  html += '<table class="builder-table">';
+  html +=   '<thead><tr>' +
+              selectAllTh("params") +
+              sortableTh("params", "id",          "ID",    ' style="width:220px"') +
+              sortableTh("params", "value",       "Value", ' style="width:140px"') +
+              sortableTh("params", "description", "Description", "") +
+              '<th style="width:90px"></th>' +
+            '</tr></thead><tbody>';
+
+  if (params.length === 0) {
+    html += tableEmptyRow(5, 'No constants — that is fine. Click "+ Add constant" if a box formula needs one.');
+  } else {
+    sortedBuilderIndices("params").forEach((i) => {
+      const p = params[i];
+      // Two cheap hints, mirroring the loader's own checks: an id a box has
+      // already taken, and a value that isn't a number. Everything else waits
+      // for "Apply to map".
+      const idInvalid    = (!p.id || v.dupParams.has(p.id) || v.clashParams.has(p.id)) ? ' invalid' : '';
+      const valueInvalid = v.badParamValueRows.has(i) ? ' invalid' : '';
+      const idHint = v.clashParams.has(p.id)
+        ? ' data-tooltip="A box already uses this id — a formula could mean either, so this constant would be dropped."'
+        : '';
+
+      html += '<tr class="' + rowSelectedClass(i).trim() + '" data-index="' + i + '">';
+      html +=   rowSelectTd("params", i);
+      html +=   '<td' + idHint + '><input type="text" data-section="params" data-field="id" data-index="' + i + '" value="' + escapeHtml(p.id) + '" class="' + idInvalid + '" placeholder="share_air" /></td>';
+      html +=   '<td><input type="number" step="any" data-section="params" data-field="value" data-index="' + i + '" value="' + escapeHtml(p.value === undefined || p.value === null ? "" : p.value) + '" class="' + valueInvalid + '" placeholder="0.35" /></td>';
+      html +=   '<td><input type="text" data-section="params" data-field="description" data-index="' + i + '" value="' + escapeHtml(p.description) + '" placeholder="What this number is, and where it came from" /></td>';
+      html +=   rowActionsHtml("params", i);
+      html += '</tr>';
+    });
+  }
+  html += '</tbody></table>';
+  html += '<div class="builder-action-bar"><button class="builder-action" data-add="params">+ Add constant</button></div>';
+  return html;
+}
+
+// ───── Step 7: Review ─────────────────────────────────────────────────────
 export function renderBuilderReviewStep(): string {
   const v = validateBuilder();
   const b = state.builder;
@@ -676,6 +789,7 @@ export function renderBuilderReviewStep(): string {
             reviewTile("Categories", b.categories.length) +
             reviewTile("Boxes",      b.nodes.length) +
             reviewTile("Links",      b.edges.length) +
+            reviewTile("Constants",  (b.params || []).length) +
           '</div>';
 
   if (v.errors.length === 0) {

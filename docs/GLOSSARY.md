@@ -22,6 +22,11 @@ or `decreases`.
 Simulation works in *ratios* to the baseline, so a box with no baseline just sits on the
 map without taking part in the numbers.
 
+**Ratio (to baseline).** How far a box has moved from its starting value, as a multiple:
+120 out of a baseline of 100 is a ratio of 1.2. Most of the simulation is done in ratios
+rather than raw numbers, which is why a link's strength can be reused whatever the units
+are. Formulas are the exception — they read the raw numbers.
+
 **Elasticity (link strength).** A single number on each link that says *how strongly* the
 cause moves the effect. Think "stretchiness": an elasticity of 0.3 means if the cause
 doubles, the effect grows by roughly 30% of the way there. It can be negative (the cause
@@ -34,6 +39,44 @@ to that link's elasticity, then scale by the box's own baseline. The nice proper
 that it's always positive, smooth, and handles several inputs compounding naturally. (Named
 after the economists who popularised the formula.) The math is written out in the header of
 `07-simulation-engine.ts`.
+
+**Combine rule.** Which recipe a box uses to fold its incoming links into one number. Three
+choices, set in the box's `combine` column: *multiplicative* (the default Cobb-Douglas rule
+above — independent percentage effects that compound), *additive* (the effects add up
+instead of compounding, so two inputs that are really the same story don't double-count),
+and *min* (see *gate* below). Blank means multiplicative, which is what every box did before
+the column existed.
+
+**Gate / weakest link.** A box whose result is held down by whichever input is furthest
+behind — "you need ALL of these". Staff, vehicles and a working depot each have to be there;
+twice the vans doesn't make up for half the drivers. That's the `min` combine rule, and the
+same idea written as a formula is a product of the things that all have to hold
+(`delivered * readiness * reliability`). The detail panel marks which input is doing the
+gating.
+
+**Formula.** A short line of arithmetic in a box's `formula` column that replaces the usual
+link maths for that box, e.g. `min(orders, capacity)`. It works in the boxes' own units
+rather than ratios, and can name other boxes and hidden constants. Deliberately tiny: `+ - *
+/`, brackets, and four functions (`min`, `max`, `clamp`, `delay`) — no code, nothing that can
+*do* anything. The whole language is 07a-formula.ts.
+
+**Hidden constant (parameter / "param").** A named number that belongs to the maths but not
+to the picture — a conversion rate, a route share, a tuning factor. Constants live in the
+spreadsheet's optional `params` section, can be used by any formula, and never render as a
+box, so the map stays readable without hiding the numbers behind it.
+
+**Clamp / bounds.** Holding a number inside a range: `clamp(x, 0, 1)` says "never below 0,
+never above 1", and a box's `min` / `max` columns do the same to its final value. Used where
+a quantity is a share or a percentage that physically can't run past its ends, and as a
+seatbelt on a loop that would otherwise run away. When a bound actually bites, the detail
+panel says so and shows what the number would have been.
+
+**Unit delay (`delay()`).** Reading an input's value from the *previous* pass of the solver
+instead of the current one. In a loop ("better service → more demand → more deliveries →
+better service") something has to go first; `delay()` makes the rule explicit — this pass
+uses last pass's number — so the answer no longer depends on which box happens to be
+calculated first, and the loop settles instead of chasing its own tail. "Unit" = one step
+behind. The detail panel tags such an input "previous step".
 
 **Gain (of a feedback loop).** When links form a loop that feeds back on itself, "gain" is
 how much the loop amplifies each time round. Gain below 1 settles down to a steady answer;
@@ -66,6 +109,11 @@ order so that, on a loop-free map, one pass computes every box exactly. (The app
 with "Kahn's algorithm", a standard recipe for the job.) DFS cycle-detection sometimes
 labels nodes white / gray / black — unvisited / on the current path / fully done — as a
 bookkeeping trick to spot when a path loops back on itself.
+
+**Fixed point.** The state where doing the sum again changes nothing — every box's value is
+consistent with every other's. That settled state is the answer the solver is hunting for;
+"converged" on the simulation panel means it found one, and a loop that never settles is one
+that has no fixed point to find.
 
 **Gauss-Seidel sweep.** A "keep refining until it settles" technique. When the map has loops
 there's no perfect order, so the solver sweeps through all the boxes updating each from the

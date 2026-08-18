@@ -13,6 +13,8 @@
 #   4. Add boxes - one per cell of the row x column grid you want to fill in.
 #   5. Add links - cause-and-effect links between boxes (from -> to).
 #   6. (Optional) Set starting values + strengths to turn on the Simulation feature.
+#   7. (Optional) Add per-box calculation rules (combine / formula / min / max) and any
+#      hidden constants they need - see the `params` and `nodes` sections below.
 
 # SECTION: streams
 # id        - unique row identifier (used by boxes). Lowercase, no spaces.
@@ -43,6 +45,19 @@ elasticity_enables,0.3
 elasticity_increases,0.25
 elasticity_decreases,-0.25
 
+# OPTIONAL SECTION: params (hidden constants)
+# Named numbers a box `formula` can use - a conversion rate, a share, a tuning factor.
+# They never appear as boxes on the map and need no links. Only useful if you write
+# formulas (see the `nodes` section below); leave this out otherwise.
+#   id          - the name a formula refers to. Lowercase, no spaces. Must NOT match a box id.
+#   value       - the number.
+#   description - what it is and where it came from.
+# To switch it on, delete the leading "# " from the three lines below:
+#
+# # SECTION: params
+# id,value,description
+# share_standard,0.7,Share of the flow going out on the standard service
+
 # SECTION: nodes
 # id           - unique box identifier (used by links). Lowercase, underscores, no spaces.
 # label        - display name shown on the box.
@@ -58,7 +73,24 @@ elasticity_decreases,-0.25
 # controllable - 'true' to show this box as a slider in Simulation mode. Use for external inputs only.
 # direction    - 'higher_better', 'lower_better', or 'neutral'. Set on outcome metrics to drive status colouring.
 # slider_max   - largest multiplier for the slider in Simulation mode (e.g. 2.0 = up to 200% of the starting value). Default 2.0.
-id,label,description,stream,stage,category,baseline,unit,controllable,direction,slider_max
+#
+# The last four fields are OPTIONAL calculation rules. Leave them blank and the box works
+# the standard way: each incoming link's effect multiplies together.
+#
+# combine      - how the links pointing INTO this box add up:
+#                  multiplicative = the default (independent % effects that compound)
+#                  additive       = the effects add up instead of compounding
+#                  min            = the weakest input gates the box ("you need ALL of these")
+# formula      - an expression in the boxes' own units that replaces the links' maths for
+#                this box, e.g. min(orders_placed, fleet_capacity) - wrap it in quotes if it
+#                contains a comma. It can use `+ - * /`, brackets, min(...), max(...),
+#                clamp(x, low, high) and delay(box_id) (that box's value from the previous
+#                pass, which is how a feedback loop is made well-behaved), plus any box id
+#                or params id. Every box a formula names must also have a link drawn from it.
+#                A formula beats `combine`; an adjustable (slider) box ignores both.
+# min          - hard lower limit for the final value, in this box's own units (e.g. 0).
+# max          - hard upper limit (e.g. 1 for a share, 100 for a percentage).
+id,label,description,stream,stage,category,baseline,unit,controllable,direction,slider_max,combine,formula,min,max
 
 # SECTION: edges
 # from        - source box id.

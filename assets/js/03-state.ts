@@ -24,6 +24,7 @@ import type {
   ElasticityDefaults,
   GraphNode,
   Layout,
+  Param,
   Stage,
   StageWithIndex,
   Stream,
@@ -58,6 +59,10 @@ export const state: AppState = {
   simulationMode: false,
   userOverrides: {}, // nodeId → multiplier (1.0 = baseline)
   computedValues: {}, // nodeId → current value (recomputed on slider change)
+  // nodeId → the working behind that value: which rule ran, what fed in, and
+  // whether a bound bit (see NodeExplanation in types.ts). Filled by the
+  // simulation engine alongside computedValues; `{}` until it first runs.
+  explanations: {},
   // Status of the most recent iterative solver run (07-simulation-engine.ts).
   // converged=false means a positive feedback loop ran away (gain ≥ 1) and its
   // values were clamped; feedbackLoopCount mirrors cycleInfo.loopCount.
@@ -185,6 +190,10 @@ export let STAGES: Stage[] = [];
 export let CATEGORIES: CategoryMap = {};
 export let NODES: GraphNode[] = [];
 export let EDGES: Edge[] = [];
+// Named constants used by the calculation model but never drawn on the map
+// (route shares, detection rates, conversion factors). Loaded from the optional
+// `# SECTION: params` block; empty for a CSV that doesn't use them.
+export let PARAMS: Param[] = [];
 
 // Used when an edge has no explicit elasticity. Overridden by the
 // `defaults` section of the CSV.
@@ -196,6 +205,7 @@ export let DEFAULT_ELASTICITY_BY_EFFECT: ElasticityDefaults = {
 
 // ───── Pre-computed indexes (rebuilt whenever data is reloaded) ───────────
 export let nodeById: Record<string, GraphNode> = {}; // id → node
+export let paramById: Record<string, Param> = {}; // id → param (param ids never collide with node ids — the loader rejects that)
 export let edgeById: Record<string, Edge> = {}; // edge id → edge (rebuilt with the edge ids in rebuildIndexes)
 export let outgoingEdges: Record<string, Edge[]> = {}; // node id → edges leaving the node
 export let incomingEdges: Record<string, Edge[]> = {}; // node id → edges entering the node
@@ -244,11 +254,17 @@ export function setNodes(value: GraphNode[]): void {
 export function setEdges(value: Edge[]): void {
   EDGES = value;
 }
+export function setParams(value: Param[]): void {
+  PARAMS = value;
+}
 export function setDefaultElasticityByEffect(value: ElasticityDefaults): void {
   DEFAULT_ELASTICITY_BY_EFFECT = value;
 }
 export function setNodeById(value: Record<string, GraphNode>): void {
   nodeById = value;
+}
+export function setParamById(value: Record<string, Param>): void {
+  paramById = value;
 }
 export function setEdgeById(value: Record<string, Edge>): void {
   edgeById = value;

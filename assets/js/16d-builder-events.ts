@@ -27,6 +27,7 @@ import {
   addBuilderRow,
   applyBuilderBulkField,
   applyBuilderToMap,
+  BUILDER_LAST_STEP,
   clearBuilderSelection,
   closeBuilder,
   deleteBuilderSelectedRows,
@@ -62,7 +63,7 @@ export function wireBuilderFooterButtons(): void {
   });
   const next = document.getElementById("builder-next-button");
   if (next) next.addEventListener("click", () => {
-    if (state.builder.step < 6) { state.builder.step += 1; renderBuilder(); }
+    if (state.builder.step < BUILDER_LAST_STEP) { state.builder.step += 1; renderBuilder(); }
   });
   const apply = document.getElementById("builder-apply-button");
   if (apply) apply.addEventListener("click", applyBuilderToMap);
@@ -152,7 +153,10 @@ export function handleBuilderClick(event: MouseEvent): void {
     }
     renderBuilder();
   } else if (target.hasAttribute("data-delete")) {
-    state.builder[target.getAttribute("data-delete")! as BuilderSection].splice(index, 1);
+    // `params` is optional on BuilderState, so index defensively — every other
+    // section is always an array.
+    const rows = state.builder[target.getAttribute("data-delete")! as BuilderSection];
+    if (rows) rows.splice(index, 1);
     clearBuilderSelection();   // a removed row shifts later indices
     renderBuilder();
   }
@@ -521,7 +525,8 @@ export function handleBuilderInput(event: Event): void {
   const field   = el.getAttribute("data-field");
   const index   = parseInt(el.getAttribute("data-index")!, 10);
   if (!section || !field || isNaN(index)) return;
-  const row = state.builder[section][index] as BuilderNode;
+  const rows = state.builder[section];
+  const row = rows && (rows[index] as BuilderNode);
   if (!row) return;
 
   let newValue: string | number | boolean;

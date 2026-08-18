@@ -7,7 +7,8 @@ import {
   formatNodeDelta,
   getOutcomeBorderColor,
 } from "../assets/js/07-simulation-engine";
-import { state } from "../assets/js/03-state";
+import { state, NODES, nodeById, incomingEdges, topologicalOrder } from "../assets/js/03-state";
+import { SAMPLE_CSV } from "../assets/js/01-sample-data";
 import { LINEAR_CSV, RUNAWAY_CSV } from "./fixtures/graphs";
 import type { Edge } from "../assets/js/types";
 
@@ -46,6 +47,58 @@ describe("Cobb-Douglas propagation on the linear chain", () => {
     expect(formatNodeValue("a")).toBe("400 units");
     expect(formatNodeDelta("c")).toEqual({ text: "+100.0%", pct: 100 });
     expect(getOutcomeBorderColor("c")).toBe("var(--status-good)"); // higher_better + positive
+  });
+});
+
+// A CSV with no combine / formula / min / max columns must compute EXACTLY as
+// it did before those rules existed. The reference below is the original
+// single-pass engine, written out longhand: value = baseline × ∏ rᵢ^eᵢ, swept
+// once in topological order.
+function classicSinglePass(overrides: Record<string, number>): Record<string, number> {
+  const values: Record<string, number> = {};
+  for (const node of NODES) {
+    if (node.baseline === undefined) continue;
+    values[node.id] = node.controllable ? node.baseline * (overrides[node.id] ?? 1) : node.baseline;
+  }
+  for (const nodeId of topologicalOrder) {
+    const node = nodeById[nodeId];
+    if (!node || node.baseline === undefined || node.controllable) continue;
+    let logSum = 0;
+    for (const edge of incomingEdges[nodeId]) {
+      const source = nodeById[edge.from];
+      if (!source || !source.baseline || values[edge.from] === undefined) continue;
+      logSum +=
+        resolveEdgeElasticity(edge) * Math.log(Math.max(values[edge.from] / source.baseline, 1e-6));
+    }
+    values[nodeId] = node.baseline * Math.exp(logSum);
+  }
+  return values;
+}
+
+describe("legacy regression — the bundled sample map", () => {
+  beforeEach(() => loadDataFromCsv(SAMPLE_CSV));
+
+  it("computes identical values to the original single-pass engine", () => {
+    const runs: Record<string, number>[] = [
+      {},
+      { team_size: 1.5 },
+      { marketing_spend: 0.4, support_staff: 2 },
+    ];
+    for (const overrides of runs) {
+      state.userOverrides = { ...overrides };
+      recomputeValues();
+      const expected = classicSinglePass(overrides);
+      expect(Object.keys(state.computedValues).sort()).toEqual(Object.keys(expected).sort());
+      for (const id of Object.keys(expected)) {
+        expect(state.computedValues[id]).toBeCloseTo(expected[id], 9);
+      }
+    }
+  });
+
+  it("explains every box with the classic rules only", () => {
+    const rules = new Set(Object.values(state.explanations).map((e) => e.rule));
+    for (const rule of rules) expect(["pinned", "baseline", "multiplicative"]).toContain(rule);
+    expect(Object.values(state.explanations).every((e) => e.clamp === undefined)).toBe(true);
   });
 });
 

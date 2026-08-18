@@ -126,7 +126,10 @@
 .builder-step-scroll {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  /* Both axes: rows scroll vertically as always, and the Boxes table (below)
+   * is wider than a narrow window, so it scrolls sideways in here rather than
+   * pushing the whole card out of shape. */
+  overflow: auto;
   /* No top padding — the sticky table header sits flush against the divider
    * above. Side + bottom padding gives the table breathing room. */
   padding: 0 var(--gutter) var(--section-gap) var(--gutter);
@@ -136,8 +139,17 @@
   margin-top: 0;
 }
 
-/* On step 6 the scroll area has no table — give it a top margin so the
- * review tiles don't butt up against the divider. */
+/* The Boxes step carries 17 columns once the optional calculation rules
+ * (combine / formula / min / max) are in play. Hold a sensible minimum width
+ * so the cells stay readable and let the container above scroll sideways,
+ * instead of crushing every column to fit. Every other step's table is plain
+ * width:100% and never triggers the horizontal scrollbar. */
+.builder-table.builder-table-wide {
+  min-width: 1500px;
+}
+
+/* On the Review step the scroll area has no table — give it a top margin so
+ * the review tiles don't butt up against the divider. */
 .builder-step-scroll > .builder-review-grid {
   margin-top: var(--section-gap);
 }

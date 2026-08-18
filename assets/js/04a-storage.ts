@@ -173,6 +173,11 @@ export function saveBuilderToStorage(): void {
       defaults:   b.defaults,
       nodes:      b.nodes,
       edges:      b.edges,
+      // The map's hidden calculation constants (the wizard's Constants step).
+      // Saved so a refresh mid-build doesn't change what an apply would do —
+      // and note that an OLDER saved snapshot has no `params` key at all,
+      // which the serializer reads as "keep the live map's constants".
+      params:     b.params,
     }));
   } catch (_) {}
 }

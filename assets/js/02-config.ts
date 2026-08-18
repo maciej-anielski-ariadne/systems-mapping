@@ -100,6 +100,14 @@ export const EFFECT_OPTIONS = ["enables", "increases", "decreases"];
 // option in dropdowns.
 export const DIRECTION_OPTIONS = ["", "higher_better", "lower_better", "neutral"];
 
+// How a box aggregates the arrows pointing into it. The blank entry is the
+// "(default)" option in dropdowns, and a blank CSV cell means the same thing:
+// multiplicative, i.e. exactly what the app did before the column existed.
+// The loader validates against this same list (minus the blank) — see
+// COMBINE_MODES in 06-data-loader.js, CombineMode in types.js and
+// docs/CALCULATION-ENGINE-DESIGN.md §3.2.
+export const COMBINE_OPTIONS = ["", "multiplicative", "additive", "min"];
+
 // Colour palette cycled through when seeding a new stream / category so
 // adjacent ones visually differ. Used by addStream / addCategory (16e) and
 // the wizard.
