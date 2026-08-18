@@ -29,6 +29,7 @@ import {
   DEFAULT_ELASTICITY_BY_EFFECT,
   nodeById,
   paramById,
+  edgeById,
   outgoingEdges,
   incomingEdges,
   streamById,
@@ -805,7 +806,7 @@ export function applyNodeFieldEdit(node: GraphNode, field: string, input: HTMLIn
 }
 
 export function applyEdgeFieldEdit(edgeId: string, field: string, input: HTMLInputElement): void {
-  const edge = EDGES.find(e => e.id === edgeId);
+  const edge = edgeById[edgeId];
   if (!edge) return;
   if (field === "effect") {
     if (!EFFECT_OPTIONS.includes(input.value)) return;

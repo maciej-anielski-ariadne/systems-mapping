@@ -21,6 +21,7 @@ import {
   state,
   streamById,
   streamNodeCount,
+  stageNodeCount,
 } from "./03-state";
 import { renderSimulationPanel } from "./14-simulation-panel";
 import {
@@ -88,7 +89,7 @@ export function renderStagesList(): void {
   let html = "";
   for (let i = 0; i < STAGES.length; i++) {
     const stage = STAGES[i];
-    const count = NODES.reduce((acc, n) => n.stage === stage.id ? acc + 1 : acc, 0);
+    const count = stageNodeCount[stage.id] || 0;
     const isHidden = state.hiddenStages.has(stage.id);
     const tip = (isHidden ? "Click to show " : "Click to hide ") + stage.label + " — " + count + " box" + (count === 1 ? "" : "es") + " on the map. Shift-click the name to rename.";
     html += '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="stage" data-id="' + escapeHtml(stage.id) + '" data-index="' + i + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';

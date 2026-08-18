@@ -19,7 +19,7 @@ import { escapeHtml, formatScalar } from "./04-utils";
 import { recomputeValues, formatNodeDelta } from "./07-simulation-engine";
 import { render, scheduleRender, updateSimulationValuesInPlace } from "./11-rendering";
 import { renderDetailPanel } from "./15-detail-panel";
-import { saveUiStateToStorage } from "./04a-storage";
+import { saveUiStateToStorage, scheduleUiStateSave } from "./04a-storage";
 import { renderSidebar } from "./13-sidebar";
 import { applyPanelPinnedClasses } from "./17-events";
 
@@ -145,7 +145,9 @@ export function applySimMultiplier(nodeId: string, newMultiplier: number, origin
   // can't apply cleanly (a delta label must appear/disappear, or a node is
   // selected) do we fall back to a coalesced full render.
   if (!updateSimulationValuesInPlace()) scheduleRender();
-  saveUiStateToStorage();
+  // Slider drags fire this at pointer-move rate; the debounced saver writes
+  // once when the drag goes quiet instead of per event.
+  scheduleUiStateSave();
 }
 
 // Show or hide the feedback-loop warning in the sim panel. The simulation works

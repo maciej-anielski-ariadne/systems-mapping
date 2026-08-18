@@ -223,6 +223,7 @@ export let cycleInfo: CycleInfo = {
 };
 export let streamNodeCount: Record<string, number> = {}; // stream id → count of nodes
 export let categoryNodeCount: Record<string, number> = {}; // category id → count of nodes
+export let stageNodeCount: Record<string, number> = {}; // stage id → count of nodes
 export let maxHighlightDepth = 1; // deepest highlight hop the current map can reach (longest shortest-path distance, up- or downstream). Recomputed by rebuildIndexes; the depth control uses it as a dynamic cap instead of a fixed ceiling.
 
 // Layout result (set by 08-layout.ts → computeLayout).
@@ -292,6 +293,9 @@ export function setStreamNodeCount(value: Record<string, number>): void {
 }
 export function setCategoryNodeCount(value: Record<string, number>): void {
   categoryNodeCount = value;
+}
+export function setStageNodeCount(value: Record<string, number>): void {
+  stageNodeCount = value;
 }
 export function setMaxHighlightDepth(value: number): void {
   maxHighlightDepth = value;

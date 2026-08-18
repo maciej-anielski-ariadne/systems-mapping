@@ -49,6 +49,7 @@ import {
   layout,
   nodeById,
   edgeById,
+  outgoingEdges,
   streamById,
   stageById,
   setStreams,
@@ -70,7 +71,7 @@ import {
   SVG_PADDING_TOP,
 } from "./02-config";
 import { cloneEdgeForUndo } from "./04-utils";
-import { saveCsvToStorage, saveUiStateToStorage } from "./04a-storage";
+import { scheduleCsvSave, saveUiStateToStorage } from "./04a-storage";
 import { serializeLiveStateToCsv } from "./05a-csv-serializer";
 import { rebuildIndexes } from "./06-data-loader";
 import { recomputeValues } from "./07-simulation-engine";
@@ -424,7 +425,7 @@ export function bootEmptyStateGrid(): void {
   // Seed the undo "previous snapshot" so the first mutation after boot has
   // something to push onto history.past, and start with an empty stack.
   try {
-    state.lastCsvSnapshot = serializeLiveStateToCsv();
+    state.lastCsvSnapshot = serializeLiveStateToCsv(null, { compact: true });
   } catch (err) { /* serializer unavailable yet — first applyCanvasMutation will set it */ }
   if (typeof clearHistory === "function") clearHistory();
 }
@@ -1371,8 +1372,10 @@ export function commitNewEdge(fromNodeId: string, toNodeId: string, effect: Effe
   if (!nodeById[fromNodeId] || !nodeById[toNodeId]) return null;
   if (fromNodeId === toNodeId) return null;
   // Skip duplicates — an edge with the same (from, to, effect) already exists.
-  for (const e of EDGES) {
-    if (e.from === fromNodeId && e.to === toNodeId && e.effect === effect) return null;
+  // Scan just the source node's outgoing edges (usually a handful) rather than
+  // the whole EDGES array.
+  for (const e of outgoingEdges[fromNodeId] || []) {
+    if (e.to === toNodeId && e.effect === effect) return null;
   }
   const newEdge: Edge = {
     from: fromNodeId,
@@ -1383,7 +1386,7 @@ export function commitNewEdge(fromNodeId: string, toNodeId: string, effect: Effe
   EDGES.push(newEdge);
   state.canvasEdit.lastUsedEdgeEffect = effect;
   applyCanvasMutation();
-  // rebuildIndexes() inside applyCanvasMutation assigns edge.id by index,
+  // rebuildIndexes() inside applyCanvasMutation mints an id for the new edge,
   // so by this point newEdge.id is populated and selectable.
   return newEdge;
 }
@@ -1440,14 +1443,18 @@ export function cycleSelectedEdgeEffect(direction: number): boolean {
 // undo entry. Used for the 2nd…Nth arrow press in a cycle session so the
 // whole burst collapses to one undo step.
 export function applyEdgeCycleSubsequent(): void {
-  rebuildIndexes();
+  // No rebuildIndexes() here: cycling an edge's effect changes neither the
+  // graph topology nor any id — adjacency lists, the topological order and
+  // the formula cache all hold the same edge object and read `effect` live.
+  // The first cycle of a session (via applyCanvasMutation) still does the
+  // full rebuild, so anything effect-derived is at most one burst stale.
   if (typeof recomputeValues === "function") recomputeValues();
   render();
   if (typeof renderDetailPanel === "function") renderDetailPanel();
   try {
     if (typeof serializeLiveStateToCsv === "function") {
-      state.lastCsvSnapshot = serializeLiveStateToCsv();
-      if (typeof saveCsvToStorage === "function") saveCsvToStorage(state.lastCsvSnapshot);
+      state.lastCsvSnapshot = serializeLiveStateToCsv(null, { compact: true });
+      scheduleCsvSave(state.lastCsvSnapshot);
     }
   } catch (err) {
     console.warn("Persisting edge-cycle mutation failed:", err);

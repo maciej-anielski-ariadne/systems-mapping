@@ -19,7 +19,7 @@
 import { COMBINE_OPTIONS, DIRECTION_OPTIONS, EFFECT_OPTIONS } from "./02-config";
 import { state } from "./03-state";
 import { escapeHtml } from "./04-utils";
-import { saveBuilderToStorage } from "./04a-storage";
+import { scheduleBuilderSave } from "./04a-storage";
 import { upgradeSelectsIn } from "./04b-typeable-dropdown";
 import {
   BUILDER_LAST_STEP,
@@ -101,7 +101,7 @@ export function renderBuilder(): void {
   if (typeof upgradeSelectsIn === "function") upgradeSelectsIn(overlay);
 
   attachBuilderEvents();
-  saveBuilderToStorage();
+  scheduleBuilderSave();
   applyFocusAfterRender();
 
   // Restore scroll after layout settles (same rAF timing as focus restore).

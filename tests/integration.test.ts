@@ -6,7 +6,7 @@ import { loadDataFromCsv } from "../assets/js/06-data-loader";
 import { toggleCategory } from "../assets/js/10-filters";
 import { renderOverlay } from "../assets/js/11-rendering";
 import { NODES, EDGES, PARAMS, nodeById, state } from "../assets/js/03-state";
-import { loadBuilderFromStorage } from "../assets/js/04a-storage";
+import { loadBuilderFromStorage, flushPendingSaves } from "../assets/js/04a-storage";
 import { serializeBuilderToCsv } from "../assets/js/05a-csv-serializer";
 import {
   BUILDER_LAST_STEP,
@@ -209,8 +209,11 @@ describe("build/edit wizard — constants step and calculation columns", () => {
     type(cell("params", "description", 1), "Revised detection rate");
     expect(state.builder.params![1].description).toBe("Revised detection rate");
 
-    // Every keystroke also lands in the wizard's localStorage snapshot, so a
-    // refresh mid-build doesn't change what an "Apply to map" would write.
+    // Typing schedules a debounced write of the wizard's localStorage
+    // snapshot (per-keystroke synchronous writes stalled large maps); the
+    // pending write is flushed on tab hide / close, which flushPendingSaves
+    // simulates here — after it, a refresh mid-build restores this edit.
+    flushPendingSaves();
     expect(loadBuilderFromStorage().params[0].value).toBe(0.5);
   });
 

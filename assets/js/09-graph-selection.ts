@@ -21,8 +21,11 @@ import {
   incomingEdges,
   outgoingEdges,
   NODES,
+  EDGES,
   edgeById,
   layout,
+  topologicalOrder,
+  cycleInfo,
 } from "./03-state";
 import { commitInlineRename } from "./16h-canvas-inline-rename";
 import { endEdgeCycleSession } from "./16e-canvas-edit";
@@ -119,11 +122,50 @@ export function computeHighlightedEdges(
 // `maxHighlightDepth` by rebuildIndexes. Falls back to 1 for an edge-less map.
 // Defers to the shared maxReachableDepth primitive (04-utils), which the export
 // viewer's cap also uses, so the two stay in lockstep.
+// Above this budget (≈ nodes × (nodes + edges)) the exact all-pairs BFS is too
+// slow to run inside rebuildIndexes — it froze large maps for 100+ ms on every
+// single edit — so big maps switch to a cheap O(N+E) upper bound instead.
+const EXACT_DEPTH_BUDGET = 2_000_000;
+
 export function computeMaxHighlightDepth(): number {
-  return maxReachableDepth(
-    NODES.map(n => n.id),
-    id => outgoingEdges[id].map(e => e.to)
-  );
+  const n = NODES.length;
+  const e = EDGES.length;
+  if (n === 0) return 1;
+
+  if (n * (n + e) <= EXACT_DEPTH_BUDGET) {
+    // Small map: exact answer, same as always. Pre-resolve each node's
+    // neighbour ids ONCE — the callback used to allocate a fresh array on
+    // every BFS visit, i.e. O(N·E) throwaway arrays across the sweep.
+    const neighborIds: Record<string, string[]> = {};
+    for (const node of NODES) {
+      neighborIds[node.id] = outgoingEdges[node.id].map((edge) => edge.to);
+    }
+    return maxReachableDepth(NODES.map(node => node.id), id => neighborIds[id]);
+  }
+
+  // Large map: an upper bound is enough — the value only caps the depth
+  // spinner, and a too-high cap merely lets the user step past the point
+  // where nothing new lights up. Never under-estimate (that would truncate
+  // the control).
+  if (cycleInfo.inCycleNodeIds.size === 0) {
+    // Acyclic: longest path in hops via one pass over the topological order.
+    // Always ≥ the longest shortest-path (the exact answer), so it's a safe cap.
+    const depthByNode: Record<string, number> = {};
+    let max = 1;
+    for (const id of topologicalOrder) {
+      const d = depthByNode[id] || 0;
+      for (const edge of outgoingEdges[id]) {
+        const next = d + 1;
+        if (next > (depthByNode[edge.to] || 0)) {
+          depthByNode[edge.to] = next;
+          if (next > max) max = next;
+        }
+      }
+    }
+    return max;
+  }
+  // Cyclic large map: no cheap tight bound exists; N−1 bounds any BFS depth.
+  return Math.max(1, n - 1);
 }
 
 // ───── Select / deselect ──────────────────────────────────────────────────

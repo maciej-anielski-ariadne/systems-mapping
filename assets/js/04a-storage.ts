@@ -27,9 +27,76 @@ export const STORAGE_KEY_CSV     = "systems-map.csv";
 export const STORAGE_KEY_UI      = "systems-map.ui";
 export const STORAGE_KEY_BUILDER = "systems-map.builder";
 
+// ───── Quota-failure surfacing ────────────────────────────────────────────
+// localStorage tops out around 5 MB per origin; a very large map (or the
+// wizard's working copy of one) can exceed that, and swallowing the
+// QuotaExceededError silently meant the user's map just stopped surviving a
+// refresh with no warning. Surface it once per session — the toast helper
+// lives in 16-file-io, which sits above this module in the import graph, so
+// it's called through a lazy guard.
+let _quotaWarned = false;
+function warnStorageQuota(): void {
+  if (_quotaWarned) return;
+  _quotaWarned = true;
+  import("./16-file-io")
+    .then((io) => {
+      if (typeof io.showLoadFeedback === "function") {
+        io.showLoadFeedback(
+          "This map is too large for the browser's auto-save — download the CSV to keep your work.",
+          true,
+        );
+      }
+    })
+    .catch(() => {});
+  console.warn("localStorage write failed (likely quota) — auto-save disabled for this map.");
+}
+
 // ───── CSV slot ───────────────────────────────────────────────────────────
-export function saveCsvToStorage(csv: string | null | undefined): void {
-  try { localStorage.setItem(STORAGE_KEY_CSV, csv || ""); } catch (_) {}
+export function saveCsvToStorage(csv: string | null | undefined): boolean {
+  try {
+    localStorage.setItem(STORAGE_KEY_CSV, csv || "");
+    return true;
+  } catch (_) {
+    warnStorageQuota();
+    return false;
+  }
+}
+
+// Coalesced CSV save. Every canvas edit funnels through applyCanvasMutation,
+// which used to serialize + write the WHOLE map synchronously per edit —
+// a multi-megabyte localStorage write per keystroke-scale interaction on a
+// large map. The write is best-effort persistence (the live state and the
+// undo snapshot stay exact), so it's safe to wait for a quiet moment; the
+// pending write is flushed on tab hide / close below so a normal navigation
+// away never loses it.
+const CSV_SAVE_DEBOUNCE_MS = 600;
+let _csvSaveTimer: ReturnType<typeof setTimeout> | null = null;
+let _pendingCsv: string | null = null;
+export function scheduleCsvSave(csv: string): void {
+  _pendingCsv = csv;
+  if (_csvSaveTimer) clearTimeout(_csvSaveTimer);
+  _csvSaveTimer = setTimeout(() => {
+    _csvSaveTimer = null;
+    if (_pendingCsv !== null) { saveCsvToStorage(_pendingCsv); _pendingCsv = null; }
+  }, CSV_SAVE_DEBOUNCE_MS);
+}
+
+// Write any debounced state out immediately (tab hidden / closing, or a code
+// path that must observe the write, e.g. right before clearing a slot).
+export function flushPendingSaves(): void {
+  if (_csvSaveTimer) { clearTimeout(_csvSaveTimer); _csvSaveTimer = null; }
+  if (_pendingCsv !== null) { saveCsvToStorage(_pendingCsv); _pendingCsv = null; }
+  if (_builderSaveTimer) { clearTimeout(_builderSaveTimer); _builderSaveTimer = null; saveBuilderToStorage(); }
+  if (_uiSaveTimer) { clearTimeout(_uiSaveTimer); _uiSaveTimer = null; saveUiStateToStorage(); }
+}
+
+// `pagehide` covers normal closes/navigations; `visibilitychange → hidden`
+// additionally covers mobile tab switches where pagehide may never fire.
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", flushPendingSaves);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushPendingSaves();
+  });
 }
 
 export function loadCsvFromStorage(): string | null {
@@ -161,6 +228,21 @@ export function applyRestoredUiState(ui: any): void {
 // ───── Builder slot ───────────────────────────────────────────────────────
 // Stored only while the wizard is open. On close we remove the key so the
 // wizard doesn't auto-reopen on the next refresh.
+// Coalesced builder save. The wizard used to JSON.stringify its ENTIRE
+// working copy (all seven sections) and write it synchronously on every
+// keystroke — on a large map that's a 100 ms+ stall per character. The slot
+// is a crash-recovery convenience, so a trailing debounce loses at most the
+// last moments of typing; flushPendingSaves() above writes it out on tab hide.
+const BUILDER_SAVE_DEBOUNCE_MS = 600;
+let _builderSaveTimer: ReturnType<typeof setTimeout> | null = null;
+export function scheduleBuilderSave(): void {
+  if (_builderSaveTimer) clearTimeout(_builderSaveTimer);
+  _builderSaveTimer = setTimeout(() => {
+    _builderSaveTimer = null;
+    saveBuilderToStorage();
+  }, BUILDER_SAVE_DEBOUNCE_MS);
+}
+
 export function saveBuilderToStorage(): void {
   try {
     if (!state.builder || !state.builder.open) return;
@@ -191,5 +273,8 @@ export function loadBuilderFromStorage(): any {
 }
 
 export function clearBuilderFromStorage(): void {
+  // Cancel any debounced write first — a save landing AFTER the clear would
+  // resurrect the wizard slot and make it auto-reopen on the next refresh.
+  if (_builderSaveTimer) { clearTimeout(_builderSaveTimer); _builderSaveTimer = null; }
   try { localStorage.removeItem(STORAGE_KEY_BUILDER); } catch (_) {}
 }

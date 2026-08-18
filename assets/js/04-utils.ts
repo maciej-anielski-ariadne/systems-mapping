@@ -57,7 +57,12 @@ export const _labelLineCache = new Map<string, string[]>();
 // edit mints fresh keys) can't grow it without bound. When the limit is hit we
 // drop the oldest ~25% of entries (Map preserves insertion order) — cheap, and
 // the working set of currently-visible labels is re-measured on the next render.
+// The cap grows (doubling, up to a hard ceiling) each time it's hit: a map with
+// more labels than the cap would otherwise thrash — every layout pass evicting
+// a quarter of the LIVE working set and re-measuring 1000+ labels per keystroke.
 export const LABEL_CACHE_MAX = 5000;
+const LABEL_CACHE_HARD_MAX = 50_000;
+let _labelCacheCap = LABEL_CACHE_MAX;
 export let _labelMeasureCtx: CanvasRenderingContext2D | null = null;
 export function measureLabelLines(text: unknown, maxWidthPx: number): string[] {
   text = String(text == null ? "" : text);
@@ -87,13 +92,18 @@ export function measureLabelLines(text: unknown, maxWidthPx: number): string[] {
   }
   if (current) lines.push(current);
   const result = lines.length ? lines : [""];
-  if (_labelLineCache.size >= LABEL_CACHE_MAX) {
-    const drop = Math.ceil(LABEL_CACHE_MAX / 4);
-    const it = _labelLineCache.keys();
-    for (let i = 0; i < drop; i++) {
-      const k = it.next().value;
-      if (k === undefined) break;
-      _labelLineCache.delete(k);
+  if (_labelLineCache.size >= _labelCacheCap) {
+    if (_labelCacheCap < LABEL_CACHE_HARD_MAX) {
+      // Working set outgrew the cap — give it headroom instead of thrashing.
+      _labelCacheCap = Math.min(LABEL_CACHE_HARD_MAX, _labelCacheCap * 2);
+    } else {
+      const drop = Math.ceil(_labelCacheCap / 4);
+      const it = _labelLineCache.keys();
+      for (let i = 0; i < drop; i++) {
+        const k = it.next().value;
+        if (k === undefined) break;
+        _labelLineCache.delete(k);
+      }
     }
   }
   _labelLineCache.set(key, result);
@@ -117,10 +127,19 @@ export function escapeHtml(text: unknown): string {
 //   • 10 to 99:        one decimal ("12.5")
 //   • 1 to 9:          two decimals ("3.14")
 //   • Below 1:         three decimals ("0.125")
+// Cached formatter for the thousands-separated branch below — a fresh
+// toLocaleString() call resolves the locale on every invocation and is one of
+// the slowest formatting primitives in JS; the cached formatter produces the
+// identical string. Lazy so module load never pays for it.
+let _thousandsFormat: Intl.NumberFormat | null = null;
+
 export function formatScalar(value: number): string {
   const absValue = Math.abs(value);
   if (absValue >= 1e9)    return (value / 1e9).toFixed(2);
-  if (absValue >= 10000)  return Math.round(value).toLocaleString();
+  if (absValue >= 10000) {
+    if (!_thousandsFormat) _thousandsFormat = new Intl.NumberFormat();
+    return _thousandsFormat.format(Math.round(value));
+  }
   if (absValue >= 100)    return Math.round(value).toString();
   if (absValue >= 10)     return value.toFixed(1);
   if (absValue >= 1)      return value.toFixed(2);

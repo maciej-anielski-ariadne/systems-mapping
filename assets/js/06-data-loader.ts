@@ -43,6 +43,7 @@ import {
   edgeById,
   streamNodeCount,
   categoryNodeCount,
+  stageNodeCount,
   outgoingEdges,
   incomingEdges,
   streamById,
@@ -66,6 +67,7 @@ import {
   setCycleInfo,
   setStreamNodeCount,
   setCategoryNodeCount,
+  setStageNodeCount,
   setMaxHighlightDepth,
   setLayout,
 } from "./03-state";
@@ -94,6 +96,11 @@ import { isUndoCaptureSuspended, clearHistory } from "./16g-canvas-undo";
 // types.ts and docs/CALCULATION-ENGINE-DESIGN.md §3.2.)
 const COMBINE_MODES = COMBINE_OPTIONS.filter(Boolean) as CombineMode[];
 
+// Session-wide counter for minting edge ids in rebuildIndexes(). Monotonic and
+// never reset, so an id handed out once is never handed out again — which keeps
+// ids stable across rebuilds and collision-free with edges an undo restores.
+let _edgeIdSeq = 0;
+
 // Build all the lookup maps from the freshly-loaded NODES/EDGES/STREAMS/STAGES.
 // Also produces a topological order: a list of node ids where every node
 // comes after all the nodes that feed into it (i.e. every cause is listed
@@ -106,12 +113,14 @@ export function rebuildIndexes(): void {
   setNodeById({});
   setStreamNodeCount({});
   setCategoryNodeCount({});
+  setStageNodeCount({});
   for (const node of NODES) {
     nodeById[node.id] = node;
     // Counts cached here (rather than recomputed per render) so the sidebar
     // and any other code that wants "how many nodes in this stream" is an
     // O(1) lookup. Matters once the map grows past a few hundred nodes.
     streamNodeCount[node.stream]     = (streamNodeCount[node.stream]     || 0) + 1;
+    stageNodeCount[node.stage]       = (stageNodeCount[node.stage]       || 0) + 1;
     // Count every category a node carries (a node can now hold several).
     for (const cid of nodeCategoryIds(node)) categoryNodeCount[cid] = (categoryNodeCount[cid] || 0) + 1;
   }
@@ -131,7 +140,13 @@ export function rebuildIndexes(): void {
   }
   for (let edgeIndex = 0; edgeIndex < EDGES.length; edgeIndex++) {
     const edge = EDGES[edgeIndex];
-    edge.id = "edge_" + edgeIndex;       // give every edge a stable id
+    // Mint an id only for edges that don't have one yet. Ids must survive a
+    // rebuild unchanged: selection, highlight sets and the undo flash all hold
+    // edge ids across mutations, and renumbering by array index made them all
+    // point at different edges after any splice. The counter is monotonic for
+    // the whole session so a freshly-minted id can never collide with one an
+    // undo snapshot brings back.
+    if (!edge.id) edge.id = "edge_" + _edgeIdSeq++;
     edgeById[edge.id] = edge;            // O(1) lookup by id (select / cycle / delete)
     if (outgoingEdges[edge.from]) outgoingEdges[edge.from].push(edge);
     if (incomingEdges[edge.to])   incomingEdges[edge.to].push(edge);
@@ -417,6 +432,11 @@ function sameSweepDependencies(node: GraphNode): string[] {
 // unvisited, gray = on the path we're walking, black = done), with an explicit
 // stack so a deep map can't overflow the JS call stack.
 function reportFormulaCyclesWithoutDelay(errors: string[]): void {
+  // Only a loop passing through a formula box is ever reported, so a map with
+  // no formulas at all can skip the whole-graph DFS (and its per-node
+  // dependency arrays) — on large formula-free maps this was a third full
+  // traversal per load for a guaranteed-empty result.
+  if (!NODES.some((node) => usesFormula(node))) return;
   const WHITE = 0, GRAY = 1, BLACK = 2;
   const color: Record<string, number> = {};
   const dependencies: Record<string, string[]> = {};
@@ -475,6 +495,11 @@ function reportFormulaCyclesWithoutDelay(errors: string[]): void {
 
 // Main entry point. Returns true on success, false on fatal validation errors.
 export function loadDataFromCsv(csvText: string): boolean {
+  // A full load replaces every edge object, so restart the id counter — ids
+  // are then deterministic per load (edge_0… in file order), which tests and
+  // the export model rely on. In-session mutations never reset it, so live
+  // edge ids stay stable across rebuilds.
+  _edgeIdSeq = 0;
   const sections = parseCsvDocument(csvText);
   const errors: string[] = [];
 
@@ -713,7 +738,12 @@ export function loadDataFromCsv(csvText: string): boolean {
 
   // Reset transient interaction state. Must happen BEFORE computeLayout()
   // because layout now reads state.hiddenStreams to collapse hidden rows.
+  // selectedNodeIds / selectedEdgeId must be cleared with selectedNodeId —
+  // 03-state documents the invariant that they move together, and a stale
+  // multi-select Set surviving a load points at nodes that no longer exist.
   state.selectedNodeId = null;
+  state.selectedNodeIds = new Set();
+  state.selectedEdgeId = null;
   state.hoveredNodeId = null;
   state.hiddenStreams = new Set();
   state.hiddenCategories = new Set();

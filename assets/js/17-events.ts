@@ -11,7 +11,7 @@ import { getMapTextScale } from "./04-utils";
 import { clearCsvFromStorage, saveUiStateToStorage, scheduleUiStateSave } from "./04a-storage";
 import { refreshNeighborHighlight } from "./09-graph-selection";
 import { computeLayout } from "./08-layout";
-import { render, maybeRenderForViewport } from "./11-rendering";
+import { render, maybeRenderForViewport, setMapTextScaleVar } from "./11-rendering";
 import { toggleSimulationMode } from "./14-simulation-panel";
 import { downloadCsvBlob, readCsvFile } from "./16-file-io";
 import { closeBuilder, openBuilder } from "./16a-builder-state";
@@ -297,7 +297,9 @@ export function applyZoom(): void {
   if (svgEl && layout && layout.totalWidth) {
     svgEl.setAttribute("width",  String(layout.totalWidth  * state.zoomLevel));
     svgEl.setAttribute("height", String(layout.totalHeight * state.zoomLevel));
-    (svgEl as SVGSVGElement).style.setProperty("--map-text-scale", String(textScale));
+    // Guarded write (skipped while the value is unchanged) — an unconditional
+    // custom-property write here invalidated every text element per wheel event.
+    setMapTextScaleVar(svgEl as SVGSVGElement, textScale);
   }
   if (readout) readout.textContent = Math.round(state.zoomLevel * 100) + "%";
 

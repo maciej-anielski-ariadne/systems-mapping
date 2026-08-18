@@ -210,7 +210,8 @@ function edgeGeometry(): EdgeGeometry {
 // threshold, and skipped whenever the container has no laid-out size (e.g.
 // jsdom in tests). In both cases everything is drawn, exactly as before — so
 // small maps and the test suite are unaffected.
-export const VIRTUALIZE_MIN_NODES = 400;   // below this, never cull
+export const VIRTUALIZE_MIN_NODES = 400;   // below this node count…
+export const VIRTUALIZE_MIN_EDGES = 2000;  // …AND below this edge count, never cull
 export const CULL_MARGIN = 600;            // layout px drawn beyond each viewport edge
 // How close (layout px) the viewport may come to the edge of the already-drawn
 // region before we redraw a fresh, re-centred slice. Must be < CULL_MARGIN so
@@ -225,7 +226,9 @@ export interface CullRect { minX: number; minY: number; maxX: number; maxY: numb
 // The visible viewport in layout coordinates, or null when virtualization is
 // inactive (small map, or a container with no laid-out size — e.g. jsdom).
 function computeViewportRect(): CullRect | null {
-  if (NODES.length < VIRTUALIZE_MIN_NODES) return null;
+  // Gate on edges as well as nodes: a 300-box map with 20 000 links is edge-
+  // dominated, and the links are where the DOM bytes are.
+  if (NODES.length < VIRTUALIZE_MIN_NODES && EDGES.length < VIRTUALIZE_MIN_EDGES) return null;
   const scroller = document.getElementById("viz-scroll");
   if (!scroller) return null;
   const vw = scroller.clientWidth, vh = scroller.clientHeight;
@@ -303,6 +306,20 @@ export function scheduleRender(): void {
   if (_renderQueued) return;
   _renderQueued = true;
   _renderRAF = _raf(() => { _renderQueued = false; _renderRAF = 0; render(); });
+}
+
+// Single owner of the `--map-text-scale` CSS variable. Writing a custom
+// property on the SVG root invalidates style for EVERY text element that
+// reads it (thousands on a big map), so both writers — render() and
+// applyZoom() (17-events) — go through here and the write is skipped while
+// the value is unchanged, which it is for all zooming within one text-scale
+// band. Tracking lives in one module so the two writers can't desync.
+let _lastTextScaleVar = "";
+export function setMapTextScaleVar(svgEl: SVGSVGElement | HTMLElement, scale: number): void {
+  const value = String(scale);
+  if (value === _lastTextScaleVar) return;
+  _lastTextScaleVar = value;
+  (svgEl as SVGSVGElement).style.setProperty("--map-text-scale", value);
 }
 
 // ───── Transient overlay layer ────────────────────────────────────────────
@@ -478,6 +495,14 @@ export function render(): void {
     return;
   }
 
+  // Read the viewport cull rect BEFORE any attribute writes below — reading
+  // scroller.clientWidth/scrollLeft after writing the SVG's size forces a
+  // synchronous layout of the whole document mid-render (write→read thrash).
+  // Remember it so maybeRenderForViewport knows how far the user can scroll
+  // on the already-drawn slice before a fresh one is needed.
+  const cull = computeCullRect();
+  _renderedCull = cull;
+
   // Size the SVG canvas to fit the layout, scaled by the current zoom level
   // (state.zoomLevel defaults to 1.0). The viewBox stays in unscaled layout
   // coordinates so the SVG natively rescales every element by the same factor.
@@ -487,8 +512,8 @@ export function render(): void {
   svg.setAttribute("viewBox", "0 0 " + layout.totalWidth + " " + layout.totalHeight);
   // Grow SVG text-size when zoomed out (capped) so labels stay readable.
   // Picked up by `font-size: calc(<base> * var(--map-text-scale, 1))` in
-  // assets/css/05-visualization.css.
-  svg.style.setProperty("--map-text-scale", String(getMapTextScale(zoom)));
+  // assets/css/05-visualization.css. Guarded write — see setMapTextScaleVar.
+  setMapTextScaleVar(svg, getMapTextScale(zoom));
 
   let content = "";
 
@@ -611,11 +636,8 @@ export function render(): void {
   // index to renderEdges (both come from the same cache entry together).
   const { renderEdges, anchorOffsets } = edgeGeometry();
 
-  // Viewport cull rect (null on small maps / unlaid-out containers → draw all).
-  // Remember it so maybeRenderForViewport knows how far the user can scroll on
-  // the already-drawn slice before a fresh one is needed.
-  const cull = computeCullRect();
-  _renderedCull = cull;
+  // (Viewport cull rect was computed at the top of render(), before any
+  // attribute writes, to avoid a forced synchronous layout.)
 
   // Two output buffers. Every edge is drawn twice: first a slightly fatter line
   // in the page's background colour (its "casing"), then the real coloured line
@@ -769,6 +791,10 @@ export function render(): void {
   // un-dimmed by CSS) so the user sees what the operation touched.
   const undoFlashNodeIds = state.canvasEdit && state.canvasEdit.flashedNodeIds;
 
+  // Outcome borders only show when nothing at all is selected — hoisted out
+  // of the loop so the per-node branch is a boolean test.
+  const showOutcomeBorders = !state.selectedNodeId && !state.selectedNodeIds.size;
+
   // ───── Nodes ──────────────────────────────────────────────────────────
   for (const node of NODES) {
     if (!isNodeVisible(node)) continue;
@@ -808,7 +834,6 @@ export function render(): void {
     // ── Background rect with conditional border ──
     let strokeColor = "rgba(0,0,0,0.4)";
     let strokeWidth = 1;
-    const outcomeStatusColor = getOutcomeBorderColor(node.id);
 
     if (state.selectedNodeIds.has(node.id)) {
       strokeColor = "#ffffff";
@@ -819,10 +844,16 @@ export function render(): void {
     } else if (state.descendantSet.has(node.id)) {
       strokeColor = "var(--edge-descendant)";
       strokeWidth = 2;
-    } else if (outcomeStatusColor && !state.selectedNodeId && !state.selectedNodeIds.size) {
+    } else if (showOutcomeBorders) {
       // Show good/bad colour around outcome nodes when nothing is selected.
-      strokeColor = outcomeStatusColor;
-      strokeWidth = 2;
+      // Only computed on this branch — getOutcomeBorderColor runs the delta
+      // formatting internally, and calling it unconditionally for every box
+      // was pure waste whenever a selection was active.
+      const outcomeStatusColor = getOutcomeBorderColor(node.id);
+      if (outcomeStatusColor) {
+        strokeColor = outcomeStatusColor;
+        strokeWidth = 2;
+      }
     }
 
     content += '<rect class="node-rect" x="' + pos.x + '" y="' + pos.y + '" width="' + pos.width + '" height="' + pos.height + '" rx="5" fill="' + fillInfo.fill + '" stroke="' + strokeColor + '" stroke-width="' + strokeWidth + '"></rect>';

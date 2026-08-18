@@ -34,7 +34,7 @@ import { scrollNodeIntoView, selectNode } from "./09-graph-selection";
 import { render } from "./11-rendering";
 import { renderDetailPanel } from "./15-detail-panel";
 import { applyZoom } from "./17-events";
-import { EDGES, NODES, layout, nodeById, state } from "./03-state";
+import { EDGES, NODES, layout, nodeById, edgeById, state } from "./03-state";
 
 export const UNDO_TOAST_DURATION_MS = 6000;
 export const HISTORY_CAP = 50;
@@ -56,7 +56,7 @@ export function clearHistory(): void {
 export function historyUndo(): boolean {
   if (state.history.past.length === 0) return false;
   const beforeCsv = state.history.past.pop();
-  const currentCsv = (typeof serializeLiveStateToCsv === "function") ? serializeLiveStateToCsv() : state.lastCsvSnapshot;
+  const currentCsv = (typeof serializeLiveStateToCsv === "function") ? serializeLiveStateToCsv(null, { compact: true }) : state.lastCsvSnapshot;
   if (currentCsv) state.history.future.push(currentCsv);
   if (state.history.future.length > HISTORY_CAP) state.history.future.shift();
   return _restoreSnapshot(beforeCsv!);
@@ -65,7 +65,7 @@ export function historyUndo(): boolean {
 export function historyRedo(): boolean {
   if (state.history.future.length === 0) return false;
   const afterCsv = state.history.future.pop();
-  const currentCsv = (typeof serializeLiveStateToCsv === "function") ? serializeLiveStateToCsv() : state.lastCsvSnapshot;
+  const currentCsv = (typeof serializeLiveStateToCsv === "function") ? serializeLiveStateToCsv(null, { compact: true }) : state.lastCsvSnapshot;
   if (currentCsv) state.history.past.push(currentCsv);
   if (state.history.past.length > HISTORY_CAP) state.history.past.shift();
   return _restoreSnapshot(afterCsv!);
@@ -231,9 +231,8 @@ export function _restoreSnapshot(csv: string): boolean {
   if (saved.selectedNodeId && nodeById[saved.selectedNodeId] && typeof selectNode === "function") {
     selectNode(saved.selectedNodeId);
   }
-  if (saved.selectedEdgeId) {
-    const edgeStillExists = EDGES.some(e => e.id === saved.selectedEdgeId);
-    if (edgeStillExists) state.selectedEdgeId = saved.selectedEdgeId;
+  if (saved.selectedEdgeId && edgeById[saved.selectedEdgeId]) {
+    state.selectedEdgeId = saved.selectedEdgeId;
   }
   if (typeof renderDetailPanel === "function") renderDetailPanel();
   if (typeof render === "function") render();

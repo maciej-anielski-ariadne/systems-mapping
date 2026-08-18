@@ -48,7 +48,7 @@ import { render } from "./11-rendering";
 import { renderDetailPanel } from "./15-detail-panel";
 import { renderMultiSelectBar } from "./16j-multi-select-bar";
 import { serializeLiveStateToCsv } from "./05a-csv-serializer";
-import { saveCsvToStorage } from "./04a-storage";
+import { scheduleCsvSave } from "./04a-storage";
 import { STREAM_COLOR_PALETTE } from "./02-config";
 import { deriveShortLabel } from "./16e-canvas-edit";
 import { pickTextColor, cloneNodeForUndo, cloneEdgeForUndo } from "./04-utils";
@@ -84,9 +84,15 @@ export function applyCanvasMutation(options?: { skipDetailRender?: boolean; skip
   // batch delete empties the selection.
   if (typeof renderMultiSelectBar === "function") renderMultiSelectBar();
   try {
-    const afterCsv = serializeLiveStateToCsv();
+    // Compact (no companion label columns) — this string is held as the undo
+    // snapshot and written to localStorage, so smaller is strictly better;
+    // the parser round-trips both shapes identically. The snapshot must be
+    // taken synchronously (the NEXT mutation pushes it onto history), but
+    // the localStorage write is best-effort persistence and goes through the
+    // debounced saver so a burst of edits costs one write, not one per edit.
+    const afterCsv = serializeLiveStateToCsv(null, { compact: true });
     state.lastCsvSnapshot = afterCsv;
-    saveCsvToStorage(afterCsv);
+    scheduleCsvSave(afterCsv);
   } catch (err) {
     console.warn("Persisting canvas mutation failed:", err);
   }

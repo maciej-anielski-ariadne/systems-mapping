@@ -22,7 +22,7 @@
 // =============================================================================
 
 import { state } from "./03-state";
-import { saveBuilderToStorage } from "./04a-storage";
+import { scheduleBuilderSave } from "./04a-storage";
 import {
   addBuilderRow,
   applyBuilderBulkField,
@@ -136,7 +136,7 @@ export function handleBuilderClick(event: MouseEvent): void {
     const value   = input ? input.value : "";
     if (typeof applyBuilderBulkField === "function") {
       const changed = applyBuilderBulkField(section, field, value);
-      saveBuilderToStorage();
+      scheduleBuilderSave();
       if (changed) renderBuilder(); else refreshBuilderBulkBar();
     }
     return;
@@ -215,7 +215,7 @@ export function handleBuilderBulkField(event: Event): void {
   if (value === "") { if (typeof refreshBuilderBulkBar === "function") refreshBuilderBulkBar(); return; }
   if (typeof applyBuilderBulkField !== "function") return;
   const changed = applyBuilderBulkField(section, field, value);
-  saveBuilderToStorage();
+  scheduleBuilderSave();
   if (changed) renderBuilder();
   else if (typeof refreshBuilderBulkBar === "function") refreshBuilderBulkBar();
 }
@@ -447,7 +447,7 @@ export function handleBuilderDrop(event: DragEvent): void {
   handleBuilderDragEnd();
   clearBuilderSelection();   // reorder shifts indices
   renderBuilder();
-  saveBuilderToStorage();
+  scheduleBuilderSave();
 }
 
 export function handleBuilderDragEnd(): void {
@@ -515,7 +515,7 @@ export function handleBuilderDefault(event: Event): void {
   const val = parseFloat(raw);
   if (!isNaN(val)) {
     (state.builder.defaults as unknown as Record<string, number>)[key] = val;
-    saveBuilderToStorage();
+    scheduleBuilderSave();
   }
 }
 
@@ -570,7 +570,7 @@ export function handleBuilderInput(event: Event): void {
   // doesn't trigger a footer-DOM rebuild on every keystroke — that was the
   // single largest per-keystroke cost in the wizard.
   scheduleBuilderFooterRefresh();
-  saveBuilderToStorage();
+  scheduleBuilderSave();
 
   // If the value just started overflowing, drop the "expanded" textarea
   // below the cell so the user can keep reading what they're typing.

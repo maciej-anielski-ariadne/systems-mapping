@@ -89,7 +89,15 @@ export function serializeBuilderToCsv(builder: Partial<BuilderState> | null | un
 // with a box selected — only its highlighted boxes and links). Streams, stages,
 // categories and defaults are always written in full so the file stays a valid,
 // reloadable map. With no `subset`, the whole map is serialized.
-export function serializeLiveStateToCsv(subset?: { nodeIds: Set<string>; edgeIds: Set<string> }): string {
+// `options.compact` drops the from_label / to_label companion columns from the
+// edges section. Those columns exist purely for humans reading the file — the
+// loader keys links on `from`/`to` and ignores them — and on a link-heavy map
+// they are ~35% of the serialized bytes. The auto-save / undo-snapshot paths
+// pass compact:true; user-facing downloads keep the readable columns.
+export function serializeLiveStateToCsv(
+  subset?: { nodeIds: Set<string>; edgeIds: Set<string> } | null,
+  options?: { compact?: boolean },
+): string {
   const nodes = subset ? NODES.filter((n) => subset.nodeIds.has(n.id)) : NODES;
   const edges = subset ? EDGES.filter((e) => e.id != null && subset.edgeIds.has(e.id)) : EDGES;
   return _serializeShape({
@@ -112,21 +120,25 @@ export function serializeLiveStateToCsv(subset?: { nodeIds: Set<string>; edgeIds
     // Params are map-wide constants, not boxes, so they are written in full
     // even for a subset export — a formula in the exported slice may need them.
     params: PARAMS.map((p): Param => ({ id: p.id, value: p.value, description: p.description })),
-  });
+  }, options);
 }
 
 // Shared serialization core used by both the builder and the live-state paths.
-export function _serializeShape(data: Partial<BuilderState>): string {
+export function _serializeShape(data: Partial<BuilderState>, options?: { compact?: boolean }): string {
   const builder = data;
+  const compact = !!(options && options.compact);
   const lines: string[] = [];
 
   // id → title lookups, so sections that reference a node/stream/stage/category
   // by id can also carry the human-readable title beside it. These companion
   // columns are for the reader only — the loader keys links by the id columns
   // (`from`/`to`), so the titles can drift or be blank without breaking a map.
+  // Skipped entirely in compact mode (auto-save / undo snapshots).
   const nodeLabelById: Record<string, string> = {};
-  for (const node of builder.nodes || []) {
-    if (node.id) nodeLabelById[node.id] = node.label || node.id;
+  if (!compact) {
+    for (const node of builder.nodes || []) {
+      if (node.id) nodeLabelById[node.id] = node.label || node.id;
+    }
   }
 
   // ───── File-level header ─────────────────────────────────────────────────
@@ -250,18 +262,26 @@ export function _serializeShape(data: Partial<BuilderState>): string {
   lines.push("# elasticity   - OPTIONAL per-link override (strength). Blank = use the default for the effect.");
   lines.push("# style        - OPTIONAL line style: 'dashed', or blank for solid (default).");
   lines.push("# description  - explanation shown in the detail panel");
-  lines.push("from,from_label,to,to_label,effect,elasticity,style,description");
+  // Compact mode drops the two *_label companion columns — the header row is
+  // what the parser keys on, so both shapes round-trip identically.
+  lines.push(compact
+    ? "from,to,effect,elasticity,style,description"
+    : "from,from_label,to,to_label,effect,elasticity,style,description");
   for (const edge of builder.edges || []) {
-    lines.push(csvRow([
-      edge.from,
-      nodeLabelById[edge.from] || "",
-      edge.to,
-      nodeLabelById[edge.to] || "",
-      edge.effect,
-      edge.elasticity === undefined || edge.elasticity === null || edge.elasticity === "" ? "" : edge.elasticity,
-      edge.style === "dashed" ? "dashed" : "",
-      edge.description || "",
-    ]));
+    const elasticityCell = edge.elasticity === undefined || edge.elasticity === null || edge.elasticity === "" ? "" : edge.elasticity;
+    const styleCell = edge.style === "dashed" ? "dashed" : "";
+    lines.push(csvRow(compact
+      ? [edge.from, edge.to, edge.effect, elasticityCell, styleCell, edge.description || ""]
+      : [
+          edge.from,
+          nodeLabelById[edge.from] || "",
+          edge.to,
+          nodeLabelById[edge.to] || "",
+          edge.effect,
+          elasticityCell,
+          styleCell,
+          edge.description || "",
+        ]));
   }
   lines.push("");
 
