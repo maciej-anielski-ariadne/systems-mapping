@@ -43,7 +43,14 @@ export const svg = document.getElementById("viz-svg") as unknown as SVGSVGElemen
 // Click: node select / row-stream toggle / column-stage toggle / background
 // deselect. Canvas-edit affordances (edge select, handles, ghost cells) are
 // handled by their own delegated listeners in 16e — skip them here.
+// Any pointer press on the map ends a zoom gesture first: hit-testing, drag
+// maths and the drawn slice all assume the SVG is at its true size, which is
+// only so once the gesture's compositor transform has been folded back in.
+// Capture phase, so it runs before 16e's drag / marquee handlers.
+svg.addEventListener("mousedown", () => flushZoomGesture(), true);
+
 svg.addEventListener("click", event => {
+  flushZoomGesture();
   const t = event.target as Element;
   if (!t || typeof t.closest !== "function") return;
   if (t.closest(".edge-handle, .ghost-cell, .edge-hit, .edge-path")) return;
@@ -225,7 +232,15 @@ export const CULL_MARGIN = 600;            // layout px drawn beyond each viewpo
 // Effect: a fresh slice is drawn roughly every (CULL_MARGIN − RERENDER_BUFFER)
 // px of scroll; in between, the browser scrolls the existing SVG natively (no
 // rebuild) — which is what keeps panning a large map smooth.
-export const RERENDER_BUFFER = 250;
+//
+// Raised from 250: at 250 the rebuild started with barely a screenful of runway
+// and regularly RACED the pan, so it had to be finished this frame and landed
+// inside one. Starting it earlier gives schedulePanRender() room to wait for an
+// idle gap, and — because the SLICE size is unchanged — each rebuild costs the
+// same as before; there are simply more of them, each cheaper to hide. (Growing
+// the margin instead, so rebuilds are rarer, measures worse: the slice grows
+// with it and a 300-box rebuild can't be hidden in any gap.)
+export const RERENDER_BUFFER = 400;
 
 // The margin scales with the viewport: on a large display a fixed 600px band is
 // only a fraction of a screen, so a fast pan crosses it (and rebuilds a slice)
@@ -244,6 +259,50 @@ function rerenderBufferFor(margin: number): number {
 
 export interface CullRect { minX: number; minY: number; maxX: number; maxY: number; }
 
+// ───── Zoom-gesture state (owned here, driven by 17-events) ───────────────
+// While the user is actively zooming, the SVG keeps the size it was last drawn
+// at and 17-events carries the difference on a compositor-only CSS transform —
+// no width/height write, no re-raster of the vector tree, no slice rebuild. So
+// during a gesture `state.zoomLevel` (what the user has asked for) runs AHEAD of
+// the zoom the DOM actually reflects. Everything in this module that converts
+// between layout and device pixels — render()'s width/height + text scale, and
+// the viewport rect the culling reads — must use the COMMITTED zoom, or the
+// drawn slice and the transform would disagree.
+//
+// null = no gesture in flight; committed zoom is simply state.zoomLevel.
+let _committedZoom: number | null = null;
+let _zoomGestureCommitter: (() => void) | null = null;
+
+// The zoom the SVG's width / height / viewBox currently reflect.
+export function renderZoomLevel(): number {
+  if (_committedZoom !== null) return _committedZoom;
+  return (state.zoomLevel && !isNaN(state.zoomLevel)) ? state.zoomLevel : 1.0;
+}
+
+export function committedZoomLevel(): number | null { return _committedZoom; }
+
+// `commit` is the "fold the transform back into a real render" routine, handed
+// over by 17-events with each gesture rather than imported — importing it would
+// close a module cycle (11 → 16e → … → 17 → 11) and 17-events is not
+// necessarily evaluated by the time this module's body runs.
+export function beginZoomGesture(committedZoom: number, commit: () => void): void {
+  if (_committedZoom !== null) return;
+  _committedZoom = committedZoom;
+  _zoomGestureCommitter = commit;
+}
+
+export function endZoomGesture(): void {
+  _committedZoom = null;
+  _zoomGestureCommitter = null;
+}
+
+// Force any in-flight zoom gesture to commit NOW. Called before anything that
+// needs the DOM to be at its true size and position: a click / mousedown on the
+// map, or a caller that is about to write the zoom itself.
+export function flushZoomGesture(): void {
+  if (_committedZoom !== null && _zoomGestureCommitter) _zoomGestureCommitter();
+}
+
 // The visible viewport in layout coordinates, or null when virtualization is
 // inactive (small map, or a container with no laid-out size — e.g. jsdom).
 function computeViewportRect(): CullRect | null {
@@ -254,7 +313,9 @@ function computeViewportRect(): CullRect | null {
   if (!scroller) return null;
   const vw = scroller.clientWidth, vh = scroller.clientHeight;
   if (!vw || !vh) return null;   // not laid out (jsdom) → draw everything
-  const zoom = (state.zoomLevel && !isNaN(state.zoomLevel)) ? state.zoomLevel : 1.0;
+  // The COMMITTED zoom: scrollLeft/scrollTop are in the SVG's current device
+  // pixels, which mid-gesture still reflect the last committed zoom.
+  const zoom = renderZoomLevel();
   return {
     minX: scroller.scrollLeft / zoom,
     minY: scroller.scrollTop  / zoom,
@@ -291,10 +352,22 @@ let _renderedCull: CullRect | null = null;
 // slice we last drew. Otherwise it's a no-op: the browser scrolls the existing
 // (viewport + margin) SVG content on its own, with no rebuild and no jank. On
 // small maps computeViewportRect() is null, so scrolling stays entirely free.
-export function maybeRenderForViewport(): void {
+//
+// `fromPan` marks the scroll-driven caller. A pan rebuild is never urgent —
+// there is a whole RERENDER_BUFFER of already-drawn map between the viewport and
+// the blank area — so it is scheduled into idle time instead of onto the next
+// animation frame, and lands between frames rather than inside one. A
+// structural trigger (zoom commit, first paint) still takes the frame.
+export function maybeRenderForViewport(fromPan = false): void {
+  // A zoom gesture deliberately leaves the drawn slice alone until it commits:
+  // the SVG is still at the committed size and the difference rides on a
+  // compositor transform, so a rebuild now would draw the wrong slice AND cost
+  // exactly the raster we are avoiding.
+  if (_committedZoom !== null) return;
   const vp = computeViewportRect();
   if (!vp) return;                       // virtualization inactive → native scroll only
-  if (!_renderedCull) { scheduleRender(); return; }
+  const schedule = fromPan ? schedulePanRender : scheduleRender;
+  if (!_renderedCull) { schedule(); return; }
   const c = _renderedCull;
   const bufferX = rerenderBufferFor(cullMarginFor(vp.maxX - vp.minX));
   const bufferY = rerenderBufferFor(cullMarginFor(vp.maxY - vp.minY));
@@ -302,7 +375,7 @@ export function maybeRenderForViewport(): void {
       vp.minY < c.minY + bufferY ||
       vp.maxX > c.maxX - bufferX ||
       vp.maxY > c.maxY - bufferY) {
-    scheduleRender();
+    schedule();
   }
 }
 
@@ -410,16 +483,58 @@ export function edgeCurveIntersectsRect(
 // load) supersedes a pending one so the DOM is always current immediately when a
 // caller needs it.
 let _renderQueued = false;
-let _renderRAF = 0;
+let _cancelQueuedRender: (() => void) | null = null;
 const _raf: (cb: FrameRequestCallback) => number =
   typeof requestAnimationFrame === "function" ? requestAnimationFrame : (cb => setTimeout(() => cb(0), 16) as unknown as number);
 const _cancelRaf: (h: number) => void =
   typeof cancelAnimationFrame === "function" ? cancelAnimationFrame : (h => clearTimeout(h));
 
-export function scheduleRender(): void {
+// Queue exactly one render, deferred by `schedule` (which returns its own
+// canceller). Any number of requests within the same window collapse into one.
+function queueRender(schedule: (cb: () => void) => () => void): void {
   if (_renderQueued) return;
   _renderQueued = true;
-  _renderRAF = _raf(() => { _renderQueued = false; _renderRAF = 0; render(); });
+  _cancelQueuedRender = schedule(() => {
+    _renderQueued = false;
+    _cancelQueuedRender = null;
+    render();
+  });
+}
+
+export function scheduleRender(): void {
+  queueRender(cb => { const h = _raf(cb); return () => _cancelRaf(h); });
+}
+
+// How long a pan-triggered slice rebuild may wait for an idle gap before the
+// browser runs it anyway. Comfortably shorter than the time it takes a pan to
+// eat through RERENDER_BUFFER worth of already-drawn map, so the deferral can
+// never expose blank margin.
+export const PAN_RENDER_IDLE_TIMEOUT_MS = 100;
+
+// scheduleRender()'s patient twin, for slice rebuilds triggered by panning.
+// requestIdleCallback runs the rebuild in whatever gap is left after the
+// browser has painted, so the (still substantial) string build + innerHTML
+// parse lands BETWEEN frames instead of inside one — the pan keeps its frame
+// budget. The `timeout` bounds the wait, and environments without
+// requestIdleCallback (jsdom, older Safari) fall back to the animation frame,
+// i.e. exactly today's behaviour.
+export function schedulePanRender(): void {
+  queueRender(cb => {
+    if (typeof requestIdleCallback === "function") {
+      const h = requestIdleCallback(cb, { timeout: PAN_RENDER_IDLE_TIMEOUT_MS });
+      return () => { if (typeof cancelIdleCallback === "function") cancelIdleCallback(h); };
+    }
+    const h = _raf(cb);
+    return () => _cancelRaf(h);
+  });
+}
+
+// Run a just-scheduled render NOW, in the caller's own task, instead of letting
+// it wait for its frame. Used by the zoom commit: it has already written the
+// SVG's new size, so letting the render land a frame later would paint the map
+// twice — once at the new size with the old slice, once with the new slice.
+export function flushScheduledRender(): void {
+  if (_renderQueued) render();
 }
 
 // Like scheduleRender(), but the layout is recomputed inside the animation
@@ -620,10 +735,9 @@ interface StyleContext {
   dragNodeId: string | null;
   showOutcomeBorders: boolean;
   singleSelection: boolean;      // exactly one node selected → highlight / dim edges
-  preDesaturate: boolean;        // H5: emit pre-desaturated fills (large maps only)
 }
 
-function styleContext(preDesaturate: boolean): StyleContext {
+function styleContext(): StyleContext {
   const ce = state.canvasEdit;
   const drag = (ce && ce.draggingNode) || null;
   return {
@@ -636,7 +750,6 @@ function styleContext(preDesaturate: boolean): StyleContext {
     dragNodeId: drag ? drag.nodeId : null,
     showOutcomeBorders: !state.selectedNodeId && !state.selectedNodeIds.size,
     singleSelection: !!state.selectedNodeId && state.selectedNodeIds.size <= 1,
-    preDesaturate,
   };
 }
 
@@ -785,20 +898,33 @@ function edgeStyleFor(re: RenderEdge, ctx: StyleContext): EdgeStyle {
   };
 }
 
-// ───── H5: pre-desaturated fills on very large maps ───────────────────────
+// ───── Pre-desaturated fills: no per-element filter at rest, ever ─────────
 // `.node-rect` / `.node-stripe` each carry `filter: saturate(0.32)`
-// (05-visualization.css). That is one rasterization pass PER ELEMENT — fine for
-// a few hundred boxes, thousands of passes on a big map. Above the threshold we
-// instead bake the same desaturation into the emitted fill colours and tag the
-// group with `.pre-desat`, which switches the CSS filter off (the class rules
-// live next to the originals in 05-visualization.css). Below the threshold not
-// a single byte changes.
+// (05-visualization.css). That is one rasterization pass PER ELEMENT, and — the
+// expensive part — Chromium must REDO every one of those passes whenever a
+// class changes anywhere in the tree that could affect them. Selecting a box
+// toggles `dimmed` / `ancestor` / `descendant` on every drawn box, so a single
+// click re-rasterized every filtered rect and stripe on screen: the "click lags
+// and flashes the whole map" report.
+//
+// So we never emit a resting filter. The same sRGB saturate(0.32) transform is
+// baked into the emitted fill colours and the group is tagged `.pre-desat`,
+// which switches the CSS filter off (the class rules live next to the originals
+// in 05-visualization.css). The matrix is exact (pinned by
+// tests/large-map-fills.test.ts), so the resting pixels are identical — only
+// WHERE the desaturation happens changes.
+//
+// This used to be gated on a drawn-box count (PRE_DESATURATE_MIN_BOXES = 800),
+// which virtualization made unreachable: culling keeps the drawn slice around a
+// hundred boxes however big the map is, so the optimization never engaged on the
+// maps it was written for. The gate is gone — the baked path is the only path.
 //
 // Only plain resting boxes qualify: a node whose CSS filter is something else
 // (selected / trace / hovered / search-match / undo-flash) and any node with a
 // GRADIENT fill keep their literal colours and the CSS filter, so their look is
-// untouched. A theme switch re-renders the map, which re-derives these colours.
-export const PRE_DESATURATE_MIN_BOXES = 800;
+// untouched. Those are a handful of elements at a time — a filter on one hovered
+// or selected box costs nothing. A theme switch re-renders the map, which
+// re-derives these colours.
 const SATURATE_AMOUNT = 0.32;
 const _desaturatedColorCache = new Map<string, string>();
 
@@ -831,7 +957,7 @@ export function desaturateColor(color: string, amount = SATURATE_AMOUNT): string
 
 export function render(): void {
   // A synchronous render makes any queued full OR overlay render redundant.
-  if (_renderRAF)  { _cancelRaf(_renderRAF);  _renderRAF = 0; }
+  if (_cancelQueuedRender) { _cancelQueuedRender(); _cancelQueuedRender = null; }
   if (_overlayRAF) { _cancelRaf(_overlayRAF); _overlayRAF = 0; }
   _renderQueued = false;
   _overlayQueued = false;
@@ -861,7 +987,9 @@ export function render(): void {
   // Size the SVG canvas to fit the layout, scaled by the current zoom level
   // (state.zoomLevel defaults to 1.0). The viewBox stays in unscaled layout
   // coordinates so the SVG natively rescales every element by the same factor.
-  const zoom = (state.zoomLevel && !isNaN(state.zoomLevel)) ? state.zoomLevel : 1.0;
+  // renderZoomLevel() is state.zoomLevel except mid-zoom-gesture, when the SVG
+  // must stay at the size the compositor transform was computed against.
+  const zoom = renderZoomLevel();
   svg.setAttribute("width",  String(layout.totalWidth  * zoom));
   svg.setAttribute("height", String(layout.totalHeight * zoom));
   svg.setAttribute("viewBox", "0 0 " + layout.totalWidth + " " + layout.totalHeight);
@@ -957,7 +1085,7 @@ export function render(): void {
 
   // Everything selection-dependent, resolved once and shared by the edge loop,
   // the node loop, and (later, on a selection change) refreshSelectionStyling.
-  const ctx = styleContext(drawList.length >= PRE_DESATURATE_MIN_BOXES);
+  const ctx = styleContext();
 
   // ───── Row label strip on the left (per stream) ───────────────────────
   // Hidden streams keep their label so the user can click to expand again;
@@ -1094,9 +1222,9 @@ export function render(): void {
     // selected, so multi-select renders un-selected nodes plainly — no noise).
     let nodeClasses = nodeGroupClasses(node.id, ctx);
 
-    // H5: bake the resting desaturation into the colours instead of paying for a
+    // Bake the resting desaturation into the colours instead of paying for a
     // per-element CSS filter pass. Only plain solid-filled resting boxes qualify.
-    const preDesat = ctx.preDesaturate && !fillInfo.defs && !hasNonRestingFilter(node.id, ctx);
+    const preDesat = !fillInfo.defs && !hasNonRestingFilter(node.id, ctx);
     if (preDesat) nodeClasses += " pre-desat";
     const rectFill   = preDesat ? desaturateColor(fillInfo.fill)  : fillInfo.fill;
     const stripeFill = preDesat ? desaturateColor(stream.color) : stream.color;
@@ -1210,7 +1338,6 @@ export function render(): void {
   _drawnNodesLength = NODES.length;
   _drawnEdgesLength = EDGES.length;
   _drawnGeometryRevision = layoutGeometryRevision();
-  _drawnPreDesaturate = ctx.preDesaturate;
 }
 
 // ───── Incremental selection repaint ──────────────────────────────────────
@@ -1231,7 +1358,6 @@ let _drawnEdges: RenderEdge[] = [];
 let _drawnNodesIdentity: typeof NODES | null = null;
 let _drawnEdgesIdentity: typeof EDGES | null = null;
 let _drawnGeometryRevision = -1;
-let _drawnPreDesaturate = false;
 // Lengths as well as identities: a mutation that pushes into the LIVE arrays
 // (commitNewEdge, a splice-based reorder) leaves the identity alone.
 let _drawnNodesLength = -1;
@@ -1254,7 +1380,7 @@ export function refreshSelectionStyling(): boolean {
   const paths   = staticLayer.querySelectorAll(".edge-path");
   if (casings.length !== _drawnEdges.length || paths.length !== _drawnEdges.length) return false;
 
-  const ctx = styleContext(_drawnPreDesaturate);
+  const ctx = styleContext();
 
   for (let i = 0; i < _drawnEdges.length; i++) {
     const style = edgeStyleFor(_drawnEdges[i], ctx);
@@ -1278,7 +1404,7 @@ export function refreshSelectionStyling(): boolean {
     const node = nodeById[id];
     if (!node) return false;                 // slice describes nodes we no longer have
     let classes = nodeGroupClasses(id, ctx);
-    // H5: a box that gains a selection / trace / halo state needs its literal
+    // A box that gains a selection / trace / halo state needs its literal
     // colours back (its CSS filter is no longer the resting saturate()), and one
     // that loses them goes back to the baked-in desaturated pair.
     const rect = group.querySelector(".node-rect");
@@ -1286,7 +1412,7 @@ export function refreshSelectionStyling(): boolean {
     // A gradient (multi-primary) box paints through a per-render <defs> id and
     // is never pre-desaturated, so its fills are left exactly as rendered.
     const gradientFilled = !!rect && (rect.getAttribute("fill") || "").startsWith("url(");
-    if (ctx.preDesaturate && rect && !gradientFilled) {
+    if (rect && !gradientFilled) {
       const preDesat = !hasNonRestingFilter(id, ctx);
       if (preDesat) classes += " pre-desat";
       const solidFill = nodePrimaryFill(node, "").fill;

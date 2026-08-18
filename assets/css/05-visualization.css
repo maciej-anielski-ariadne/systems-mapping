@@ -94,19 +94,27 @@ body.panning * {
   filter: saturate(0.32) brightness(1.12);
 }
 
-/* === Very large maps: pre-desaturated fills instead of a per-box filter ===
- * `filter: saturate(0.32)` above is one rasterization pass PER BOX — thousands
- * of them once a map gets big. Above a drawn-box threshold the renderer
- * (11-rendering.ts, PRE_DESATURATE_MIN_BOXES) instead emits fills that ALREADY
- * carry the same sRGB saturate(0.32) transform and tags the group `.pre-desat`,
- * so these rules switch the filter off and the box paints in one pass. The
- * pixels are identical; only where the desaturation happens changes.
+/* === Pre-desaturated fills instead of a per-box filter (ALL map sizes) ===
+ * `filter: saturate(0.32)` above is one rasterization pass PER BOX, and every
+ * one of them is redone whenever a class change anywhere could affect it — so
+ * clicking a box (which toggles .dimmed / .ancestor / .descendant across the
+ * whole drawn slice) re-rasterized every filtered rect and stripe on screen.
+ *
+ * The renderer (11-rendering.ts) therefore emits fills that ALREADY carry the
+ * same sRGB saturate(0.32) transform and tags the group `.pre-desat`, so these
+ * rules switch the filter off and the box paints in one pass. The matrix is
+ * exact (pinned by tests/large-map-fills.test.ts): the pixels are identical,
+ * only where the desaturation happens changes.
  *
  * Only plain resting boxes are tagged. Anything whose filter is something other
  * than the resting saturate() — selected / ancestor / descendant / hovered /
  * search-match / undo-flash — and any box with a gradient fill keeps its literal
- * colours and every rule above, untouched. Below the threshold no box is ever
- * tagged, so small and mid-size maps render exactly as they always have. */
+ * colours and every rule above, untouched. Those are a handful of elements at a
+ * time, so their filters cost nothing.
+ *
+ * NOTE the rules above are still live and still load-bearing: they style
+ * gradient-filled boxes and every non-resting state, and `.node-rect`'s
+ * `stroke: transparent` / transition apply to every box regardless. */
 .node-group.pre-desat .node-rect,
 .node-group.pre-desat .node-stripe {
   filter: none;
@@ -218,9 +226,19 @@ body.panning * {
 }
 
 /* === Edges (the arrows connecting nodes) === */
+/* NOTE opacity is deliberately NOT transitioned. Selecting a box dims every
+ * un-highlighted link, and a transition turns that one state change into ~8
+ * frames that each re-rasterize every dimmed stroke on screen — around a
+ * thousand SVG paths on a large map. That was the whole of the "click lags and
+ * flashes the map" cost: ~100ms of jank per click, against ~3ms of script.
+ * Dimming now lands in a single frame. The resting pixels are unchanged, and
+ * `.edge-casing` under each stroke never had a transition either — so the two
+ * halves of a link now change together instead of the casing snapping while the
+ * colour faded. stroke-width still animates: only the handful of highlighted
+ * links change width, so that costs nothing. */
 .edge-path {
   fill: none;
-  transition: opacity var(--dur-fast), stroke-width var(--dur-fast);
+  transition: stroke-width var(--dur-fast);
 }
 
 .edge-path.dimmed {

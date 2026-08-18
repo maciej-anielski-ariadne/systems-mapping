@@ -11,7 +11,16 @@ import { getMapTextScale } from "./04-utils";
 import { clearCsvFromStorage, saveUiStateToStorage, scheduleUiStateSave } from "./04a-storage";
 import { refreshNeighborHighlight } from "./09-graph-selection";
 import { computeLayout } from "./08-layout";
-import { maybeRenderForViewport, renderSelectionChange, scheduleLayoutRender, setMapTextScaleVar } from "./11-rendering";
+import {
+  beginZoomGesture,
+  committedZoomLevel,
+  endZoomGesture,
+  flushScheduledRender,
+  maybeRenderForViewport,
+  renderSelectionChange,
+  scheduleLayoutRender,
+  setMapTextScaleVar,
+} from "./11-rendering";
 import { toggleSimulationMode } from "./14-simulation-panel";
 import { downloadCsvBlob, readCsvFile } from "./16-file-io";
 import { closeBuilder, openBuilder } from "./16a-builder-state";
@@ -290,24 +299,32 @@ export function clampZoom(level: number): number {
 // actually changes (zooming within the ≥ TEXT_SCALE_RATIO band leaves it at 1).
 let _lastTextScale = getMapTextScale(state.zoomLevel);
 
-export function applyZoom(): void {
-  const svgEl    = _vizSvgEl   || document.getElementById("viz-svg");
-  const readout  = _zoomReadEl || document.getElementById("viz-zoom-readout");
-  const textScale = getMapTextScale(state.zoomLevel);
+// Write the CURRENT state.zoomLevel into the DOM for real: the SVG's scaled
+// width/height, the text-scale custom property, and the readout. This is the
+// expensive half of a zoom — the size change forces Chromium to re-rasterize the
+// whole vector tree — so during a gesture it runs ONCE, at commit.
+function writeZoomToSvg(): void {
+  const svgEl   = _vizSvgEl   || document.getElementById("viz-svg");
+  const readout = _zoomReadEl || document.getElementById("viz-zoom-readout");
   if (svgEl && layout && layout.totalWidth) {
     svgEl.setAttribute("width",  String(layout.totalWidth  * state.zoomLevel));
     svgEl.setAttribute("height", String(layout.totalHeight * state.zoomLevel));
     // Guarded write (skipped while the value is unchanged) — an unconditional
     // custom-property write here invalidated every text element per wheel event.
-    setMapTextScaleVar(svgEl as SVGSVGElement, textScale);
+    setMapTextScaleVar(svgEl as SVGSVGElement, getMapTextScale(state.zoomLevel));
   }
-  if (readout) readout.textContent = Math.round(state.zoomLevel * 100) + "%";
+  updateZoomReadout(readout);
+}
 
-  // When the zoom text-scale changes, labels are wrapped/sized for the old scale,
-  // so re-run layout (which re-wraps at the new scale) and redraw — otherwise the
-  // enlarged font spills out of the boxes. Skipped while the scale stays put
-  // (the common ≥ TEXT_SCALE_RATIO range) so ordinary zooming stays cheap.
-  // render() re-applies the zoom-scaled SVG width/height + --map-text-scale itself.
+function updateZoomReadout(readout?: HTMLElement | null): void {
+  const el = readout || _zoomReadEl || document.getElementById("viz-zoom-readout");
+  if (el) el.textContent = Math.round(state.zoomLevel * 100) + "%";
+}
+
+// The two follow-ups a settled zoom owes: re-wrap labels if the text-scale band
+// changed, otherwise refresh the drawn slice if the visible layout area moved.
+function afterZoomSettled(): void {
+  const textScale = getMapTextScale(state.zoomLevel);
   if (textScale !== _lastTextScale) {
     _lastTextScale = textScale;
     // Both the re-layout (every label re-wrapped at the new scale) and the
@@ -326,19 +343,195 @@ export function applyZoom(): void {
   }
 }
 
+export function applyZoom(): void {
+  // A caller outside the gesture machinery (undo restore, UI-state restore) is
+  // setting the zoom itself — fold any in-flight gesture back in first so it
+  // can't overwrite the size this call is about to write.
+  if (committedZoomLevel() !== null) { commitZoomGesture(); return; }
+  writeZoomToSvg();
+  afterZoomSettled();
+}
+
 // Zoom changes fire in rapid bursts (wheel / pinch), so coalesce their persist
 // through the shared debounced saver rather than writing on every step.
 export function scheduleZoomSave(): void {
   scheduleUiStateSave();
 }
 
+// ───── Composite-only zoom gesture ───────────────────────────────────────
+// Every step of a zoom used to write the SVG's width/height. That is a layout +
+// full re-rasterization of the vector tree, and on a virtualized map it also
+// moved the viewport in LAYOUT coordinates — so zooming OUT grew the visible
+// layout area past the drawn slice and triggered a full rebuild mid-gesture
+// (which is why zooming out stuttered while zooming in, staying inside the
+// slice, was smooth). Crossing a text-scale band added a relayout on top.
+//
+// While the user is still zooming we therefore leave the DOM completely alone
+// and carry the whole change on a CSS transform on the SVG: the compositor
+// rescales the bitmap it already has, at no raster cost. `state.zoomLevel` is
+// the live (pending) zoom and drives the readout; the SVG stays at the
+// COMMITTED zoom, which 11-rendering reads via renderZoomLevel().
+//
+// ~ZOOM_GESTURE_IDLE_MS after the last zoom input — or immediately, if the user
+// clicks — the gesture COMMITS: transform off, real width/height on, scroll
+// restored so the anchor point hasn't moved, band relayout / slice render if
+// needed. At rest the DOM is byte-for-byte what it would have been without any
+// of this. During the gesture the map is a scaled bitmap and may look slightly
+// soft, exactly as a map app does mid-pinch.
+
+// How long after the last zoom input the gesture settles and commits. Long
+// enough that a burst of +/− button clicks (which arrive ~200ms apart) is one
+// gesture with one commit rather than one commit per click; short enough that a
+// single deliberate step snaps back to crisp vectors almost immediately.
+export const ZOOM_GESTURE_IDLE_MS = 220;
+
+// The transform currently on the SVG: screenX = contentX * scale + tx − scrollLeft,
+// where contentX is a device pixel of the SVG at the COMMITTED zoom.
+let _gestureScale = 1;
+let _gestureTx = 0;
+let _gestureTy = 0;
+let _gestureEndTimer: ReturnType<typeof setTimeout> | 0 = 0;
+
+// The gesture needs a real compositor and a laid-out scroller. jsdom (and any
+// environment without them) has neither, so it takes the original synchronous
+// path and behaves exactly as before — same guard style as the virtualization.
+function zoomGestureCapable(): boolean {
+  if (typeof requestAnimationFrame !== "function") return false;
+  const svgEl = _vizSvgEl || document.getElementById("viz-svg");
+  const sc = document.getElementById("viz-scroll");
+  return !!(svgEl && sc && sc.clientWidth > 0 && sc.clientHeight > 0 && layout && layout.totalWidth);
+}
+
+function writeGestureTransform(svgEl: HTMLElement | SVGElement): void {
+  (svgEl as HTMLElement).style.transform =
+    "translate(" + _gestureTx + "px," + _gestureTy + "px) scale(" + _gestureScale + ")";
+}
+
+// Fold the gesture back into the DOM: real size, no transform, anchored scroll.
+//
+// `flushRender` runs any render the commit schedules synchronously, so the
+// resize and the redraw share one paint. A commit triggered by a POINTER PRESS
+// must NOT do that: a synchronous render replaces every element in the SVG, and
+// the click still travelling up from the element under the cursor would then be
+// bubbling through a detached tree and select nothing. Those commits leave the
+// render on its animation frame, which is a frame later but keeps the DOM the
+// press is happening in alive.
+export function commitZoomGesture(flushRender = true): void {
+  if (committedZoomLevel() === null) return;
+  if (_gestureEndTimer) { clearTimeout(_gestureEndTimer); _gestureEndTimer = 0; }
+
+  const svgEl = (_vizSvgEl || document.getElementById("viz-svg")) as HTMLElement | null;
+  const sc = document.getElementById("viz-scroll");
+  const tx = _gestureTx, ty = _gestureTy;
+  // Read the scroll offsets the transform was computed against BEFORE resizing
+  // the SVG (a resize can clamp them).
+  const scrollLeft = sc ? sc.scrollLeft : 0;
+  const scrollTop  = sc ? sc.scrollTop  : 0;
+
+  _gestureScale = 1; _gestureTx = 0; _gestureTy = 0;
+  endZoomGesture();          // committed zoom is state.zoomLevel again
+  writeZoomToSvg();          // the one real resize of the whole gesture
+  if (svgEl) {
+    svgEl.style.transform = "";
+    svgEl.style.transformOrigin = "";
+  }
+  // A content pixel sat at (x * scale + tx − scrollLeft) on screen; at the new
+  // size the same layout point sits at (x * scale − scrollLeftNew). Equate.
+  if (sc) {
+    sc.scrollLeft = scrollLeft - tx;
+    sc.scrollTop  = scrollTop  - ty;
+  }
+  afterZoomSettled();
+  // The size write above and whatever afterZoomSettled queued (a band relayout,
+  // or a fresh slice for the area the new zoom reveals) both repaint the map.
+  // Run the render here so they share ONE paint instead of hitching twice.
+  if (flushRender) flushScheduledRender();
+  scheduleZoomSave();
+}
+
+// The single entry point for "the user wants this zoom level", anchored to a
+// client-space point (the cursor for wheel/pinch; omitted → the viewport centre,
+// which is what the +/− buttons, the keyboard shortcuts and the readout reset
+// want). `level` is applied through clampZoom.
+function zoomToLevel(level: number, anchorClientX?: number, anchorClientY?: number): void {
+  const target = clampZoom(level);
+  if (target === state.zoomLevel) return;
+
+  if (!zoomGestureCapable()) {
+    // Original synchronous path, unchanged: resize now, re-anchor the scroll.
+    const sc = document.getElementById("viz-scroll");
+    if (sc && typeof anchorClientX === "number" && typeof anchorClientY === "number") {
+      const rect = sc.getBoundingClientRect();
+      const cursorX = anchorClientX - rect.left;
+      const cursorY = anchorClientY - rect.top;
+      const oldZoom = state.zoomLevel;
+      const layoutX = (cursorX + sc.scrollLeft) / oldZoom;
+      const layoutY = (cursorY + sc.scrollTop ) / oldZoom;
+      state.zoomLevel = target;
+      applyZoom();
+      sc.scrollLeft = layoutX * target - cursorX;
+      sc.scrollTop  = layoutY * target - cursorY;
+    } else {
+      state.zoomLevel = target;
+      applyZoom();
+    }
+    scheduleZoomSave();
+    return;
+  }
+
+  const sc = document.getElementById("viz-scroll")!;
+  const svgEl = (_vizSvgEl || document.getElementById("viz-svg")) as HTMLElement;
+  const rect = sc.getBoundingClientRect();
+  const anchorX = typeof anchorClientX === "number" ? anchorClientX - rect.left : sc.clientWidth  / 2;
+  const anchorY = typeof anchorClientY === "number" ? anchorClientY - rect.top  : sc.clientHeight / 2;
+
+  if (committedZoomLevel() === null) {
+    // 11-rendering force-commits through this handle on any press on the map.
+    beginZoomGesture(state.zoomLevel, () => commitZoomGesture(false));
+    _gestureScale = 1; _gestureTx = 0; _gestureTy = 0;
+    svgEl.style.transformOrigin = "0 0";
+    // NOTE deliberately no `will-change: transform`. It sounds right — promote
+    // the SVG so the compositor rescales a texture — but measured on an
+    // 800-box map it makes things WORSE: promoting a map-sized layer is one
+    // large raster, demoting it at commit is another, and a burst of +/- clicks
+    // pays that pair on every gesture. Without the hint each step is a plain
+    // transform write and the whole burst costs one long task.
+  }
+
+  state.zoomLevel = target;
+  updateZoomReadout();
+
+  const scale = target / committedZoomLevel()!;
+  const scrollLeft = sc.scrollLeft, scrollTop = sc.scrollTop;
+  // The content point currently under the anchor, in committed-zoom device px.
+  const contentX = (anchorX + scrollLeft - _gestureTx) / _gestureScale;
+  const contentY = (anchorY + scrollTop  - _gestureTy) / _gestureScale;
+  _gestureScale = scale;
+  _gestureTx = anchorX + scrollLeft - contentX * scale;
+  _gestureTy = anchorY + scrollTop  - contentY * scale;
+  writeGestureTransform(svgEl);
+
+  // A transform shrinks (or grows) the scroller's scrollable overflow, so the
+  // browser may have clamped scrollLeft/scrollTop under us. Read them back — the
+  // read forces the layout that applies the clamp — and absorb any change into
+  // the translation, which is unbounded, so the anchor still doesn't move.
+  const clampedLeft = sc.scrollLeft, clampedTop = sc.scrollTop;
+  if (clampedLeft !== scrollLeft || clampedTop !== scrollTop) {
+    _gestureTx = anchorX + clampedLeft - contentX * scale;
+    _gestureTy = anchorY + clampedTop  - contentY * scale;
+    writeGestureTransform(svgEl);
+  }
+
+  if (_gestureEndTimer) clearTimeout(_gestureEndTimer);
+  _gestureEndTimer = setTimeout(() => { _gestureEndTimer = 0; commitZoomGesture(); }, ZOOM_GESTURE_IDLE_MS);
+  scheduleZoomSave();
+}
+
 export function setZoom(level: number): void {
   // A discrete zoom supersedes any wheel/pinch factor still waiting for its
   // frame — otherwise that factor would land on top of the level just set.
   cancelPendingZoom();
-  state.zoomLevel = clampZoom(level);
-  applyZoom();
-  scheduleZoomSave();
+  zoomToLevel(level);
 }
 
 // Multiply the current zoom by `factor`, optionally anchored to a viewport
@@ -382,30 +575,7 @@ export function zoomBy(factor: number, anchorClientX?: number, anchorClientY?: n
 }
 
 export function applyZoomBy(factor: number, anchorClientX?: number, anchorClientY?: number): void {
-  const oldZoom = state.zoomLevel;
-  const newZoom = clampZoom(oldZoom * factor);
-  if (newZoom === oldZoom) return;
-
-  const vizScrollEl = document.getElementById("viz-scroll");
-  if (vizScrollEl && typeof anchorClientX === "number" && typeof anchorClientY === "number") {
-    const rect = vizScrollEl.getBoundingClientRect();
-    const cursorX = anchorClientX - rect.left;
-    const cursorY = anchorClientY - rect.top;
-    // Layout-coordinate point under the cursor BEFORE zoom changes.
-    const layoutX = (cursorX + vizScrollEl.scrollLeft) / oldZoom;
-    const layoutY = (cursorY + vizScrollEl.scrollTop ) / oldZoom;
-
-    state.zoomLevel = newZoom;
-    applyZoom();
-
-    // Restore the same layout point under the cursor at the new zoom.
-    vizScrollEl.scrollLeft = layoutX * newZoom - cursorX;
-    vizScrollEl.scrollTop  = layoutY * newZoom - cursorY;
-  } else {
-    state.zoomLevel = newZoom;
-    applyZoom();
-  }
-  scheduleZoomSave();
+  zoomToLevel(state.zoomLevel * factor, anchorClientX, anchorClientY);
 }
 
 export const zoomInButton  = document.getElementById("viz-zoom-in");
@@ -508,8 +678,11 @@ if (vizScroll) {
   // the existing (viewport + margin) SVG natively, which is what keeps panning
   // snappy. On small maps maybeRenderForViewport is a no-op (scrolling stays
   // entirely free).
+  // `true` = pan-triggered: the rebuild is scheduled into idle time rather than
+  // onto the next animation frame (see schedulePanRender in 11-rendering), so it
+  // lands between frames instead of stealing one from the pan.
   vizScroll.addEventListener("scroll", () => {
-    maybeRenderForViewport();
+    maybeRenderForViewport(true);
   }, { passive: true });
 }
 

@@ -6,6 +6,7 @@ import {
   VIRTUALIZE_MIN_NODES,
   VIRTUALIZE_MIN_EDGES,
   CULL_MARGIN,
+  RERENDER_BUFFER,
   computeCullRect,
 } from "../assets/js/11-rendering";
 import { EDGES, NODES, layout } from "../assets/js/03-state";
@@ -218,7 +219,9 @@ describe("viewport virtualization", () => {
 
     // Scroll a fraction of the margin — still well inside the drawn slice, so the
     // browser can scroll natively and we must NOT rebuild (the element stays put).
-    const smallStep = Math.floor((CULL_MARGIN - 250) / 2); // comfortably below the trigger
+    // Half the gap between the drawn edge and the rebuild trigger line — i.e.
+    // comfortably inside the drawn slice, wherever the two constants sit.
+    const smallStep = Math.floor((CULL_MARGIN - RERENDER_BUFFER) / 2);
     mockViewport(400, 400, smallStep, smallStep);
     maybeRenderForViewport();
     await flushFrame();
