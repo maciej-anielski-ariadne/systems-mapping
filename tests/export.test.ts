@@ -6,7 +6,12 @@ import {
   buildPublishHtml,
   exportPalette,
   exportMaxHighlightDepth,
+  exportRasterScale,
+  exportViewportFrame,
   EXPORT_CLOSE_SCRIPT,
+  EXPORT_MAX_CANVAS_AREA,
+  EXPORT_MAX_CANVAS_DIM,
+  EXPORT_PNG_SCALE,
 } from "../assets/js/19-export";
 import { state, setLayout } from "../assets/js/03-state";
 import { computeLayout } from "../assets/js/08-layout";
@@ -26,6 +31,9 @@ describe("interactive published HTML (A → B → C)", () => {
   // nodes + both edges (the jsdom viewport is 0×0, so the no-selection path
   // would include nothing — selection is viewport-independent).
   beforeEach(() => {
+    // Tests below mount the published viewer over document.body, so put the
+    // app's real markup back first — loadDataFromCsv renders into it.
+    mountAppDom();
     loadDataFromCsv(LINEAR_CSV);
     state.highlightDepth = 2;
     state.selectedNodeId = "a";
@@ -119,6 +127,57 @@ describe("interactive published HTML (A → B → C)", () => {
     expect(node("a").classList.contains("sel")).toBe(false);
     expect(node("c").classList.contains("dim")).toBe(false);
   });
+
+  it("moves the trace straight from one box to another (incremental update)", () => {
+    // The viewer only mutates the classes that actually change between two
+    // highlight states, so switching selection WITHOUT deselecting first — the
+    // path that never resets everything — has to land on exactly the same
+    // classes a fresh trace would.
+    const model = buildExportModel({ allEdges: true })!;
+    const pal = exportPalette();
+    const { svg, width, height, nodeInfo } = renderExportSvg(model, { pal });
+    const html = buildPublishHtml(svg, width, height, nodeInfo, pal, model.edges);
+    document.body.innerHTML = html.slice(html.indexOf("<body>") + "<body>".length, html.indexOf("<script>"));
+    new Function(viewerScript(html))();
+
+    const node = (id: string) => document.querySelector('.xnode[data-node-id="' + id + '"]')!;
+    const edge = (id: string) => document.querySelector('.xedge[data-edge-id="' + id + '"]')!;
+    const classesOf = (id: string) => [...node(id).classList].filter((c) => c !== "xnode").sort();
+
+    node("a").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    // Straight to C — no intermediate deselect.
+    node("c").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(classesOf("c")).toEqual(["sel"]);       // A's old "sel" is gone
+    expect(classesOf("b")).toEqual(["anc"]);       // was "desc" of A
+    expect(classesOf("a")).toEqual(["dim"]);
+    expect(edge("edge_1").classList.contains("ehi")).toBe(true);
+    expect(edge("edge_0").classList.contains("edim")).toBe(true);
+
+    // Depth 2 pulls A into the ancestor chain, then back down again.
+    (document.getElementById("mv-depth-up") as HTMLButtonElement).click();
+    expect(classesOf("a")).toEqual(["anc"]);
+    expect(edge("edge_0").classList.contains("ehi")).toBe(true);
+    (document.getElementById("mv-depth-down") as HTMLButtonElement).click();
+    expect(classesOf("a")).toEqual(["dim"]);
+    expect(edge("edge_0").classList.contains("edim")).toBe(true);
+
+    // Clearing leaves every box with no highlight class at all.
+    node("c").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    for (const id of ["a", "b", "c"]) expect(classesOf(id)).toEqual([]);
+    expect([...edge("edge_0").classList].sort()).toEqual(["xedge"]);
+  });
+
+  it("stamps the viewer's svg id at build time instead of patching it in", () => {
+    const model = buildExportModel({ allEdges: true })!;
+    const pal = exportPalette();
+    const patched = renderExportSvg(model, { pal });
+    const stamped = renderExportSvg(model, { pal, svgId: "mv-svg" });
+    expect(stamped.svg.startsWith('<svg id="mv-svg" ')).toBe(true);
+    // Either way the published page is byte-for-byte the same.
+    const page = (r: typeof patched) =>
+      buildPublishHtml(r.svg, r.width, r.height, r.nodeInfo, pal, model.edges);
+    expect(page(stamped)).toBe(page(patched));
+  });
 });
 
 describe("export layout reuses the live grid geometry", () => {
@@ -149,6 +208,140 @@ describe("export layout reuses the live grid geometry", () => {
     expect(ex.rowHeights.ops).toBe(live.rowHeights.ops);
     expect(ex.totalWidth).toBe(live.totalWidth);
     expect(ex.totalHeight).toBe(live.totalHeight);
+  });
+});
+
+describe("viewport framing (no selection)", () => {
+  // A → B → C, one row, three columns. The packed geometry is deterministic:
+  //   col s1 x=112, s2 x=396, s3 x=680 (each NODE_WIDTH 220 + COL_GAP 64),
+  //   totalWidth 916, totalHeight 136 — so a 300px-wide viewport sees exactly
+  //   one column at a time and framing is observable.
+  //
+  // jsdom reports clientWidth/clientHeight as 0 and won't scroll, so the
+  // scroller's metrics are stubbed per test. That 0×0 default is itself the
+  // fallback the other suites rely on.
+  const stub = (dims: { w: number; h: number; left?: number; top?: number }): void => {
+    const el = document.getElementById("viz-scroll")!;
+    const def = (name: string, value: number): void => {
+      Object.defineProperty(el, name, { value, configurable: true });
+    };
+    def("clientWidth", dims.w);
+    def("clientHeight", dims.h);
+    def("scrollLeft", dims.left || 0);
+    def("scrollTop", dims.top || 0);
+  };
+
+  beforeEach(() => {
+    mountAppDom();
+    loadDataFromCsv(LINEAR_CSV);
+    state.selectedNodeId = null;
+    state.selectedNodeIds = new Set();
+    state.hiddenStreams = new Set();
+    state.hiddenStages = new Set();
+    state.zoomLevel = 1;
+    setLayout(computeLayout());
+  });
+
+  it("frames the export on the boxes inside the scroll viewport", () => {
+    stub({ w: 300, h: 2000 });                 // only column s1 is on screen
+    expect(exportViewportFrame()).toMatchObject({ x: 0, y: 0, width: 300, height: 2000 });
+
+    const model = buildExportModel()!;
+    expect([...model.nodeIds]).toEqual(["a"]);
+    // A → B has one end off-screen, so it is dropped rather than left dangling.
+    expect(model.edges).toHaveLength(0);
+  });
+
+  it("follows the scroll position", () => {
+    stub({ w: 300, h: 2000, left: 400 });      // scrolled right onto s2 / s3
+    const model = buildExportModel()!;
+    expect([...model.nodeIds].sort()).toEqual(["b", "c"]);
+    // Both ends of B → C are framed, so that edge survives.
+    expect(model.edges.map((e) => e.id)).toEqual(["edge_1"]);
+  });
+
+  it("divides by the zoom level (the scroller scrolls the scaled SVG)", () => {
+    state.zoomLevel = 2;                       // 300 device px = 150 layout px
+    stub({ w: 300, h: 2000, left: 800 });      // layout x 400 → same crop as above
+    expect(exportViewportFrame()).toMatchObject({ x: 400, y: 0, width: 150, height: 1000 });
+    expect([...buildExportModel()!.nodeIds]).toEqual(["b"]);
+  });
+
+  it("exports the whole map when it already fits inside the viewport", () => {
+    stub({ w: 5000, h: 5000 });
+    expect(exportViewportFrame()).toBeNull();
+    expect([...buildExportModel()!.nodeIds].sort()).toEqual(["a", "b", "c"]);
+  });
+
+  it("exports the whole map when the viewport is degenerate (jsdom's 0×0)", () => {
+    stub({ w: 0, h: 0 });
+    expect(exportViewportFrame()).toBeNull();
+    expect([...buildExportModel()!.nodeIds].sort()).toEqual(["a", "b", "c"]);
+  });
+
+  it("exports the whole map when there is no scroll container at all", () => {
+    const el = document.getElementById("viz-scroll")!;
+    el.parentElement!.removeChild(el);
+    expect(exportViewportFrame()).toBeNull();
+    expect([...buildExportModel()!.nodeIds].sort()).toEqual(["a", "b", "c"]);
+    document.body.appendChild(el);
+  });
+});
+
+describe("raster density ceilings", () => {
+  it("keeps the target density for a normally-sized map", () => {
+    expect(exportRasterScale(1200, 800)).toBe(EXPORT_PNG_SCALE);
+  });
+
+  it("caps the total canvas area well below the per-side square", () => {
+    // The area ceiling is the binding one: 16384² px would be ~1GB of backing
+    // store, which Safari/iOS refuse outright.
+    expect(EXPORT_MAX_CANVAS_AREA).toBeLessThan(EXPORT_MAX_CANVAS_DIM * EXPORT_MAX_CANVAS_DIM);
+    const scale = exportRasterScale(6000, 4000);
+    expect(scale).toBeLessThan(EXPORT_PNG_SCALE);
+    expect(6000 * scale * 4000 * scale).toBeLessThanOrEqual(EXPORT_MAX_CANVAS_AREA + 1);
+  });
+
+  it("degrades below 1× rather than failing on a huge map", () => {
+    const scale = exportRasterScale(20000, 12000);
+    expect(scale).toBeGreaterThan(0);
+    expect(scale).toBeLessThan(1);            // caller warns the user about this
+    expect(20000 * scale).toBeLessThanOrEqual(EXPORT_MAX_CANVAS_DIM);
+  });
+
+  it("falls back to 1× rather than a non-finite density", () => {
+    expect(exportRasterScale(NaN, NaN)).toBe(1);
+    expect(exportRasterScale(-10, -10)).toBe(1);
+  });
+});
+
+describe("emitted coordinate precision", () => {
+  // Zoomed out past TEXT_SCALE_RATIO the layout grows boxes by 0.85/zoom, so
+  // every height, row offset and bezier control point becomes a repeating
+  // fraction — the export used to emit all 17 digits of them, several times per
+  // box and twice per edge.
+  beforeEach(() => {
+    mountAppDom();
+    state.zoomLevel = 0.7;
+    loadDataFromCsv(LINEAR_CSV);
+    state.selectedNodeId = null;
+    state.selectedNodeIds = new Set();
+    setLayout(computeLayout());
+    const el = document.getElementById("viz-scroll");
+    el?.parentElement?.removeChild(el!);
+  });
+  afterEach(() => {
+    state.zoomLevel = 1;
+  });
+
+  it("rounds every emitted geometry number to one decimal", () => {
+    const { svg } = renderExportSvg(buildExportModel()!);
+    // The layout really is fractional here — otherwise this test proves nothing.
+    expect(svg).toMatch(/\sd="[^"]*\d\.\d/);
+
+    const geometry = svg.match(/\s(?:d|x|y|x1|y1|x2|y2|width|height|rx)="([^"]*)"/g) || [];
+    const overPrecise = geometry.filter((attr) => /\d+\.\d\d+/.test(attr));
+    expect(overPrecise).toEqual([]);
   });
 });
 
