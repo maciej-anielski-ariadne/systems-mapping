@@ -28,17 +28,21 @@ import {
   applyBuilderBulkField,
   applyBuilderToMap,
   BUILDER_LAST_STEP,
+  BUILDER_ROW_FIELDS,
   clearBuilderSelection,
   closeBuilder,
   deleteBuilderSelectedRows,
   downloadBuilderCsv,
   duplicateBuilderRow,
+  invalidateBuilderCaches,
   nextBuilderDisplayIndex,
+  prevBuilderDisplayIndex,
   reconcileBuilderNodeCategories,
   seedBuilderFromSample,
   slugify,
 } from "./16a-builder-state";
 import {
+  ensureBuilderRowVisible,
   refreshBuilderBulkBar,
   refreshBuilderFooter,
   renderBuilder,
@@ -92,6 +96,7 @@ export function handleBuilderClick(event: MouseEvent): void {
               : (cur.dir === "asc")       ? "desc"
               :                             null;
     state.builder.sort[section] = dir ? { key, dir } : null;
+    invalidateBuilderCaches();
     renderBuilder();
     return;
   }
@@ -157,6 +162,7 @@ export function handleBuilderClick(event: MouseEvent): void {
     // section is always an array.
     const rows = state.builder[target.getAttribute("data-delete")! as BuilderSection];
     if (rows) rows.splice(index, 1);
+    invalidateBuilderCaches();
     clearBuilderSelection();   // a removed row shifts later indices
     renderBuilder();
   }
@@ -259,9 +265,56 @@ export function builderEditableCells(fromEl: HTMLElement | null): HTMLElement[] 
   return Array.from(scope.querySelectorAll(BUILDER_EDITABLE_SELECTOR)) as HTMLElement[];
 }
 
-// Move focus to the next / previous editable cell in DOM order. Returns the
-// element focused, or null if we ran off the end. Caller is responsible for
-// appending a new row if it wants to handle the off-end case.
+// ───── Data-model cell addressing ────────────────────────────────────────
+// Navigation used to walk the live DOM in document order. That only works when
+// every row is in the DOM, and above ~150 rows a step renders a window of them
+// (see 16b). So the model, not the DOM, decides where the next cell is:
+// BUILDER_ROW_FIELDS (16a) gives the column order within a row, and
+// next/prevBuilderDisplayIndex give the row above/below in the CURRENT display
+// order — sorted or not. Only once we know the destination do we touch the DOM,
+// materializing its row first if virtualization has it scrolled out.
+
+/** Which (section, field, row) a focused element edits, or null if it isn't a
+ *  table cell — e.g. a bulk-bar control, which still uses the DOM walk. */
+export function builderCellCoords(
+  el: HTMLElement | null,
+): { section: BuilderSection; field: string; index: number } | null {
+  if (!el) return null;
+  // A typable dropdown's visible input carries no data-*; its hidden native
+  // <select> sibling does.
+  const cell = el.matches("[data-section][data-field]")
+    ? el
+    : (el.closest(".typeable-dropdown")?.querySelector("[data-section][data-field]") as HTMLElement | null);
+  if (!cell || !cell.closest("table.builder-table")) return null;
+  const section = cell.getAttribute("data-section") as BuilderSection | null;
+  const field   = cell.getAttribute("data-field");
+  const index   = parseInt(cell.getAttribute("data-index")!, 10);
+  if (!section || !field || isNaN(index)) return null;
+  return { section, field, index };
+}
+
+/** The focusable element for one cell, materializing nothing. Redirects to the
+ *  visible input when the cell's <select> has already been upgraded. */
+export function builderCellElement(
+  section: BuilderSection,
+  field: string,
+  index: number,
+): HTMLElement | null {
+  const overlay = document.getElementById("builder-overlay");
+  if (!overlay) return null;
+  const el = overlay.querySelector(
+    '[data-section="' + section + '"][data-field="' + field + '"][data-index="' + index + '"]',
+  ) as HTMLElement | null;
+  if (!el) return null;
+  if (el.classList && el.classList.contains("typeable-dropdown-native")) {
+    const input = el.closest(".typeable-dropdown")?.querySelector(".typeable-dropdown-input");
+    if (input) return input as HTMLElement;
+  }
+  return el;
+}
+
+// Focus a cell, bringing its row into the DOM and into view first. Returns the
+// element that took focus, or null when the cell doesn't exist.
 //
 // Caret is placed at the end of the value (not select-all). select() would
 // have two unwanted effects: (a) visually highlights all text, which the
@@ -270,7 +323,70 @@ export function builderEditableCells(fromEl: HTMLElement | null): HTMLElement[] 
 // handleBuilderFocus just opened — the editor's blur handler then closes
 // it before the expand animation runs. setSelectionRange has no such
 // side effects.
+export function focusBuilderCell(
+  section: BuilderSection,
+  field: string,
+  index: number,
+): HTMLElement | null {
+  if (typeof ensureBuilderRowVisible === "function") ensureBuilderRowVisible(section, index);
+  const next = builderCellElement(section, field, index) as HTMLInputElement | null;
+  if (!next) return null;
+  next.focus();
+  if (next.type === "text" && typeof next.setSelectionRange === "function") {
+    // Typable dropdown inputs already select-all on focus (handled inside
+    // 04b-typeable-dropdown.js) — leaving the selection alone here lets
+    // the user start typing to filter the option list immediately. For
+    // plain text/number cells, place the caret at the end of the value
+    // (see the wider explanation in the surrounding comment block).
+    if (!(next.classList && next.classList.contains("typeable-dropdown-input"))) {
+      try { next.setSelectionRange(next.value.length, next.value.length); } catch (_) {}
+    }
+  }
+  if (typeof next.scrollIntoView === "function") next.scrollIntoView({ block: "nearest" });
+  return next;
+}
+
+// Move focus to the next / previous editable cell in DISPLAY order. Returns the
+// element focused, or null if we ran off the end. Caller is responsible for
+// appending a new row if it wants to handle the off-end case.
 export function navigateEditableCell(fromEl: HTMLElement, direction: string): HTMLElement | null {
+  const coords = builderCellCoords(fromEl);
+  // Not a table cell (bulk bar, defaults row, …) — nothing in the data model to
+  // walk, so fall back to the DOM order those controls have always used.
+  if (!coords) return navigateEditableCellByDom(fromEl, direction);
+
+  const fields = BUILDER_ROW_FIELDS[coords.section];
+  if (!fields) return null;
+  const fieldPos = fields.indexOf(coords.field);
+  if (fieldPos === -1) return null;
+
+  let targetField: string;
+  let targetIndex: number;
+  if (direction === "prev") {
+    if (fieldPos > 0) {
+      targetField = fields[fieldPos - 1];
+      targetIndex = coords.index;
+    } else {
+      targetIndex = prevBuilderDisplayIndex(coords.section, coords.index);
+      if (targetIndex < 0) return null;      // first cell of the first row
+      targetField = fields[fields.length - 1];
+    }
+  } else {
+    if (fieldPos < fields.length - 1) {
+      targetField = fields[fieldPos + 1];
+      targetIndex = coords.index;
+    } else {
+      targetIndex = nextBuilderDisplayIndex(coords.section, coords.index);
+      if (targetIndex < 0) return null;      // last cell of the last row
+      targetField = fields[0];
+    }
+  }
+  return focusBuilderCell(coords.section, targetField, targetIndex);
+}
+
+// The original DOM-order walk, kept for the editable controls that live outside
+// a row table and therefore have no (section, field, index) address.
+function navigateEditableCellByDom(fromEl: HTMLElement, direction: string): HTMLElement | null {
   const cells = builderEditableCells(fromEl);
   const idx = cells.indexOf(fromEl);
   if (idx === -1) return null;
@@ -279,11 +395,6 @@ export function navigateEditableCell(fromEl: HTMLElement, direction: string): HT
   const next = cells[targetIdx] as HTMLInputElement;
   next.focus();
   if (next.type === "text" && typeof next.setSelectionRange === "function") {
-    // Typable dropdown inputs already select-all on focus (handled inside
-    // 04b-typeable-dropdown.js) — leaving the selection alone here lets
-    // the user start typing to filter the option list immediately. For
-    // plain text/number cells, place the caret at the end of the value
-    // (see the wider explanation in the surrounding comment block).
     if (!(next.classList && next.classList.contains("typeable-dropdown-input"))) {
       try { next.setSelectionRange(next.value.length, next.value.length); } catch (_) {}
     }
@@ -308,7 +419,11 @@ export function builderTabNavigate(
   const moved = navigateEditableCell(fromCell, direction);
   if (moved) return { moved };
   if (direction === "next") {
-    const section = fromCell.getAttribute("data-section") as BuilderSection | null;
+    // Read the section from the data model, not the attribute — an upgraded
+    // dropdown's visible input carries no data-section of its own.
+    const coords = builderCellCoords(fromCell);
+    const section = coords ? coords.section
+                           : (fromCell.getAttribute("data-section") as BuilderSection | null);
     if (section && typeof addBuilderRow === "function") {
       const newIdx = addBuilderRow(section);
       if (newIdx >= 0) {
@@ -347,36 +462,25 @@ export function handleBuilderKeydown(event: KeyboardEvent): void {
     if (t.tagName !== "INPUT") return;
     if (t.type !== "text" && t.type !== "number") return;
 
-    const section = t.getAttribute("data-section");
-    const field   = t.getAttribute("data-field");
-    const index   = parseInt(t.getAttribute("data-index")!, 10);
-    if (!section || !field || isNaN(index)) return;
+    const coords = builderCellCoords(t);
+    if (!coords) return;
+    const { section, field, index } = coords;
 
     event.preventDefault();
-    const overlay = document.getElementById("builder-overlay");
     // Follow the on-screen (possibly sorted) order, not the raw array order —
     // nextBuilderDisplayIndex returns index+1 when no sort is active.
+    // focusBuilderCell materializes the destination row first, so this still
+    // works when the row below is outside the rendered window.
     const nextIndex = (typeof nextBuilderDisplayIndex === "function")
-      ? nextBuilderDisplayIndex(section as BuilderSection, index)
+      ? nextBuilderDisplayIndex(section, index)
       : index + 1;
-    const sameColNext = nextIndex >= 0 && overlay && overlay.querySelector(
-      '[data-section="' + section + '"]' +
-      '[data-field="'   + field   + '"]' +
-      '[data-index="'   + nextIndex + '"]'
-    ) as HTMLInputElement | null;
-    if (sameColNext) {
-      sameColNext.focus();
-      // Caret at end (not select-all) — see navigateEditableCell comment.
-      if (sameColNext.type === "text" && typeof sameColNext.setSelectionRange === "function") {
-        try { sameColNext.setSelectionRange(sameColNext.value.length, sameColNext.value.length); } catch (_) {}
-      }
-      return;
-    }
+    if (nextIndex >= 0 && focusBuilderCell(section, field, nextIndex)) return;
+
     // At the last row → append and land in the same column of the new row.
     if (typeof addBuilderRow === "function") {
-      const newIdx = addBuilderRow(section as BuilderSection);
+      const newIdx = addBuilderRow(section);
       if (newIdx >= 0) {
-        state.builder.focusAfterRender = { section: section as BuilderSection, index: newIdx, field };
+        state.builder.focusAfterRender = { section, index: newIdx, field };
         renderBuilder();
       }
     }
@@ -443,6 +547,7 @@ export function handleBuilderDrop(event: DragEvent): void {
   if (fromIndex !== toIndex) {
     const [moved] = arr.splice(fromIndex, 1);
     arr.splice(toIndex, 0, moved);
+    invalidateBuilderCaches();
   }
   handleBuilderDragEnd();
   clearBuilderSelection();   // reorder shifts indices
@@ -540,6 +645,9 @@ export function handleBuilderInput(event: Event): void {
   }
 
   (row as unknown as Record<string, unknown>)[field] = newValue;
+  // A field write can change a sorted table's display order, which is what the
+  // Enter key follows — retire the cached order (16a).
+  invalidateBuilderCaches();
 
   // The node table edits the single primary anchor; keep the node's full
   // category list in sync (full multi-primary editing lives in the detail panel).

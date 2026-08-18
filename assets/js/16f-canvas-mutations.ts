@@ -39,7 +39,7 @@ import {
   setEdges,
   setLayout,
 } from "./03-state";
-import { HISTORY_CAP, isUndoCaptureSuspended, pushUndo, restoreFromUndo, showUndoToast } from "./16g-canvas-undo";
+import { isUndoCaptureSuspended, pushHistorySnapshot, pushUndo, restoreFromUndo, showUndoToast } from "./16g-canvas-undo";
 import { rebuildIndexes } from "./06-data-loader";
 import { computeLayout } from "./08-layout";
 import { recomputeValues } from "./07-simulation-engine";
@@ -66,11 +66,11 @@ export function applyCanvasMutation(options?: { skipDetailRender?: boolean; skip
   // Push the PREVIOUS state's CSV onto undo history before mutating. The
   // "previous" snapshot is whatever applyCanvasMutation produced last time
   // (or what loadDataFromCsv seeded). This makes every mutation undoable
-  // without each call-site having to opt in.
-  if (state.dataLoaded && !isUndoCaptureSuspended() && state.lastCsvSnapshot) {
-    state.history.past.push(state.lastCsvSnapshot);
-    if (state.history.past.length > HISTORY_CAP) state.history.past.shift();
-    state.history.future.length = 0;
+  // without each call-site having to opt in. pushHistorySnapshot (16g) owns the
+  // stack bookkeeping — the entry cap AND the total-size budget — so this stays
+  // one call rather than an inline copy of the eviction rules.
+  if (state.dataLoaded && !isUndoCaptureSuspended()) {
+    pushHistorySnapshot(state.lastCsvSnapshot);
   }
 
   rebuildIndexes();

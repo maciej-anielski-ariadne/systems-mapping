@@ -20,17 +20,19 @@ import { COMBINE_OPTIONS, DIRECTION_OPTIONS, EFFECT_OPTIONS } from "./02-config"
 import { state } from "./03-state";
 import { escapeHtml } from "./04-utils";
 import { scheduleBuilderSave } from "./04a-storage";
-import { upgradeSelectsIn } from "./04b-typeable-dropdown";
+import { setLazySelectPreparer, upgradeSelectsIn, upgradeSelectsLazilyIn } from "./04b-typeable-dropdown";
 import {
   BUILDER_LAST_STEP,
   BUILDER_SPLIT,
   BUILDER_STEPS,
+  invalidateBuilderCaches,
   rowActionsHtml,
   rowDragHandleHtml,
   sortableTh,
   sortedBuilderIndices,
   tableEmptyRow,
   validateBuilder,
+  withBuilderValidationMemo,
 } from "./16a-builder-state";
 import { clearDismissedTrigger, hideCellEditor } from "./16c-builder-editor";
 import {
@@ -38,6 +40,231 @@ import {
   syncBuilderSelectAllState,
   wireBuilderFooterButtons,
 } from "./16d-builder-events";
+import type { BuilderSection } from "./types";
+
+// ───── Row virtualization ─────────────────────────────────────────────────
+// A step's table used to put every row in the DOM. That is fine at the sizes
+// the wizard was designed for and ruinous past them: the Boxes step emits 17
+// inputs per row, and the Links step emits TWO <select>s per row, each one
+// carrying an <option> for every box in the map — O(links × boxes) elements,
+// which hangs the tab outright on a real map.
+//
+// Above BUILDER_VIRTUAL_MIN_ROWS we materialize only a window of rows around
+// the scroll position and stand two zero-content spacer rows in for everything
+// above and below it, so the scrollbar still measures the full table. Below the
+// threshold nothing changes at all — same markup, no spacers, no scroll
+// listener — because that is the size at which today's output is the contract.
+//
+// What virtualization must NOT change, and doesn't:
+//   • data-index is the DATA index, never a position in the window.
+//   • Sorting still decides display order; the window slices the sorted order.
+//   • Select-all and bulk delete work off state.builder, not the DOM.
+//   • Add / duplicate / delete / drag-reorder are index-based already.
+//   • Tab / Enter navigate the data model (16d) and materialize their target
+//     row through ensureBuilderRowVisible() before focusing it.
+export const BUILDER_VIRTUAL_MIN_ROWS = 150;
+// Rows kept in the DOM at once. Comfortably more than fills a tall window, so
+// a scroll of a screen or two lands inside the already-rendered slice.
+export const BUILDER_VIRTUAL_WINDOW = 80;
+// Rows rendered above the first visible one, so a small upward scroll doesn't
+// expose a spacer before the rAF repaint lands.
+export const BUILDER_VIRTUAL_OVERSCAN = 20;
+// Assumed row height in px, used to size the spacers and to map scrollTop onto
+// a row position. Matches --pad-cell + the cell input's height in 11-builder.css;
+// refined from a real measurement once one row has been laid out (jsdom and the
+// first paint report 0, hence the fallback).
+export const BUILDER_ROW_HEIGHT_PX = 37;
+
+interface VirtualTable {
+  section: BuilderSection;
+  /** DATA indices, in display (sorted) order. */
+  order: number[];
+  colSpan: number;
+  renderRow: (dataIndex: number) => string;
+  /** First materialized position within `order`. */
+  start: number;
+  rowHeight: number;
+}
+
+// The virtualized table of the CURRENTLY rendered step, or null when the step
+// renders every row (small table, empty table, or the Review step).
+let _virtualTable: VirtualTable | null = null;
+let _virtualScrollFrame: number | null = null;
+
+/** Test/introspection hook: the live virtual-window state, or null. */
+export function builderVirtualState(): { section: string; start: number; total: number; window: number } | null {
+  if (!_virtualTable) return null;
+  return {
+    section: _virtualTable.section,
+    start: _virtualTable.start,
+    total: _virtualTable.order.length,
+    window: BUILDER_VIRTUAL_WINDOW,
+  };
+}
+
+// Rows for one step's <tbody>. Either every row (small table — byte-identical
+// to what the step renderers used to emit inline) or a spacer / window / spacer
+// sandwich. Called by each step renderer; the LAST caller in a render wins,
+// which is correct because renderBuilder paints exactly one step.
+export function renderBuilderRows(
+  section: BuilderSection,
+  order: number[],
+  colSpan: number,
+  renderRow: (dataIndex: number) => string,
+): string {
+  if (order.length < BUILDER_VIRTUAL_MIN_ROWS) {
+    _virtualTable = null;
+    return order.map(renderRow).join("");
+  }
+  // Keep the window where the user left it when re-rendering the same section
+  // (delete / bulk edit / checkbox toggle all re-render in place, and
+  // renderBuilder restores the scroll position to match).
+  const carried = _virtualTable && _virtualTable.section === section ? _virtualTable.start : 0;
+  const rowHeight = _virtualTable ? _virtualTable.rowHeight : BUILDER_ROW_HEIGHT_PX;
+  _virtualTable = {
+    section, order, colSpan, renderRow, rowHeight,
+    start: clampWindowStart(carried, order.length),
+  };
+  return virtualWindowHtml(_virtualTable);
+}
+
+// Display order for the three drag-reorderable sections, which have no
+// sortable headers: the array order IS the display order.
+function identityOrder(rows: unknown[]): number[] {
+  return rows.map((_, i) => i);
+}
+
+function clampWindowStart(start: number, total: number): number {
+  const maxStart = Math.max(0, total - BUILDER_VIRTUAL_WINDOW);
+  return Math.max(0, Math.min(start, maxStart));
+}
+
+function windowStartFromScroll(scrollTop: number, total: number, rowHeight: number): number {
+  const firstVisible = Math.floor(Math.max(0, scrollTop) / Math.max(1, rowHeight));
+  return clampWindowStart(firstVisible - BUILDER_VIRTUAL_OVERSCAN, total);
+}
+
+// A spacer stands in for `count` un-rendered rows. aria-hidden + no content, so
+// screen readers and every `tr[data-index]` query skip straight past it.
+function spacerRow(count: number, rowHeight: number, colSpan: number): string {
+  if (count <= 0) return "";
+  const h = count * rowHeight;
+  return '<tr class="builder-virtual-spacer" aria-hidden="true" style="height:' + h + 'px">' +
+           '<td colspan="' + colSpan + '" style="height:' + h + 'px"></td>' +
+         '</tr>';
+}
+
+function virtualWindowHtml(vt: VirtualTable): string {
+  const total = vt.order.length;
+  const end = Math.min(total, vt.start + BUILDER_VIRTUAL_WINDOW);
+  let html = spacerRow(vt.start, vt.rowHeight, vt.colSpan);
+  for (let pos = vt.start; pos < end; pos++) html += vt.renderRow(vt.order[pos]);
+  html += spacerRow(total - end, vt.rowHeight, vt.colSpan);
+  return html;
+}
+
+function virtualScrollEl(): HTMLElement | null {
+  const overlay = document.getElementById("builder-overlay");
+  return overlay ? (overlay.querySelector(".builder-step-scroll") as HTMLElement | null) : null;
+}
+
+// Repaint the window into the live <tbody>, preserving the caret when the
+// focused cell's row survives the repaint. A row scrolled out of the window is
+// destroyed by design — that is what makes this cheap.
+function paintVirtualWindow(vt: VirtualTable, tbody: Element): void {
+  const active = document.activeElement as HTMLElement | null;
+  let keep: { section: string; field: string; index: string } | null = null;
+  if (active && tbody.contains(active)) {
+    // A focused typeable dropdown is an <input> with no data-* of its own; the
+    // hidden native <select> beside it carries them.
+    const cell = active.matches("[data-section][data-field]")
+      ? active
+      : (active.closest(".typeable-dropdown")?.querySelector("[data-section][data-field]") as HTMLElement | null);
+    const section = cell && cell.getAttribute("data-section");
+    const field   = cell && cell.getAttribute("data-field");
+    const index   = cell && cell.getAttribute("data-index");
+    if (section && field && index) keep = { section, field, index };
+    // The floating cell editor anchors to a DOM node we're about to discard.
+    hideCellEditor({ skipAnimation: true });
+  }
+
+  tbody.innerHTML = virtualWindowHtml(vt);
+
+  if (keep) {
+    const el = tbody.querySelector(
+      '[data-section="' + keep.section + '"][data-field="' + keep.field + '"][data-index="' + keep.index + '"]',
+    ) as HTMLElement | null;
+    if (el && typeof el.focus === "function") el.focus();
+  }
+  if (typeof syncBuilderSelectAllState === "function") syncBuilderSelectAllState();
+}
+
+// rAF-throttled scroll handler. The listener is attached to the freshly built
+// .builder-step-scroll each render, so there is nothing to detach — the old
+// element (and its listener) is discarded with the old DOM.
+function onBuilderVirtualScroll(): void {
+  if (_virtualScrollFrame !== null) return;
+  _virtualScrollFrame = requestAnimationFrame(() => {
+    _virtualScrollFrame = null;
+    repaintBuilderVirtualRows();
+  });
+}
+
+export function repaintBuilderVirtualRows(): void {
+  const vt = _virtualTable;
+  if (!vt) return;
+  const scroll = virtualScrollEl();
+  const tbody = scroll && scroll.querySelector("table.builder-table tbody");
+  if (!scroll || !tbody) return;
+  const start = windowStartFromScroll(scroll.scrollTop, vt.order.length, vt.rowHeight);
+  if (start === vt.start) return;
+  vt.start = start;
+  paintVirtualWindow(vt, tbody);
+}
+
+// Wire the scroll listener and refine the assumed row height from a real
+// measurement, now that one window of rows has been laid out.
+export function attachBuilderVirtualScroll(): void {
+  const vt = _virtualTable;
+  if (!vt) return;
+  const scroll = virtualScrollEl();
+  if (!scroll) return;
+  const firstRow = scroll.querySelector("table.builder-table tbody tr:not(.builder-virtual-spacer)") as HTMLElement | null;
+  const measured = firstRow ? firstRow.offsetHeight : 0;
+  if (measured > 0) vt.rowHeight = measured;
+  scroll.addEventListener("scroll", onBuilderVirtualScroll);
+}
+
+// Make sure the row holding DATA index `index` is materialized, sliding the
+// window onto it if it isn't. This is what lets Tab / Enter step into a row
+// that virtualization has scrolled out of the DOM. Returns true if the window
+// moved. No-op when the step isn't virtualized, so callers can call it blindly.
+export function ensureBuilderRowVisible(section: BuilderSection, index: number): boolean {
+  const vt = _virtualTable;
+  if (!vt || vt.section !== section) return false;
+  const pos = vt.order.indexOf(index);
+  if (pos < 0) return false;
+  if (pos >= vt.start && pos < vt.start + BUILDER_VIRTUAL_WINDOW) return false;
+
+  const scroll = virtualScrollEl();
+  const tbody = scroll && scroll.querySelector("table.builder-table tbody");
+  if (!scroll || !tbody) return false;
+
+  // Scroll FIRST, then derive the window from where the container actually
+  // landed. Doing it in this order means the scroll event this triggers
+  // recomputes the same start and its repaint is a no-op — otherwise it would
+  // immediately tear down the row we just materialized to focus.
+  scroll.scrollTop = Math.max(0, (pos - BUILDER_VIRTUAL_OVERSCAN) * vt.rowHeight);
+  let start = windowStartFromScroll(scroll.scrollTop, vt.order.length, vt.rowHeight);
+  // Environments without layout (jsdom, and any container that can't scroll)
+  // swallow the assignment — centre the window on the row by hand instead.
+  if (pos < start || pos >= start + BUILDER_VIRTUAL_WINDOW) {
+    start = clampWindowStart(pos - BUILDER_VIRTUAL_OVERSCAN, vt.order.length);
+  }
+  vt.start = start;
+  paintVirtualWindow(vt, tbody);
+  return true;
+}
 
 // ───── Main render dispatch ───────────────────────────────────────────────
 export function renderBuilder(): void {
@@ -56,6 +283,7 @@ export function renderBuilder(): void {
   if (!state.builder.open) {
     overlay.classList.remove("open");
     overlay.innerHTML = "";
+    _virtualTable = null;   // its rows, and its scroll listener, are gone
     return;
   }
 
@@ -68,16 +296,29 @@ export function renderBuilder(): void {
   const sameStep = state.builder._lastRenderedStep === state.builder.step;
   state.builder._lastRenderedStep = state.builder.step;
 
-  let body = "";
-  switch (state.builder.step) {
-    case 1: body = renderBuilderStreamsStep();    break;
-    case 2: body = renderBuilderStagesStep();     break;
-    case 3: body = renderBuilderCategoriesStep(); break;
-    case 4: body = renderBuilderNodesStep();      break;
-    case 5: body = renderBuilderEdgesStep();      break;
-    case 6: body = renderBuilderParamsStep();     break;
-    case 7: body = renderBuilderReviewStep();     break;
-  }
+  // Retire any cached sort order before painting. The step renderer below is
+  // the one caller guaranteed to see current data, so making it the cache's
+  // generation boundary means a mutation that forgot to invalidate can cost a
+  // stale keyboard hop at worst, never a stale table. (16a explains the rest.)
+  invalidateBuilderCaches();
+  // Any window from the previously rendered step is meaningless now; the step
+  // renderer re-establishes it (or leaves it null for a small / table-less step).
+  _virtualTable = null;
+
+  // One validation scan for the whole pass — the step renderer, the footer and
+  // the Review step all ask for it and all see the same state (16a).
+  const body = withBuilderValidationMemo(() => {
+    switch (state.builder.step) {
+      case 1: return renderBuilderStreamsStep();
+      case 2: return renderBuilderStagesStep();
+      case 3: return renderBuilderCategoriesStep();
+      case 4: return renderBuilderNodesStep();
+      case 5: return renderBuilderEdgesStep();
+      case 6: return renderBuilderParamsStep();
+      case 7: return renderBuilderReviewStep();
+      default: return "";
+    }
+  });
 
   const splitIdx = body.indexOf(BUILDER_SPLIT);
   const above  = splitIdx === -1 ? body : body.slice(0, splitIdx);
@@ -90,17 +331,28 @@ export function renderBuilder(): void {
         '<div class="builder-step-static">' + above + '</div>' +
         '<div class="builder-step-scroll">' + scroll + '</div>' +
       '</div>' +
-      renderBuilderFooter() +
+      withBuilderValidationMemo(renderBuilderFooter) +
     '</div>';
   overlay.classList.add("open");
 
-  // Upgrade every <select> in the freshly-rendered overlay (stream / stage /
-  // category / direction / from / to / effect) into a typable filterable
-  // dropdown. Must run before Tab/Enter navigation queries see the cell —
-  // 16d's BUILDER_EDITABLE_SELECTOR matches the typeable input by class.
-  if (typeof upgradeSelectsIn === "function") upgradeSelectsIn(overlay);
+  // Typable filterable dropdowns, in two tiers.
+  //
+  // The bulk bar holds a handful of <select>s and is always on screen, so it is
+  // upgraded eagerly exactly as the whole overlay used to be.
+  //
+  // Table cells are upgraded LAZILY, on first focus. Upgrading eagerly cost
+  // three extra elements and ~8 listeners per <select>, and a Boxes step with
+  // 5000 rows carries 25000 of them — seconds of work for controls the user
+  // will touch a few of. `.builder-table select` is styled to match the
+  // upgraded input exactly (11-builder.css), so a cell looks the same before
+  // and after it is upgraded.
+  const staticEl = overlay.querySelector(".builder-step-static");
+  if (staticEl && typeof upgradeSelectsIn === "function") upgradeSelectsIn(staticEl);
+  if (typeof setLazySelectPreparer === "function") setLazySelectPreparer(fillDeferredSelectOptions);
+  if (typeof upgradeSelectsLazilyIn === "function") upgradeSelectsLazilyIn(overlay);
 
   attachBuilderEvents();
+  attachBuilderVirtualScroll();
   scheduleBuilderSave();
   applyFocusAfterRender();
 
@@ -214,7 +466,7 @@ export function refreshBuilderFooter(): void {
   const oldFooter = document.querySelector("#builder-overlay .builder-footer");
   if (!oldFooter) return;
   const wrapper = document.createElement("div");
-  wrapper.innerHTML = renderBuilderFooter();
+  wrapper.innerHTML = withBuilderValidationMemo(renderBuilderFooter);
   oldFooter.parentNode!.replaceChild(wrapper.firstElementChild!, oldFooter);
   wireBuilderFooterButtons();
 }
@@ -375,17 +627,19 @@ export function renderBuilderStreamsStep(): string {
   if (state.builder.streams.length === 0) {
     html += tableEmptyRow(7, 'No rows yet. Click "+ Add row" to create one.');
   } else {
-    state.builder.streams.forEach((s, i) => {
+    html += renderBuilderRows("streams", identityOrder(state.builder.streams), 7, (i) => {
+      const s = state.builder.streams[i];
       const invalidId = v.dupStreams.has(s.id) || !s.id ? ' invalid' : '';
-      html += '<tr draggable="true" class="' + rowSelectedClass(i).trim() + '" data-section="streams" data-index="' + i + '">';
-      html +=   rowSelectTd("streams", i);
-      html +=   rowDragHandleHtml();
-      html +=   '<td><input type="text" data-section="streams" data-field="id" data-index="' + i + '" value="' + escapeHtml(s.id) + '" class="' + invalidId + '" placeholder="ops" /></td>';
-      html +=   '<td><input type="text" data-section="streams" data-field="label" data-index="' + i + '" value="' + escapeHtml(s.label) + '" placeholder="Operations" /></td>';
-      html +=   '<td><input type="text" data-section="streams" data-field="short" data-index="' + i + '" value="' + escapeHtml(s.short) + '" placeholder="OPS" /></td>';
-      html +=   '<td><input type="color" data-section="streams" data-field="color" data-index="' + i + '" value="' + escapeHtml(s.color || "#94a3b8") + '" /></td>';
-      html +=   rowActionsHtml("streams", i);
-      html += '</tr>';
+      let row = '<tr draggable="true" class="' + rowSelectedClass(i).trim() + '" data-section="streams" data-index="' + i + '">';
+      row +=   rowSelectTd("streams", i);
+      row +=   rowDragHandleHtml();
+      row +=   '<td><input type="text" data-section="streams" data-field="id" data-index="' + i + '" value="' + escapeHtml(s.id) + '" class="' + invalidId + '" placeholder="ops" /></td>';
+      row +=   '<td><input type="text" data-section="streams" data-field="label" data-index="' + i + '" value="' + escapeHtml(s.label) + '" placeholder="Operations" /></td>';
+      row +=   '<td><input type="text" data-section="streams" data-field="short" data-index="' + i + '" value="' + escapeHtml(s.short) + '" placeholder="OPS" /></td>';
+      row +=   '<td><input type="color" data-section="streams" data-field="color" data-index="' + i + '" value="' + escapeHtml(s.color || "#94a3b8") + '" /></td>';
+      row +=   rowActionsHtml("streams", i);
+      row += '</tr>';
+      return row;
     });
   }
 
@@ -428,15 +682,17 @@ export function renderBuilderStagesStep(): string {
   if (state.builder.stages.length === 0) {
     html += tableEmptyRow(5, 'No columns yet. Click "+ Add column" to create one.');
   } else {
-    state.builder.stages.forEach((s, i) => {
+    html += renderBuilderRows("stages", identityOrder(state.builder.stages), 5, (i) => {
+      const s = state.builder.stages[i];
       const invalidId = v.dupStages.has(s.id) || !s.id ? ' invalid' : '';
-      html += '<tr draggable="true" class="' + rowSelectedClass(i).trim() + '" data-section="stages" data-index="' + i + '">';
-      html +=   rowSelectTd("stages", i);
-      html +=   rowDragHandleHtml();
-      html +=   '<td><input type="text" data-section="stages" data-field="id" data-index="' + i + '" value="' + escapeHtml(s.id) + '" class="' + invalidId + '" placeholder="inputs" /></td>';
-      html +=   '<td><input type="text" data-section="stages" data-field="label" data-index="' + i + '" value="' + escapeHtml(s.label) + '" placeholder="Inputs" /></td>';
-      html +=   rowActionsHtml("stages", i);
-      html += '</tr>';
+      let row = '<tr draggable="true" class="' + rowSelectedClass(i).trim() + '" data-section="stages" data-index="' + i + '">';
+      row +=   rowSelectTd("stages", i);
+      row +=   rowDragHandleHtml();
+      row +=   '<td><input type="text" data-section="stages" data-field="id" data-index="' + i + '" value="' + escapeHtml(s.id) + '" class="' + invalidId + '" placeholder="inputs" /></td>';
+      row +=   '<td><input type="text" data-section="stages" data-field="label" data-index="' + i + '" value="' + escapeHtml(s.label) + '" placeholder="Inputs" /></td>';
+      row +=   rowActionsHtml("stages", i);
+      row += '</tr>';
+      return row;
     });
   }
   html += '</tbody></table>';
@@ -477,21 +733,23 @@ export function renderBuilderCategoriesStep(): string {
   if (state.builder.categories.length === 0) {
     html += tableEmptyRow(8, 'No categories yet. Click "+ Add category" to create one.');
   } else {
-    state.builder.categories.forEach((c, i) => {
+    html += renderBuilderRows("categories", identityOrder(state.builder.categories), 8, (i) => {
+      const c = state.builder.categories[i];
       const invalidId = v.dupCategories.has(c.id) || !c.id ? ' invalid' : '';
-      html += '<tr draggable="true" class="' + rowSelectedClass(i).trim() + '" data-section="categories" data-index="' + i + '">';
-      html +=   rowSelectTd("categories", i);
-      html +=   rowDragHandleHtml();
-      html +=   '<td><input type="text" data-section="categories" data-field="id" data-index="' + i + '" value="' + escapeHtml(c.id) + '" class="' + invalidId + '" placeholder="resource" /></td>';
-      html +=   '<td><input type="text" data-section="categories" data-field="label" data-index="' + i + '" value="' + escapeHtml(c.label) + '" placeholder="Resource" /></td>';
-      html +=   '<td><input type="color" data-section="categories" data-field="color" data-index="' + i + '" value="' + escapeHtml(c.color || "#a3a3a3") + '" /></td>';
-      html +=   '<td><input type="color" data-section="categories" data-field="textColor" data-index="' + i + '" value="' + escapeHtml(c.textColor || "#1c1917") + '" /></td>';
-      html +=   '<td><select data-section="categories" data-field="class" data-index="' + i + '">' +
-                  '<option value="primary"'   + ((c.class || "primary") !== "secondary" ? " selected" : "") + '>Fill tag</option>' +
-                  '<option value="secondary"' + ((c.class || "primary") === "secondary" ? " selected" : "") + '>Corner tag</option>' +
-                '</select></td>';
-      html +=   rowActionsHtml("categories", i);
-      html += '</tr>';
+      let row = '<tr draggable="true" class="' + rowSelectedClass(i).trim() + '" data-section="categories" data-index="' + i + '">';
+      row +=   rowSelectTd("categories", i);
+      row +=   rowDragHandleHtml();
+      row +=   '<td><input type="text" data-section="categories" data-field="id" data-index="' + i + '" value="' + escapeHtml(c.id) + '" class="' + invalidId + '" placeholder="resource" /></td>';
+      row +=   '<td><input type="text" data-section="categories" data-field="label" data-index="' + i + '" value="' + escapeHtml(c.label) + '" placeholder="Resource" /></td>';
+      row +=   '<td><input type="color" data-section="categories" data-field="color" data-index="' + i + '" value="' + escapeHtml(c.color || "#a3a3a3") + '" /></td>';
+      row +=   '<td><input type="color" data-section="categories" data-field="textColor" data-index="' + i + '" value="' + escapeHtml(c.textColor || "#1c1917") + '" /></td>';
+      row +=   '<td><select data-section="categories" data-field="class" data-index="' + i + '">' +
+                 '<option value="primary"'   + ((c.class || "primary") !== "secondary" ? " selected" : "") + '>Fill tag</option>' +
+                 '<option value="secondary"' + ((c.class || "primary") === "secondary" ? " selected" : "") + '>Corner tag</option>' +
+               '</select></td>';
+      row +=   rowActionsHtml("categories", i);
+      row += '</tr>';
+      return row;
     });
   }
   html += '</tbody></table>';
@@ -584,43 +842,44 @@ export function renderBuilderNodesStep(): string {
   if (state.builder.nodes.length === 0) {
     html += tableEmptyRow(17, 'No boxes yet. Click "+ Add box" to create one.');
   } else {
-    sortedBuilderIndices("nodes").forEach((i) => {
+    html += renderBuilderRows("nodes", sortedBuilderIndices("nodes"), 17, (i) => {
       const n = state.builder.nodes[i];
       const idInvalid       = !n.id || v.dupNodes.has(n.id)   ? ' invalid' : '';
       const streamInvalid   = !v.streamIds.has(n.stream)      ? ' invalid' : '';
       const stageInvalid    = !v.stageIds.has(n.stage)        ? ' invalid' : '';
       const categoryInvalid = !v.categoryIds.has(n.category as string)  ? ' invalid' : '';
 
-      html += '<tr class="' + rowSelectedClass(i).trim() + '" data-index="' + i + '">';
-      html +=   rowSelectTd("nodes", i);
-      html +=   '<td><input type="text" data-section="nodes" data-field="id" data-index="' + i + '" value="' + escapeHtml(n.id) + '" class="' + idInvalid + '" placeholder="team_size" /></td>';
-      html +=   '<td><input type="text" data-section="nodes" data-field="label" data-index="' + i + '" value="' + escapeHtml(n.label) + '" placeholder="Team size" /></td>';
-      html +=   '<td><input type="text" data-section="nodes" data-field="description" data-index="' + i + '" value="' + escapeHtml(n.description) + '" placeholder="What this box represents" /></td>';
-      html +=   '<td><select data-section="nodes" data-field="stream" data-index="' + i + '" class="' + streamInvalid + '"><option value=""></option>' + streamOptions(n.stream) + '</select></td>';
-      html +=   '<td><select data-section="nodes" data-field="stage" data-index="' + i + '" class="' + stageInvalid + '"><option value=""></option>' + stageOptions(n.stage) + '</select></td>';
-      html +=   '<td><select data-section="nodes" data-field="category" data-index="' + i + '" class="' + categoryInvalid + '"><option value=""></option>' + categoryOptions(n.category) + '</select></td>';
-      html +=   '<td><input type="number" step="any" data-section="nodes" data-field="baseline" data-index="' + i + '" value="' + escapeHtml(n.baseline === undefined ? "" : n.baseline) + '" placeholder="100" /></td>';
-      html +=   '<td><input type="text" data-section="nodes" data-field="unit" data-index="' + i + '" value="' + escapeHtml(n.unit) + '" placeholder="units" /></td>';
-      html +=   '<td style="text-align:center"><input type="checkbox" data-section="nodes" data-field="controllable" data-index="' + i + '"' + (n.controllable ? " checked" : "") + ' /></td>';
-      html +=   '<td><select data-section="nodes" data-field="direction" data-index="' + i + '">' +
+      let row = '<tr class="' + rowSelectedClass(i).trim() + '" data-index="' + i + '">';
+      row +=   rowSelectTd("nodes", i);
+      row +=   '<td><input type="text" data-section="nodes" data-field="id" data-index="' + i + '" value="' + escapeHtml(n.id) + '" class="' + idInvalid + '" placeholder="team_size" /></td>';
+      row +=   '<td><input type="text" data-section="nodes" data-field="label" data-index="' + i + '" value="' + escapeHtml(n.label) + '" placeholder="Team size" /></td>';
+      row +=   '<td><input type="text" data-section="nodes" data-field="description" data-index="' + i + '" value="' + escapeHtml(n.description) + '" placeholder="What this box represents" /></td>';
+      row +=   '<td><select data-section="nodes" data-field="stream" data-index="' + i + '" class="' + streamInvalid + '"><option value=""></option>' + streamOptions(n.stream) + '</select></td>';
+      row +=   '<td><select data-section="nodes" data-field="stage" data-index="' + i + '" class="' + stageInvalid + '"><option value=""></option>' + stageOptions(n.stage) + '</select></td>';
+      row +=   '<td><select data-section="nodes" data-field="category" data-index="' + i + '" class="' + categoryInvalid + '"><option value=""></option>' + categoryOptions(n.category) + '</select></td>';
+      row +=   '<td><input type="number" step="any" data-section="nodes" data-field="baseline" data-index="' + i + '" value="' + escapeHtml(n.baseline === undefined ? "" : n.baseline) + '" placeholder="100" /></td>';
+      row +=   '<td><input type="text" data-section="nodes" data-field="unit" data-index="' + i + '" value="' + escapeHtml(n.unit) + '" placeholder="units" /></td>';
+      row +=   '<td style="text-align:center"><input type="checkbox" data-section="nodes" data-field="controllable" data-index="' + i + '"' + (n.controllable ? " checked" : "") + ' /></td>';
+      row +=   '<td><select data-section="nodes" data-field="direction" data-index="' + i + '">' +
                   DIRECTION_OPTIONS.map(opt =>
                     '<option value="' + opt + '"' + (opt === (n.direction || "") ? " selected" : "") + '>' + (opt || "—") + '</option>'
                   ).join("") +
                 '</select></td>';
-      html +=   '<td><input type="number" step="any" data-section="nodes" data-field="sliderMax" data-index="' + i + '" value="' + escapeHtml(n.sliderMax === undefined ? "" : n.sliderMax) + '" placeholder="2.0" /></td>';
+      row +=   '<td><input type="number" step="any" data-section="nodes" data-field="sliderMax" data-index="' + i + '" value="' + escapeHtml(n.sliderMax === undefined ? "" : n.sliderMax) + '" placeholder="2.0" /></td>';
       // Calculation rules. `combine` is an enum cell exactly like `direction`
       // (blank first entry = the default rule); `formula` is free text; min /
       // max are plain numbers in the box's own units.
-      html +=   '<td><select data-section="nodes" data-field="combine" data-index="' + i + '">' +
+      row +=   '<td><select data-section="nodes" data-field="combine" data-index="' + i + '">' +
                   COMBINE_OPTIONS.map(opt =>
                     '<option value="' + opt + '"' + (opt === (n.combine || "") ? " selected" : "") + '>' + (opt || "—") + '</option>'
                   ).join("") +
                 '</select></td>';
-      html +=   '<td><input type="text" data-section="nodes" data-field="formula" data-index="' + i + '" value="' + escapeHtml(n.formula) + '" placeholder="min(demand, capacity)" /></td>';
-      html +=   '<td><input type="number" step="any" data-section="nodes" data-field="minValue" data-index="' + i + '" value="' + escapeHtml(n.minValue === undefined ? "" : n.minValue) + '" placeholder="no limit" /></td>';
-      html +=   '<td><input type="number" step="any" data-section="nodes" data-field="maxValue" data-index="' + i + '" value="' + escapeHtml(n.maxValue === undefined ? "" : n.maxValue) + '" placeholder="no limit" /></td>';
-      html +=   rowActionsHtml("nodes", i);
-      html += '</tr>';
+      row +=   '<td><input type="text" data-section="nodes" data-field="formula" data-index="' + i + '" value="' + escapeHtml(n.formula) + '" placeholder="min(demand, capacity)" /></td>';
+      row +=   '<td><input type="number" step="any" data-section="nodes" data-field="minValue" data-index="' + i + '" value="' + escapeHtml(n.minValue === undefined ? "" : n.minValue) + '" placeholder="no limit" /></td>';
+      row +=   '<td><input type="number" step="any" data-section="nodes" data-field="maxValue" data-index="' + i + '" value="' + escapeHtml(n.maxValue === undefined ? "" : n.maxValue) + '" placeholder="no limit" /></td>';
+      row +=   rowActionsHtml("nodes", i);
+      row += '</tr>';
+      return row;
     });
   }
   html += '</tbody></table>';
@@ -631,7 +890,8 @@ export function renderBuilderNodesStep(): string {
 // ───── Step 5: Edges ──────────────────────────────────────────────────────
 export function renderBuilderEdgesStep(): string {
   const v = validateBuilder();
-  const nodeOptions = optionList(state.builder.nodes.map(n => n.id), state.builder.nodes);
+  // Deferred, not the full optionList: see selectedOnlyNodeOption.
+  const nodeOptions = selectedOnlyNodeOption();
 
   let html = "";
   html += '<h2 class="builder-step-heading">Links between boxes</h2>';
@@ -679,28 +939,29 @@ export function renderBuilderEdgesStep(): string {
   if (state.builder.edges.length === 0) {
     html += tableEmptyRow(8, 'No links yet. Click "+ Add link".');
   } else {
-    sortedBuilderIndices("edges").forEach((i) => {
+    html += renderBuilderRows("edges", sortedBuilderIndices("edges"), 8, (i) => {
       const e = state.builder.edges[i];
       const fromInvalid = !v.nodeIds.has(e.from) ? ' invalid' : '';
       const toInvalid   = !v.nodeIds.has(e.to)   ? ' invalid' : '';
 
-      html += '<tr class="' + rowSelectedClass(i).trim() + '" data-index="' + i + '">';
-      html +=   rowSelectTd("edges", i);
-      html +=   '<td><select data-section="edges" data-field="from" data-index="' + i + '" class="' + fromInvalid + '"><option value=""></option>' + nodeOptions(e.from) + '</select></td>';
-      html +=   '<td><select data-section="edges" data-field="to"   data-index="' + i + '" class="' + toInvalid   + '"><option value=""></option>' + nodeOptions(e.to)   + '</select></td>';
-      html +=   '<td><select data-section="edges" data-field="effect" data-index="' + i + '">' +
+      let row = '<tr class="' + rowSelectedClass(i).trim() + '" data-index="' + i + '">';
+      row +=   rowSelectTd("edges", i);
+      row +=   '<td><select data-options="nodes" data-section="edges" data-field="from" data-index="' + i + '" class="' + fromInvalid + '"><option value=""></option>' + nodeOptions(e.from) + '</select></td>';
+      row +=   '<td><select data-options="nodes" data-section="edges" data-field="to"   data-index="' + i + '" class="' + toInvalid   + '"><option value=""></option>' + nodeOptions(e.to)   + '</select></td>';
+      row +=   '<td><select data-section="edges" data-field="effect" data-index="' + i + '">' +
                   EFFECT_OPTIONS.map(opt =>
                     '<option value="' + opt + '"' + (opt === e.effect ? " selected" : "") + '>' + opt + '</option>'
                   ).join("") +
                 '</select></td>';
-      html +=   '<td><input type="number" step="any" data-section="edges" data-field="elasticity" data-index="' + i + '" value="' + escapeHtml(e.elasticity === undefined ? "" : e.elasticity) + '" placeholder="(default)" /></td>';
-      html +=   '<td><select data-section="edges" data-field="style" data-index="' + i + '">' +
+      row +=   '<td><input type="number" step="any" data-section="edges" data-field="elasticity" data-index="' + i + '" value="' + escapeHtml(e.elasticity === undefined ? "" : e.elasticity) + '" placeholder="(default)" /></td>';
+      row +=   '<td><select data-section="edges" data-field="style" data-index="' + i + '">' +
                   '<option value="solid"'  + (e.style === "dashed" ? "" : " selected") + '>Solid</option>' +
                   '<option value="dashed"' + (e.style === "dashed" ? " selected" : "") + '>Dashed</option>' +
                 '</select></td>';
-      html +=   '<td><input type="text" data-section="edges" data-field="description" data-index="' + i + '" value="' + escapeHtml(e.description) + '" placeholder="Why this link exists" /></td>';
-      html +=   rowActionsHtml("edges", i);
-      html += '</tr>';
+      row +=   '<td><input type="text" data-section="edges" data-field="description" data-index="' + i + '" value="' + escapeHtml(e.description) + '" placeholder="Why this link exists" /></td>';
+      row +=   rowActionsHtml("edges", i);
+      row += '</tr>';
+      return row;
     });
   }
   html += '</tbody></table>';
@@ -746,7 +1007,7 @@ export function renderBuilderParamsStep(): string {
   if (params.length === 0) {
     html += tableEmptyRow(5, 'No constants — that is fine. Click "+ Add constant" if a box formula needs one.');
   } else {
-    sortedBuilderIndices("params").forEach((i) => {
+    html += renderBuilderRows("params", sortedBuilderIndices("params"), 5, (i) => {
       const p = params[i];
       // Two cheap hints, mirroring the loader's own checks: an id a box has
       // already taken, and a value that isn't a number. Everything else waits
@@ -757,13 +1018,14 @@ export function renderBuilderParamsStep(): string {
         ? ' data-tooltip="A box already uses this id — a formula could mean either, so this constant would be dropped."'
         : '';
 
-      html += '<tr class="' + rowSelectedClass(i).trim() + '" data-index="' + i + '">';
-      html +=   rowSelectTd("params", i);
-      html +=   '<td' + idHint + '><input type="text" data-section="params" data-field="id" data-index="' + i + '" value="' + escapeHtml(p.id) + '" class="' + idInvalid + '" placeholder="share_air" /></td>';
-      html +=   '<td><input type="number" step="any" data-section="params" data-field="value" data-index="' + i + '" value="' + escapeHtml(p.value === undefined || p.value === null ? "" : p.value) + '" class="' + valueInvalid + '" placeholder="0.35" /></td>';
-      html +=   '<td><input type="text" data-section="params" data-field="description" data-index="' + i + '" value="' + escapeHtml(p.description) + '" placeholder="What this number is, and where it came from" /></td>';
-      html +=   rowActionsHtml("params", i);
-      html += '</tr>';
+      let row = '<tr class="' + rowSelectedClass(i).trim() + '" data-index="' + i + '">';
+      row +=   rowSelectTd("params", i);
+      row +=   '<td' + idHint + '><input type="text" data-section="params" data-field="id" data-index="' + i + '" value="' + escapeHtml(p.id) + '" class="' + idInvalid + '" placeholder="share_air" /></td>';
+      row +=   '<td><input type="number" step="any" data-section="params" data-field="value" data-index="' + i + '" value="' + escapeHtml(p.value === undefined || p.value === null ? "" : p.value) + '" class="' + valueInvalid + '" placeholder="0.35" /></td>';
+      row +=   '<td><input type="text" data-section="params" data-field="description" data-index="' + i + '" value="' + escapeHtml(p.description) + '" placeholder="What this number is, and where it came from" /></td>';
+      row +=   rowActionsHtml("params", i);
+      row += '</tr>';
+      return row;
     });
   }
   html += '</tbody></table>';
@@ -812,6 +1074,45 @@ export function reviewTile(label: string, value: number | string): string {
            '<div class="builder-review-tile-label">' + escapeHtml(label) + '</div>' +
            '<div class="builder-review-tile-value">' + value + '</div>' +
          '</div>';
+}
+
+// ───── Deferred option lists ──────────────────────────────────────────────
+// The Links table's `from` / `to` cells are the wizard's worst DOM offender:
+// two <select>s per row, each historically carrying an <option> for every box
+// in the map. Virtualization caps the rows, but 80 rows × 2 selects × 2000
+// boxes is still 320,000 <option> elements — most of a minute of parsing for a
+// list the user will open at most one of.
+//
+// Since a <select> displays only its SELECTED option at rest, the markup only
+// needs that one. The full list is built by fillDeferredSelectOptions the
+// instant the control is entered, just before 04b upgrades it into a typable
+// dropdown — so the resting cell is pixel-identical and the opened one is
+// complete. `data-options` marks a select as needing that treatment.
+
+// <option> markup for a Links cell: the blank placeholder plus, when the value
+// names a real box, that one entry — with exactly the display text optionList
+// would have produced for it, so nothing shifts once the list is filled in.
+export function selectedOnlyNodeOption(): (currentValue: string | undefined) => string {
+  const labelById: Record<string, string | undefined> = {};
+  for (const n of state.builder.nodes) labelById[n.id] = n.label;
+  return function (currentValue: string | undefined): string {
+    if (!currentValue || !(currentValue in labelById)) return "";
+    const label = labelById[currentValue];
+    const display = label ? currentValue + " — " + label : currentValue;
+    return '<option value="' + escapeHtml(currentValue) + '" selected>' + escapeHtml(display) + "</option>";
+  };
+}
+
+// Registered with 04b as the lazy-upgrade preparer. Expands a deferred select
+// into its real option list, preserving the current value, then clears the
+// marker so the work happens once per control.
+export function fillDeferredSelectOptions(select: HTMLSelectElement): void {
+  if (!select || select.getAttribute("data-options") !== "nodes") return;
+  select.removeAttribute("data-options");
+  const current = select.value;
+  const build = optionList(state.builder.nodes.map(n => n.id), state.builder.nodes);
+  select.innerHTML = '<option value=""></option>' + build(current);
+  select.value = current;
 }
 
 // Helper: build a closure that returns <option> markup for a list of ids,
