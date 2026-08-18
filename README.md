@@ -2,7 +2,7 @@
 
 Spreadsheet-driven, interactive causal maps. Written in TypeScript as ES modules and bundled with Vite; `npm run build` produces a **single standalone HTML file** with no runtime dependencies, server, or network access. Open that file, drop in a spreadsheet, and get a layered cause-and-effect diagram with live what-if simulation.
 
-Domain-agnostic — any system you can express as boxes-with-rows-and-columns plus signed links will render. The default sample spreadsheet is a small neutral worked example (a three-team product company — 12 boxes, 12 links) that exercises every feature of the app while staying small enough to grok at a glance.
+Domain-agnostic — any system you can express as boxes-with-rows-and-columns plus signed links will render. The default sample spreadsheet is a small neutral worked example (a three-team product company — 12 boxes, 12 links) that exercises every feature of the app while staying small enough to grok at a glance. A second sample, `assets/data/advanced_sample.csv` (a parcel-delivery company — 16 boxes), demonstrates the optional [per-box calculation rules](#per-box-calculation-rules).
 
 ## What's in this repo
 
@@ -31,7 +31,7 @@ file to open.
 2. The app boots into an **empty 3×3 starter grid** — three rows, three columns, no boxes yet. From here you have three paths:
    - **Build directly on the map** (recommended for non-technical users). Click any empty cell to add a box, then rename it in the right panel. Drag from the right edge of a box to another box to draw a link. Edit rows / columns / categories from the left sidebar (pencil icon to rename / delete, drag handle to reorder, **+ Add** buttons at the bottom of each section).
    - **Import an existing spreadsheet** — click **Import** in the header, or drag-drop a `.csv` onto the window.
-   - **Bulk edit via the wizard** — click **Edit** in the header to open a six-step form (rows → columns → categories → boxes → links → review). Useful for big edits where the map is too fiddly. Hit **Apply to map** to re-render, or **Download CSV** to save a snapshot.
+   - **Bulk edit via the wizard** — click **Edit** in the header to open a seven-step form (rows → columns → categories → boxes → links → constants → review). Useful for big edits where the map is too fiddly. Hit **Apply to map** to re-render, or **Download CSV** to save a snapshot.
 3. Iterate freely. Every map edit auto-saves to your browser, so a page refresh restores everything. Click **Save** in the header to download the current map as a spreadsheet.
 
 The header has eight buttons left-to-right: **Create · Edit · Import · CSV · PNG · HTML · Simulate · Theme** (the CSV / PNG / HTML "get data out" trio sits behind a divider, with Simulate / Theme behind another).
@@ -52,8 +52,8 @@ The header has eight buttons left-to-right: **Create · Edit · Import · CSV ·
 - **Smart search** → fuzzy match across every box field — name, description, row, column, category, ID, and unit — ranked in that priority order (handles typos like "brder" → "Border" and word-initials like "bff" → "Border Force FTE"). So searching a row/column/category name surfaces every box in it. Top results show as a dropdown below the search box, with the matched text highlighted; matching boxes get an amber glow on the map. Press `/` from anywhere on the page to jump to the search box.
 - Detail panel → category, row, column, starting value + current values, all direct inputs/impacts with per-link strengths, click-through navigation. **Edit Box** toggle turns the panel into an edit form (every field as an input, per-row outgoing-link editor, delete button).
 - **Map direct edit** → click an empty grid cell to add a box, drag from a box's right edge to another box to draw a link, press Delete on a selected box to remove it (with a 6-second undo toast). Rows / columns / categories are edited from the left sidebar (pencil to rename / re-colour, drag handle to reorder, **+ Add** at the bottom of each section).
-- **Build / Edit wizard** → optional six-step in-app form (rows → columns → categories → boxes → links → review) with dropdowns for every cross-reference, live validation, and round-trip with the current map. Click **Edit Data** in the header. Useful for bulk edits where the map is too fiddly.
-- **Simulation mode** → sliders **and** typeable number inputs on every adjustable box, grouped by row. The values they affect recompute live (Cobb-Douglas propagation). The selected box's `Current` value is also editable from the detail panel.
+- **Build / Edit wizard** → optional seven-step in-app form (rows → columns → categories → boxes → links → constants → review) with dropdowns for every cross-reference, live validation, and round-trip with the current map. Click **Edit Data** in the header. Useful for bulk edits where the map is too fiddly.
+- **Simulation mode** → sliders **and** typeable number inputs on every adjustable box, grouped by row. The values they affect recompute live (Cobb-Douglas propagation, plus any [per-box calculation rules](#per-box-calculation-rules) a box opts into). The selected box's `Current` value is also editable from the detail panel, and the panel shows a **"How this number is calculated"** breakdown for it.
 - Outcome boxes get green / red glow colouring when their direction-of-merit metric moves materially from its starting value.
 - **Collapsible side panels** → click the pin icon in either panel header to collapse it to a thin strip; hover the strip to peek the contents, click the pin again to re-pin.
 - **Zoom** → bottom-right `−` / `+` buttons, `Ctrl/Cmd` + scroll-wheel (or trackpad pinch), or `Ctrl/Cmd + =/-/0` to zoom in / out / reset. Pinching anchors on the cursor.
@@ -62,7 +62,7 @@ The header has eight buttons left-to-right: **Create · Edit · Import · CSV ·
 
 ## Spreadsheet format
 
-Single file. Six sections delimited by `# SECTION: <name>` lines. Each section has its own column headers on the first non-comment row. Lines starting with `#` are comments, empty lines are ignored. Order doesn't matter to the parser but sections are typically written in build order: structure first, then content.
+Single file. Six sections delimited by `# SECTION: <name>` lines, plus an optional seventh (`params`). Each section has its own column headers on the first non-comment row. Lines starting with `#` are comments, empty lines are ignored. Order doesn't matter to the parser but sections are typically written in build order: structure first, then content.
 
 Edit in any spreadsheet app — each section appears as its own distinct table block. Quote cells with embedded commas; use `""` to escape literal quotes.
 
@@ -107,6 +107,23 @@ Key-value rows. Three keys used when a link's `elasticity` cell is blank:
 | `elasticity_increases` |  0.25 | Default for `increases` links. |
 | `elasticity_decreases` | -0.25 | Default for `decreases` links (negative). |
 
+### `params` (hidden constants) — optional
+
+Named numbers a box `formula` can use: conversion rates, route shares, tuning factors. They never render as boxes and need no links — they're part of the maths, not the picture. A file with no formulas can leave this section out entirely.
+
+| Column | Meaning |
+|--------|---------|
+| `id`          | Unique identifier a formula refers to. Must not collide with a box id. |
+| `value`       | The number. |
+| `description` | What it is and where it came from (shown on hover in the calculation breakdown). |
+
+```
+# SECTION: params
+id,value,description
+share_standard,0.7,Share of delivered parcels on the standard service
+orders_per_visit,0.04,Orders placed per website visit (the conversion rate)
+```
+
 ### `nodes` (boxes)
 
 | Column | Required | Meaning |
@@ -122,8 +139,21 @@ Key-value rows. Three keys used when a link's `elasticity` cell is blank:
 | `controllable` | no  | `true` to expose this box as a slider in Simulation mode. Use only for external inputs. |
 | `direction`    | no  | `higher_better` / `lower_better` / `neutral`. Drives outcome colouring. |
 | `slider_max`   | no  | Maximum slider multiplier (e.g. `2.0` = up to 200% of the starting value). Default 2.0. |
+| `combine`      | no  | How the links pointing **into** this box add up: `multiplicative` (default — independent % effects compound), `additive` (effects add rather than compound), `min` (the weakest input gates the box). |
+| `formula`      | no  | An expression in the boxes' own units that replaces the incoming links' maths, e.g. `min(orders_placed, fleet_capacity)`. |
+| `min`          | no  | Hard lower limit in the box's own units, applied after whichever rule ran. |
+| `max`          | no  | Hard upper limit, same. |
 
 *Without `baseline` + `unit` a box renders structurally but shows no value and doesn't participate in simulation.
+
+The last four columns are optional per-box calculation rules; leave them blank and a box behaves exactly as it always has. A `formula` beats `combine`, and an adjustable box's slider beats both. Formulas use `+ - * /` and parentheses plus four functions: `min(a, b, …)`, `max(a, b, …)`, `clamp(x, lo, hi)`, and `delay(box_id)` (that box's value from the previous solver pass — how a feedback loop is made well-defined). Names in a formula are box ids or constant ids; **every box a formula names must also have a link drawn from it**, so the arrows stay an honest picture of what feeds what.
+
+```
+id,label,…,baseline,unit,…,combine,formula,min,max
+fleet_capacity,Fleet capacity,…,2500,parcels/wk,…,min,,,
+parcels_delivered,Parcels delivered,…,2000,parcels/wk,…,,"min(orders_placed, fleet_capacity)",,
+depot_readiness,Depot readiness,…,0.95,share,…,,,0,1
+```
 
 ### `edges` (links)
 
@@ -139,14 +169,15 @@ Key-value rows. Three keys used when a link's `elasticity` cell is blank:
 
 Click **Edit Data** in the header (or **Create Map** first if you want a fresh start) to open a full-screen wizard that constructs the same spreadsheet without you typing any spreadsheet syntax. The map direct-edit flow is usually faster for small tweaks; the wizard shines when you're doing bulk edits or want to see all fields for a row at once.
 
-Six steps in build order:
+Seven steps in build order:
 
 1. **Rows** — rows of the map. Each gets a colour picker. A **Start from sample** shortcut pre-fills the taxonomy from the bundled sample if you want a scaffold rather than a blank map.
 2. **Columns** — left-to-right.
 3. **Categories** — box types, with fill + label colour pickers.
-4. **Boxes** — table view. The row / column / category columns are dropdowns sourced from steps 1–3, so cross-reference typos are structurally impossible. Optional simulation fields (baseline, unit, controllable, direction, slider_max) sit alongside the required ones.
+4. **Boxes** — table view. The row / column / category columns are dropdowns sourced from steps 1–3, so cross-reference typos are structurally impossible. Optional simulation fields (baseline, unit, controllable, direction, slider_max) sit alongside the required ones, followed by the optional calculation-rule fields (combine, formula, min, max).
 5. **Links** — table view. The **from** / **to** columns are dropdowns sourced from step 4. The three default strengths sit above the table for quick tuning.
-6. **Review** — counts of everything, all validation issues in one place, and the two CTAs:
+6. **Constants** — optional hidden numbers (`id`, `value`, `description`) that box formulas can use. They never render as boxes; a map with no formulas can skip this step entirely.
+7. **Review** — counts of everything, all validation issues in one place, and the two CTAs:
    - **Apply to map** — round-trips through the same spreadsheet loader as a drag-drop, so all validation runs.
    - **Download CSV** — saves a `.csv` with comments + section headers (drag back in later, or share with colleagues).
 
@@ -172,6 +203,12 @@ value_target = baseline_target × ∏ (current_source / baseline_source) ^ elast
 - Output is always positive, smooth, handles compounding inputs naturally, degrades gracefully at extremes (a source ratio of 0 collapses targets through any positive strength).
 - The `effect` label sets the default strength sign; a per-link `elasticity` override always wins.
 
+### Per-box calculation rules
+
+That default rule is what a box uses when the `combine` / `formula` / `min` / `max` columns are blank — which is every box in an older spreadsheet, so old maps compute exactly as they always did. A box can opt into something else: `combine` changes how its incoming links aggregate (`additive` effects add instead of compounding, `min` lets the weakest input gate the box), a `formula` replaces that aggregation with an explicit expression in the boxes' own units (ratios, capacity limits, share splits, and — through `delay()` — well-defined feedback), `min` / `max` put hard limits on the result, and hidden `params` hold the constants those formulas need. The precedence is fixed: an adjustable box's slider beats its formula, a formula beats `combine`. Anything the loader can't square — a formula it can't read, a name that is neither box nor constant, a formula reading a box with no arrow drawn from it — comes back as a plain-language warning on load; the map still loads and still computes.
+
+In simulation mode the detail panel for the selected box shows a **"How this number is calculated"** breakdown: which rule ran, each input with its value and its share of the answer (constants marked as hidden, delayed reads marked "previous step", the gating input on a `min` box flagged), plus a note whenever a limit bit, something divided by zero, or a name couldn't be resolved. `assets/data/advanced_sample.csv` is a worked example of every rule; [`docs/CALCULATION-ENGINE-DESIGN.md`](docs/CALCULATION-ENGINE-DESIGN.md) has the full design and the maths.
+
 ### Feedback loops
 
 Links may form loops — an output feeding back to affect a box that affects it. Negative-feedback loops settle quickly; a runaway positive loop (gain ≥ 1) can't settle, so its values are clamped to something finite and a warning is shown (at load and on the simulation panel). Lower the strengths on the loop to bring it back into a stable range.
@@ -193,6 +230,7 @@ Loader checks every load and reports findings in a toast (top-right) and the con
 - Every link's `from` / `to` references a known box. Unresolved → warning, link dropped.
 - No duplicate box IDs. Duplicate → warning, second occurrence dropped.
 - Link `effect` is one of `enables` / `increases` / `decreases`. Invalid → warning, link dropped.
+- Calculation rules line up: `combine` is one of the three modes, `min` ≤ `max`, a constant's id doesn't collide with a box id, and every formula parses, names only real boxes / constants, and has a link drawn from every box it reads. Any mismatch → warning naming the box and what the engine did instead; the map still loads.
 
 ## Files
 
@@ -244,7 +282,7 @@ systems_mapping/
     │   ├── 15-detail-panel.ts       Renders the right-side details
     │   ├── 16-file-io.ts            Drag-drop, file picker, CSV download
     │   ├── 16a-builder-state.ts     Wizard: state seeding, validation, helpers
-    │   ├── 16b-builder-render.ts    Wizard: HTML output for the six steps
+    │   ├── 16b-builder-render.ts    Wizard: HTML output for the seven steps
     │   ├── 16c-builder-editor.ts    Wizard: floating "expand this cell" editor
     │   ├── 16d-builder-events.ts    Wizard: click / typing / drag handlers
     │   ├── 16e-canvas-edit.ts       Canvas gestures: ghost cell, edge drag, delete
@@ -263,6 +301,9 @@ systems_mapping/
     └── data/
         ├── sample.csv               Small neutral example (3 rows, 12 boxes, 12 links).
         │                            Powers "Load Sample" + "Download Sample".
+        ├── advanced_sample.csv      Worked example of every calculation rule
+        │                            (params, combine, formula, bounds, delay()).
+        │                            Reference only — drag it in to load it.
         └── empty_template.csv       Empty starter with structure + inline comments.
                                      Reference only — no button loads it.
 ```
@@ -298,7 +339,8 @@ features are split across multiple files:
 | The sample CSV that comes built-in | `assets/data/sample.csv` (and re-export the JS constant — see note below) |
 | The size of nodes / spacing | `assets/js/02-config.ts` |
 | The list of valid edge effects, outcome directions, stream colour palette | `assets/js/02-config.ts` |
-| How nodes propagate values | `assets/js/07-simulation-engine.ts` |
+| How nodes propagate values (combine rules, bounds, the solver) | `assets/js/07-simulation-engine.ts` |
+| The formula language (`min` / `max` / `clamp` / `delay`) | `assets/js/07a-formula.ts` |
 | How nodes are positioned | `assets/js/08-layout.ts` |
 | How nodes/edges are drawn | `assets/js/11-rendering.ts` |
 | The right detail panel | `assets/js/15-detail-panel.ts` |
@@ -312,7 +354,7 @@ features are split across multiple files:
 | How links reroute across hidden rows / columns | `assets/js/10a-collapsed-edges.ts` |
 | Search behaviour / fuzzy matching | `assets/js/17a-search.ts`, `assets/css/13-search.css` |
 | Button behaviour | `assets/js/17-events.ts` |
-| Sample data dataset | `assets/data/sample.csv` |
+| Sample data dataset | `assets/data/sample.csv` (starter) · `assets/data/advanced_sample.csv` (calculation rules) |
 | Colours, fonts &amp; design tokens (radius / spacing / motion scales) | `assets/css/01-variables.css` |
 | The flat look (no borders) | `border: 0` in `assets/css/02-base.css`; state shown as box-shadow rings in the component files |
 
@@ -369,7 +411,7 @@ build on every push (`.github/workflows/ci.yml`).
 ## Limitations
 
 - **Strengths in the sample are illustrative, not calibrated.** Plausible round figures, not regression coefficients. Defensible for direction-of-effect analysis, not policy costings. To calibrate: substitute real numbers and fit strengths on time-series data.
-- **No threshold non-linearities.** Cobb-Douglas is smooth and monotone. Real-world bottlenecks have kinks (queues blow up non-linearly near capacity); not captured.
+- **Few threshold non-linearities by default.** Cobb-Douglas is smooth and monotone, so the standard rule has no kinks. A box can opt into the sharp ones — `min` gating, `min(demand, capacity)`, `clamp(…)`, hard `min` / `max` bounds — but everything else (a queue blowing up non-linearly *near* capacity, say) still has to be approximated with strengths.
 - **No confidence intervals.** Point estimates only.
 - **No cost / budget side.** Sliders move physical inputs without cost constraints. Easy to add: an additional `unit_cost` box field summed to a budget readout in the simulation panel.
 - **Feedback loops settle, they don't oscillate dynamically.** The iterative solver finds the steady state of a loop, not its time-path. A runaway positive loop (gain ≥ 1) has no steady state; its values are clamped and flagged rather than simulated over time.

@@ -1,8 +1,12 @@
 # Design decision: per-node calculation rules for simulation mode
 
-**Status:** proposed — for review before implementation.
-**Scope:** the simulation calculation engine (`assets/js/07-simulation-engine.ts`), the CSV
-schema, validation in the data loader, and the detail panel's simulation view.
+**Status:** implemented (2026-08-18). The sections below describe the shipped behaviour;
+"*As implemented*" notes flag the few places the build deliberately differs from this
+proposal.
+**Scope:** the simulation calculation engine (`assets/js/07-simulation-engine.ts` and the
+formula language in `07a-formula.ts`), the CSV schema, validation in the data loader, the
+detail panel's simulation view, and the Build / Edit wizard.
+**Worked example:** `assets/data/advanced_sample.csv` exercises every rule below.
 
 ## 1. The problem
 
@@ -86,6 +90,10 @@ Params never render as boxes. They are editable in the builder wizard and the CS
 referenceable from formulas, and round-trip through the serializer. This is the
 "separate the readable visual map from the underlying calculation model" requirement.
 
+> *As implemented:* the wizard's params step is called **Constants** in the UI (step 6 of
+> seven, between Links and Review) — "parameter" is jargon for the audience the wizard is
+> for. `params` remains the section name in the CSV and the field name in code.
+
 ### 3.4 `formula` — explicit rules where the built-ins aren't enough
 
 A new optional node column holding a small, safe expression evaluated in **absolute
@@ -115,10 +123,16 @@ map therefore remain an honest picture of causality; only the *how* moves into t
 and the constants move into params.
 
 **Feedback becomes well-defined.** Any cycle passing through a formula node must go
-through at least one `delay()` — a validation error names the cycle otherwise. `delay(x)`
+through at least one `delay()` — a validation warning names the cycle otherwise. `delay(x)`
 reads x's value from the previous solver sweep, which makes loop results independent of
 sweep order and structurally convergent (a unit delay, the standard trick). Cycles made
 only of classic ratio edges keep today's Gauss-Seidel treatment and status reporting.
+
+> *As implemented:* two rules the proposal left implicit. A **slider beats a formula** — a
+> `controllable` box is pinned by the user, so its formula never runs (the loader says so),
+> which is also why bounds never apply to it. And `delay()` takes a **bare box or param id**,
+> not an expression: the solver keeps previous-sweep values per id, so `delay(a + b)` has
+> nothing to read and the parser rejects it.
 
 ### 3.5 `min` / `max` node columns — hard bounds
 
@@ -147,6 +161,13 @@ formulas) the offending token:
 - a cycle through a formula node with no `delay()` on the cycle (error naming the nodes);
 - `combine` values outside the enum; `min > max`;
 - division-by-zero guarded at runtime (result 0, flagged in the trace) rather than at load.
+
+> *As implemented:* **nothing here is fatal.** Every item above loads as a plain-language
+> warning in the same list as the existing load warnings, saying what the engine did instead
+> ("the formula is ignored", "it will be read as 0", "that link is descriptive only"). The
+> only fatal errors remain the pre-existing ones — a missing or empty required section. The
+> reasoning: a half-valid calculation model is still worth looking at, and refusing to open
+> someone's file teaches them nothing about how to fix it.
 
 ## 6. CSV schema summary
 

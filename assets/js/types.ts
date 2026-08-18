@@ -266,8 +266,9 @@ export interface BuilderNode {
   controllable?: boolean;
   direction?: string;
   sliderMax?: number | string;
-  // Per-box calculation rules. Carried through the wizard untouched (there is
-  // no editor for them yet) so an "Apply to map" round-trip never drops them.
+  // Per-box calculation rules, edited on the wizard's Boxes step (step 4) in
+  // the columns after the simulation fields, and round-tripped back out on
+  // "Apply to map" / "Download CSV".
   combine?: string;
   formula?: string;
   minValue?: number | string;
@@ -298,10 +299,10 @@ export interface BuilderState {
   defaults: ElasticityDefaults;
   nodes: BuilderNode[];
   edges: BuilderEdge[];
-  // Hidden calculation constants. The wizard has no params step yet, so this is
-  // simply carried from the live map and written back out on apply — undefined
-  // means "the wizard never saw them", which the serializer reads as "keep the
-  // live map's params".
+  // Hidden calculation constants, edited on the wizard's Constants step (step 6)
+  // and written back out on apply. Still optional: undefined means "the wizard
+  // never saw them" (e.g. a builder object saved before the step existed), which
+  // the serializer reads as "keep the live map's params".
   params?: Param[];
   selected: Set<number>;
   _lastRenderedStep: number | null;

@@ -1,0 +1,119 @@
+# Ariadne Maps — Advanced sample (per-box calculation rules)
+# A neutral worked example of every calculation rule the simulation engine
+# supports. Models a small parcel-delivery company: web demand on one row,
+# fulfilment in the middle, customer service at the end. 16 boxes, 18 links,
+# 5 hidden constants. Every box rests exactly at its starting value, so any
+# movement you see comes from a slider you moved.
+#
+# What each technique looks like here:
+#   • hidden constants (params)  - conversion rate, route shares, feedback tuning
+#   • conversion rate            - `orders_placed` = visits x orders_per_visit
+#   • allocation by shares       - `standard_parcels` / `express_parcels` split
+#                                  one flow by two shares that sum to 1
+#   • capacity limit             - `parcels_delivered` = min(demand, capacity)
+#   • ratio with clamp           - `fleet_utilisation` = clamp(delivered / capacity, 0, 1)
+#   • gate (joint prerequisites) - `on_time_parcels` multiplies delivered volume
+#                                  by BOTH readiness and reliability
+#   • combine = min              - `fleet_capacity` is gated by whichever of vans
+#                                  or drivers is scarcer (the weakest link)
+#   • combine = additive         - `service_score` adds its two effects instead
+#                                  of compounding them
+#   • min / max bounds           - `depot_readiness` is a share, so it is held
+#                                  inside 0 - 1 however hard you push the slider
+#   • delayed feedback           - `repeat_uplift` reads LAST sweep's service
+#                                  score through delay(), which closes the
+#                                  service -> demand loop without it chasing
+#                                  its own tail
+#
+# Drag this file onto the app to load it. `sample.csv` is the simpler starter
+# example; this one is the reference for the calculation columns. The rules
+# themselves are documented in README.md ("Spreadsheet format") and in depth in
+# docs/CALCULATION-ENGINE-DESIGN.md.
+#
+# Sections (in order): streams (rows), stages (columns), categories, defaults, params (hidden constants), nodes (boxes), edges (links).
+
+# SECTION: streams
+id,label,short,color
+demand,Demand,DEMAND,#60a5fa
+fulfil,Fulfilment,FULFIL,#34d399
+service,Service,SERVICE,#fbbf24
+
+# SECTION: stages
+# Columns of the map, shown left-to-right in CSV order.
+id,label
+inputs,Inputs
+capacity,Capacity
+flow,Flow
+outcomes,Outcomes
+
+# SECTION: categories
+id,label,color,text_color,class
+resource,Resource,#d4a373,#1c1917,primary
+driver,Driver,#7dd3fc,#082f49,primary
+volume,Volume,#5eead4,#042f2e,primary
+metric,Metric,#c4b5fd,#1e1b4b,primary
+outcome,Outcome,#86efac,#052e16,primary
+
+# SECTION: defaults
+# Used when a link's `elasticity` cell is blank.
+key,value
+elasticity_enables,0.3
+elasticity_increases,0.25
+elasticity_decreases,-0.25
+
+# SECTION: params
+# Hidden constants: named numbers a box formula can use. They never render as
+# boxes and need no arrows - they are part of the maths, not the picture.
+id,value,description
+orders_per_visit,0.04,Orders placed per website visit (the conversion rate)
+share_standard,0.7,Share of delivered parcels on the standard service
+share_express,0.3,Share on the express service (this and share_standard sum to 1)
+repeat_sensitivity,0.5,How strongly last period's service score moves repeat demand
+service_score_norm,80,The service score that counts as normal - repeat demand is measured against it
+
+# SECTION: nodes
+# The last four columns are the optional calculation rules:
+#   combine  - multiplicative (default) / additive / min
+#   formula  - an expression in the boxes' own units; beats combine
+#   min, max - hard limits applied after whichever rule ran
+id,label,description,stream,stage,category,baseline,unit,controllable,direction,slider_max,combine,formula,min,max
+site_visits,Website visits,Weekly visits to the storefront.,demand,inputs,resource,50000,visits/wk,true,,3,,,,
+van_fleet,Vans available,Delivery vans on the road this week.,fulfil,inputs,resource,40,vans,true,,3,,,,
+drivers_on_shift,Drivers on shift,Drivers rostered across the week.,fulfil,inputs,resource,48,drivers,true,,3,,,,
+depot_staff,Depot staff,People picking and loading at the depot.,fulfil,inputs,resource,30,people,true,,3,,,,
+support_agents,Support agents,People answering customer contacts.,service,inputs,resource,12,people,true,,3,,,,
+repeat_uplift,Repeat-demand uplift,Multiplier on new demand from last period's service. 1.0 = no change.,demand,capacity,driver,1,multiplier,,,,,1 + repeat_sensitivity * (delay(service_score) / service_score_norm - 1),,
+fleet_capacity,Fleet capacity,Parcels the fleet could deliver this week.,fulfil,capacity,driver,2500,parcels/wk,,,,min,,,
+depot_readiness,Depot readiness,Share of parcels picked and loaded on schedule.,fulfil,capacity,driver,0.95,share,,,,,,0,1
+route_reliability,Route reliability,Share of planned routes that run as planned.,fulfil,capacity,driver,0.9,share,,,,,,,
+orders_placed,Orders placed,New orders from the site - lifted or damped by repeat demand.,demand,flow,volume,2000,orders/wk,,,,,site_visits * orders_per_visit * repeat_uplift,,
+parcels_delivered,Parcels delivered,Whichever is smaller - the orders placed or the fleet's capacity.,fulfil,flow,volume,2000,parcels/wk,,,,,"min(orders_placed, fleet_capacity)",,
+standard_parcels,Standard parcels,The part of the flow going out on the standard service.,fulfil,flow,volume,1400,parcels/wk,,,,,parcels_delivered * share_standard,,
+express_parcels,Express parcels,The part of the flow going out on the express service.,fulfil,flow,volume,600,parcels/wk,,,,,parcels_delivered * share_express,,
+fleet_utilisation,Fleet utilisation,How much of the fleet's capacity is being used.,fulfil,outcomes,metric,0.8,share,,,,,"clamp(parcels_delivered / fleet_capacity, 0, 1)",,
+on_time_parcels,On-time parcels,Parcels that arrive on time - needs the volume AND readiness AND reliability.,fulfil,outcomes,metric,1710,parcels/wk,,higher_better,,,parcels_delivered * depot_readiness * route_reliability,,
+service_score,Service score,Customer service index from the weekly panel.,service,outcomes,outcome,80,index,,higher_better,,additive,,,
+
+# SECTION: edges
+# Arrows into a box with a `formula` are descriptive: they must be drawn (the
+# map has to show every causal input) but the formula does the arithmetic, so
+# their `elasticity` cells are left blank.
+from,to,effect,elasticity,description
+site_visits,orders_placed,increases,,More visits means more new orders at the conversion rate.
+repeat_uplift,orders_placed,increases,,Last period's service lifts or damps this period's demand.
+service_score,repeat_uplift,increases,,Closes the loop - read one step behind through delay().
+van_fleet,fleet_capacity,increases,1.0,Vans and drivers are BOTH needed - the scarcer one gates capacity.
+drivers_on_shift,fleet_capacity,increases,1.0,The same gate from the driver side.
+depot_staff,depot_readiness,enables,0.3,More pickers means fewer parcels held back at the depot.
+drivers_on_shift,route_reliability,enables,0.2,A fuller roster means fewer routes dropped.
+orders_placed,parcels_delivered,increases,,The demand side of the capacity test.
+fleet_capacity,parcels_delivered,increases,,The capacity side of the capacity test.
+parcels_delivered,standard_parcels,increases,,Split out by the standard share.
+parcels_delivered,express_parcels,increases,,Split out by the express share.
+parcels_delivered,fleet_utilisation,increases,,Top of the utilisation ratio.
+fleet_capacity,fleet_utilisation,increases,,Bottom of the utilisation ratio.
+parcels_delivered,on_time_parcels,increases,,Only a delivered parcel can be an on-time parcel.
+depot_readiness,on_time_parcels,increases,,Joint prerequisite: a parcel picked late cannot arrive on time.
+route_reliability,on_time_parcels,increases,,Joint prerequisite: a dropped route means a late parcel.
+on_time_parcels,service_score,increases,0.5,On-time delivery is the biggest single driver of the score.
+support_agents,service_score,increases,0.2,Support cover adds to the score rather than compounding with delivery.
