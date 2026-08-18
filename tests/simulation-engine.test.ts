@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { loadDataFromCsv } from "../assets/js/06-data-loader";
+import { loadDataFromCsv, rebuildIndexes } from "../assets/js/06-data-loader";
 import {
   resolveEdgeElasticity,
   recomputeValues,
   formatNodeValue,
   formatNodeDelta,
   getOutcomeBorderColor,
+  getSolverDiagnostics,
 } from "../assets/js/07-simulation-engine";
 import { state, NODES, nodeById, incomingEdges, topologicalOrder } from "../assets/js/03-state";
 import { SAMPLE_CSV } from "../assets/js/01-sample-data";
@@ -99,6 +100,79 @@ describe("legacy regression — the bundled sample map", () => {
     const rules = new Set(Object.values(state.explanations).map((e) => e.rule));
     for (const rule of rules) expect(["pinned", "baseline", "multiplicative"]).toContain(rule);
     expect(Object.values(state.explanations).every((e) => e.clamp === undefined)).toBe(true);
+  });
+});
+
+// While a slider is dragged the engine keeps the previous solve's numbers and
+// re-evaluates only what that slider can reach. On a loop-free map that is not
+// an approximation — the untouched boxes would have been recomputed from
+// identical inputs — so the incremental answer must equal a cold, from-scratch
+// solve exactly, and it must stay equal over a whole drag.
+describe("incremental solving matches a cold solve", () => {
+  function solveCold(overrides: Record<string, number>): Record<string, number> {
+    loadDataFromCsv(SAMPLE_CSV);
+    state.userOverrides = { ...overrides };
+    // Any rebuild of the map's indexes invalidates the incremental bookkeeping,
+    // so this next solve is a full, from-scratch one.
+    rebuildIndexes();
+    recomputeValues();
+    expect(getSolverDiagnostics().mode).toBe("cold");
+    return { ...state.computedValues };
+  }
+
+  it("lands on identical values after a drag, box for box", () => {
+    // A drag: one slider moving through a sequence of positions, each solve
+    // building on the last.
+    loadDataFromCsv(SAMPLE_CSV);
+    for (const value of [1.1, 1.2, 1.3, 1.25]) {
+      state.userOverrides = { team_size: value };
+      recomputeValues();
+      expect(getSolverDiagnostics().mode).toBe("incremental");
+    }
+    const dragged = { ...state.computedValues };
+
+    const cold = solveCold({ team_size: 1.25 });
+    expect(Object.keys(dragged).sort()).toEqual(Object.keys(cold).sort());
+    for (const id of Object.keys(cold)) {
+      expect(dragged[id]).toBeCloseTo(cold[id], 12);
+    }
+  });
+
+  it("only re-evaluates what the moved slider can reach", () => {
+    loadDataFromCsv(SAMPLE_CSV);
+    const coldSweep = getSolverDiagnostics().sweptNodes;
+    state.userOverrides = { team_size: 1.4 };
+    recomputeValues();
+    const incrementalSweep = getSolverDiagnostics().sweptNodes;
+    expect(incrementalSweep).toBeGreaterThan(0);
+    expect(incrementalSweep).toBeLessThan(coldSweep);
+  });
+
+  it("falls back to a cold solve when more than one slider moved", () => {
+    loadDataFromCsv(SAMPLE_CSV);
+    state.userOverrides = { team_size: 1.5, marketing_spend: 0.5 };
+    recomputeValues();
+    expect(getSolverDiagnostics().mode).toBe("cold");
+
+    const incremental = { ...state.computedValues };
+    const cold = solveCold({ team_size: 1.5, marketing_spend: 0.5 });
+    for (const id of Object.keys(cold)) {
+      expect(incremental[id]).toBeCloseTo(cold[id], 12);
+    }
+  });
+
+  it("re-seeds a slider that was reset back to its baseline", () => {
+    loadDataFromCsv(SAMPLE_CSV);
+    const atRest = { ...state.computedValues };
+
+    state.userOverrides = { team_size: 1.6 };
+    recomputeValues();
+    state.userOverrides = {}; // the override removed, not just changed
+    recomputeValues();
+
+    for (const id of Object.keys(atRest)) {
+      expect(state.computedValues[id]).toBeCloseTo(atRest[id], 12);
+    }
   });
 });
 

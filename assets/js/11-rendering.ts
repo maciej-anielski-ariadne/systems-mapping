@@ -950,64 +950,117 @@ export function render(): void {
   attachSvgEventHandlers();
 }
 
-// Patch only the value / delta / outcome-border of quantified nodes in place,
-// skipping a full SVG rebuild. A simulation slider scrub recomputes downstream
-// values every frame but changes nothing structural — same nodes, same edges,
-// same positions — so on a large map a full render() is mostly wasted work.
+// Patch only the value / delta / border of quantified nodes in place, skipping a
+// full SVG rebuild. A simulation slider scrub recomputes downstream values every
+// frame but changes nothing structural — same nodes, same edges, same positions,
+// and (during a drag) the same selection — so on a large map a full render() is
+// mostly wasted work.
+//
 // Returns true if it fully handled the update; false (→ caller falls back to a
-// full render) when:
-//   • something is selected — selection/ancestor borders interact with the
-//     outcome border and aren't worth patching in place (rare during a scrub), or
-//   • a delta label needs to appear or disappear — that's a markup change, so
-//     the structure must be rebuilt.
+// full render) when a delta label needs to appear or disappear, because that is
+// a markup change and the structure has to be rebuilt.
+//
+// A SELECTION no longer forces the fallback. The selected / ancestor / descendant
+// borders take precedence over the outcome colour, but those three sets don't
+// change while a slider moves, so the same precedence the full render applies
+// (11-rendering's node loop) is applied here per node instead.
 export function updateSimulationValuesInPlace(): boolean {
   if (!state.dataLoaded) return false;
-  if (state.selectedNodeId || state.selectedNodeIds.size) return false;
   const staticLayer = svg.querySelector("." + STATIC_LAYER_CLASS);
   if (!staticLayer) return false;
 
-  // One DOM sweep → id-keyed map (only visible nodes have a group element).
-  const groupById = new Map<string, Element>();
-  staticLayer.querySelectorAll(".node-group").forEach(g => {
-    const id = g.getAttribute("data-node-id");
-    if (id) groupById.set(id, g);
-  });
+  // One DOM sweep → id-keyed map (only visible nodes have a group element), and
+  // one cached lookup of each group's three patchable children. The WeakMap is
+  // keyed by the group element, so a later full render (which replaces every
+  // group) drops the stale entries by itself.
+  const groups = staticLayer.querySelectorAll(".node-group");
+  const patches: NodePatch[] = [];
 
-  // Pass 1: bail to a full render if any delta label must appear/disappear.
-  for (const node of NODES) {
-    if (node.baseline === undefined || node.baseline === null) continue;
-    const group = groupById.get(node.id);
-    if (!group) continue;
-    const d = formatNodeDelta(node.id);
-    const needs = !!(d.text && d.text !== "—");
-    const has = !!group.querySelector(".node-delta");
-    if (needs !== has) return false;
+  // Pass 1: gather each node's freshly-formatted delta ONCE, and bail to a full
+  // render if any delta label must appear or disappear.
+  for (let i = 0; i < groups.length; i++) {
+    const group = groups[i];
+    const id = group.getAttribute("data-node-id");
+    if (!id) continue;
+    const node = nodeById[id];
+    if (!node || node.baseline === undefined || node.baseline === null) continue;
+
+    const refs = nodePatchRefs(group);
+    const delta = formatNodeDelta(id);
+    const needsDelta = !!(delta.text && delta.text !== "—");
+    if (needsDelta !== !!refs.delta) return false;
+    patches.push({ node: node, refs: refs, delta: delta });
   }
 
-  // Pass 2: patch value text, delta text + colour, and the outcome border.
-  for (const node of NODES) {
-    if (node.baseline === undefined || node.baseline === null) continue;
-    const group = groupById.get(node.id);
-    if (!group) continue;
+  // Pass 2: patch value text, delta text + colour, and the border.
+  const showOutcomeBorders = !state.selectedNodeId && !state.selectedNodeIds.size;
+  for (let i = 0; i < patches.length; i++) {
+    const { node, refs, delta } = patches[i];
 
-    const valueEl = group.querySelector(".node-value");
-    if (valueEl) valueEl.textContent = formatNodeValue(node.id);
+    if (refs.value) refs.value.textContent = formatNodeValue(node.id);
 
-    const d = formatNodeDelta(node.id);
-    const deltaEl = group.querySelector(".node-delta");
-    if (deltaEl && d.text && d.text !== "—") {
-      deltaEl.textContent = d.text;
-      deltaEl.setAttribute("fill", deltaColorFor(node, d));
+    if (refs.delta && delta.text && delta.text !== "—") {
+      refs.delta.textContent = delta.text;
+      refs.delta.setAttribute("fill", deltaColorFor(node, delta));
     }
 
-    const rectEl = group.querySelector(".node-rect");
-    if (rectEl) {
-      const outcome = getOutcomeBorderColor(node.id);
-      rectEl.setAttribute("stroke", outcome || "rgba(0,0,0,0.4)");
-      rectEl.setAttribute("stroke-width", outcome ? "2" : "1");
+    if (!refs.rect) continue;
+    // Same precedence as the full render: the selection glow wins, then the
+    // ancestor / descendant trace, then the good/bad outcome colour (which only
+    // shows when nothing at all is selected), then the plain border.
+    let strokeColor = "rgba(0,0,0,0.4)";
+    let strokeWidth = "1";
+    if (state.selectedNodeIds.has(node.id)) {
+      strokeColor = "#ffffff";
+      strokeWidth = "2.5";
+    } else if (state.ancestorSet.has(node.id)) {
+      strokeColor = "var(--edge-ancestor)";
+      strokeWidth = "2";
+    } else if (state.descendantSet.has(node.id)) {
+      strokeColor = "var(--edge-descendant)";
+      strokeWidth = "2";
+    } else if (showOutcomeBorders) {
+      // The delta is already computed for this node — hand it over rather than
+      // having getOutcomeBorderColor format it a second time.
+      const outcome = getOutcomeBorderColor(node.id, delta);
+      if (outcome) {
+        strokeColor = outcome;
+        strokeWidth = "2";
+      }
     }
+    refs.rect.setAttribute("stroke", strokeColor);
+    refs.rect.setAttribute("stroke-width", strokeWidth);
   }
   return true;
+}
+
+// The three elements a value patch writes to, resolved once per group element
+// instead of on every frame. (querySelector is the expensive part of the patch:
+// four of them per node per frame was the bulk of a scrub's DOM cost.)
+interface NodePatchRefs {
+  value: Element | null;
+  delta: Element | null;
+  rect: Element | null;
+}
+
+interface NodePatch {
+  node: GraphNode;
+  refs: NodePatchRefs;
+  delta: { text: string; pct: number };
+}
+
+const nodePatchRefsByGroup = new WeakMap<Element, NodePatchRefs>();
+
+function nodePatchRefs(group: Element): NodePatchRefs {
+  const cached = nodePatchRefsByGroup.get(group);
+  if (cached) return cached;
+  const refs: NodePatchRefs = {
+    value: group.querySelector(".node-value"),
+    delta: group.querySelector(".node-delta"),
+    rect: group.querySelector(".node-rect"),
+  };
+  nodePatchRefsByGroup.set(group, refs);
+  return refs;
 }
 
 // Ensure the delegated event listeners are wired. All node / row-label /

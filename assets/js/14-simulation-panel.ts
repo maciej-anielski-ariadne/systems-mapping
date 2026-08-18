@@ -18,7 +18,7 @@ import { state, NODES, STREAMS, nodeById } from "./03-state";
 import { escapeHtml, formatScalar } from "./04-utils";
 import { recomputeValues, formatNodeDelta } from "./07-simulation-engine";
 import { render, scheduleRender, updateSimulationValuesInPlace } from "./11-rendering";
-import { renderDetailPanel } from "./15-detail-panel";
+import { patchDetailPanelValues, renderDetailPanel } from "./15-detail-panel";
 import { saveUiStateToStorage, scheduleUiStateSave } from "./04a-storage";
 import { renderSidebar } from "./13-sidebar";
 import { applyPanelPinnedClasses } from "./17-events";
@@ -87,44 +87,139 @@ export function renderSimulationPanel(): void {
   simPanel.innerHTML = html;
   updateSimSolverBadge();
 
-  // ───── Wire up the slider + the number input ──────────────────────────
-  // Both call applySimMultiplier — only the source field is excluded from
-  // the inline sync so we don't fight the user's input.
-  simPanel.querySelectorAll(".sim-slider").forEach(slider => {
-    slider.addEventListener("input", event => {
-      const target = event.target as HTMLInputElement;
-      const nodeId = target.getAttribute("data-node-id")!;
+  bindSimPanelHandlers(simPanel);
+}
+
+// ───── Delegated panel handlers — bound ONCE, never per render ────────────
+// The panel's innerHTML is rebuilt whenever the map or the mode changes, so
+// per-slider listeners meant one addEventListener per control per rebuild (two
+// per adjustable box) and a fresh closure each time. The panel element itself is
+// stable, so one listener set on it handles every row, for every rebuild, and
+// dispatches on the target's class.
+let simPanelHandlersBound = false;
+
+function bindSimPanelHandlers(simPanel: HTMLElement): void {
+  if (simPanelHandlersBound) return;
+  simPanelHandlersBound = true;
+
+  // Drag / type: write the override now, solve and repaint once per frame.
+  simPanel.addEventListener("input", event => {
+    const target = event.target as HTMLInputElement;
+    if (!target || !target.classList) return;
+    const nodeId = target.getAttribute("data-node-id");
+    if (!nodeId) return;
+
+    if (target.classList.contains("sim-slider")) {
       const newMultiplier = parseFloat(target.value);
       if (isNaN(newMultiplier)) return;
-      applySimMultiplier(nodeId, newMultiplier, target);
-      maybeRefreshDetailPanel(nodeId);
-    });
-  });
-  simPanel.querySelectorAll(".sim-value-input").forEach(input => {
-    input.addEventListener("input", event => {
-      const target = event.target as HTMLInputElement;
-      const nodeId = target.getAttribute("data-node-id")!;
+      scheduleSimTick(nodeId, newMultiplier, target);
+    } else if (target.classList.contains("sim-value-input")) {
       const node = nodeById[nodeId];
       if (!node || !node.baseline) return;
       const raw = parseFloat(target.value);
       if (isNaN(raw)) return;
-      applySimMultiplier(nodeId, raw / node.baseline, target);
-      maybeRefreshDetailPanel(nodeId);
-    });
+      scheduleSimTick(nodeId, raw / node.baseline, target);
+    }
   });
 
-  // ───── Wire up reset button ───────────────────────────────────────────
-  const resetButton = document.getElementById("sim-reset-button");
-  if (resetButton) {
-    resetButton.addEventListener("click", () => {
-      state.userOverrides = {};
-      recomputeValues();
-      renderSimulationPanel();
-      render();
-      renderDetailPanel();
-      saveUiStateToStorage();
-    });
+  // Commit (mouse released on a slider, focus left a typed value): drain any
+  // frame still owed, then give the detail panel one full, unpatched render so
+  // anything the scrub patch skipped is definitely right.
+  simPanel.addEventListener("change", event => {
+    const target = event.target as HTMLInputElement;
+    if (!target || !target.classList) return;
+    if (!target.classList.contains("sim-slider") && !target.classList.contains("sim-value-input")) return;
+    flushSimTick();
+    renderDetailPanel();
+    saveUiStateToStorage();
+  });
+
+  simPanel.addEventListener("click", event => {
+    const target = event.target as Element;
+    if (!target || typeof target.closest !== "function") return;
+    if (!target.closest("#sim-reset-button")) return;
+    cancelSimTick();
+    state.userOverrides = {};
+    recomputeValues();
+    renderSimulationPanel();
+    render();
+    renderDetailPanel();
+    saveUiStateToStorage();
+  });
+}
+
+// ───── One solve + repaint per animation frame ────────────────────────────
+// A slider fires `input` at 100-240 Hz on a modern pointer. Solving and
+// repainting inside every one of those events means most of the work lands on
+// frames the browser never gets to draw. Instead the handler writes the override
+// immediately (so state is never behind the widget) and asks for a tick; the
+// tick runs once per frame, no matter how many events arrived.
+//
+// Anything that needs the update to have happened ALREADY — a test, a commit
+// handler, a mode change — calls flushSimTick() to drain it synchronously.
+interface PendingSimTick {
+  nodeId: string;
+  origin: Element | null;
+}
+
+let pendingSimTick: PendingSimTick | null = null;
+let pendingFrameHandle: number | null = null;
+
+function requestFrame(callback: () => void): number {
+  if (typeof requestAnimationFrame === "function") return requestAnimationFrame(callback);
+  return setTimeout(callback, 16) as unknown as number;
+}
+
+function cancelFrame(handle: number): void {
+  if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(handle);
+  else clearTimeout(handle);
+}
+
+// Write the override straight away, and queue the solve + repaint for the next
+// frame. Later calls in the same frame replace the queued one.
+export function scheduleSimTick(nodeId: string, newMultiplier: number, originElement: Element | null): void {
+  const node = nodeById[nodeId];
+  if (!node || !node.baseline) return;
+  state.userOverrides[nodeId] = clampMultiplier(node, newMultiplier);
+  pendingSimTick = { nodeId: nodeId, origin: originElement };
+  if (pendingFrameHandle === null) pendingFrameHandle = requestFrame(runSimTick);
+}
+
+// Run any owed tick right now. Safe (and free) to call when nothing is pending.
+export function flushSimTick(): void {
+  if (pendingFrameHandle !== null) {
+    cancelFrame(pendingFrameHandle);
+    pendingFrameHandle = null;
   }
+  runSimTick();
+}
+
+// Drop an owed tick without running it — used when the whole panel is about to
+// be rebuilt from scratch anyway (Reset).
+function cancelSimTick(): void {
+  if (pendingFrameHandle !== null) {
+    cancelFrame(pendingFrameHandle);
+    pendingFrameHandle = null;
+  }
+  pendingSimTick = null;
+}
+
+function runSimTick(): void {
+  pendingFrameHandle = null;
+  const tick = pendingSimTick;
+  if (!tick) return;
+  pendingSimTick = null;
+
+  applySimUpdate(tick.nodeId, tick.origin);
+  // A scrub patches the detail panel's numbers in place; the drag-end `change`
+  // event above gives it a full render.
+  maybeRefreshDetailPanel(tick.nodeId, { scrub: true });
+  scheduleUiStateSave();
+}
+
+function clampMultiplier(node: GraphNode, newMultiplier: number): number {
+  const sliderMax = node.sliderMax || 2.0;
+  return Math.max(0, Math.min(newMultiplier, sliderMax));
 }
 
 // ───── Shared multiplier-apply (called by sim panel + detail panel) ──────
@@ -132,22 +227,29 @@ export function renderSimulationPanel(): void {
 // the sim panel inline (preserving focus on the source), and re-renders the
 // SVG. Does NOT call renderDetailPanel — see maybeRefreshDetailPanel.
 export function applySimMultiplier(nodeId: string, newMultiplier: number, originElement: Element | null): void {
-  if (!nodeById[nodeId]) return;
   const node = nodeById[nodeId];
-  if (!node.baseline) return;
-  const sliderMax = node.sliderMax || 2.0;
-  const clamped = Math.max(0, Math.min(newMultiplier, sliderMax));
-  state.userOverrides[nodeId] = clamped;
+  if (!node || !node.baseline) return;
+  state.userOverrides[nodeId] = clampMultiplier(node, newMultiplier);
+  // Called directly (the detail panel's Current field, a test), so it is
+  // synchronous by contract: the DOM reflects the new value the moment it
+  // returns. Only the panel's own high-rate `input` events are coalesced, and a
+  // tick they left owed is superseded by the solve we are about to run.
+  pendingSimTick = null;
+  applySimUpdate(nodeId, originElement);
+  // Slider drags fire this at pointer-move rate; the debounced saver writes
+  // once when the drag goes quiet instead of per event.
+  scheduleUiStateSave();
+}
+
+// Solve, then repaint: the shared body of a direct call and a coalesced tick.
+function applySimUpdate(nodeId: string, originElement: Element | null): void {
   recomputeValues();
   syncSimRow(nodeId, originElement);
   updateSimSolverBadge();
   // Patch the changed values straight into the existing node DOM. Only when that
-  // can't apply cleanly (a delta label must appear/disappear, or a node is
-  // selected) do we fall back to a coalesced full render.
+  // can't apply cleanly (a delta label must appear or disappear) do we fall back
+  // to a coalesced full render.
   if (!updateSimulationValuesInPlace()) scheduleRender();
-  // Slider drags fire this at pointer-move rate; the debounced saver writes
-  // once when the drag goes quiet instead of per event.
-  scheduleUiStateSave();
 }
 
 // Show or hide the feedback-loop warning in the sim panel. The simulation works
@@ -194,14 +296,21 @@ export function syncSimRow(nodeId: string, originElement: Element | null): void 
 // isn't currently typing into the detail-panel's own value input (which
 // would wipe their input and lose focus). For that case, update the delta
 // display inline instead.
-export function maybeRefreshDetailPanel(changedNodeId: string): void {
+export function maybeRefreshDetailPanel(changedNodeId: string, options?: { scrub?: boolean }): void {
   const active = document.activeElement;
   const detailInputActive = active && active.classList && active.classList.contains("detail-value-input");
   if (detailInputActive) {
     updateDetailPanelDeltaInline(changedNodeId);
-  } else {
-    renderDetailPanel();
+    return;
   }
+  // Mid-scrub, rebuilding the whole panel (re-running every field, every
+  // handler and every dropdown upgrade) for a set of numbers that changed by a
+  // fraction of a percent is the single most expensive thing a slider frame can
+  // do. Patch the numbers instead, and fall back to a full render the moment the
+  // panel's SHAPE would differ (a clamp notice appearing, a different input
+  // gating a min rule, the rule itself changing).
+  if (options && options.scrub && patchDetailPanelValues()) return;
+  renderDetailPanel();
 }
 
 // Inline-update the "Current" + "Δ vs baseline" cells in the detail panel
@@ -251,6 +360,9 @@ export function updateDetailPanelDeltaInline(changedNodeId: string): void {
 
 // Flip simulation mode on/off and refresh everything that depends on it.
 export function toggleSimulationMode(): void {
+  // Everything below re-renders from scratch, so an owed slider tick has nothing
+  // left to contribute.
+  cancelSimTick();
   state.simulationMode = !state.simulationMode;
 
   const button = document.getElementById("sim-toggle-button");

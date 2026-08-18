@@ -71,20 +71,38 @@ import {
   nodeById,
   paramById,
   incomingEdges,
+  outgoingEdges,
   cycleInfo,
 } from "./03-state";
 import { formatScalar } from "./04-utils";
-import { parseFormula, evaluateFormula } from "./07a-formula";
+import { parseFormula, evaluateFormula, evaluateFormulaValue } from "./07a-formula";
 import type { ParsedFormula, FormulaEvalContext } from "./07a-formula";
 
+// `values` / `nodeById` and friends are plain objects, so a key like
+// "constructor" would otherwise resolve to something off Object.prototype. Every
+// lookup driven by an OUTSIDE key (a property read on state.explanations, say)
+// goes through this.
+function hasOwn(object: object, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(object, key);
+}
+
 // How hard the iterative solver tries before giving up. Acyclic maps converge
-// in a single sweep; stable feedback loops in a handful; only a runaway
-// (positive loop gain ≥ 1) ever reaches the cap.
-export const SOLVER_MAX_ITERATIONS = 100;
+// in a single sweep; stable feedback loops in tens of sweeps; only a runaway
+// (positive loop gain ≥ 1) ever reaches the cap. 250 covers loop gains up to
+// ~0.95 at the 1e-7 epsilon below — affordable because sweeps 2..k touch only
+// the loop core, not the whole map, so even a capped run costs well under a
+// millisecond. A cap hit therefore genuinely means "this loop amplifies
+// itself", which is exactly what the panel's warning claims.
+export const SOLVER_MAX_ITERATIONS = 250;
 // A sweep counts as "converged" once the largest relative change to any node
-// falls below this. Small enough that converged values match the exact
-// single-pass result to many significant figures.
-export const SOLVER_EPSILON = 1e-9;
+// falls below this. 1e-7 is a hundred-thousandth of a percent — three or four
+// orders of magnitude finer than anything the UI shows (values print to three
+// significant figures, deltas to one decimal place), so a converged run is
+// exact as far as the map is concerned. The old 1e-9 bought no visible accuracy
+// and cost ~44 extra sweeps on a stable loop, which pushed slow-but-perfectly-
+// well-behaved loops past the iteration cap and made the panel warn that they
+// "did not settle" when they had.
+export const SOLVER_EPSILON = 1e-7;
 // Source ratios are floored here before log() so a near-zero source can never
 // blow up to -Infinity (matches the original single-pass behaviour).
 export const SOLVER_LOG_RATIO_FLOOR = 1e-6;
@@ -176,13 +194,225 @@ export function usesFormula(node: GraphNode): boolean {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+// SOLVER INDEXES — everything the sweep would otherwise re-derive per tick
+// -----------------------------------------------------------------------------
+// Rebuilt by rebuildSolverIndexes(), which rebuildIndexes() (06-data-loader.ts)
+// calls once per map change — the same chokepoint that refreshes nodeById, the
+// topological order and the parsed-formula cache. Between two rebuilds the map's
+// SHAPE is fixed; only slider positions move. So everything that depends on the
+// shape alone is worked out here, once:
+//
+//   • per box, its incoming links flattened into parallel arrays (source id,
+//     source baseline, resolved elasticity) — no per-sweep nodeById lookups and
+//     no per-sweep elasticity fallback logic;
+//   • the ITERATIVE SET: the boxes whose values a second sweep could still
+//     change (loop members, anything downstream of them, anything reading
+//     through delay(), and anything downstream of THOSE). Everything else is
+//     exact after one topological sweep, by construction. That set is split in
+//     two, because the two halves need very different amounts of work:
+//       – the CORE: the loop members / delay() readers themselves plus anything
+//         on a path BETWEEN them. These feed back into each other, so they are
+//         the only boxes that have to be swept over and over;
+//       – the TAIL: everything else downstream. It can't feed back (if it could,
+//         it would be on a loop), so one sweep once the core has settled gives
+//         it the same numbers a hundred interleaved sweeps would have;
+//   • the forward dependency graph, used to answer "what does moving this
+//     slider actually change?" for the incremental solve.
+// ═════════════════════════════════════════════════════════════════════════════
+
+// One box's incoming links, flattened. Index i of all three arrays describes the
+// same link. A source that can never contribute (missing, or with no usable
+// baseline to divide by) is marked with baseline 0 and skipped by the sweep,
+// exactly as the original per-edge guard did.
+interface IncomingRow {
+  sourceIds: string[];
+  sourceBaselines: Float64Array;
+  elasticities: Float64Array;
+}
+
+const EMPTY_ROW: IncomingRow = {
+  sourceIds: [],
+  sourceBaselines: new Float64Array(0),
+  elasticities: new Float64Array(0),
+};
+
+let incomingRowByNodeId: Record<string, IncomingRow> = {};
+// Bumped on every rebuild. Any cached per-solve bookkeeping stamped with an
+// older generation is stale and simply ignored.
+let solveGeneration = 0;
+// nodeId → the boxes that read it (arrows out PLUS any formula that names it,
+// even one the map forgot to draw an arrow for — the loader warns about that
+// but still computes it, so the solver must still propagate through it).
+let dependentsByNodeId: Record<string, string[]> = {};
+// The same graph the other way round (nodeId → the boxes it reads), used to work
+// out which boxes sit on a path back INTO the feedback core.
+let dependenciesByNodeId: Record<string, string[]> = {};
+let topoRankById: Record<string, number> = {};
+// The boxes a second sweep can still move (see above), split into the part that
+// has to be re-swept until it settles and the part that only needs one final
+// pass. Both are slices of the topological order.
+let iterativeCoreIdSet: Set<string> = new Set();
+let iterativeCoreOrder: string[] = [];
+let iterativeTailOrder: string[] = [];
+// Every id any live formula reads through delay(), so a sweep can snapshot just
+// those instead of cloning the whole values object.
+let delayedIds: string[] = [];
+// controllable id → the boxes its value can reach, in topological order, split
+// the same way. Built on first use, dropped on rebuild.
+interface AffectedSlice {
+  all: string[];
+  core: string[];
+  tail: string[];
+}
+const descendantCache = new Map<string, AffectedSlice>();
+
+// Rebuild everything above from the current NODES / EDGES / topological order /
+// cycleInfo / parsed formulas. Called at the end of rebuildIndexes().
+export function rebuildSolverIndexes(): void {
+  solveGeneration++;
+  descendantCache.clear();
+  lastSolve = null;
+
+  // ── Incoming links, flattened per box ───────────────────────────────
+  incomingRowByNodeId = {};
+  for (const node of NODES) {
+    const edges = incomingEdges[node.id] || [];
+    const count = edges.length;
+    const row: IncomingRow = {
+      sourceIds: new Array<string>(count),
+      sourceBaselines: new Float64Array(count),
+      elasticities: new Float64Array(count),
+    };
+    for (let i = 0; i < count; i++) {
+      const edge = edges[i];
+      const source = nodeById[edge.from];
+      row.sourceIds[i] = edge.from;
+      // 0 doubles as "unusable": a missing source, or one with no baseline (we
+      // would be dividing by it), contributes nothing.
+      row.sourceBaselines[i] = source && source.baseline ? source.baseline : 0;
+      row.elasticities[i] = resolveEdgeElasticity(edge);
+    }
+    incomingRowByNodeId[node.id] = row;
+  }
+
+  // ── Forward dependencies + topological rank ─────────────────────────
+  dependentsByNodeId = {};
+  dependenciesByNodeId = {};
+  topoRankById = {};
+  for (let i = 0; i < topologicalOrder.length; i++) topoRankById[topologicalOrder[i]] = i;
+  const addDependent = (fromId: string, toId: string): void => {
+    const forward = dependentsByNodeId[fromId];
+    if (!forward) dependentsByNodeId[fromId] = [toId];
+    else if (!forward.includes(toId)) forward.push(toId);
+    const back = dependenciesByNodeId[toId];
+    if (!back) dependenciesByNodeId[toId] = [fromId];
+    else if (!back.includes(fromId)) back.push(fromId);
+  };
+  for (const node of NODES) {
+    for (const edge of outgoingEdges[node.id] || []) addDependent(node.id, edge.to);
+    const parsed = parsedFormulaByNodeId[node.id];
+    if (!parsed) continue;
+    // A formula reads its inputs directly, so those ids feed this box whether or
+    // not an arrow was drawn. delay() reads count too: they are one sweep
+    // behind, which is precisely why the box needs re-sweeping.
+    for (const id of parsed.references) addDependent(id, node.id);
+    for (const id of parsed.delayReferences) addDependent(id, node.id);
+  }
+
+  // ── The iterative set ───────────────────────────────────────────────
+  const seeds: string[] = [];
+  for (const id of cycleInfo.inCycleNodeIds) seeds.push(id);
+  delayedIds = [];
+  const seenDelayed = new Set<string>();
+  for (const node of NODES) {
+    const parsed = parsedFormulaByNodeId[node.id];
+    if (!parsed || parsed.delayReferences.length === 0) continue;
+    for (const id of parsed.delayReferences) {
+      if (!seenDelayed.has(id)) { seenDelayed.add(id); delayedIds.push(id); }
+    }
+    // A box the user is holding with a slider never runs its formula, so its
+    // delayed read can't be the reason the map needs another sweep.
+    if (!node.controllable) seeds.push(node.id);
+  }
+  // Downstream of a seed = "could still move on a later sweep". Upstream of a
+  // seed = "could feed one of those later sweeps". A box in BOTH sits inside the
+  // feedback core and has to be re-swept every time round; a box only downstream
+  // is tail work, done once at the end.
+  const downstream = reachableFrom(seeds, dependentsByNodeId);
+  const upstream = reachableFrom(seeds, dependenciesByNodeId);
+  iterativeCoreIdSet = new Set<string>();
+  iterativeCoreOrder = [];
+  iterativeTailOrder = [];
+  if (downstream.size > 0) {
+    for (const id of downstream) {
+      if (upstream.has(id)) iterativeCoreIdSet.add(id);
+    }
+    for (const id of topologicalOrder) {
+      if (!downstream.has(id)) continue;
+      if (iterativeCoreIdSet.has(id)) iterativeCoreOrder.push(id);
+      else iterativeTailOrder.push(id);
+    }
+  }
+}
+
+// Every box reachable from `seeds` through `adjacency` (the dependency graph in
+// one direction or the other), seeds included. Plain breadth-first walk with an
+// explicit queue.
+function reachableFrom(seeds: string[], adjacency: Record<string, string[]>): Set<string> {
+  const reached = new Set<string>();
+  const queue: string[] = [];
+  for (const id of seeds) {
+    if (!reached.has(id)) { reached.add(id); queue.push(id); }
+  }
+  for (let head = 0; head < queue.length; head++) {
+    for (const next of adjacency[queue[head]] || []) {
+      if (reached.has(next)) continue;
+      reached.add(next);
+      queue.push(next);
+    }
+  }
+  return reached;
+}
+
+// The boxes one slider can reach, in topological order, plus the iterative
+// subset of them. Computed on first use (a map has many controllable inputs and
+// a session usually drags two or three of them) and dropped on any rebuild.
+function descendantsOf(nodeId: string): AffectedSlice {
+  const cached = descendantCache.get(nodeId);
+  if (cached) return cached;
+
+  const reached = reachableFrom([nodeId], dependentsByNodeId);
+  reached.delete(nodeId);   // the slider box itself is pinned, never recomputed
+  const all: string[] = [];
+  for (const id of reached) all.push(id);
+  all.sort((a, b) => (topoRankById[a] ?? 0) - (topoRankById[b] ?? 0));
+
+  const core: string[] = [];
+  const tail: string[] = [];
+  if (iterativeCoreOrder.length > 0) for (const id of iterativeCoreOrder) if (reached.has(id)) core.push(id);
+  if (iterativeTailOrder.length > 0) for (const id of iterativeTailOrder) if (reached.has(id)) tail.push(id);
+
+  const entry: AffectedSlice = { all: all, core: core, tail: tail };
+  descendantCache.set(nodeId, entry);
+  return entry;
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
 // THE RULES — one function per layer, each usable with or without tracing
 // ═════════════════════════════════════════════════════════════════════════════
 
 // What a formula is allowed to read. `lookup` is this sweep's numbers;
 // `lookupDelayed` is the snapshot taken at the START of this sweep — that's the
 // unit delay. Params are constants, so both resolve them identically.
-function makeEvalContext(values: ComputedValues, previous: ComputedValues): FormulaEvalContext {
+//
+// `delayedSnapshot` holds ONLY the ids some formula actually reads through
+// delay() (usually one or two on a whole map), not a copy of every value. Any
+// other id falls through to the live number, which is what it would have found
+// in a full clone anyway: nothing reads a delayed value it didn't ask for.
+function makeEvalContext(
+  values: ComputedValues,
+  delayedSnapshot: ComputedValues | null,
+): FormulaEvalContext {
   return {
     lookup(id: string): number | undefined {
       const param = paramById[id];
@@ -190,9 +420,26 @@ function makeEvalContext(values: ComputedValues, previous: ComputedValues): Form
     },
     lookupDelayed(id: string): number | undefined {
       const param = paramById[id];
-      return param ? param.value : previous[id];
+      if (param) return param.value;
+      if (delayedSnapshot) {
+        const snapshot = delayedSnapshot[id];
+        if (snapshot !== undefined) return snapshot;
+      }
+      return values[id];
     },
   };
+}
+
+// The pre-sweep values of just the delayed ids — the whole of F5's "unit delay"
+// bookkeeping. null when no live formula delays anything at all.
+function snapshotDelayed(values: ComputedValues): ComputedValues | null {
+  if (delayedIds.length === 0) return null;
+  const snapshot: ComputedValues = {};
+  for (const id of delayedIds) {
+    const value = values[id];
+    if (value !== undefined) snapshot[id] = value;
+  }
+  return snapshot;
 }
 
 // Aggregate the arrows pointing into one box, in ratio space, per its `combine`
@@ -215,14 +462,21 @@ function combineIncomingEdges(
   let smallestFactor = 1;    // min:            smallest rᵢ^eᵢ seen so far
   let usableEdges = 0;
 
-  for (const edge of incomingEdges[node.id]) {
-    const sourceNode = nodeById[edge.from];
+  // Source ids, their baselines and the resolved elasticities were flattened
+  // into parallel arrays by rebuildSolverIndexes(); the sweep just walks them.
+  const row = incomingRowByNodeId[node.id] || EMPTY_ROW;
+  const linkCount = row.sourceIds.length;
+
+  for (let i = 0; i < linkCount; i++) {
+    const sourceBaseline = row.sourceBaselines[i];
     // Skip a source with no/zero baseline (would divide-by-zero) or one
     // not yet seeded.
-    if (!sourceNode || !sourceNode.baseline || values[edge.from] === undefined) continue;
-    const sourceValue = values[edge.from];
-    const sourceRatio = sourceValue / sourceNode.baseline;
-    const elasticity = resolveEdgeElasticity(edge);
+    if (sourceBaseline === 0) continue;
+    const sourceId = row.sourceIds[i];
+    const sourceValue = values[sourceId];
+    if (sourceValue === undefined) continue;
+    const sourceRatio = sourceValue / sourceBaseline;
+    const elasticity = row.elasticities[i];
     let contribution: number;
 
     if (mode === "additive") {
@@ -249,7 +503,7 @@ function combineIncomingEdges(
 
     if (inputsOut) {
       inputsOut.push({
-        id: edge.from,
+        id: sourceId,
         kind: "node",
         value: sourceValue,
         ratio: sourceRatio,
@@ -272,6 +526,16 @@ interface BoundedValue {
   value: number;
   /** Set ONLY when a bound actually moved the number. */
   clamp?: { from: number; min?: number; max?: number };
+}
+
+// The bounded number on its own, with no BoundedValue object to allocate. The
+// sweep calls this once per box per sweep and never looks at the clamp record;
+// applyBounds() below is the same logic for the one box the trace explains.
+function applyBoundsValue(node: GraphNode, value: number): number {
+  let bounded = value;
+  if (node.minValue !== undefined && bounded < node.minValue) bounded = node.minValue;
+  if (node.maxValue !== undefined && bounded > node.maxValue) bounded = node.maxValue;
+  return bounded;
 }
 
 function applyBounds(node: GraphNode, value: number): BoundedValue {
@@ -304,23 +568,39 @@ function nonFiniteFallback(node: GraphNode, value: number): number {
 
 // ═════════════════════════════════════════════════════════════════════════════
 // THE SOLVER
+// -----------------------------------------------------------------------------
+// Two things make a slider tick cheap:
+//
+//   THE ITERATIVE SET. Sweeping in topological order resolves every loop-free
+//   box exactly, on the first pass — its inputs are all computed before it. Only
+//   boxes on a feedback loop, boxes reading through delay(), and whatever sits
+//   DOWNSTREAM of those can still move on a second pass. So sweep 1 covers the
+//   whole map and sweeps 2..k cover only that iterative set (precomputed in
+//   rebuildSolverIndexes), and convergence is measured over exactly the boxes
+//   the sweep actually recomputed.
+//
+//   THE INCREMENTAL SOLVE. While a slider is being dragged, the map's shape and
+//   every other slider are unchanged: the only boxes whose answers can differ
+//   are the ones DOWNSTREAM of the slider being moved. So we keep the previous
+//   solve's numbers, re-seed the sliders, and re-evaluate that downstream slice
+//   alone. On a loop-free map this is not an approximation — the untouched boxes
+//   are recomputed from identical inputs, so they land on identical bits, which
+//   the "incremental matches a cold solve" test pins. On a map with loops the
+//   previous values also make an excellent warm start: the fixed point is the
+//   same one, and starting next to it gets there in a handful of sweeps.
+//
+// Anything that can't be proved safe falls back to the cold path (a full seed +
+// full sweep), which is where every load, every map edit, every Reset and every
+// multi-slider change goes. Correctness first; the cold path is fast anyway.
 // ═════════════════════════════════════════════════════════════════════════════
 
-// Iterative solver. Produces { nodeId → currentValue } plus two non-enumerable
-// side-channels: `__meta` ({ converged, iterations }) describing the run, and
-// `__explanations` (nodeId → NodeExplanation) with the working behind every
-// number. Both are lifted off by recomputeValues(); every other consumer keys
-// by real node ids and never sees them.
-export function computeNodeValues(): ComputedValues {
-  const values: ComputedValues = {};
-
-  // ───── 1. Initialise ──────────────────────────────────────────────────
-  // Controllable inputs are pinned to baseline × user multiplier. Every other
-  // quantified node is seeded at its baseline (i.e. "no perturbation yet") so
-  // loop members have a starting value to feed back on the first sweep. Nodes
-  // without a usable baseline are left undefined and skipped throughout.
-  // Formula boxes are seeded the same way — they need a baseline both as a
-  // starting point and so the map can show them as a % change.
+// Controllable inputs are pinned to baseline × user multiplier. Every other
+// quantified node is seeded at its baseline (i.e. "no perturbation yet") so
+// loop members have a starting value to feed back on the first sweep. Nodes
+// without a usable baseline are left undefined and skipped throughout.
+// Formula boxes are seeded the same way — they need a baseline both as a
+// starting point and so the map can show them as a % change.
+function seedValues(values: ComputedValues): void {
   for (const node of NODES) {
     const baseline = node.baseline;
     if (baseline === undefined || baseline === null) continue;
@@ -331,135 +611,281 @@ export function computeNodeValues(): ComputedValues {
       values[node.id] = baseline;
     }
   }
+}
 
-  // ───── 2. Iterate to a fixed point (Gauss-Seidel) ─────────────────────
-  // "Fixed point" = keep recomputing until the numbers stop moving. "Gauss-
-  // Seidel" is just the name for the repeat-until-it-settles style used here
-  // (see docs/GLOSSARY.md). Each sweep recomputes every non-controllable node
-  // from its rule, writing results in place so later nodes in the sweep see the
-  // freshest values. Sweeping in topological order (causes before effects)
-  // means a loop-free map is fully resolved on the first pass (the second pass
-  // then finds zero change and we stop), so its results are identical to the
-  // original single-pass engine. Maps with loops take a few more passes to
-  // settle.
-  const usesDelay = anyLiveFormulaUsesDelay;
-  let iterations = 0;
-  let converged = false;
-  for (; iterations < SOLVER_MAX_ITERATIONS; iterations++) {
-    let maxRelDelta = 0;
+// The slider-pinned boxes only. Used by the incremental path, which keeps every
+// other box's number from the previous solve.
+function seedControllables(values: ComputedValues): void {
+  for (const node of NODES) {
+    const baseline = node.baseline;
+    if (baseline === undefined || baseline === null || !node.controllable) continue;
+    const userMultiplier = state.userOverrides[node.id] !== undefined ? state.userOverrides[node.id] : 1.0;
+    values[node.id] = baseline * userMultiplier;
+  }
+}
 
-    // delay(x) must read the value x had BEFORE this sweep started. The solver
-    // writes in place (that's the Gauss-Seidel part), so a plain read would see
-    // values this very sweep has already updated — we take a snapshot instead.
-    // On the first sweep that snapshot is the seed values, exactly as intended.
-    // No delay on the map → no copy, and nothing ever reads it.
-    const previousValues: ComputedValues = usesDelay ? { ...values } : values;
-    const context = makeEvalContext(values, previousValues);
+// How many box evaluations the last solve ran, for the diagnostics below.
+let lastSweptCount = 0;
 
-    for (const nodeId of topologicalOrder) {
-      const node = nodeById[nodeId];
-      if (!node || node.baseline === undefined || node.baseline === null) continue;
-      if (node.controllable) continue;   // pinned by the slider — never recomputed
-      const parsed = parsedFormulaByNodeId[nodeId];
+// One pass over `order`, writing results in place (that's the Gauss-Seidel part:
+// later boxes in the pass see the freshest numbers). Returns the largest
+// relative move any box made, which is what convergence is tested against.
+function sweepOnce(values: ComputedValues, order: string[]): number {
+  const context = makeEvalContext(values, snapshotDelayed(values));
+  let maxRelDelta = 0;
 
-      // A formula box is computed from its formula ALONE, in absolute values.
-      // Everything else aggregates its incoming arrows in ratio space.
-      const raw = parsed
-        ? evaluateFormula(parsed, context).value
-        : combineIncomingEdges(node, values);
-      const next = applyBounds(node, raw).value;
+  for (let i = 0; i < order.length; i++) {
+    const nodeId = order[i];
+    const node = nodeById[nodeId];
+    if (!node || node.baseline === undefined || node.baseline === null) continue;
+    if (node.controllable) continue;   // pinned by the slider — never recomputed
+    const parsed = parsedFormulaByNodeId[nodeId];
 
-      const prev = values[nodeId];
-      values[nodeId] = next;
+    // A formula box is computed from its formula ALONE, in absolute values.
+    // Everything else aggregates its incoming arrows in ratio space.
+    const raw = parsed
+      ? evaluateFormulaValue(parsed, context)
+      : combineIncomingEdges(node, values);
+    const next = applyBoundsValue(node, raw);
 
-      // Track the largest relative move this sweep to test for convergence. A
-      // non-finite update means a runaway positive loop overflowed — force a
-      // non-converging signal so we run to the cap (and clamp) rather than
-      // mistaking Infinity−Infinity = NaN for "nothing changed".
-      if (!Number.isFinite(next)) {
-        maxRelDelta = Infinity;
-      } else {
-        const denom = Math.abs(prev) > 1e-300 ? Math.abs(prev) : 1;
-        const relDelta = Math.abs(next - prev) / denom;
-        if (relDelta > maxRelDelta) maxRelDelta = relDelta;
-      }
-    }
+    const prev = values[nodeId];
+    values[nodeId] = next;
+    lastSweptCount++;
 
-    // A sweep with nothing moving means we've reached the fixed point. An
-    // acyclic map is fully resolved by its very first topological sweep, so we
-    // stop after one rather than re-sweeping just to confirm — as long as it
-    // stayed finite (a non-finite sweep means a value blew up, so we keep
-    // going to clamp + flag it). That shortcut is OFF when any formula reads
-    // through delay(): a delayed read is one sweep behind by construction, so
-    // even a loop-free map needs sweeps to settle, exactly like a cycle.
-    const singleSweepIsExact = cycleInfo.loopCount === 0 && !usesDelay;
-    if (maxRelDelta < SOLVER_EPSILON ||
-        (singleSweepIsExact && Number.isFinite(maxRelDelta))) {
-      converged = true; iterations++; break;
+    // Track the largest relative move this sweep to test for convergence. A
+    // non-finite update means a runaway positive loop overflowed — force a
+    // non-converging signal so we run to the cap (and clamp) rather than
+    // mistaking Infinity−Infinity = NaN for "nothing changed".
+    if (!Number.isFinite(next)) {
+      maxRelDelta = Infinity;
+    } else {
+      const denom = Math.abs(prev) > 1e-300 ? Math.abs(prev) : 1;
+      const relDelta = Math.abs(next - prev) / denom;
+      if (relDelta > maxRelDelta) maxRelDelta = relDelta;
     }
   }
 
-  // ───── 3. Defensive clamp ─────────────────────────────────────────────
-  // The log-ratio floor should keep everything finite, but a runaway positive
-  // loop could in principle overflow to Infinity. Fall back to the nearest
-  // bound (or, unbounded, to baseline) rather than letting NaN/Infinity leak
-  // into the UI.
+  return maxRelDelta;
+}
+
+// Sweep `firstOrder` once, then the feedback CORE until the numbers stop moving
+// (or the safety cap bites), then the TAIL once so everything downstream of the
+// settled loop is refreshed from the numbers it finished on.
+//
+// An EMPTY core means nothing can move again: every box was loop-free and read
+// no delayed value, so the first topological sweep is the exact answer and we
+// stop right there rather than re-sweeping to confirm. That is the shortcut that
+// keeps loop-free maps identical, to the last bit, to the original single-pass
+// engine.
+function iterate(
+  values: ComputedValues,
+  firstOrder: string[],
+  coreOrder: string[],
+  tailOrder: string[],
+): SolverMeta {
+  let iterations = 1;
+  let maxRelDelta = sweepOnce(values, firstOrder);
+
+  // Nothing left that a further sweep could change. (A non-finite value can only
+  // come from a runaway loop, which would have put boxes in the core — so this
+  // only ever reports "converged" for a clean run.)
+  if (coreOrder.length === 0) {
+    return { converged: Number.isFinite(maxRelDelta), iterations: iterations };
+  }
+  // The first sweep already settled everything, tail included.
+  if (maxRelDelta < SOLVER_EPSILON) return { converged: true, iterations: iterations };
+
+  let converged = false;
+  while (iterations < SOLVER_MAX_ITERATIONS) {
+    maxRelDelta = sweepOnce(values, coreOrder);
+    iterations++;
+    if (maxRelDelta < SOLVER_EPSILON) { converged = true; break; }
+  }
+
+  // One pass over the tail, in topological order, from the settled core. The
+  // tail can't feed back into the core (anything that did would be on the loop
+  // and hence part of the core), so this lands on exactly the numbers repeated
+  // whole-set sweeps would have produced — for a fraction of the work.
+  if (tailOrder.length > 0) {
+    const tailDelta = sweepOnce(values, tailOrder);
+    iterations++;
+    if (!Number.isFinite(tailDelta)) converged = false;
+  }
+
+  return { converged: converged, iterations: iterations };
+}
+
+// The log-ratio floor should keep everything finite, but a runaway positive loop
+// could in principle overflow to Infinity. Fall back to the nearest bound (or,
+// unbounded, to baseline) rather than letting NaN/Infinity leak into the UI.
+function clampNonFinite(values: ComputedValues, ids: string[] | null): void {
+  if (ids) {
+    for (const id of ids) {
+      const value = values[id];
+      if (value !== undefined && !Number.isFinite(value)) values[id] = nonFiniteFallback(nodeById[id], value);
+    }
+    return;
+  }
   for (const id in values) {
     if (!Number.isFinite(values[id])) values[id] = nonFiniteFallback(nodeById[id], values[id]);
   }
+}
 
-  // ───── 4. Explain the final numbers ───────────────────────────────────
-  const explanations = explainValues(values);
-
-  // Stash run status where recomputeValues() can lift it off without it ever
-  // being read as a node value (every consumer keys by real node ids).
-  Object.defineProperty(values, "__meta", {
-    value: { converged: converged, iterations: iterations },
-    enumerable: false,
-  });
-  Object.defineProperty(values, "__explanations", {
-    value: explanations,
-    enumerable: false,
-  });
+// A full, from-scratch solve: seed every box, sweep the whole map, then iterate
+// the iterative set to its fixed point. Produces a clean { nodeId → value } map
+// — the run's status is read back with getSolverDiagnostics(), and the working
+// behind each number is computed on demand by explainNode().
+export function computeNodeValues(): ComputedValues {
+  const values: ComputedValues = {};
+  lastSweptCount = 0;
+  seedValues(values);
+  lastMeta = iterate(values, topologicalOrder, iterativeCoreOrder, iterativeTailOrder);
+  clampNonFinite(values, null);
+  lastSolveMode = "cold";
   return values;
+}
+
+// ───── Incremental solving (only override values changed) ─────────────────
+
+interface LastSolve {
+  /** The rebuildSolverIndexes() generation these numbers were computed under. */
+  generation: number;
+  /** Identity-checked against state.computedValues, so a caller that swapped the
+   *  values object out from under us falls back to the cold path. */
+  values: ComputedValues;
+  /** Effective multiplier per controllable box (1.0 when there's no override). */
+  multipliers: Record<string, number>;
+  converged: boolean;
+}
+
+let lastSolve: LastSolve | null = null;
+let lastMeta: SolverMeta = { converged: true, iterations: 0 };
+let lastSolveMode: "cold" | "incremental" = "cold";
+
+function currentMultipliers(): Record<string, number> {
+  const multipliers: Record<string, number> = {};
+  for (const node of NODES) {
+    if (!node.controllable || node.baseline === undefined || node.baseline === null) continue;
+    multipliers[node.id] = state.userOverrides[node.id] !== undefined ? state.userOverrides[node.id] : 1.0;
+  }
+  return multipliers;
+}
+
+// The one slider that moved since the last solve, "" when none did, or null when
+// the incremental path can't be used at all (a different map, a solve someone
+// else's code has since replaced, a previous run that didn't settle, or more
+// than one slider changed — Reset, an undo, a restored session).
+function movedSliderId(multipliers: Record<string, number>): string | null {
+  if (!lastSolve || !state.dataLoaded) return null;
+  if (lastSolve.generation !== solveGeneration) return null;
+  if (lastSolve.values !== state.computedValues) return null;
+  // Previous numbers we'd be building on were clamped, not solved.
+  if (!lastSolve.converged) return null;
+
+  const previous = lastSolve.multipliers;
+  const previousKeys = Object.keys(previous);
+  const currentKeys = Object.keys(multipliers);
+  if (previousKeys.length !== currentKeys.length) return null;   // the map's sliders changed
+
+  let moved = "";
+  for (const id of currentKeys) {
+    if (!hasOwn(previous, id)) return null;
+    if (previous[id] === multipliers[id]) continue;
+    if (moved !== "") return null;   // two sliders at once — take the cold path
+    moved = id;
+  }
+  return moved;
+}
+
+// Re-solve only what the moved slider can reach, keeping every other box's
+// number from the previous solve.
+function solveIncremental(movedId: string): ComputedValues {
+  const values = lastSolve!.values;
+  lastSweptCount = 0;
+  seedControllables(values);
+
+  if (movedId === "") {
+    // Nothing actually moved (the same numbers arrived in a fresh overrides
+    // object). The previous solve is still the answer.
+    lastMeta = { converged: true, iterations: 0 };
+    lastSolveMode = "incremental";
+    return values;
+  }
+
+  const affected = descendantsOf(movedId);
+  lastMeta = iterate(values, affected.all, affected.core, affected.tail);
+  clampNonFinite(values, affected.all);
+  lastSolveMode = "incremental";
+  return values;
+}
+
+// What the most recent solve did. Exported for tests and perf work; the app
+// itself reads state.solverStatus.
+export function getSolverDiagnostics(): {
+  mode: "cold" | "incremental";
+  sweptNodes: number;
+  iterations: number;
+  converged: boolean;
+} {
+  return {
+    mode: lastSolveMode,
+    sweptNodes: lastSweptCount,
+    iterations: lastMeta.iterations,
+    converged: lastMeta.converged,
+  };
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
 // TRACEABILITY — "how was this number calculated?"
 // -----------------------------------------------------------------------------
-// One extra pass over the FINAL values, re-running each box's rule purely to
-// record its working. Doing it after the solver settles (rather than during the
-// sweeps) means every input shown is the number the map is actually displaying,
-// with no half-updated intermediate values from a mid-solve sweep.
+// Re-run ONE box's rule over the FINAL values, purely to record its working.
+// Doing it after the solver settles (rather than during the sweeps) means every
+// input shown is the number the map is actually displaying, with no half-updated
+// intermediate values from a mid-solve sweep.
 //
-// delay() reads resolve to the final values here too. That is not a shortcut: at
-// a fixed point "the value from the previous sweep" and "the value now" are the
+// Doing it ONE BOX AT A TIME matters just as much: the detail panel shows the
+// working for exactly one box, the selected one, so explaining all of them after
+// every solve meant re-running every rule with tracing on — tens of thousands of
+// throwaway objects per slider tick — to read a single entry. Explanations are
+// therefore computed on demand and memoised until the next solve replaces them.
+//
+// delay() reads resolve to the final values here. That is not a shortcut: at a
+// fixed point "the value from the previous sweep" and "the value now" are the
 // same number — that is what a fixed point IS. If a run failed to converge, the
 // trace shows the last sweep's numbers, which is exactly what the map shows.
 // ═════════════════════════════════════════════════════════════════════════════
-function explainValues(values: ComputedValues): Record<string, NodeExplanation> {
-  const explanations: Record<string, NodeExplanation> = {};
-  const context = makeEvalContext(values, values);
 
-  for (const node of NODES) {
-    const value = values[node.id];
-    if (value === undefined) continue;
+let explanationCache = new Map<string, NodeExplanation>();
+let explainedValues: ComputedValues = {};
 
-    // The user is holding this box at a value. No rule ran; the slider IS the
-    // answer, which is also why bounds never apply to it.
-    if (node.controllable) {
-      explanations[node.id] = { rule: "pinned", inputs: [], value: value };
-      continue;
-    }
+// The working behind one box's current number, or undefined for a box with no
+// value (no baseline, or not on this map). Memoised per solve.
+export function explainNode(nodeId: string): NodeExplanation | undefined {
+  const cached = explanationCache.get(nodeId);
+  if (cached) return cached;
 
-    const parsed = parsedFormulaByNodeId[node.id];
+  const values = explainedValues;
+  if (!hasOwn(values, nodeId)) return undefined;
+  const value = values[nodeId];
+  if (value === undefined) return undefined;
+  const node = hasOwn(nodeById, nodeId) ? nodeById[nodeId] : undefined;
+  if (!node) return undefined;
+
+  let explanation: NodeExplanation;
+
+  // The user is holding this box at a value. No rule ran; the slider IS the
+  // answer, which is also why bounds never apply to it.
+  if (node.controllable) {
+    explanation = { rule: "pinned", inputs: [], value: value };
+  } else {
+    const parsed = parsedFormulaByNodeId[nodeId];
     const inputs: TraceInput[] = [];
     let rule: CalcRule;
     let raw: number;
-    const explanation: NodeExplanation = { rule: "baseline", inputs: inputs, value: value };
+    explanation = { rule: "baseline", inputs: inputs, value: value };
 
     if (parsed) {
-      const evaluation = evaluateFormula(parsed, context);
+      const evaluation = evaluateFormula(parsed, makeEvalContext(values, null));
       rule = "formula";
       raw = evaluation.value;
       for (const input of evaluation.inputs) {
@@ -488,30 +914,66 @@ function explainValues(values: ComputedValues): Record<string, NodeExplanation> 
     // Recorded ONLY when a bound actually moved the number.
     const bounded = applyBounds(node, raw);
     if (bounded.clamp) explanation.clamp = bounded.clamp;
-
-    explanations[node.id] = explanation;
   }
 
-  return explanations;
+  explanationCache.set(nodeId, explanation);
+  return explanation;
+}
+
+// state.explanations, as every consumer has always used it: a { nodeId →
+// explanation } map, one entry per box that has a value. It just fills itself in
+// as it is read — property access, `in`, Object.keys and Object.values all work,
+// and none of them cost anything until something actually asks.
+function makeExplanationView(values: ComputedValues): Record<string, NodeExplanation> {
+  const isNodeKey = (key: string | symbol): key is string =>
+    typeof key === "string" && hasOwn(values, key) && values[key] !== undefined;
+
+  return new Proxy({} as Record<string, NodeExplanation>, {
+    get(_target, key) {
+      return isNodeKey(key) ? explainNode(key) : undefined;
+    },
+    has(_target, key) {
+      return isNodeKey(key);
+    },
+    ownKeys() {
+      return Object.keys(values);
+    },
+    getOwnPropertyDescriptor(_target, key) {
+      if (!isNodeKey(key)) return undefined;
+      return { configurable: true, enumerable: true, writable: false, value: explainNode(key) };
+    },
+    set() {
+      return false;
+    },
+    deleteProperty() {
+      return false;
+    },
+  });
 }
 
 // Convenience wrapper — recomputes, stores the clean { id → value } map into
-// state.computedValues, the per-box working into state.explanations (replaced
-// wholesale each run, so a stale box can never linger), and records solver
+// state.computedValues, a freshly-emptied lazy view onto the per-box working
+// into state.explanations (so a stale box can never linger), and records solver
 // status (convergence + loop count) into state.solverStatus for the UI.
 export function recomputeValues(): void {
-  const values = computeNodeValues();
-  const sideChannels = values as ComputedValues & {
-    __meta?: SolverMeta;
-    __explanations?: Record<string, NodeExplanation>;
-  };
-  const meta: SolverMeta = sideChannels.__meta || { converged: true, iterations: 0 };
+  const multipliers = currentMultipliers();
+  const moved = movedSliderId(multipliers);
+  const values = moved === null ? computeNodeValues() : solveIncremental(moved);
+
   state.computedValues = values;
-  state.explanations = sideChannels.__explanations || {};
+  explanationCache = new Map();
+  explainedValues = values;
+  state.explanations = makeExplanationView(values);
   state.solverStatus = {
-    converged: meta.converged,
-    iterations: meta.iterations,
+    converged: lastMeta.converged,
+    iterations: lastMeta.iterations,
     feedbackLoopCount: cycleInfo.loopCount,
+  };
+  lastSolve = {
+    generation: solveGeneration,
+    values: values,
+    multipliers: multipliers,
+    converged: lastMeta.converged,
   };
 }
 
@@ -544,10 +1006,17 @@ export function formatNodeDelta(nodeId: string): { text: string; pct: number } {
 //   • green if the change moves in the "good" direction
 //   • red   if the change moves in the "bad"  direction
 //   • null  for neutral metrics or for changes too small to colour
-export function getOutcomeBorderColor(nodeId: string): string | null {
+//
+// `precomputedDelta` lets a caller that has already formatted this node's delta
+// (the in-place scrub patch does, for every node, every frame) pass it in rather
+// than have it computed a second time.
+export function getOutcomeBorderColor(
+  nodeId: string,
+  precomputedDelta?: { text: string; pct: number },
+): string | null {
   const node = nodeById[nodeId];
   if (!node || !node.direction || node.direction === "neutral") return null;
-  const delta = formatNodeDelta(nodeId);
+  const delta = precomputedDelta || formatNodeDelta(nodeId);
   if (Math.abs(delta.pct) < 0.5) return null;
 
   const isGoodChange = (delta.pct > 0 && node.direction === "higher_better") ||

@@ -162,8 +162,9 @@ export interface SolverStatus {
   feedbackLoopCount: number;
 }
 
-// nodeId → current computed value. computeNodeValues attaches a non-enumerable
-// `__meta` describing the run; recomputeValues lifts it off.
+// nodeId → current computed value. Run diagnostics travel alongside via
+// getSolverDiagnostics() in 07-simulation-engine (the old non-enumerable
+// `__meta` side-channel is gone).
 export type ComputedValues = Record<string, number>;
 export interface SolverMeta {
   converged: boolean;

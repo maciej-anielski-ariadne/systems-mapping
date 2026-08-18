@@ -170,9 +170,14 @@ describe("delay() feedback", () => {
 
     expect(loadDataFromCsv(DELAY_LOOP_REORDERED_CSV)).toBe(true);
     simulate({ a: 1.2 });
-    // Equal to well within the solver's convergence tolerance.
-    expect(state.computedValues.p).toBeCloseTo(inOrder.p, 6);
-    expect(state.computedValues.q).toBeCloseTo(inOrder.q, 6);
+    // Equal to well within the solver's convergence tolerance. The two
+    // declaration orders take different routes to the same fixed point and each
+    // stops as soon as a sweep moves nothing by more than SOLVER_EPSILON (1e-7
+    // RELATIVE), so on a ~100-unit value they agree to ~1e-5 absolute — eight
+    // significant figures, and four orders of magnitude finer than the ±0.1%
+    // the map ever displays.
+    expect(state.computedValues.p).toBeCloseTo(inOrder.p, 4);
+    expect(state.computedValues.q).toBeCloseTo(inOrder.q, 4);
   });
 
   it("keeps sweeping on a loop-free map when a formula reads through delay()", () => {

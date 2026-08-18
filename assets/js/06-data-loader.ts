@@ -77,6 +77,7 @@ import { computeLayout } from "./08-layout";
 import {
   recomputeValues,
   rebuildFormulaCache,
+  rebuildSolverIndexes,
   getParsedFormula,
   getFormulaParseFailures,
   usesFormula,
@@ -224,6 +225,15 @@ export function rebuildIndexes(): void {
   } else {
     setCycleInfo({ inCycleNodeIds: new Set(), backEdgeIds: new Set(), loopCount: 0 });
   }
+
+  // Everything the solver would otherwise re-derive on every slider tick: each
+  // box's incoming links flattened with their resolved elasticities, the set of
+  // boxes a second sweep could still move (loop members, delay() readers and
+  // their downstreams), and the forward dependency graph behind "what does THIS
+  // slider actually change?". Depends on the topological order and cycleInfo
+  // above, and on the parsed formulas from rebuildFormulaCache(), so it runs
+  // last. See 07-simulation-engine.ts.
+  rebuildSolverIndexes();
 
   // Cache the deepest reachable highlight hop so the depth control can cap
   // itself to the current map (no fixed ceiling). Defined in 09-graph-selection;

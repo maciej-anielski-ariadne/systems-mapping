@@ -1,7 +1,12 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { loadDataFromCsv } from "../assets/js/06-data-loader";
 import { render } from "../assets/js/11-rendering";
-import { applySimMultiplier } from "../assets/js/14-simulation-panel";
+import {
+  applySimMultiplier,
+  flushSimTick,
+  renderSimulationPanel,
+} from "../assets/js/14-simulation-panel";
+import { deselectAll, selectNode } from "../assets/js/09-graph-selection";
 import { formatNodeValue, recomputeValues } from "../assets/js/07-simulation-engine";
 import { renderDetailPanel } from "../assets/js/15-detail-panel";
 import { state, NODES } from "../assets/js/03-state";
@@ -56,6 +61,132 @@ describe("simulation slider updates node values in place", () => {
     render();
     expect(bValueEl().textContent).toBe(formatNodeValue("b"));
     expect(state.computedValues.b).toBeCloseTo(50 * Math.sqrt(2.0), 6);
+  });
+});
+
+// A selection used to force the whole SVG to be rebuilt on every slider event,
+// because the selected / ancestor / descendant borders take precedence over the
+// outcome colour. Those sets don't change while a slider moves, so the in-place
+// patch applies the same precedence itself.
+describe("in-place patching with a selection active", () => {
+  function group(id: string): Element {
+    return document.querySelector('.node-group[data-node-id="' + id + '"]')!;
+  }
+
+  it("keeps the selection border across a scrub, and still moves the numbers", () => {
+    loadDataFromCsv(LINEAR_CSV);
+    applySimMultiplier("a", 1.5, null); // make B's delta label exist
+    selectNode("b");                    // b selected → c becomes a descendant
+
+    const bGroupBefore = group("b");
+    const cGroupBefore = group("c");
+    expect(bGroupBefore.querySelector(".node-rect")!.getAttribute("stroke")).toBe("#ffffff");
+
+    applySimMultiplier("a", 1.8, null);
+
+    // Patched, not rebuilt.
+    expect(group("b")).toBe(bGroupBefore);
+    expect(group("c")).toBe(cGroupBefore);
+    // Selection border survives, and the descendant border with it.
+    const bRect = bGroupBefore.querySelector(".node-rect")!;
+    expect(bRect.getAttribute("stroke")).toBe("#ffffff");
+    expect(bRect.getAttribute("stroke-width")).toBe("2.5");
+    expect(cGroupBefore.querySelector(".node-rect")!.getAttribute("stroke")).toBe(
+      "var(--edge-descendant)",
+    );
+    // …and the numbers are the new ones.
+    expect(bGroupBefore.querySelector(".node-value")!.textContent).toBe(formatNodeValue("b"));
+    expect(state.computedValues.b).toBeCloseTo(50 * Math.sqrt(1.8), 6);
+
+    deselectAll();
+  });
+});
+
+// Slider `input` events arrive far faster than the screen refreshes, so the
+// panel writes the override immediately and coalesces the solve + repaint into
+// one per animation frame. flushSimTick() drains whatever is owed.
+describe("slider events are coalesced into one tick per frame", () => {
+  function slider(nodeId: string): HTMLInputElement {
+    return document.querySelector(
+      '.sim-slider[data-node-id="' + nodeId + '"]',
+    ) as HTMLInputElement;
+  }
+
+  function drag(nodeId: string, value: number): void {
+    const el = slider(nodeId);
+    el.value = String(value);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  beforeEach(() => {
+    loadDataFromCsv(LINEAR_CSV);
+    state.simulationMode = true;
+    renderSimulationPanel();
+    render();
+  });
+
+  it("writes the override at once but solves once, on flush", () => {
+    const before = state.computedValues.b;
+
+    drag("a", 1.4);
+    drag("a", 1.7);
+    drag("a", 2.0);
+
+    // State is never behind the widget…
+    expect(state.userOverrides.a).toBe(2.0);
+    // …but the solve hasn't run yet.
+    expect(state.computedValues.b).toBe(before);
+
+    flushSimTick();
+    expect(state.computedValues.b).toBeCloseTo(50 * Math.sqrt(2.0), 6);
+    // Nothing owed any more.
+    flushSimTick();
+    expect(state.computedValues.b).toBeCloseTo(50 * Math.sqrt(2.0), 6);
+  });
+
+  it("clamps to the slider's range, as the direct call does", () => {
+    drag("a", 9999);
+    flushSimTick();
+    expect(state.userOverrides.a).toBe(400); // the fixture's slider_max
+
+    drag("a", -5);
+    flushSimTick();
+    expect(state.userOverrides.a).toBe(0);
+  });
+});
+
+// A scrub rewrites the detail panel's numbers in place. The panel is rebuilt
+// only when its SHAPE would change (a notice appearing, a different input
+// gating a min rule) or when the drag ends.
+describe("detail panel patching during a scrub", () => {
+  it("updates the numbers without rebuilding the panel", () => {
+    loadDataFromCsv(LINEAR_CSV);
+    state.simulationMode = true;
+    state.canvasEdit.editMode = false;
+    renderSimulationPanel();
+    render();
+    selectNode("c");
+
+    const breakdownBefore = document.querySelector("#detail-content .calc-breakdown")!;
+    const inputRowBefore = breakdownBefore.querySelector(".calc-input")!;
+    const deltaCellBefore = document.querySelectorAll(
+      "#detail-content .detail-quant-row",
+    )[2].querySelector(".detail-quant-value")!;
+
+    const el = document.querySelector('.sim-slider[data-node-id="a"]') as HTMLInputElement;
+    el.value = "4";
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    flushSimTick();
+
+    // Same elements — the panel was patched, not re-rendered.
+    expect(document.querySelector("#detail-content .calc-breakdown")).toBe(breakdownBefore);
+    expect(breakdownBefore.querySelector(".calc-input")).toBe(inputRowBefore);
+    // Carrying the new numbers: C = 20 × √4 = 40, driven by B = 100.
+    expect(deltaCellBefore.textContent).toBe("+100.0%");
+    expect(inputRowBefore.querySelector(".calc-input-value")!.textContent).toBe("100 units");
+    expect(inputRowBefore.querySelector(".calc-input-detail")!.textContent).toBe("×2.00");
+
+    deselectAll();
   });
 });
 

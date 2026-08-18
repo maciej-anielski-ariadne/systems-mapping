@@ -38,7 +38,7 @@ import {
 } from "./03-state";
 import { upgradeSelectsIn } from "./04b-typeable-dropdown";
 import { escapeHtml, formatScalar, splitCategoriesByClass, nodeCategoryIds } from "./04-utils";
-import { formatNodeDelta, resolveEdgeElasticity } from "./07-simulation-engine";
+import { explainNode, formatNodeDelta, resolveEdgeElasticity } from "./07-simulation-engine";
 import { EFFECT_OPTIONS } from "./02-config";
 import { selectNode, scrollNodeIntoView } from "./09-graph-selection";
 import { applySimMultiplier, updateDetailPanelDeltaInline } from "./14-simulation-panel";
@@ -341,16 +341,31 @@ function calcInputLabelHtml(input: TraceInput): string {
 //   • additive             — a signed share of the starting value ("+20.0%")
 //   • formula              — nothing; a formula reads plain values, and the
 //                            expression itself is printed above.
-function calcInputDetailHtml(rule: CalcRule, input: TraceInput): string {
+function calcInputDetailText(rule: CalcRule, input: TraceInput): string {
   if (input.contribution === undefined) return "";
   if (rule === "additive") {
     const pct = input.contribution * 100;
-    return '<span class="calc-input-detail">' + (pct >= 0 ? "+" : "") + pct.toFixed(1) + '%</span>';
+    return (pct >= 0 ? "+" : "") + pct.toFixed(1) + "%";
   }
   if (rule === "multiplicative" || rule === "min") {
-    return '<span class="calc-input-detail">×' + escapeHtml(formatScalar(input.contribution)) + '</span>';
+    return "×" + formatScalar(input.contribution);
   }
   return "";
+}
+
+function calcInputDetailHtml(rule: CalcRule, input: TraceInput): string {
+  const text = calcInputDetailText(rule, input);
+  return text ? '<span class="calc-input-detail">' + escapeHtml(text) + '</span>' : "";
+}
+
+// The two conditional warning sentences, as text. Shared by the renderer and the
+// scrub patch so the patch can tell "same notice, new numbers" from "a notice
+// appeared" without either copy of the wording drifting.
+const DIVIDED_BY_ZERO_NOTICE =
+  "Something in the formula divided by zero, so that part was treated as 0.";
+
+function missingInputsNoticeText(missingInputs: string[]): string {
+  return "No value found for: " + missingInputs.join(", ") + ". Those parts were treated as 0.";
 }
 
 // Which input the `min` rule actually settled on — the smallest factor is the
@@ -383,7 +398,11 @@ function calcClampNoticeText(clamp: NonNullable<NodeExplanation["clamp"]>, unit:
 }
 
 export function renderCalculationBreakdown(node: GraphNode): string {
-  const explanation = state.explanations ? state.explanations[node.id] : undefined;
+  // Asked for by node, one box at a time: the engine works the breakdown out on
+  // demand (and memoises it until the next solve) rather than tracing every box
+  // on the map after every solve to have this one entry read. state.explanations
+  // is the same thing keyed as a map, for consumers that want to enumerate.
+  const explanation = explainNode(node.id);
   if (!explanation) return "";
 
   const rule = explanation.rule;
@@ -420,14 +439,147 @@ export function renderCalculationBreakdown(node: GraphNode): string {
     html += '<div class="calc-notice calc-notice--clamp">' + escapeHtml(calcClampNoticeText(explanation.clamp, unit)) + '</div>';
   }
   if (explanation.dividedByZero) {
-    html += '<div class="calc-notice calc-notice--warn">Something in the formula divided by zero, so that part was treated as 0.</div>';
+    html += '<div class="calc-notice calc-notice--warn">' + escapeHtml(DIVIDED_BY_ZERO_NOTICE) + '</div>';
   }
   if (explanation.missingInputs && explanation.missingInputs.length) {
-    html += '<div class="calc-notice calc-notice--warn">No value found for: ' + escapeHtml(explanation.missingInputs.join(", ")) + '. Those parts were treated as 0.</div>';
+    html += '<div class="calc-notice calc-notice--warn">' + escapeHtml(missingInputsNoticeText(explanation.missingInputs)) + '</div>';
   }
 
   html += '</div>';
   return html;
+}
+
+// =============================================================================
+// SCRUB PATCHING — the same panel, with only the numbers rewritten
+// -----------------------------------------------------------------------------
+// While a slider is moving, everything about the panel except its numbers stays
+// put: the same box is selected, with the same rule, the same inputs and the
+// same notices. renderDetailPanel() would rebuild all of it — markup, event
+// handlers, dropdown upgrades — many times a second, and throw away the user's
+// scroll position and focus with it.
+//
+// So during a scrub we write the new numbers into the existing elements and
+// return true. The moment anything STRUCTURAL would differ — a clamp notice
+// appearing, a different input winning a `min`, a rule changing, the box
+// gaining or losing a row — we return false and the caller does a full render.
+// Nothing here decides what the panel says; it only re-states what
+// renderQuantFrame / renderCalculationBreakdown would have produced.
+// =============================================================================
+
+// Patch the selected box's Current + Δ cells and its calculation breakdown.
+// Returns false when the panel has to be rebuilt instead.
+export function patchDetailPanelValues(): boolean {
+  const selectedId = state.selectedNodeId;
+  // Nothing on show — the empty state has no numbers to patch, and a full
+  // render would produce the same nothing.
+  if (!selectedId) return true;
+  const node = nodeById[selectedId];
+  if (!node) return false;
+  // Edit mode is a different panel (inputs, not values) and isn't a scrub target.
+  if (state.canvasEdit && state.canvasEdit.editMode) return false;
+  const content = document.getElementById("detail-content");
+  if (!content || content.style.display === "none") return false;
+
+  if (!patchQuantBlock(node, content)) return false;
+  return patchCalculationBreakdown(node, content);
+}
+
+// The "Current" and "Change vs start" rows of the quantification block.
+function patchQuantBlock(node: GraphNode, content: HTMLElement): boolean {
+  const block = content.querySelector(".detail-quant-block");
+  // A box with no baseline has no block at all in view mode — and no numbers.
+  if (!block) return node.baseline === undefined || node.baseline === null;
+
+  const rows = block.querySelectorAll(".detail-quant-row");
+  // Layout (view mode): 0 = Starting value, 1 = Current, 2 = Change vs start.
+  if (rows.length < 3) return false;
+
+  const unit = node.unit || "";
+  const value = state.computedValues[node.id];
+
+  const currentCell = rows[1].querySelector(".detail-quant-value") as HTMLElement | null;
+  if (!currentCell) return false;
+  const currentInput = currentCell.querySelector("input") as HTMLInputElement | null;
+  if (currentInput) {
+    // The box the user is holding: never fight what they are typing/dragging.
+    if (document.activeElement !== currentInput) {
+      currentInput.value = value !== undefined ? formatScalar(value) : String(node.baseline);
+    }
+  } else {
+    currentCell.textContent = value !== undefined ? formatScalar(value) + " " + unit : "—";
+  }
+
+  const deltaInfo = formatNodeDelta(node.id);
+  const deltaCell = rows[2].querySelector(".detail-quant-value") as HTMLElement | null;
+  if (!deltaCell) return false;
+  deltaCell.textContent = deltaInfo.text || "—";
+  deltaCell.style.color = quantDeltaColor(node, deltaInfo.pct);
+  return true;
+}
+
+// The colour renderQuantFrame paints the Δ row in. Shared so the patched panel
+// and the rendered one can never drift apart.
+function quantDeltaColor(node: GraphNode, pct: number): string {
+  if (Math.abs(pct) < 0.5) return "var(--text-secondary)";
+  if (node.direction === "higher_better") return pct > 0 ? "var(--status-good)" : "var(--status-bad)";
+  if (node.direction === "lower_better") return pct < 0 ? "var(--status-good)" : "var(--status-bad)";
+  return pct > 0 ? "var(--accent-blue)" : "var(--accent-orange)";
+}
+
+// "How this number is calculated": same rule, same inputs in the same order,
+// same notices — only the figures move. Anything else and we give up.
+function patchCalculationBreakdown(node: GraphNode, content: HTMLElement): boolean {
+  const block = content.querySelector(".calc-breakdown");
+  const explanation = explainNode(node.id);
+  const shouldShow = state.simulationMode && !!explanation;
+  if (!block) return !shouldShow;
+  if (!shouldShow) return false;
+
+  const rule = explanation!.rule;
+  if (block.getAttribute("data-calc-rule") !== rule) return false;
+
+  const inputs = explanation!.inputs || [];
+  const rows = block.querySelectorAll(".calc-input");
+  if (rows.length !== inputs.length) return false;
+
+  const winnerIndex = rule === "min" ? winningMinInputIndex(inputs) : -1;
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const input = inputs[i];
+    if (row.getAttribute("data-calc-input") !== input.id) return false;
+    // Which input gates a `min` box is part of the story, not a number: if it
+    // changed hands, the panel has to be re-rendered to move the badge.
+    if (row.classList.contains("calc-input--winner") !== (i === winnerIndex)) return false;
+
+    const valueCell = row.querySelector(".calc-input-value");
+    if (!valueCell) return false;
+    valueCell.textContent = calcInputValueText(input);
+
+    const detailCell = row.querySelector(".calc-input-detail");
+    const detailText = calcInputDetailText(rule, input);
+    if (!detailCell) {
+      if (detailText) return false;   // a factor column would have to appear
+    } else if (!detailText) {
+      return false;                   // …or disappear
+    } else {
+      detailCell.textContent = detailText;
+    }
+  }
+
+  // Notices are conditional markup, so their presence — and the numbers inside
+  // the clamp sentence — decide between patch and rebuild.
+  const notices = block.querySelectorAll(".calc-notice");
+  const expectedNotices: string[] = [];
+  if (explanation!.clamp) expectedNotices.push(calcClampNoticeText(explanation!.clamp, node.unit || ""));
+  if (explanation!.dividedByZero) expectedNotices.push(DIVIDED_BY_ZERO_NOTICE);
+  if (explanation!.missingInputs && explanation!.missingInputs.length) {
+    expectedNotices.push(missingInputsNoticeText(explanation!.missingInputs));
+  }
+  if (notices.length !== expectedNotices.length) return false;
+  for (let i = 0; i < notices.length; i++) {
+    if (notices[i].textContent !== expectedNotices[i]) return false;
+  }
+  return true;
 }
 
 export function editRow(label: string, controlHtml: string): string {

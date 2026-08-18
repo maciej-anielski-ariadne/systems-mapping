@@ -575,9 +575,79 @@ function evaluateNode(node: FormulaAst, state: EvalState): number {
   }
 }
 
+// ───── Fast path: the same maths with no audit trail ────────────────────────
+// The solver sweeps every formula box dozens of times per slider tick and only
+// ever reads `.value`. Building the inputs / missingInputs bookkeeping for those
+// runs was pure waste — an array push per identifier plus an O(k²) `.some()`
+// dedupe and an `includes()` scan, thousands of times a frame. This walk does
+// the arithmetic ONLY: no EvalState, no allocations at all beyond the recursion.
+//
+// It must agree with evaluateNode() digit for digit; the two differ only in what
+// they record. The min/max loops below replace Math.min(...args) (which
+// allocates an argument array per call) but keep its NaN behaviour explicitly.
+export function evaluateFormulaValue(parsed: ParsedFormula, ctx: FormulaEvalContext): number {
+  const raw = evaluateValueOnly(parsed.ast, ctx);
+  return Number.isFinite(raw) ? raw : 0;
+}
+
+function evaluateValueOnly(node: FormulaAst, ctx: FormulaEvalContext): number {
+  switch (node.kind) {
+    case "number":
+      return node.value;
+
+    case "identifier": {
+      const value = ctx.lookup(node.id);
+      return value === undefined ? 0 : value;
+    }
+
+    case "delay": {
+      const value = ctx.lookupDelayed(node.id);
+      return value === undefined ? 0 : value;
+    }
+
+    case "negate":
+      return -evaluateValueOnly(node.operand, ctx);
+
+    case "binary": {
+      const left = evaluateValueOnly(node.left, ctx);
+      const right = evaluateValueOnly(node.right, ctx);
+      if (node.op === "+") return left + right;
+      if (node.op === "-") return left - right;
+      if (node.op === "*") return left * right;
+      // Division by zero yields 0 here too (the traced path also raises a flag,
+      // which only the detail panel needs).
+      if (right === 0) return 0;
+      return left / right;
+    }
+
+    case "call": {
+      const args = node.args;
+      if (node.fn === "clamp") {
+        const x = evaluateValueOnly(args[0], ctx);
+        const lo = evaluateValueOnly(args[1], ctx);
+        const hi = evaluateValueOnly(args[2], ctx);
+        return Math.min(Math.max(x, lo), hi);
+      }
+      // min / max over 2+ arguments, without the spread's argument array.
+      let accumulator = evaluateValueOnly(args[0], ctx);
+      if (accumulator !== accumulator) return NaN;   // NaN in → NaN out, as Math.min does
+      const wantSmallest = node.fn === "min";
+      for (let i = 1; i < args.length; i++) {
+        const value = evaluateValueOnly(args[i], ctx);
+        if (value !== value) return NaN;
+        if (wantSmallest ? value < accumulator : value > accumulator) accumulator = value;
+      }
+      return accumulator;
+    }
+  }
+}
+
 // Evaluate a parsed formula against the current numbers. NEVER throws: every
 // numeric mishap becomes a flag on the result, so the solver can keep sweeping
 // and the UI can explain what happened.
+//
+// This is the TRACED path: it records every input it read, so the detail panel
+// can show the working. The solver uses evaluateFormulaValue() instead.
 export function evaluateFormula(parsed: ParsedFormula, ctx: FormulaEvalContext): FormulaEvalResult {
   const state: EvalState = {
     ctx: ctx,
