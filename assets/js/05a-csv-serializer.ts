@@ -69,11 +69,13 @@ export function csvRow(cells: unknown[]): string {
 //     params:     [{ id, value, description }],   // optional — see below
 //   }
 //
-// Params note: the wizard has no params step yet, so a builder object may not
-// carry them at all. `undefined` therefore means "the wizard never saw the
-// map's params" and we fall back to the LIVE ones, so an "Apply to map" can
-// never silently delete constants the user can't yet see. An explicit `[]`
-// (what seedBuilderEmpty writes for a from-scratch build) means "no params".
+// Params note: a builder object may not carry params at all — an older saved
+// snapshot from before the wizard's Constants step, say. `undefined` therefore
+// means "this builder never saw the map's params" and we fall back to the LIVE
+// ones, so an "Apply to map" can never silently delete constants the user was
+// never shown. An explicit `[]` (what seedBuilderEmpty writes for a
+// from-scratch build, and what the Constants step leaves behind when the user
+// deletes every row) means "no params".
 export function serializeBuilderToCsv(builder: Partial<BuilderState> | null | undefined): string {
   const data = builder || {};
   return _serializeShape(data.params === undefined ? { ...data, params: PARAMS } : data);

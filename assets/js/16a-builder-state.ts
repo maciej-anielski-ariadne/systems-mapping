@@ -7,7 +7,7 @@
 //                            helpers (row buttons, drag handle, table-empty,
 //                            slugify), and apply/download.
 //   16b-builder-render.js  — HTML output for the wizard overlay (header,
-//                            footer, six step renderers).
+//                            footer, one renderer per step).
 //   16c-builder-editor.js  — the floating "expand this cell" editor that
 //                            pops up when the user focuses a text/number
 //                            field inside the wizard.
@@ -45,14 +45,22 @@ import { renderBuilder } from "./16b-builder-render";
 import { hideCellEditor } from "./16c-builder-editor";
 
 // ───── Constants ──────────────────────────────────────────────────────────
+// The wizard's step list — the single source of truth for how many steps there
+// are. The header dots, the footer's Back / Next buttons and the step switch in
+// renderBuilder() all read it, so adding a step here (Constants, step 6) needs
+// no arithmetic changed anywhere else.
 export const BUILDER_STEPS: { num: number; key: string; label: string }[] = [
   { num: 1, key: "streams",    label: "Rows" },
   { num: 2, key: "stages",     label: "Columns" },
   { num: 3, key: "categories", label: "Categories" },
   { num: 4, key: "nodes",      label: "Boxes" },
   { num: 5, key: "edges",      label: "Links" },
-  { num: 6, key: "review",     label: "Review" },
+  { num: 6, key: "params",     label: "Constants" },
+  { num: 7, key: "review",     label: "Review" },
 ];
+
+// Highest step number — used for the "Next" button's disabled state.
+export const BUILDER_LAST_STEP = BUILDER_STEPS.length;
 
 // EFFECT_OPTIONS, DIRECTION_OPTIONS, and STREAM_COLOR_PALETTE all live in
 // 02-config.js so the wizard, the detail panel, the canvas edit module, and
@@ -137,8 +145,9 @@ export function seedBuilderFromLiveData(): void {
     controllable: !!n.controllable,
     direction: n.direction || "",
     sliderMax: n.sliderMax !== undefined ? n.sliderMax : "",
-    // Carried through untouched — the wizard has no editor for the calculation
-    // rules yet, and an apply must not quietly strip them off the map.
+    // The per-box calculation rules, editable in the Boxes table's last four
+    // columns. Blank strings rather than undefined so the cells render empty
+    // and a round-trip through the wizard never invents a value.
     combine: n.combine || "",
     formula: n.formula || "",
     minValue: n.minValue !== undefined ? n.minValue : "",
@@ -150,8 +159,9 @@ export function seedBuilderFromLiveData(): void {
     style: e.style === "dashed" ? "dashed" : "",
     description: e.description || "",
   }));
-  // Same idea as the node calculation columns: no params step in the wizard
-  // yet, so the live constants ride along and get written back out on apply.
+  // The map's hidden calculation constants, edited on step 6 (Constants) and
+  // written back out on apply. Cloned, like every other section, so Cancel
+  // really does discard.
   state.builder.params = PARAMS.map(p => ({ id: p.id, value: p.value, description: p.description }));
   state.builder.focusAfterRender = null;
   state.builder.sort = {};
@@ -295,8 +305,11 @@ export function builderSortIndicator(section: BuilderSection, key: string): stri
   return s.dir === "desc" ? " ▼" : " ▲";
 }
 
-// A clickable, sortable column header. `widthStyle` is the optional inline
-// style string (e.g. ' style="width:200px"') copied from the existing headers.
+// A clickable, sortable column header. `widthStyle` is raw attribute text
+// spliced into the <th> — normally just the inline width (e.g.
+// ' style="width:200px"'), but any other attribute can ride along with it, and
+// the calculation-rule columns on the nodes table use that to attach a
+// data-tooltip explaining what the column means.
 export function sortableTh(section: BuilderSection, key: string, label: string, widthStyle?: string): string {
   return '<th class="builder-th-sort"' + (widthStyle || "") +
          ' data-sort="' + section + '" data-sortkey="' + key + '">' +
@@ -322,10 +335,16 @@ export function validateBuilder(): {
   dupStages: Set<string>;
   dupCategories: Set<string>;
   dupNodes: Set<string>;
+  dupParams: Set<string>;
   streamIds: Set<string>;
   stageIds: Set<string>;
   categoryIds: Set<string>;
   nodeIds: Set<string>;
+  /** Constant ids that collide with a box id — one id can only mean one thing
+   *  to a formula, so the loader would skip the constant on apply. */
+  clashParams: Set<string>;
+  /** Row indices whose constant value isn't a number the loader could read. */
+  badParamValueRows: Set<number>;
 } {
   const b = state.builder;
   const errors: string[] = [];
@@ -339,11 +358,13 @@ export function validateBuilder(): {
   const dupStages     = findDuplicateIds(b.stages);
   const dupCategories = findDuplicateIds(b.categories);
   const dupNodes      = findDuplicateIds(b.nodes);
+  const dupParams     = findDuplicateIds(b.params || []);
 
   dupStreams.forEach(id    => errors.push("Duplicate row id: " + id));
   dupStages.forEach(id     => errors.push("Duplicate column id: " + id));
   dupCategories.forEach(id => errors.push("Duplicate category id: " + id));
   dupNodes.forEach(id      => errors.push("Duplicate box id: " + id));
+  dupParams.forEach(id     => errors.push("Duplicate constant id: " + id));
 
   // Coalesced "missing required fields" messages: blank rows just produce
   // one "row N needs id and label" instead of two separate errors, so a
@@ -393,7 +414,36 @@ export function validateBuilder(): {
     if (!EFFECT_OPTIONS.includes(e.effect)) errors.push(tag + " has invalid effect `" + e.effect + "`.");
   });
 
-  return { errors, dupStreams, dupStages, dupCategories, dupNodes, streamIds, stageIds, categoryIds, nodeIds };
+  // ───── Constants (step 6) — cheap, local checks only ─────────────────────
+  // Deliberately shallow: whether a formula actually *reads* a constant, and
+  // whether a formula parses at all, is decided by the loader on "Apply to
+  // map" (its warnings surface through state.loadErrors). All the wizard does
+  // here is catch the two mistakes it can see without parsing anything — an id
+  // that a box has already taken (a formula could then mean either, so the
+  // loader drops the constant), and a value that isn't a number.
+  const clashParams = new Set<string>();
+  const badParamValueRows = new Set<number>();
+  (b.params || []).forEach((p, i) => {
+    const tag = "Constant " + (p.id ? "`" + p.id + "`" : "row " + (i + 1));
+    if (!p.id) {
+      errors.push("Constant row " + (i + 1) + " needs an id.");
+    } else if (nodeIds.has(p.id)) {
+      clashParams.add(p.id);
+      errors.push(tag + " has the same id as a box — ids must be unique across boxes and constants.");
+    }
+    // Blank is not "carry on with the default" here: a constant with no number
+    // has nothing to contribute to a formula, so flag it like a bad one.
+    const raw = p.value as unknown;
+    if (raw === "" || raw === undefined || raw === null || isNaN(Number(raw))) {
+      badParamValueRows.add(i);
+      errors.push(tag + " needs a numeric value.");
+    }
+  });
+
+  return {
+    errors, dupStreams, dupStages, dupCategories, dupNodes, dupParams,
+    streamIds, stageIds, categoryIds, nodeIds, clashParams, badParamValueRows,
+  };
 }
 
 // ───── Apply / Download ───────────────────────────────────────────────────
@@ -437,19 +487,31 @@ export function addBuilderRow(section: BuilderSection): number {
       to:   state.builder.nodes[0] ? state.builder.nodes[0].id : "",
       effect: "increases", elasticity: "", description: "",
     });
+  } else if (section === "params") {
+    if (!state.builder.params) state.builder.params = [];
+    // A constant's `value` is typed as a number (it always is once loaded), but
+    // a freshly-added row starts blank like every other section's does. The
+    // cast keeps that "blank until typed" convention without loosening the
+    // shared Param type; validateBuilder flags a value that never became a
+    // number, and the loader skips it with a warning if the user applies anyway.
+    state.builder.params.push({ id: "", value: "" as unknown as number, description: "" });
   } else {
     return -1;
   }
-  return state.builder[section].length - 1;
+  // `params` is optional on BuilderState (an absent list means "the wizard
+  // never saw the map's constants"), hence the guard rather than a bare index.
+  const arr = state.builder[section];
+  return arr ? arr.length - 1 : -1;
 }
 
 export function duplicateBuilderRow(section: BuilderSection, index: number): number {
-  const original = state.builder[section][index];
-  if (!original) return -1;
-  const copy = Object.assign({}, original) as unknown as Record<string, unknown>;
+  const arr = state.builder[section] as unknown as Record<string, unknown>[] | undefined;
+  const original = arr && arr[index];
+  if (!arr || !original) return -1;
+  const copy = Object.assign({}, original);
   // Wipe the id of the duplicated row — duplicates would fail validation.
   if (copy.id !== undefined) copy.id = "";
-  (state.builder[section] as unknown as Record<string, unknown>[]).splice(index + 1, 0, copy);
+  arr.splice(index + 1, 0, copy);
   return index + 1;
 }
 

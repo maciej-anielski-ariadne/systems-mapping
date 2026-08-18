@@ -14,7 +14,11 @@ import {
   openCellEditor,
   hideCellEditor,
   cellEditorState,
+  CELL_EDITOR_TYPES_SELECTOR,
 } from "../assets/js/16c-builder-editor";
+import { state } from "../assets/js/03-state";
+import { BUILDER_SPLIT } from "../assets/js/16a-builder-state";
+import { renderBuilderParamsStep } from "../assets/js/16b-builder-render";
 
 function mountCell(value: string): HTMLInputElement {
   const table = document.createElement("table");
@@ -73,5 +77,51 @@ describe("builder cell editor — close / unhighlight", () => {
     );
     expect(cellEditorState).toBeNull();
     expect(document.querySelector(".builder-cell-editor")).toBeNull();
+  });
+});
+
+// The Constants step (step 6) was added after this editor existed, so this is
+// the "it plugs into the same machinery" check: its cells must be the kind the
+// overflow editor picks up, and the editor must be able to name the column it
+// opened over (that name is what a screen reader announces).
+describe("builder cell editor — the Constants step uses the same cells", () => {
+  let host: HTMLDivElement;
+
+  beforeEach(() => {
+    state.builder.params = [
+      { id: "share_air", value: 0.35, description: "Share of the flow routed by air, from the 2024 traffic survey" },
+    ];
+    host = document.createElement("div");
+    // The step's HTML is one string split into a sticky top and a scrolling
+    // table by BUILDER_SPLIT; for this test the two halves can just sit
+    // together in one container.
+    host.innerHTML = renderBuilderParamsStep().split(BUILDER_SPLIT).join("");
+    document.body.appendChild(host);
+  });
+
+  afterEach(() => {
+    hideCellEditor({ skipAnimation: true });
+    host.remove();
+    state.builder.params = [];
+  });
+
+  it("renders id / value / description cells the editor recognises", () => {
+    const id    = host.querySelector('input[data-section="params"][data-field="id"]') as HTMLInputElement;
+    const value = host.querySelector('input[data-section="params"][data-field="value"]') as HTMLInputElement;
+    const desc  = host.querySelector('input[data-section="params"][data-field="description"]') as HTMLInputElement;
+
+    expect(id.value).toBe("share_air");
+    expect(value.type).toBe("number");
+    expect(id.matches(CELL_EDITOR_TYPES_SELECTOR)).toBe(true);
+    expect(value.matches(CELL_EDITOR_TYPES_SELECTOR)).toBe(true);
+    expect(desc.matches(CELL_EDITOR_TYPES_SELECTOR)).toBe(true);
+  });
+
+  it("names the column and row when it opens over a constants cell", () => {
+    const desc = host.querySelector('input[data-section="params"][data-field="description"]') as HTMLInputElement;
+    openCellEditor(desc);
+    const editor = document.querySelector(".builder-cell-editor")!;
+    expect(editor.getAttribute("aria-label")).toBe("Edit Description, row 1");
+    expect((editor as HTMLTextAreaElement).value).toBe(desc.value);
   });
 });

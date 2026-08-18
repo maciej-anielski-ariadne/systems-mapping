@@ -282,7 +282,7 @@ export interface BuilderEdge {
   description?: string;
 }
 
-export type BuilderSection = "streams" | "stages" | "categories" | "nodes" | "edges";
+export type BuilderSection = "streams" | "stages" | "categories" | "nodes" | "edges" | "params";
 
 export interface BuilderSort {
   key: string;

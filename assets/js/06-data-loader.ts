@@ -25,7 +25,7 @@ import type {
   Param,
 } from "./types";
 import { nodeCategoryIds, splitCategoriesByClass } from "./04-utils";
-import { ELASTICITY_KEYS, EFFECT_OPTIONS } from "./02-config";
+import { ELASTICITY_KEYS, EFFECT_OPTIONS, COMBINE_OPTIONS } from "./02-config";
 import {
   parseCsvDocument,
   parseNumericCell,
@@ -88,9 +88,11 @@ import { isUndoCaptureSuspended, clearHistory } from "./16g-canvas-undo";
 
 // The three ways a box can aggregate the arrows pointing into it. Blank in the
 // CSV means "multiplicative", which is exactly what the app did before the
-// column existed. (See CombineMode in types.ts and
-// docs/CALCULATION-ENGINE-DESIGN.md §3.2.)
-const COMBINE_MODES: CombineMode[] = ["multiplicative", "additive", "min"];
+// column existed. Derived from the shared dropdown list (COMBINE_OPTIONS in
+// 02-config.js) with its blank "(default)" entry dropped, so the wizard's
+// dropdown and this validation can never drift apart. (See CombineMode in
+// types.ts and docs/CALCULATION-ENGINE-DESIGN.md §3.2.)
+const COMBINE_MODES = COMBINE_OPTIONS.filter(Boolean) as CombineMode[];
 
 // Build all the lookup maps from the freshly-loaded NODES/EDGES/STREAMS/STAGES.
 // Also produces a topological order: a list of node ids where every node
