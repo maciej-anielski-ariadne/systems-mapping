@@ -10,7 +10,9 @@
 //   What:  • If a single node is selected → only the highlighted nodes + edges
 //            (selected + ancestors/descendants out to state.highlightDepth).
 //          • Otherwise → every node currently visible inside the scroll
-//            viewport (so the user frames the export by zooming / panning).
+//            viewport (so the user frames the export by zooming / panning),
+//            falling back to the whole filtered map when the viewport can't
+//            be measured or already contains the whole map.
 //
 //   How:   the selection only chooses WHAT to include — never HOW it looks.
 //          Everything renders in the map's normal, un-highlighted style (no
@@ -129,6 +131,11 @@ interface ExportModel {
   layout: ExportLayout;
 }
 
+// The id the published viewer's JS uses to reach its <svg>. renderExportSvg can
+// stamp it at build time (see its `svgId` option), which is why it lives next to
+// the other export-wide constants rather than inside buildPublishHtml.
+export const PUBLISH_SVG_ID = "mv-svg";
+
 // A literal closing-script tag would break this file once build-dist.py
 // inlines it into a single HTML page, so assemble the closing tag from pieces
 // (its bytes never contain the contiguous closing sequence).
@@ -193,20 +200,32 @@ export function getExportSelection(allEdges = false): { nodeIds: Set<string>; ed
     return { nodeIds: ids, edges, selectionActive: true };
   }
 
-  // No single selection → the whole map (every box passing the sidebar
-  // visibility filters), not just the on-screen portion.
+  // No single selection → frame the export on what the user can actually see:
+  // every box passing the sidebar visibility filters whose layout rect overlaps
+  // the scroll viewport, so zooming / panning chooses the crop.
+  //
+  // Fall back to the WHOLE filtered map whenever framing would be meaningless
+  // or misleading:
+  //   • no scroll container, or it reports a zero-size / non-finite viewport
+  //     (headless DOM, hidden panel, a browser mid-layout) — cropping to an
+  //     unknown rectangle would silently export nothing;
+  //   • the whole map already fits inside the viewport — nothing to crop.
+  const frame = exportViewportFrame();
   const ids = new Set<string>();
   for (const node of NODES) {
     if (!isNodeVisible(node)) continue;
     const pos = layout.positions[node.id];
     if (!pos) continue;                       // nodes in collapsed stages have no position
+    if (frame && !rectsOverlap(frame, pos)) continue;
     ids.add(node.id);
   }
   // Draw exactly what the live map draws: real edges between visible nodes PLUS
   // the synthetic "through" arrows that reroute a chain across a collapsed
   // stage (computeRenderEdges, shared with 11-rendering). Honour the same
   // sidebar edge filters the renderer applies, then keep only edges whose
-  // endpoints are both inside the framed viewport.
+  // endpoints are BOTH inside the framed viewport (an arrow with one end off
+  // the crop has nothing to point at, so it is dropped rather than left
+  // dangling — the same rule the selection branch above uses).
   const edges: ExportEdge[] = [];
   for (const re of computeRenderEdges()) {
     if (!ids.has(re.from) || !ids.has(re.to)) continue;
@@ -241,6 +260,22 @@ export function rectsOverlap(
 ): boolean {
   return a.x < b.x + b.width  && a.x + a.width  > b.x &&
          a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
+// The rectangle an unselected export should crop to, or null for "don't crop"
+// (export the whole filtered map). Null whenever the viewport can't be trusted
+// — no scroll container, a zero / non-finite size (headless DOM, hidden panel) —
+// or when the entire map already fits on screen, in which case cropping would
+// be a no-op anyway. Keeping the fallback in one place means every caller
+// degrades to the same, safe whole-map behaviour.
+export function exportViewportFrame(): { x: number; y: number; width: number; height: number } | null {
+  const vp = visibleLayoutRect();
+  if (!vp) return null;
+  if (!isFinite(vp.width) || !isFinite(vp.height) || vp.width <= 0 || vp.height <= 0) return null;
+  if (!isFinite(vp.x) || !isFinite(vp.y)) return null;
+  // Whole map on screen → nothing to frame.
+  if (vp.width >= layout.totalWidth && vp.height >= layout.totalHeight) return null;
+  return vp;
 }
 
 // ───── Reorder stream rows to minimise edge length ─────────────────────────
@@ -432,12 +467,50 @@ export function exportNodeStroke(nodeId: string, pal: ExportPalette): { color: s
   return { color: "rgba(0,0,0,0.4)", width: 1 };
 }
 
+// ───── Emitted-coordinate rounding ─────────────────────────────────────────
+// Float arithmetic (fan offsets of span/(n-1), half-heights, bezier control
+// points) produces coordinates like 2116.3333333333335 — 17 characters of
+// noise per number, repeated twice per edge (casing + stroke) and several times
+// per box. Rounding to 0.1px is invisible at any realistic zoom (a tenth of a
+// CSS pixel, and the PNG raster is at most 3× density) but keeps the exported
+// string honest and smaller.
+//
+// This deliberately lives here, on the strings/numbers the EXPORT emits: the
+// shared geometry in 04-utils feeds the live renderer too and must not be
+// perturbed.
+const EXPORT_COORD_DECIMALS = 1;
+const COORD_ROUND = Math.pow(10, EXPORT_COORD_DECIMALS);
+
+// One emitted number, rounded. Integers (the common case) come back untouched.
+function n1(v: number): number {
+  return Math.round(v * COORD_ROUND) / COORD_ROUND;
+}
+
+// Round every over-precise number inside an already-built path string (the
+// bezier `d` from 04-utils). Numbers with 0 or 1 decimals are left alone, so a
+// path that is already clean is returned as-is.
+function roundPathCoords(d: string): string {
+  return d.replace(/-?\d+\.\d\d+/g, m => String(Math.round(Number(m) * COORD_ROUND) / COORD_ROUND));
+}
+
+// The export SVG's opening tag. `drawW/drawH` are the declared (CSS-pixel) size
+// and `viewW/viewH` the internal coordinate system — the PNG rasterizer grows
+// the former while keeping the latter, so both it and renderExportSvg build the
+// tag from here rather than rewriting an existing header with .replace.
+export function exportSvgOpenTag(
+  viewW: number, viewH: number, drawW: number, drawH: number, id?: string
+): string {
+  return '<svg' + (id ? ' id="' + id + '"' : "") +
+         ' xmlns="http://www.w3.org/2000/svg" width="' + drawW + '" height="' + drawH +
+         '" viewBox="0 0 ' + viewW + ' ' + viewH + '">';
+}
+
 // ───── Render the model to a self-contained SVG string ─────────────────────
 // Returns { svg, width, height, nodeInfo } where nodeInfo maps node id →
 // metadata used by the published HTML viewer's hover tooltips.
 export function renderExportSvg(
   model: ExportModel,
-  opts?: { pal?: ExportPalette; transparent?: boolean }
+  opts?: { pal?: ExportPalette; transparent?: boolean; svgId?: string }
 ): { svg: string; width: number; height: number; nodeInfo: Record<string, Record<string, string>> } {
   _xnodeGradSeq = 0;   // restart per export
   opts = opts || {};
@@ -455,12 +528,13 @@ export function renderExportSvg(
                              pal.edgeDefault;
   const effectMarker = effectMarkerName;
   const lay = model.layout;
-  const W = lay.totalWidth, H = lay.totalHeight;
+  const W = n1(lay.totalWidth), H = n1(lay.totalHeight);
   const nodeInfo: Record<string, Record<string, string>> = {};
 
+  // The id (used by the published viewer) is emitted here rather than patched
+  // in afterwards with a whole-string .replace.
   let s = "";
-  s += '<svg xmlns="http://www.w3.org/2000/svg" width="' + W + '" height="' + H +
-       '" viewBox="0 0 ' + W + ' ' + H + '">';
+  s += exportSvgOpenTag(W, H, W, H, opts.svgId);
 
   // Fonts + text sizing baked in (values mirror 05-visualization.css).
   s += '<style>'
@@ -499,7 +573,7 @@ export function renderExportSvg(
     // Per-stream background stripe + top divider.
     for (const streamId of model.streamOrder) {
       const stream = streamById[streamId] || ({ color: "#94a3b8" } as Stream);
-      const y = lay.rowY[streamId], h = lay.rowHeights[streamId];
+      const y = n1(lay.rowY[streamId]), h = n1(lay.rowHeights[streamId]);
       s += '<rect x="0" y="' + y + '" width="' + W + '" height="' + h + '" fill="' + stream.color + '" opacity="0.04"></rect>';
       s += '<line x1="0" y1="' + y + '" x2="' + W + '" y2="' + y + '" stroke="' + pal.borderSubtle + '" stroke-width="1"></line>';
     }
@@ -514,11 +588,11 @@ export function renderExportSvg(
   for (let i = 0; i < model.stageIds.length; i++) {
     const stageId = model.stageIds[i];
     const stage = stageById[stageId] || ({ label: stageId } as StageWithIndex);
-    const cx = lay.colX[stageId] + NODE_WIDTH / 2;
+    const cx = n1(lay.colX[stageId] + NODE_WIDTH / 2);
     s += '<text class="xc-header" x="' + cx + '" y="' + (SVG_PADDING_TOP + 24) +
          '" text-anchor="middle" fill="' + pal.textSecondary + '">' + escapeHtml(stage.label) + '</text>';
     if (!transparent && i < model.stageIds.length - 1) {
-      const dividerX = lay.colX[stageId] + NODE_WIDTH + COL_GAP / 2;
+      const dividerX = n1(lay.colX[stageId] + NODE_WIDTH + COL_GAP / 2);
       s += '<line x1="' + dividerX + '" y1="' + headerBandBottom + '" x2="' + dividerX + '" y2="' + H +
            '" stroke="' + pal.borderSubtle + '" stroke-width="1" stroke-dasharray="2 4" opacity="0.6"></line>';
     }
@@ -527,12 +601,12 @@ export function renderExportSvg(
   // Row-label strip (stream short codes).
   for (const streamId of model.streamOrder) {
     const stream = streamById[streamId] || ({ short: streamId, color: "#94a3b8" } as Stream);
-    const y = lay.rowY[streamId], h = lay.rowHeights[streamId];
+    const y = n1(lay.rowY[streamId]), h = n1(lay.rowHeights[streamId]);
     if (!transparent) {
       s += '<rect x="0" y="' + y + '" width="' + ROW_HEADER_WIDTH + '" height="' + h + '" fill="' + pal.bgDeepest + '"></rect>';
     }
     s += '<rect x="' + (ROW_HEADER_WIDTH - 4) + '" y="' + y + '" width="4" height="' + h + '" fill="' + stream.color + '" opacity="0.7"></rect>';
-    s += '<text class="xr-label" x="' + (ROW_HEADER_WIDTH / 2) + '" y="' + (y + h / 2) +
+    s += '<text class="xr-label" x="' + (ROW_HEADER_WIDTH / 2) + '" y="' + n1(y + h / 2) +
          '" text-anchor="middle" dominant-baseline="middle" fill="' + stream.color + '">' + escapeHtml(stream.short) + '</text>';
   }
 
@@ -565,7 +639,7 @@ export function renderExportSvg(
     const fromPos = lay.positions[edge.from], toPos = lay.positions[edge.to];
     if (!fromPos || !toPos) continue;
     const off = edgeOffsets[i];
-    const pathD = edgeBezierPath(fromPos, toPos, off.fromYOffset, off.toYOffset);
+    const pathD = roundPathCoords(edgeBezierPath(fromPos, toPos, off.fromYOffset, off.toYOffset));
     const dashAttr = edge.style === "dashed" ? ' stroke-dasharray="6 5"' : '';
     if (transparent) {
       // Full-colour, full-opacity edges with a directional arrowhead — the live
@@ -593,32 +667,37 @@ export function renderExportSvg(
     if (!pos) continue;
     const stream   = streamById[node.stream]   || ({ color: "#94a3b8" } as Stream);
     const fillInfo = nodePrimaryFill(node, "xgrad_" + (_xnodeGradSeq++));
-    const chips    = nodeSecondaryChips(node, pos);
     const stroke   = exportNodeStroke(node.id, pal);
+    // Round the box once, up front, and derive every emitted coordinate (and
+    // the chips, which are placed off this rect) from the rounded values — so
+    // the whole box stays internally consistent to the tenth of a pixel.
+    const xpos = { x: n1(pos.x), y: n1(pos.y), width: n1(pos.width), height: n1(pos.height), labelLines: pos.labelLines };
+    const chips    = nodeSecondaryChips(node, xpos);
 
     s += '<g class="xnode" data-node-id="' + escapeHtml(node.id) + '">';
     s += fillInfo.defs;   // per-node gradient (empty unless multi-primary)
 
     // Background rect (xn-bg lets the interactive viewer paint selection glows).
-    s += '<rect class="xn-bg" x="' + pos.x + '" y="' + pos.y + '" width="' + pos.width + '" height="' + pos.height +
+    s += '<rect class="xn-bg" x="' + xpos.x + '" y="' + xpos.y + '" width="' + xpos.width + '" height="' + xpos.height +
          '" rx="5" fill="' + fillInfo.fill + '" stroke="' + stroke.color + '" stroke-width="' + stroke.width + '"></rect>';
 
     // Left stream-colour stripe (rounded only on the left corners).
-    const barRadius = 5, barLeft = pos.x, barRight = pos.x + 6, barTop = pos.y, barBottom = pos.y + pos.height;
-    s += '<path d="M ' + (barLeft + barRadius) + ',' + barTop +
+    const barRadius = 5, barLeft = xpos.x, barRight = n1(xpos.x + 6), barTop = xpos.y, barBottom = n1(xpos.y + xpos.height);
+    const barInner = n1(barLeft + barRadius);
+    s += '<path d="M ' + barInner + ',' + barTop +
          ' L ' + barRight + ',' + barTop +
          ' L ' + barRight + ',' + barBottom +
-         ' L ' + (barLeft + barRadius) + ',' + barBottom +
-         ' A ' + barRadius + ',' + barRadius + ' 0 0 1 ' + barLeft + ',' + (barBottom - barRadius) +
-         ' L ' + barLeft + ',' + (barTop + barRadius) +
-         ' A ' + barRadius + ',' + barRadius + ' 0 0 1 ' + (barLeft + barRadius) + ',' + barTop +
+         ' L ' + barInner + ',' + barBottom +
+         ' A ' + barRadius + ',' + barRadius + ' 0 0 1 ' + barLeft + ',' + n1(barBottom - barRadius) +
+         ' L ' + barLeft + ',' + n1(barTop + barRadius) +
+         ' A ' + barRadius + ',' + barRadius + ' 0 0 1 ' + barInner + ',' + barTop +
          ' Z" fill="' + stream.color + '"></path>';
 
     // Wrapped label — reuse the same grow-to-fit lines the layout sized the box
     // from, so the export matches the live map. Anchored at the symmetric inset.
     const labelLines = pos.labelLines || measureLabelLines(node.label || node.id || "", NODE_WIDTH - LABEL_INSET * 2);
-    const lx = pos.x + LABEL_INSET;
-    s += '<text class="xn-label" x="' + lx + '" y="' + (pos.y + 16) +
+    const lx = n1(xpos.x + LABEL_INSET);
+    s += '<text class="xn-label" x="' + lx + '" y="' + n1(xpos.y + 16) +
          '" fill="' + fillInfo.textColor + '" dominant-baseline="middle">';
     for (let i = 0; i < labelLines.length; i++) {
       s += '<tspan x="' + lx + '" dy="' + (i === 0 ? "0" : "1.083em") + '">' + escapeHtml(labelLines[i]) + '</tspan>';
@@ -628,13 +707,13 @@ export function renderExportSvg(
     // Value + delta (only for quantified nodes).
     const valueText = formatNodeValue(node.id);
     if (valueText) {
-      const valueY = pos.y + pos.height - 12;
-      s += '<text class="xn-value" x="' + (pos.x + LABEL_INSET) + '" y="' + valueY +
+      const valueY = n1(xpos.y + xpos.height - 12);
+      s += '<text class="xn-value" x="' + lx + '" y="' + valueY +
            '" fill="' + fillInfo.textColor + '" dominant-baseline="middle"' + (transparent ? '' : ' opacity="0.75"') + '>' + escapeHtml(valueText) + '</text>';
       const deltaInfo = formatNodeDelta(node.id);
       if (deltaInfo.text && deltaInfo.text !== "—") {
         const deltaColor = deltaColorFor(node, deltaInfo);
-        const deltaX = chips.svg ? chips.leftEdge - 6 : pos.x + pos.width - LABEL_INSET;
+        const deltaX = n1(chips.svg ? chips.leftEdge - 6 : xpos.x + xpos.width - LABEL_INSET);
         s += '<text class="xn-delta" x="' + deltaX + '" y="' + valueY +
              '" fill="' + deltaColor + '" text-anchor="end" dominant-baseline="middle">' + escapeHtml(deltaInfo.text) + '</text>';
       }
@@ -676,11 +755,30 @@ export function downloadTextBlob(content: string, filename: string, mime?: strin
 // Target raster density. We render at this multiple of the map's natural size
 // so the PNG stays crisp when displayed or printed much larger than 1:1.
 export const EXPORT_PNG_SCALE = 3;
-// Conservative canvas ceilings (Chrome caps a side at 16384px and the total
-// area well below 2^31). Exceeding either yields a blank/failed canvas, so we
-// back the density off for very large maps rather than fail.
+// Conservative canvas ceilings. A single side is capped at 16384px (Chrome's
+// limit), and the TOTAL area at 64 megapixels — deliberately far below the
+// per-side square (16384² = 268Mpx, ~1GB of RGBA backing store, which Safari
+// simply refuses to allocate; iOS gives up around 16.7Mpx). 64Mpx is ~256MB
+// peak and still covers an A0 sheet at 300dpi. Exceeding either ceiling yields
+// a blank or failed canvas, so we back the density off instead.
 export const EXPORT_MAX_CANVAS_DIM  = 16384;
-export const EXPORT_MAX_CANVAS_AREA = 16384 * 16384;
+export const EXPORT_MAX_CANVAS_AREA = 64_000_000;
+
+// The raster density actually used for a map of this size: the target density,
+// backed off to fit both ceilings. It can land BELOW 1 for a very large map —
+// the export still happens (the biggest image that works beats no image at
+// all), but the caller then warns the user rather than quietly handing them
+// something blurrier than a screenshot. Exported so the caller can report
+// exactly the number the rasterizer used, from one formula.
+export function exportRasterScale(width: number, height: number): number {
+  const scale = Math.min(
+    EXPORT_PNG_SCALE,
+    EXPORT_MAX_CANVAS_DIM / width,
+    EXPORT_MAX_CANVAS_DIM / height,
+    Math.sqrt(EXPORT_MAX_CANVAS_AREA / (width * height))
+  );
+  return (isFinite(scale) && scale > 0) ? scale : 1;
+}
 
 // Turn the map (drawn as crisp SVG vector shapes) into a PNG image file —
 // "rasterize" means convert those shapes into a grid of pixels. Returns a
@@ -698,34 +796,38 @@ export const EXPORT_MAX_CANVAS_AREA = 16384 * 16384;
 // biggest image that still works, rather than failing outright.
 export function renderExportPngBlob(svg: string, width: number, height: number, pal: ExportPalette, transparent?: boolean): Promise<Blob> {
   return new Promise((resolve, reject) => {
-    let scale = Math.min(
-      EXPORT_PNG_SCALE,
-      EXPORT_MAX_CANVAS_DIM / width,
-      EXPORT_MAX_CANVAS_DIM / height,
-      Math.sqrt(EXPORT_MAX_CANVAS_AREA / (width * height))
-    );
-    if (!isFinite(scale) || scale <= 0) scale = 1;
-
+    const scale = exportRasterScale(width, height);
     const cw = Math.max(1, Math.round(width  * scale));
     const ch = Math.max(1, Math.round(height * scale));
 
     // Grow the SVG's intrinsic size to the raster size (viewBox unchanged) so
-    // it rasterizes vector-sharp at full resolution.
-    const scaledSvg = svg.replace(
-      /^(<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg") width="[^"]*" height="[^"]*"/,
-      '$1 width="' + cw + '" height="' + ch + '"'
-    );
-    // Blob URL (not a data: URI) so very large maps aren't capped by data-URI
-    // length limits. Self-contained, same-origin → does not taint the canvas.
-    const blobUrl = URL.createObjectURL(new Blob([scaledSvg], { type: "image/svg+xml;charset=utf-8" }));
+    // it rasterizes vector-sharp at full resolution. The opening tag is REBUILT
+    // and the body passed to the Blob as a second part, so a multi-megabyte
+    // string is never copied wholesale just to change two attributes (Blob
+    // takes an array of parts, and .slice() of a long string is a view).
+    const bodyStart = svg.indexOf(">") + 1;   // end of the opening <svg …> tag
+    const blobUrl = URL.createObjectURL(new Blob(
+      [exportSvgOpenTag(width, height, cw, ch), svg.slice(bodyStart)],
+      { type: "image/svg+xml;charset=utf-8" }
+    ));
 
     const img = new Image();
     img.onload = () => {
+      // Allocating and painting a canvas this big is the step that actually
+      // fails on memory-constrained browsers — and it fails in three different
+      // ways: by throwing, by handing back a null 2D context, or by silently
+      // clamping the dimensions to something smaller. Catch all three and
+      // reject with a message the caller can show, rather than resolving with
+      // a blank or truncated image.
       try {
         const canvas = document.createElement("canvas");
         canvas.width  = cw;
         canvas.height = ch;
-        const ctx = canvas.getContext("2d")!;
+        if (canvas.width !== cw || canvas.height !== ch) {
+          throw new Error("the browser refused a " + cw + "×" + ch + " canvas");
+        }
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("no 2D canvas context available");
         // Clean export keeps the canvas alpha so the PNG is transparent; the
         // standard export paints the solid backdrop first.
         if (!transparent) {
@@ -736,7 +838,11 @@ export function renderExportPngBlob(svg: string, width: number, height: number, 
         URL.revokeObjectURL(blobUrl);
         if (!canvas.toBlob) { reject(new Error("Canvas.toBlob unsupported")); return; }
         canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("PNG encoding failed")), "image/png");
-      } catch (e) { URL.revokeObjectURL(blobUrl); reject(e); }
+      } catch (e) {
+        URL.revokeObjectURL(blobUrl);
+        const why = (e instanceof Error && e.message) ? e.message : "out of memory";
+        reject(new Error("this map is too big to turn into an image (" + why + ")"));
+      }
     };
     img.onerror = () => { URL.revokeObjectURL(blobUrl); reject(new Error("SVG image failed to load")); };
     img.src = blobUrl;
@@ -759,12 +865,39 @@ export function exportCanvasImage(): void {
   // matching dark or light slide.
   const { svg, width, height } = renderExportSvg(model, { pal, transparent: true });
 
+  // How dense the raster will actually be. Above 1× there is nothing to say;
+  // at or below 1× the PNG is no sharper than a screenshot, and the user has a
+  // way out (select a box → only that trace is exported, at full density), so
+  // say so plainly instead of handing back a soft image with a cheery
+  // "copied!". Computed here, and reported only once the copy succeeds, so the
+  // message isn't immediately overwritten by the success toast.
+  const scale = exportRasterScale(width, height);
+  const degraded = scale < 1;
+
   // Hand ClipboardItem a Promise<Blob> so the write stays tied to the click
-  // gesture even though rasterization is asynchronous.
-  const blobPromise = renderExportPngBlob(svg, width, height, pal, true);
+  // gesture even though rasterization is asynchronous. Rasterization failures
+  // get their own toast — some browsers swallow the rejected image promise
+  // rather than failing the clipboard write, which would look like nothing
+  // happened at all.
+  let rasterFailed = false;
+  const blobPromise = renderExportPngBlob(svg, width, height, pal, true).catch(err => {
+    rasterFailed = true;
+    console.error("Map rasterization failed:", err);
+    showLoadFeedback("Couldn't create the map image — " +
+      (err && err.message ? err.message : "the canvas could not be created") +
+      ". Try selecting a box to export a smaller slice.", true);
+    throw err;
+  });
   navigator.clipboard.write([new ClipboardItem({ "image/png": blobPromise })])
-    .then(() => showLoadFeedback("Map image copied to clipboard.", false))
+    .then(() => showLoadFeedback(
+      degraded
+        ? "Map image copied — but this map is too large to raster at full size, so it went out at " +
+          Math.round(scale * 100) + "% scale (softer than a screenshot). Select a box first to export " +
+          "just that part at full quality."
+        : "Map image copied to clipboard.",
+      degraded))
     .catch(err => {
+      if (rasterFailed) return;              // already reported, don't double-toast
       console.error("Clipboard copy failed:", err);
       showLoadFeedback("Couldn't copy to clipboard: " + (err && err.message ? err.message : "permission denied"), true);
     });
@@ -775,7 +908,9 @@ export function publishCanvasHtml(): void {
   const model = buildExportModel({ allEdges: true });
   if (!model) { showLoadFeedback("Nothing to publish — load a map or zoom to some boxes.", true); return; }
   const pal = exportPalette();
-  const { svg, width, height, nodeInfo } = renderExportSvg(model, { pal });
+  // svgId: the viewer drives the <svg> by id, emitted at build time so the
+  // whole (possibly multi-megabyte) string isn't rewritten to add one attribute.
+  const { svg, width, height, nodeInfo } = renderExportSvg(model, { pal, svgId: PUBLISH_SVG_ID });
   const html = buildPublishHtml(svg, width, height, nodeInfo, pal, model.edges);
   downloadTextBlob(html, "systems-map.html", "text/html;charset=utf-8");
   showLoadFeedback("Published systems-map.html (interactive)", false);
@@ -789,6 +924,15 @@ export function exportMaxHighlightDepth(edges: ExportEdge[]): number {
   const out: Record<string, string[]> = {};
   for (const e of edges) (out[e.from] || (out[e.from] = [])).push(e.to);
   return maxReachableDepth(Object.keys(out), id => out[id] || []);
+}
+
+// The viewer needs its <svg> to carry id="mv-svg". renderExportSvg stamps it at
+// build time when asked (the publish path does), so this is a cheap prefix check
+// that patches only an SVG built without it — no whole-string rewrite of the
+// megabytes of markup on the normal path.
+function withSvgId(svg: string): string {
+  const stamped = '<svg id="' + PUBLISH_SVG_ID + '"';
+  return svg.lastIndexOf(stamped, 0) === 0 ? svg : svg.replace("<svg ", stamped + " ");
 }
 
 // Wrap the SVG in a self-contained, interactive pan / zoom / highlight viewer:
@@ -815,7 +959,7 @@ export function buildPublishHtml(
     'var INFO=' + infoJson + ';' +
     'var EDGES=' + edgesJson + ';' +
     'var scroll=document.getElementById("mv-scroll");' +
-    'var svg=document.getElementById("mv-svg");' +
+    'var svg=document.getElementById("' + PUBLISH_SVG_ID + '");' +
     'var tip=document.getElementById("mv-tip");' +
     'var readout=document.getElementById("mv-zoom");' +
     'var z=1;' +
@@ -851,14 +995,42 @@ export function buildPublishHtml(
     'function edgesUpDown(start,d){var ids={};[[inAdj,"from"],[outAdj,"to"]].forEach(function(p){var adj=p[0],key=p[1];' +
       'var seen={};seen[start]=1;var fr=[start];for(var l=0;l<d&&fr.length;l++){var nx=[];for(var i=0;i<fr.length;i++){var a=adj[fr[i]]||[];' +
         'for(var j=0;j<a.length;j++){ids[a[j].id]=1;var nb=a[j][key];if(!seen[nb]){seen[nb]=1;nx.push(nb);}}}fr=nx;}});return ids;}' +
+    // ── element caches (queried ONCE, at startup) ──
+    // The old applyHighlight re-ran two querySelectorAll sweeps and then reset
+    // + re-set a class on every box and every arrow, on every click and every
+    // depth step — tens of thousands of classList writes per interaction on a
+    // big map. The lists and an id→element map are built once here instead.
+    'var NODES=svg.querySelectorAll(".xnode"),EDGES_EL=svg.querySelectorAll(".xedge");' +
+    'var NODE_EL={},EDGE_EL={},q;' +
+    'for(q=0;q<NODES.length;q++)NODE_EL[NODES[q].getAttribute("data-node-id")]=NODES[q];' +
+    'for(q=0;q<EDGES_EL.length;q++)EDGE_EL[EDGES_EL[q].getAttribute("data-edge-id")]=EDGES_EL[q];' +
     // ── apply highlight classes (no re-render) ──
-    'function applyHighlight(){var anc={},desc={},eh={};' +
-      'if(sel){anc=bfs(sel,depth,inAdj,"from");desc=bfs(sel,depth,outAdj,"to");eh=edgesUpDown(sel,depth);}' +
-      'var nodes=svg.querySelectorAll(".xnode");for(var i=0;i<nodes.length;i++){var g=nodes[i];var id=g.getAttribute("data-node-id");' +
-        'g.classList.remove("sel","anc","desc","dim");if(!sel)continue;' +
-        'if(id===sel)g.classList.add("sel");else if(anc[id])g.classList.add("anc");else if(desc[id])g.classList.add("desc");else g.classList.add("dim");}' +
-      'var eds=svg.querySelectorAll(".xedge");for(var k=0;k<eds.length;k++){var p=eds[k];p.classList.remove("ehi","edim");if(!sel)continue;' +
-        'if(eh[p.getAttribute("data-edge-id")])p.classList.add("ehi");else p.classList.add("edim");}}' +
+    // `hiNode` / `hiEdge` remember what is currently highlighted, so an update
+    // only touches the symmetric difference — the boxes and arrows that
+    // actually change state. `traced` says whether the map is in the traced
+    // state at all (every non-highlighted box carries "dim"); the only full
+    // sweeps left are entering it and leaving it.
+    'var hiNode={},hiEdge={},traced=false;' +
+    'function swap(el,from,to){if(!el)return;if(from)el.classList.remove(from);el.classList.add(to);}' +
+    'function applyHighlight(){var i,id,g;' +
+      'if(!sel){if(traced){' +
+        'for(i=0;i<NODES.length;i++)NODES[i].classList.remove("sel","anc","desc","dim");' +
+        'for(i=0;i<EDGES_EL.length;i++)EDGES_EL[i].classList.remove("ehi","edim");' +
+        'traced=false;hiNode={};hiEdge={};}return;}' +
+      'var anc=bfs(sel,depth,inAdj,"from"),desc=bfs(sel,depth,outAdj,"to"),eh=edgesUpDown(sel,depth);' +
+      // Wanted class per highlighted box — ancestors win over descendants, and
+      // the selected box wins over both (the old if/else-if order).
+      'var want={};for(id in desc)want[id]="desc";for(id in anc)want[id]="anc";want[sel]="sel";' +
+      'if(!traced){' +
+        'for(i=0;i<NODES.length;i++){g=NODES[i];g.classList.add(want[g.getAttribute("data-node-id")]||"dim");}' +
+        'for(i=0;i<EDGES_EL.length;i++){g=EDGES_EL[i];g.classList.add(eh[g.getAttribute("data-edge-id")]?"ehi":"edim");}' +
+        'traced=true;}' +
+      'else{' +
+        'for(id in want)if(hiNode[id]!==want[id])swap(NODE_EL[id],hiNode[id]||"dim",want[id]);' +
+        'for(id in hiNode)if(!want[id])swap(NODE_EL[id],hiNode[id],"dim");' +
+        'for(id in eh)if(!hiEdge[id])swap(EDGE_EL[id],"edim","ehi");' +
+        'for(id in hiEdge)if(!eh[id])swap(EDGE_EL[id],"ehi","edim");}' +
+      'hiNode=want;hiEdge=eh;}' +
     'function select(id){sel=(sel===id?null:id);applyHighlight();}' +
     // ── highlight-depth control ──
     'var dReadout=document.getElementById("mv-depth"),dDown=document.getElementById("mv-depth-down"),dUp=document.getElementById("mv-depth-up");' +
@@ -934,7 +1106,7 @@ export function buildPublishHtml(
       '#mv-tip .t-desc{color:' + pal.textSecondary + ';line-height:1.4;}' +
       '#mv-hint{position:fixed;bottom:12px;left:12px;font-size:11px;color:' + pal.textTertiary + ';z-index:10;}' +
     '</style></head><body>' +
-    '<div id="mv-scroll"><div id="mv-inner">' + svg.replace('<svg ', '<svg id="mv-svg" ') + '</div></div>' +
+    '<div id="mv-scroll"><div id="mv-inner">' + withSvgId(svg) + '</div></div>' +
     '<div id="mv-tip"></div>' +
     '<div id="mv-tools">' +
       '<div class="mv-card">' +
