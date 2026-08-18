@@ -411,6 +411,27 @@
  * block — mark them so the mixed lock state reads as intentional. */
 .detail-quant-derived { font-style: italic; opacity: 0.75; }
 
+/* A row whose control needs the panel's full width rather than the narrow
+ * right-hand value rail (the formula box). Label above, control below. */
+.detail-quant-row--wide {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--gap-sm);
+}
+
+/* A label carrying data-tooltip help is hoverable — say so with the cursor
+ * rather than with another mark competing for attention in the rail. */
+.detail-quant-label[data-tooltip] {
+  cursor: help;
+}
+
+/* The formula box: an expression, so monospace and full width. */
+.detail-quant-formula {
+  font-family: var(--font-mono);
+  font-size: var(--fs-cap);
+  width: 100%;
+}
+
 /* Editable current-value input shown in the "Current" row when the
  * selected node is a controllable input and sim mode is on. Typed values
  * propagate via applySimMultiplier (assets/js/14-simulation-panel.js). */
@@ -435,6 +456,140 @@
 }
 .detail-value-input:focus {
   box-shadow: var(--focus-ring);
+}
+
+/* === Calculation breakdown ("How this number is calculated") ===
+ * Shown under the quantification block in simulation mode: the plain-language
+ * rule that produced the current value, one row per input that fed it, and a
+ * notice when a bound / a division by zero / a missing name changed the answer.
+ * Every colour is a theme token, so the block flips with the rest of the panel.
+ * Rendered by renderCalculationBreakdown (assets/js/15-detail-panel.js) from
+ * state.explanations; see docs/CALCULATION-ENGINE-DESIGN.md §4. */
+.calc-breakdown {
+  margin: var(--section-gap) 0 0;
+}
+
+/* The one-sentence rule name. Prose, not a readout — this is the line that has
+ * to make sense to someone who has never opened the CSV. */
+.calc-rule {
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  margin-bottom: var(--heading-gap);
+}
+
+/* The expression itself, verbatim. Long formulas wrap rather than scroll, so
+ * nothing is hidden from an audit. */
+.calc-formula {
+  font-family: var(--font-mono);
+  font-size: var(--fs-cap);
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: var(--bg-mid);
+  border-radius: var(--radius-interactive);
+  padding: var(--pad-card);
+  margin-bottom: var(--heading-gap);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+/* One input row: name left, its value and its share of the answer on the
+ * right-hand rail. The quiet inset stripe echoes the edge rows below without
+ * claiming an effect colour it doesn't have. */
+.calc-input {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--gap-lg);
+  padding: var(--space-0_5) var(--space-2) var(--space-0_5) calc(var(--edge-stripe-w) + var(--space-2));
+  margin-bottom: var(--row-gap);
+  font-size: var(--fs-body);
+  box-shadow: inset 3px 0 0 var(--border-strong);
+}
+
+.calc-input-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--gap-md);
+  color: var(--text-primary);
+  overflow-wrap: break-word;
+}
+
+.calc-input-value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-cap);
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.calc-input-detail {
+  font-family: var(--font-mono);
+  font-size: var(--fs-cap);
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+/* The input the `min` rule settled on — the weakest link IS the answer here,
+ * so it gets the interactive accent on both the stripe and the factor. */
+.calc-input--winner {
+  box-shadow: inset 3px 0 0 var(--act);
+}
+.calc-input--winner .calc-input-detail {
+  color: var(--act);
+  font-weight: var(--fw-semibold);
+}
+
+/* A hidden constant (a param): part of the maths, never a box on the map, so
+ * it reads as a chip with its description on hover rather than as a name the
+ * user could click through to. */
+.calc-input-param {
+  font-family: var(--font-mono);
+  font-size: var(--fs-cap);
+  color: var(--text-secondary);
+  background: var(--bg-light);
+  padding: var(--pad-row);
+  border-radius: var(--radius-interactive);
+  cursor: help;
+}
+
+/* Small inline markers on an input row ("previous step", "gates this"). */
+.calc-badge {
+  font-family: var(--font-mono);
+  font-size: var(--fs-cap);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-cap);
+  color: var(--accent-purple);
+  background: color-mix(in srgb, var(--accent-purple) 16%, transparent);
+  padding: var(--pad-row);
+  border-radius: var(--radius-interactive);
+  white-space: nowrap;
+}
+.calc-badge--gate {
+  color: var(--act);
+  background: var(--act-tint);
+}
+
+/* Notices — only ever rendered when something ACTUALLY happened to the number.
+ * Same shape as the solver badge in 08-simulation.css. */
+.calc-notice {
+  font-size: var(--fs-cap);
+  line-height: 1.45;
+  border-radius: var(--radius-surface);
+  padding: var(--pad-card);
+  margin-top: var(--heading-gap);
+  color: var(--text-secondary);
+  background: var(--bg-mid);
+}
+.calc-notice--clamp {
+  color: var(--accent-amber);
+  background: color-mix(in srgb, var(--accent-amber) 14%, transparent);
+}
+.calc-notice--warn {
+  color: var(--status-bad);
+  background: color-mix(in srgb, var(--status-bad) 12%, transparent);
 }
 
 /* === Generic detail-panel action buttons === */

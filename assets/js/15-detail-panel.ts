@@ -4,8 +4,9 @@
 // Two completely separate modes for a selected node:
 //
 //   View mode (default): tags, name, description, quant block, "Edit Node"
-//     button (full-width, centred), direct inputs, direct impacts, causal
-//     chain summary. Read-only — the user is exploring / tracing.
+//     button (full-width, centred), the calculation breakdown (simulation
+//     mode only), direct inputs, direct impacts, causal chain summary.
+//     Read-only — the user is exploring / tracing.
 //
 //   Edit mode (toggled on via the button above): tags, "Done editing"
 //     button, every node field as an editable input, mini category manager,
@@ -18,7 +19,7 @@
 // row so the user lands on the edge they wanted to edit.
 // =============================================================================
 
-import type { GraphNode, Edge, EffectKind } from "./types";
+import type { GraphNode, Edge, EffectKind, CalcRule, CombineMode, NodeExplanation, TraceInput } from "./types";
 import {
   STREAMS,
   STAGES,
@@ -27,6 +28,7 @@ import {
   EDGES,
   DEFAULT_ELASTICITY_BY_EFFECT,
   nodeById,
+  paramById,
   outgoingEdges,
   incomingEdges,
   streamById,
@@ -143,6 +145,16 @@ export function renderNodeSkeleton(node: GraphNode, editMode: boolean): string {
   // ── Quantification: values ↔ inputs, on the same rail ────────────────
   html += renderQuantFrame(node, editMode);
 
+  // ── "How this number is calculated" — the audit trail for the figure
+  //    shown just above. View mode only: in edit mode the user is CHANGING
+  //    the rule (and text-field edits deliberately skip the panel re-render
+  //    to keep focus), so a breakdown there would be showing yesterday's
+  //    working. Simulation mode only, because outside it there are no
+  //    computed numbers to explain.
+  if (!editMode && state.simulationMode) {
+    html += renderCalculationBreakdown(node);
+  }
+
   // ── Direct inputs — read-only stripes in BOTH modes (incoming edges
   //    are edited from the source node; clicking jumps there) ───────────
   html += renderEdgeList("Causes", directInputs, "from", "No causes — this is a starting input.");
@@ -192,7 +204,15 @@ export function renderQuantFrame(node: GraphNode, editMode: boolean): string {
     { value: "lower_better",  label: "Lower is better" },
     { value: "neutral",       label: "Neutral / context" },
   ];
-  const row = (label: string, leaf: string): string => '<div class="detail-quant-row"><span class="detail-quant-label">' + escapeHtml(label) + '</span>' + leaf + '</div>';
+  // `tip` (optional) hangs the panel's usual data-tooltip help off the row's
+  // label, so a one-line plain-language explanation is a hover away without
+  // spending a line of panel height on it.
+  const labelSpan = (label: string, tip?: string): string =>
+    '<span class="detail-quant-label"' + (tip ? ' data-tooltip="' + escapeHtml(tip) + '"' : '') + '>' + escapeHtml(label) + '</span>';
+  const row = (label: string, leaf: string, tip?: string): string => '<div class="detail-quant-row">' + labelSpan(label, tip) + leaf + '</div>';
+  // Same row, stacked: for a control (the formula box) that needs the panel's
+  // full width rather than the narrow right-hand value rail.
+  const wideRow = (label: string, leaf: string, tip?: string): string => '<div class="detail-quant-row detail-quant-row--wide">' + labelSpan(label, tip) + leaf + '</div>';
 
   let html = '<div class="detail-quant-block">';
 
@@ -237,6 +257,172 @@ export function renderQuantFrame(node: GraphNode, editMode: boolean): string {
   // Slider max — edit only
   if (editMode) {
     html += row("Slider max", '<input type="number" step="any" class="detail-edit-input detail-edit-number detail-quant-input" data-field="sliderMax" value="' + (node.sliderMax !== undefined && node.sliderMax !== null ? node.sliderMax : "") + '" placeholder="2 × base">');
+  }
+
+  // ── Per-box calculation rules — edit only ────────────────────────────
+  // All four are optional and blank by default: a box that sets none of them
+  // computes exactly as this app always has (docs/CALCULATION-ENGINE-DESIGN.md
+  // §3). They sit at the bottom of the quant block because they're the
+  // "advanced" end of the same subject — how this box's number comes about.
+  if (editMode) {
+    // Blank IS multiplicative, so the default option carries an empty value and
+    // an explicit "multiplicative" in the CSV simply shows as the default (a
+    // round-trip drops the redundant word; the maths is identical).
+    const combineOptions = [
+      { value: "",            label: "Standard (multiplicative)" },
+      { value: "additive",    label: "Additive" },
+      { value: "min",         label: "Weakest link (min)" },
+    ];
+    const combineValue = node.combine && node.combine !== "multiplicative" ? node.combine : "";
+    html += row("Combine", '<span class="detail-quant-control">' + selectInput("combine", combineOptions, combineValue) + '</span>',
+      "How the arrows into this box add up: standard compounds each effect, additive stops related inputs overstating the total, weakest link lets the smallest input gate the result.");
+
+    html += wideRow("Formula", '<input type="text" class="detail-edit-input detail-quant-formula" data-field="formula" value="' + escapeHtml(node.formula || "") + '" placeholder="min(a, b) · clamp(x, lo, hi) · delay(x)" spellcheck="false">',
+      "Overrides the arrows' maths — every box named here must also have an arrow into this box.");
+
+    html += row("Lowest allowed", '<input type="number" step="any" class="detail-edit-input detail-edit-number detail-quant-input" data-field="minValue" value="' + (node.minValue !== undefined && node.minValue !== null ? node.minValue : "") + '" placeholder="none">',
+      "A hard floor in this box's own units — the number can never come out below it.");
+    html += row("Highest allowed", '<input type="number" step="any" class="detail-edit-input detail-edit-number detail-quant-input" data-field="maxValue" value="' + (node.maxValue !== undefined && node.maxValue !== null ? node.maxValue : "") + '" placeholder="none">',
+      "A hard ceiling in this box's own units — useful for a percentage that must never pass 100.");
+  }
+
+  html += '</div>';
+  return html;
+}
+
+// =============================================================================
+// CALCULATION BREAKDOWN — "how this number is calculated"
+// -----------------------------------------------------------------------------
+// The audit trail the design doc asks for (docs/CALCULATION-ENGINE-DESIGN.md
+// §4): the engine records, per box, WHICH rule ran and WHAT fed into it
+// (state.explanations, rebuilt wholesale on every recompute), and this section
+// says it back in plain language.
+//
+// It is deliberately a short story, not a debug dump: one sentence naming the
+// rule, one row per input with its number and that input's share of the answer,
+// and a notice only when something actually happened to the figure (a bound
+// bit, a division by zero, a name that couldn't be resolved).
+// =============================================================================
+
+// One plain-language sentence per rule. The jargon word stays in brackets so a
+// user who has read the CSV columns can still map the two together.
+const CALC_RULE_SENTENCE: Record<CalcRule, string> = {
+  pinned:         "Pinned by your slider — you are holding this box at this value.",
+  baseline:       "No quantified inputs — stays at its starting value.",
+  multiplicative: "Independent % effects, which compound (standard).",
+  additive:       "Effects add up instead of compounding (additive).",
+  min:            "Weakest input gates this box (min).",
+  formula:        "Formula — the arrows' maths is overridden by the expression below.",
+};
+
+// "9,000 FTE" for a box; params are unitless constants, so just the number.
+function calcInputValueText(input: TraceInput): string {
+  const sourceNode = nodeById[input.id];
+  const unit = sourceNode && sourceNode.unit ? " " + sourceNode.unit : "";
+  return formatScalar(input.value) + unit;
+}
+
+// The input's name. A param is a HIDDEN CONSTANT — it never appears as a box on
+// the map, so it reads as a chip with its description on hover rather than as
+// something the user could click through to.
+function calcInputLabelHtml(input: TraceInput): string {
+  if (input.kind === "param") {
+    const param = paramById[input.id];
+    const tip = (param && param.description) ? param.description : "A hidden constant — part of the maths, not the map.";
+    return '<span class="calc-input-param" data-tooltip="' + escapeHtml(tip) + '">◆ ' + escapeHtml(input.id) + '</span>';
+  }
+  const sourceNode = nodeById[input.id];
+  return '<span class="calc-input-name">' + escapeHtml(sourceNode ? sourceNode.label : input.id) + '</span>';
+}
+
+// What this one input did to the answer, in the shape the box's rule uses:
+//   • multiplicative / min — a FACTOR the result is multiplied by ("×1.20")
+//   • additive             — a signed share of the starting value ("+20.0%")
+//   • formula              — nothing; a formula reads plain values, and the
+//                            expression itself is printed above.
+function calcInputDetailHtml(rule: CalcRule, input: TraceInput): string {
+  if (input.contribution === undefined) return "";
+  if (rule === "additive") {
+    const pct = input.contribution * 100;
+    return '<span class="calc-input-detail">' + (pct >= 0 ? "+" : "") + pct.toFixed(1) + '%</span>';
+  }
+  if (rule === "multiplicative" || rule === "min") {
+    return '<span class="calc-input-detail">×' + escapeHtml(formatScalar(input.contribution)) + '</span>';
+  }
+  return "";
+}
+
+// Which input the `min` rule actually settled on — the smallest factor is the
+// one gating the box, so it's the single most useful thing on the whole panel
+// for a "why isn't this moving?" question.
+function winningMinInputIndex(inputs: TraceInput[]): number {
+  let winner = -1;
+  for (let i = 0; i < inputs.length; i++) {
+    const contribution = inputs[i].contribution;
+    if (contribution === undefined) continue;
+    if (winner === -1 || contribution < inputs[winner].contribution!) winner = i;
+  }
+  return winner;
+}
+
+// "Held at the highest allowed value, 100 % — it would have been 132 %."
+// Only ever called when a bound ACTUALLY moved the number, so there is always
+// a side to name.
+function calcClampNoticeText(clamp: NonNullable<NodeExplanation["clamp"]>, unit: string): string {
+  const suffix = unit ? " " + unit : "";
+  const hitMax = clamp.max !== undefined && !(clamp.from < clamp.max);
+  const bound = hitMax ? clamp.max! : clamp.min!;
+  const which = hitMax ? "highest allowed value" : "lowest allowed value";
+  // A runaway loop can arrive here as Infinity; "would have been Infinity" is
+  // no use to anyone, so say what happened instead.
+  const wouldHave = Number.isFinite(clamp.from)
+    ? "it would have been " + formatScalar(clamp.from) + suffix
+    : "without the limit it ran away entirely";
+  return "Held at the " + which + ", " + formatScalar(bound) + suffix + " — " + wouldHave + ".";
+}
+
+export function renderCalculationBreakdown(node: GraphNode): string {
+  const explanation = state.explanations ? state.explanations[node.id] : undefined;
+  if (!explanation) return "";
+
+  const rule = explanation.rule;
+  const unit = node.unit || "";
+  const inputs = explanation.inputs || [];
+  const winnerIndex = rule === "min" ? winningMinInputIndex(inputs) : -1;
+
+  let html = '<div class="calc-breakdown" data-calc-rule="' + escapeHtml(rule) + '">';
+  html +=   '<div class="detail-list-title"><span>How this number is calculated</span></div>';
+  html +=   '<div class="calc-rule">' + escapeHtml(CALC_RULE_SENTENCE[rule]) + '</div>';
+
+  // The expression itself, verbatim, in a monospace block — it IS the rule for
+  // a formula box, so it reads before the inputs it names.
+  if (rule === "formula" && explanation.formula) {
+    html += '<div class="calc-formula">' + escapeHtml(explanation.formula) + '</div>';
+  }
+
+  for (let i = 0; i < inputs.length; i++) {
+    const input = inputs[i];
+    const isWinner = i === winnerIndex;
+    html += '<div class="calc-input' + (isWinner ? ' calc-input--winner' : '') + '" data-calc-input="' + escapeHtml(input.id) + '">';
+    html +=   '<span class="calc-input-label">' + calcInputLabelHtml(input);
+    // A delayed read is one solver sweep behind — that's the trick that makes a
+    // feedback loop well-defined, and worth saying out loud on the row.
+    if (input.delayed) html += ' <span class="calc-badge">previous step</span>';
+    if (isWinner)      html += ' <span class="calc-badge calc-badge--gate">gates this</span>';
+    html +=   '</span>';
+    html +=   '<span class="calc-input-value">' + escapeHtml(calcInputValueText(input)) + '</span>';
+    html +=   calcInputDetailHtml(rule, input);
+    html += '</div>';
+  }
+
+  if (explanation.clamp) {
+    html += '<div class="calc-notice calc-notice--clamp">' + escapeHtml(calcClampNoticeText(explanation.clamp, unit)) + '</div>';
+  }
+  if (explanation.dividedByZero) {
+    html += '<div class="calc-notice calc-notice--warn">Something in the formula divided by zero, so that part was treated as 0.</div>';
+  }
+  if (explanation.missingInputs && explanation.missingInputs.length) {
+    html += '<div class="calc-notice calc-notice--warn">No value found for: ' + escapeHtml(explanation.missingInputs.join(", ")) + '. Those parts were treated as 0.</div>';
   }
 
   html += '</div>';
@@ -591,6 +777,27 @@ export function applyNodeFieldEdit(node: GraphNode, field: string, input: HTMLIn
   } else if (field === "sliderMax") {
     if (value === undefined) delete node.sliderMax;
     else                     node.sliderMax = value as number;
+    skipDetailRender = true;
+  } else if (field === "combine") {
+    // Blank (and the redundant explicit "multiplicative") means "no combine
+    // column at all" — the standard rule, and the shape an untouched CSV has.
+    if (value === "additive" || value === "min") node.combine = value as CombineMode;
+    else                                         delete node.combine;
+  } else if (field === "formula") {
+    // Stored verbatim, exactly as the CSV would. Anything wrong with it —
+    // syntax, an unknown name, a missing arrow — is reported by the loader's
+    // validation on the way back in, not swallowed here.
+    const text = String(value || "").trim();
+    if (text) node.formula = text; else delete node.formula;
+    skipDetailRender = true;
+  } else if (field === "minValue") {
+    // TS calls these minValue/maxValue; the CSV columns are min/max.
+    if (value === undefined) delete node.minValue;
+    else                     node.minValue = value as number;
+    skipDetailRender = true;
+  } else if (field === "maxValue") {
+    if (value === undefined) delete node.maxValue;
+    else                     node.maxValue = value as number;
     skipDetailRender = true;
   }
 
