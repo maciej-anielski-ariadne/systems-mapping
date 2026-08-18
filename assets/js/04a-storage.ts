@@ -173,6 +173,10 @@ export function saveBuilderToStorage(): void {
       defaults:   b.defaults,
       nodes:      b.nodes,
       edges:      b.edges,
+      // The wizard has no params editor yet, but it carries the map's hidden
+      // constants so "Apply to map" can write them back. Saved so a refresh
+      // mid-build doesn't change what an apply would do.
+      params:     b.params,
     }));
   } catch (_) {}
 }

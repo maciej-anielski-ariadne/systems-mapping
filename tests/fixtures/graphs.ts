@@ -145,6 +145,83 @@ n,Node,,ops,s1,prim|sec,,,,,
 from,to,effect,elasticity,style,description
 `;
 
+// Params + the optional per-box calculation columns (combine / formula /
+// min / max). Nothing here changes how the map computes in this wave — the
+// fixture exists to prove the data model and the CSV round-trip carry it:
+//   • two params (never drawn as boxes)
+//   • `served`  — a formula (with commas inside it, so quoting is exercised)
+//   • `total`   — combine `additive`
+//   • `capacity`— hard min/max bounds
+export const PARAMS_CSV = `# SECTION: streams
+id,label,short,color
+ops,Operations,OPS,#60a5fa
+
+# SECTION: stages
+id,label
+s1,One
+s2,Two
+
+# SECTION: categories
+id,label,color,text_color,class
+cat,General,#a3a3a3,#111111,primary
+
+# SECTION: params
+id,value,description
+share_air,0.35,Share of the flow routed by air
+detection_rate,0.6,"Probability an examined item is detected, per inspection"
+
+# SECTION: nodes
+id,label,description,stream,stage,category,baseline,unit,controllable,direction,slider_max,combine,formula,min,max
+demand,Demand,,ops,s1,cat,100,units,true,,400,,,,
+capacity,Capacity,,ops,s1,cat,80,units,true,,400,,,0,200
+served,Served,,ops,s2,cat,80,units,,higher_better,,,"clamp(min(demand, capacity), 0, 200)",,
+total,Total,,ops,s2,cat,80,units,,,,additive,,,
+
+# SECTION: edges
+from,to,effect,elasticity,style,description
+demand,served,increases,0.5,,
+capacity,served,increases,0.5,,
+demand,total,increases,0.5,,
+capacity,total,increases,0.5,,
+`;
+
+// Deliberately broken params + calculation columns for validation tests:
+//   • good    — valid param
+//   • good    — DUPLICATE param id (second occurrence rejected)
+//   • notnum  — value isn't a number (rejected)
+//   • n1      — param id clashing with a box id (rejected)
+//   • (blank) — a row with no id (silently skipped, like a blank node row)
+//   • n1      — unknown `combine` value (ignored, box kept)
+//   • n2      — min greater than max (both limits ignored, box kept)
+export const PARAMS_INVALID_CSV = `# SECTION: streams
+id,label,short,color
+ops,Operations,OPS,#60a5fa
+
+# SECTION: stages
+id,label
+s1,One
+
+# SECTION: categories
+id,label,color,text_color,class
+cat,General,#a3a3a3,#111111,primary
+
+# SECTION: params
+id,value,description
+good,0.5,A perfectly fine constant
+good,0.7,Duplicate id
+notnum,abc,Value is not a number
+n1,1,Clashes with a box id
+,9,No id at all
+
+# SECTION: nodes
+id,label,description,stream,stage,category,baseline,unit,controllable,direction,slider_max,combine,formula,min,max
+n1,Node One,,ops,s1,cat,,,,,,sideways,,,
+n2,Node Two,,ops,s1,cat,,,,,,,,10,5
+
+# SECTION: edges
+from,to,effect,elasticity,style,description
+`;
+
 // Deliberately broken references for validation tests:
 //   • good   — valid node
 //   • good   — DUPLICATE id (second occurrence rejected)

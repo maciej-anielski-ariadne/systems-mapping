@@ -18,9 +18,11 @@ import type {
   Stream,
   Stage,
   CategoryMap,
+  CombineMode,
   GraphNode,
   Edge,
   ElasticityDefaults,
+  Param,
 } from "./types";
 import { nodeCategoryIds, splitCategoriesByClass } from "./04-utils";
 import { ELASTICITY_KEYS, EFFECT_OPTIONS } from "./02-config";
@@ -33,9 +35,11 @@ import {
   state,
   NODES,
   EDGES,
+  PARAMS,
   STREAMS,
   STAGES,
   nodeById,
+  paramById,
   edgeById,
   streamNodeCount,
   categoryNodeCount,
@@ -49,8 +53,10 @@ import {
   setCategories,
   setNodes,
   setEdges,
+  setParams,
   setDefaultElasticityByEffect,
   setNodeById,
+  setParamById,
   setEdgeById,
   setOutgoingEdges,
   setIncomingEdges,
@@ -74,6 +80,12 @@ import { showLoadFeedback, hideDropZone } from "./16-file-io";
 import { saveCsvToStorage } from "./04a-storage";
 import { isUndoCaptureSuspended, clearHistory } from "./16g-canvas-undo";
 
+// The three ways a box can aggregate the arrows pointing into it. Blank in the
+// CSV means "multiplicative", which is exactly what the app did before the
+// column existed. (See CombineMode in types.ts and
+// docs/CALCULATION-ENGINE-DESIGN.md §3.2.)
+const COMBINE_MODES: CombineMode[] = ["multiplicative", "additive", "min"];
+
 // Build all the lookup maps from the freshly-loaded NODES/EDGES/STREAMS/STAGES.
 // Also produces a topological order: a list of node ids where every node
 // comes after all the nodes that feed into it (i.e. every cause is listed
@@ -95,6 +107,12 @@ export function rebuildIndexes(): void {
     // Count every category a node carries (a node can now hold several).
     for (const cid of nodeCategoryIds(node)) categoryNodeCount[cid] = (categoryNodeCount[cid] || 0) + 1;
   }
+
+  // Params are hidden constants, not boxes, so they get their own index. Built
+  // here (rather than only at load time) so a canvas mutation that rebuilds the
+  // indexes leaves paramById in step with PARAMS.
+  setParamById({});
+  for (const param of PARAMS) paramById[param.id] = param;
 
   setOutgoingEdges({});
   setIncomingEdges({});
@@ -379,6 +397,38 @@ export function loadDataFromCsv(csvText: string): boolean {
     const sliderMaxValue = parseNumericCell(row.slider_max);
     if (sliderMaxValue !== undefined) node.sliderMax = sliderMaxValue;
 
+    // ── Optional per-box calculation rules (all blank in an older CSV) ──────
+    // `combine` picks how the arrows pointing INTO this box are aggregated.
+    // Blank keeps today's behaviour (multiplicative); anything outside the
+    // enum is a typo we name and ignore rather than silently mis-calculating.
+    const combineValue = (row.combine || "").trim().toLowerCase();
+    if (combineValue !== "") {
+      if (COMBINE_MODES.includes(combineValue as CombineMode)) {
+        node.combine = combineValue as CombineMode;
+      } else {
+        errors.push("Box `" + row.id + "` has an unknown combine rule `" + row.combine + "` (expected " + COMBINE_MODES.join(" / ") + "). Ignored.");
+      }
+    }
+
+    // `formula` is kept as raw text here — the expression is only meaningful
+    // once the whole map is known (it can name any box or param), so it is
+    // parsed later rather than at row level.
+    // (formula syntax/reference validation is wired in by the engine change — see design doc §5)
+    const formulaValue = (row.formula || "").trim();
+    if (formulaValue !== "") node.formula = formulaValue;
+
+    // Hard bounds, in the box's own units (not ratios). Applied after whichever
+    // rule produced the value. An inverted pair is a data error, not a silently
+    // impossible box, so we name it and drop both bounds.
+    const minValue = parseNumericCell(row.min);
+    const maxValue = parseNumericCell(row.max);
+    if (minValue !== undefined && maxValue !== undefined && minValue > maxValue) {
+      errors.push("Box `" + row.id + "` has min " + minValue + " greater than max " + maxValue + ". Both limits ignored.");
+    } else {
+      if (minValue !== undefined) node.minValue = minValue;
+      if (maxValue !== undefined) node.maxValue = maxValue;
+    }
+
     parsedNodes.push(node);
   }
 
@@ -414,12 +464,47 @@ export function loadDataFromCsv(csvText: string): boolean {
     }
   }
 
+  // ───── Params (optional hidden constants) ───────────────────────────────
+  // Named scalars that belong to the calculation model but never render as
+  // boxes — route shares, detection rates, unit conversions. Parsed AFTER the
+  // nodes so we can reject an id that clashes with a box: formulas name boxes
+  // and params in the same breath, so one id can only ever mean one thing.
+  // A CSV with no `params` section simply leaves the list empty.
+  const parsedParams: Param[] = [];
+  const seenParamIds = new Set<string>();
+
+  if (sections.params) {
+    for (const row of sections.params) {
+      if (!row.id) continue;
+      if (seenParamIds.has(row.id)) {
+        errors.push("Duplicate parameter id: " + row.id);
+        continue;
+      }
+      seenParamIds.add(row.id);
+      if (nodeIdSet.has(row.id)) {
+        errors.push("Parameter `" + row.id + "` has the same id as a box. Skipped.");
+        continue;
+      }
+      const paramValue = parseNumericCell(row.value);
+      if (paramValue === undefined) {
+        errors.push("Parameter `" + row.id + "` has a value that is not a number: `" + (row.value || "") + "`. Skipped.");
+        continue;
+      }
+      parsedParams.push({
+        id: row.id,
+        value: paramValue,
+        description: row.description || "",
+      });
+    }
+  }
+
   // ───── Commit to global state ───────────────────────────────────────────
   setStreams(parsedStreams);
   setStages(parsedStages);
   setCategories(parsedCategories);
   setNodes(parsedNodes);
   setEdges(parsedEdges);
+  setParams(parsedParams);
   setDefaultElasticityByEffect(parsedDefaults);
 
   // Reset transient interaction state. Must happen BEFORE computeLayout()

@@ -47,6 +47,29 @@ export interface Category {
 
 export type CategoryMap = Record<string, Category>;
 
+// ───── How a box combines the arrows pointing into it ───────────────────────
+// The simulation works in RATIOS (each input's "how far from its starting
+// value" figure), so these three rules all compose with the existing links and
+// strengths — see docs/CALCULATION-ENGINE-DESIGN.md §3.2.
+//   • "multiplicative" — today's default: independent percentage effects that
+//     compound (the Cobb-Douglas rule; see docs/GLOSSARY.md).
+//   • "additive"       — effects add up instead of compounding, so two related
+//     inputs don't overstate the result.
+//   • "min"            — the weakest input gates the outcome ("you need ALL of
+//     these"), rather than any one input carrying it on its own.
+export type CombineMode = "multiplicative" | "additive" | "min";
+
+// ───── A param = a named constant that never renders as a box ───────────────
+// Technical constants (route shares, detection rates, conversion factors) that
+// belong to the calculation model but would make the visual map unreadable if
+// drawn. Loaded from the optional `# SECTION: params` CSV block and referenced
+// by id from node formulas.
+export interface Param {
+  id: string;
+  value: number;
+  description: string;
+}
+
 // ───── A node = one BOX on the map ──────────────────────────────────────────
 // Named GraphNode (not Node) to avoid clashing with the DOM `Node` interface.
 export interface GraphNode {
@@ -68,6 +91,19 @@ export interface GraphNode {
   controllable?: boolean;
   direction?: Direction;
   sliderMax?: number;
+
+  // Optional per-box calculation rules (all blank in an existing CSV, which is
+  // why old maps compute exactly as before). See
+  // docs/CALCULATION-ENGINE-DESIGN.md §3.
+  /** How incoming link effects aggregate. Absent = "multiplicative". */
+  combine?: CombineMode;
+  /** Raw expression text, e.g. "min(demand, capacity)". Stored verbatim from
+   *  the CSV; parsing/validation happens in the calculation engine. */
+  formula?: string;
+  /** Hard lower bound applied after the rule runs (absolute value, not a ratio). */
+  minValue?: number;
+  /** Hard upper bound applied after the rule runs (absolute value, not a ratio). */
+  maxValue?: number;
 }
 
 // ───── A directed link = one ARROW between boxes ────────────────────────────
@@ -134,6 +170,57 @@ export interface SolverMeta {
   iterations: number;
 }
 
+// ───── Traceability: "how was this number calculated?" ──────────────────────
+// The engine records one explanation per box so the detail panel can show the
+// working — which rule ran, what fed into it, and whether a bound bit. Every
+// figure on the map is therefore auditable back to its inputs.
+// (See docs/CALCULATION-ENGINE-DESIGN.md §4.)
+
+// Which rule produced a box's value.
+//   • "pinned"   — the user is holding this box at a value with a slider.
+//   • "baseline" — nothing feeds in (or nothing to compute), so it sits at its
+//     starting value.
+//   • "multiplicative" / "additive" / "min" — the box's `combine` rule ran over
+//     its incoming links.
+//   • "formula"  — the box's `formula` expression produced the value.
+export type CalcRule = "pinned" | "baseline" | "multiplicative" | "additive" | "min" | "formula";
+
+// One thing that fed into a box's value: either another box or a param.
+// For the link-based rules (multiplicative / additive / min):
+//   • `ratio`        = the source's value ÷ its starting value (how far it moved);
+//   • `elasticity`   = the strength of that link;
+//   • `contribution` = that single link's term in the rule.
+// For formulas only `value` (and `delayed`) are meaningful — a formula reads
+// absolute values, not ratios. ("Elasticity"/"ratio": see docs/GLOSSARY.md.)
+export interface TraceInput {
+  id: string;
+  kind: "node" | "param";
+  value: number;
+  /** True when the value came from the PREVIOUS solver sweep — i.e. read via
+   *  delay(), the trick that makes feedback loops well-defined. */
+  delayed?: boolean;
+  elasticity?: number;
+  ratio?: number;
+  contribution?: number;
+}
+
+// The full working for one box's value.
+export interface NodeExplanation {
+  rule: CalcRule;
+  inputs: TraceInput[];
+  /** The raw expression text, when rule === "formula". */
+  formula?: string;
+  /** Present ONLY when a min/max bound actually changed the number; `from` is
+   *  the pre-clamp value. Absent means no bound bit. */
+  clamp?: { from: number; min?: number; max?: number };
+  /** A division by zero was guarded at runtime (result treated as 0). */
+  dividedByZero?: boolean;
+  /** Ids the rule expected but couldn't resolve to a value. */
+  missingInputs?: string[];
+  /** The final value, after any clamp — matches state.computedValues[id]. */
+  value: number;
+}
+
 // ───── Search (populated by 17a-search.js) ──────────────────────────────────
 export interface SearchMatch {
   node: GraphNode;
@@ -179,6 +266,12 @@ export interface BuilderNode {
   controllable?: boolean;
   direction?: string;
   sliderMax?: number | string;
+  // Per-box calculation rules. Carried through the wizard untouched (there is
+  // no editor for them yet) so an "Apply to map" round-trip never drops them.
+  combine?: string;
+  formula?: string;
+  minValue?: number | string;
+  maxValue?: number | string;
 }
 export interface BuilderEdge {
   from: string;
@@ -205,6 +298,11 @@ export interface BuilderState {
   defaults: ElasticityDefaults;
   nodes: BuilderNode[];
   edges: BuilderEdge[];
+  // Hidden calculation constants. The wizard has no params step yet, so this is
+  // simply carried from the live map and written back out on apply — undefined
+  // means "the wizard never saw them", which the serializer reads as "keep the
+  // live map's params".
+  params?: Param[];
   selected: Set<number>;
   _lastRenderedStep: number | null;
   focusAfterRender: { section: BuilderSection; index: number; field: string | null } | null;
@@ -267,6 +365,9 @@ export interface AppState {
   simulationMode: boolean;
   userOverrides: Record<string, number>;
   computedValues: ComputedValues;
+  /** nodeId → the working behind that node's computed value (see
+   *  NodeExplanation). Rebuilt with computedValues; `{}` before the first run. */
+  explanations: Record<string, NodeExplanation>;
   solverStatus: SolverStatus;
   dataLoaded: boolean;
   loadErrors: string[];

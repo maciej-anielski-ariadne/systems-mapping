@@ -30,6 +30,7 @@ import {
   CATEGORIES,
   NODES,
   EDGES,
+  PARAMS,
   DEFAULT_ELASTICITY_BY_EFFECT,
 } from "./03-state";
 import { SAMPLE_CSV } from "./01-sample-data";
@@ -96,6 +97,10 @@ export function seedBuilderEmpty(): void {
   state.builder.defaults   = { enables: 0.30, increases: 0.25, decreases: -0.25 };
   state.builder.nodes      = [];
   state.builder.edges      = [];
+  // Explicitly empty (not undefined): a from-scratch build really does mean
+  // "no calculation constants", whereas undefined tells the serializer to keep
+  // the live map's params — see serializeBuilderToCsv in 05a-csv-serializer.js.
+  state.builder.params     = [];
   state.builder.focusAfterRender = null;
   state.builder.sort = {};
   clearBuilderSelection();
@@ -132,6 +137,12 @@ export function seedBuilderFromLiveData(): void {
     controllable: !!n.controllable,
     direction: n.direction || "",
     sliderMax: n.sliderMax !== undefined ? n.sliderMax : "",
+    // Carried through untouched — the wizard has no editor for the calculation
+    // rules yet, and an apply must not quietly strip them off the map.
+    combine: n.combine || "",
+    formula: n.formula || "",
+    minValue: n.minValue !== undefined ? n.minValue : "",
+    maxValue: n.maxValue !== undefined ? n.maxValue : "",
   }));
   state.builder.edges = EDGES.map(e => ({
     from: e.from, to: e.to, effect: e.effect,
@@ -139,6 +150,9 @@ export function seedBuilderFromLiveData(): void {
     style: e.style === "dashed" ? "dashed" : "",
     description: e.description || "",
   }));
+  // Same idea as the node calculation columns: no params step in the wizard
+  // yet, so the live constants ride along and get written back out on apply.
+  state.builder.params = PARAMS.map(p => ({ id: p.id, value: p.value, description: p.description }));
   state.builder.focusAfterRender = null;
   state.builder.sort = {};
   clearBuilderSelection();

@@ -3,7 +3,9 @@ import { loadDataFromCsv } from "../assets/js/06-data-loader";
 import {
   NODES,
   EDGES,
+  PARAMS,
   nodeById,
+  paramById,
   outgoingEdges,
   incomingEdges,
   streamNodeCount,
@@ -11,7 +13,15 @@ import {
   cycleInfo,
   state,
 } from "../assets/js/03-state";
-import { LINEAR_CSV, FEEDBACK_CSV, MULTICAT_CSV, INVALID_CSV } from "./fixtures/graphs";
+import { SAMPLE_CSV } from "../assets/js/01-sample-data";
+import {
+  LINEAR_CSV,
+  FEEDBACK_CSV,
+  MULTICAT_CSV,
+  INVALID_CSV,
+  PARAMS_CSV,
+  PARAMS_INVALID_CSV,
+} from "./fixtures/graphs";
 
 describe("loadDataFromCsv — happy path (linear chain)", () => {
   beforeEach(() => {
@@ -82,6 +92,101 @@ describe("loadDataFromCsv — validation", () => {
     expect(joined).toMatch(/badref/);
     expect(joined).toMatch(/zero/);
     expect(joined).toMatch(/ghost/);
+  });
+});
+
+describe("loadDataFromCsv — params section", () => {
+  beforeEach(() => {
+    expect(loadDataFromCsv(PARAMS_CSV)).toBe(true);
+  });
+
+  it("loads every param and indexes it by id", () => {
+    expect(state.loadErrors).toEqual([]);
+    expect(PARAMS.map((p) => p.id)).toEqual(["share_air", "detection_rate"]);
+    expect(paramById.share_air.value).toBe(0.35);
+    expect(paramById.detection_rate.description).toBe(
+      "Probability an examined item is detected, per inspection",
+    );
+  });
+
+  it("keeps params out of the map's boxes", () => {
+    expect(NODES.map((n) => n.id)).toEqual(["demand", "capacity", "served", "total"]);
+    expect(nodeById.share_air).toBeUndefined();
+  });
+
+  it("resets to no params when a CSV without the section loads", () => {
+    expect(loadDataFromCsv(LINEAR_CSV)).toBe(true);
+    expect(PARAMS).toEqual([]);
+    expect(paramById).toEqual({});
+  });
+});
+
+describe("loadDataFromCsv — per-box calculation columns", () => {
+  beforeEach(() => {
+    expect(loadDataFromCsv(PARAMS_CSV)).toBe(true);
+  });
+
+  it("reads the combine rule and leaves it undefined when blank", () => {
+    expect(nodeById.total.combine).toBe("additive");
+    expect(nodeById.demand.combine).toBeUndefined();
+  });
+
+  it("stores the formula as raw text, commas and all", () => {
+    expect(nodeById.served.formula).toBe("clamp(min(demand, capacity), 0, 200)");
+    expect(nodeById.total.formula).toBeUndefined();
+  });
+
+  it("reads min/max into minValue/maxValue", () => {
+    expect(nodeById.capacity.minValue).toBe(0);
+    expect(nodeById.capacity.maxValue).toBe(200);
+    expect(nodeById.demand.minValue).toBeUndefined();
+    expect(nodeById.demand.maxValue).toBeUndefined();
+  });
+
+  it("changes nothing about how the map computes (this wave is data-only)", () => {
+    expect(state.explanations).toEqual({});
+    expect(state.computedValues.served).toBe(80);
+  });
+});
+
+describe("loadDataFromCsv — params / calculation-column validation", () => {
+  beforeEach(() => {
+    expect(loadDataFromCsv(PARAMS_INVALID_CSV)).toBe(true); // still loads the valid rows
+  });
+
+  it("keeps only the valid param", () => {
+    expect(PARAMS.map((p) => p.id)).toEqual(["good"]);
+    expect(paramById.good.value).toBe(0.5);
+  });
+
+  it("names the duplicate, non-numeric and box-colliding params", () => {
+    const joined = state.loadErrors.join(" | ");
+    expect(joined).toMatch(/Duplicate parameter id: good/);
+    expect(joined).toMatch(/Parameter `notnum` has a value that is not a number/);
+    expect(joined).toMatch(/Parameter `n1` has the same id as a box/);
+  });
+
+  it("rejects a combine value outside the enum but keeps the box", () => {
+    expect(nodeById.n1).toBeDefined();
+    expect(nodeById.n1.combine).toBeUndefined();
+    expect(state.loadErrors.join(" | ")).toMatch(/Box `n1` has an unknown combine rule `sideways`/);
+  });
+
+  it("rejects min > max and drops both limits", () => {
+    expect(nodeById.n2).toBeDefined();
+    expect(nodeById.n2.minValue).toBeUndefined();
+    expect(nodeById.n2.maxValue).toBeUndefined();
+    expect(state.loadErrors.join(" | ")).toMatch(/Box `n2` has min 10 greater than max 5/);
+  });
+});
+
+describe("loadDataFromCsv — legacy CSV regression", () => {
+  it("loads the bundled sample (no params, no calculation columns) with zero errors", () => {
+    expect(loadDataFromCsv(SAMPLE_CSV)).toBe(true);
+    expect(state.loadErrors).toEqual([]);
+    expect(PARAMS).toEqual([]);
+    expect(NODES.every((n) => n.combine === undefined && n.formula === undefined)).toBe(true);
+    expect(NODES.every((n) => n.minValue === undefined && n.maxValue === undefined)).toBe(true);
   });
 });
 
