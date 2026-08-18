@@ -21,6 +21,24 @@
 // Builder Tab/Enter navigation (16d-builder-events.ts) recognises it via the
 // `.typeable-dropdown-input` class.
 //
+// Two ways in:
+//
+//   upgradeSelectsIn(container)      — upgrade every <select> now. For small,
+//                                      always-visible groups (the detail panel,
+//                                      the wizard's bulk-action bar).
+//   upgradeSelectsLazilyIn(container)— one delegated listener; upgrade a select
+//                                      the first time it is entered. For a
+//                                      container holding thousands of them,
+//                                      where upgrading all of them costs more
+//                                      than the page is worth. A renderer using
+//                                      this may also emit a select carrying only
+//                                      its selected <option> and register a
+//                                      setLazySelectPreparer() to build the rest
+//                                      at upgrade time.
+//
+// The popup renders at most POPUP_MAX_RENDERED matches and summarises the tail,
+// so filtering a very long list stays responsive per keystroke.
+//
 // Popup positioning is `position: fixed` so it floats above scroll containers
 // (e.g. the builder table's scroll area, which has overflow:auto).
 //
@@ -45,6 +63,12 @@ interface OpenInstance {
 // can be open at a time — opening another closes any in-flight one.
 let openInstance: OpenInstance | null = null;
 
+// How many matching options the popup actually puts in the DOM. Everything
+// past this is summarised by one non-selectable footer row. Without the cap a
+// keystroke against a 5000-box map rebuilt 5000 <div>s per character typed,
+// which is the whole point of a filter box being unusable.
+export const POPUP_MAX_RENDERED = 200;
+
 // Public entry point — called from renderers after innerHTML changes.
 export function upgradeSelectsIn(container: ParentNode | null | undefined): void {
   if (!container || typeof container.querySelectorAll !== "function") return;
@@ -52,6 +76,68 @@ export function upgradeSelectsIn(container: ParentNode | null | undefined): void
     "select:not(.typeable-dropdown-native)",
   );
   selects.forEach(upgradeSelect);
+}
+
+// Lazy entry point — for containers holding a great many <select>s, where
+// upgrading all of them up front is the expense. Each upgrade adds three
+// elements and ~8 listeners; a builder Boxes step with 5000 rows carries 25000
+// selects, so eager upgrading is seconds of work for controls the user will
+// touch a handful of.
+//
+// Instead, attach ONE delegated listener to `container` and upgrade a select
+// the first time it is entered — then hand it the focus, so from the user's
+// side the control behaves exactly as if it had been upgraded all along.
+// `mousedown` is handled in the capture phase as well as `focusin`, because a
+// native <select> opens its own popup on mousedown; preventing that is what
+// stops the OS dropdown flashing open before the typable one replaces it.
+//
+// Idempotent: calling it again on the same container is a no-op, so renderers
+// may call it after every re-render.
+export function upgradeSelectsLazilyIn(container: HTMLElement | null | undefined): void {
+  if (!container || typeof container.addEventListener !== "function") return;
+  if (container.dataset.typeableLazy === "true") return;
+  container.dataset.typeableLazy = "true";
+
+  container.addEventListener("focusin", (event) => {
+    upgradeAndFocus(pendingSelectFrom(event.target));
+  });
+  container.addEventListener(
+    "mousedown",
+    (event) => {
+      const select = pendingSelectFrom(event.target);
+      if (!select) return;
+      event.preventDefault(); // suppress the native dropdown
+      upgradeAndFocus(select);
+    },
+    true,
+  );
+}
+
+// The not-yet-upgraded <select> an event landed on, or null.
+function pendingSelectFrom(target: EventTarget | null): HTMLSelectElement | null {
+  const el = target as HTMLElement | null;
+  if (!el || typeof el.closest !== "function") return null;
+  return el.closest("select:not(.typeable-dropdown-native)") as HTMLSelectElement | null;
+}
+
+// Optional hook run against a <select> immediately before it is upgraded.
+// Lazy upgrading lets a renderer emit a select carrying ONLY its selected
+// option — the resting control looks identical, and the full list (which may be
+// thousands of entries, per select) is built here, once, for the one control
+// the user actually opened. 16b-builder-render.ts registers the builder's.
+let lazySelectPreparer: ((select: HTMLSelectElement) => void) | null = null;
+export function setLazySelectPreparer(fn: ((select: HTMLSelectElement) => void) | null): void {
+  lazySelectPreparer = fn;
+}
+
+function upgradeAndFocus(select: HTMLSelectElement | null): void {
+  if (!select) return;
+  if (lazySelectPreparer) lazySelectPreparer(select);
+  upgradeSelect(select);
+  const input = select.parentElement
+    ? (select.parentElement.querySelector(".typeable-dropdown-input") as HTMLInputElement | null)
+    : null;
+  if (input && typeof input.focus === "function") input.focus();
 }
 
 function upgradeSelect(select: HTMLSelectElement): void {
@@ -121,16 +207,26 @@ function upgradeSelect(select: HTMLSelectElement): void {
     } else {
       highlighted = 0;
     }
+    // The highlight can only ever sit on a row that exists in the DOM —
+    // setHighlighted and scrollHighlightedIntoView both index popup.children.
+    // On a list long enough to be truncated, a current value past the cut
+    // starts the popup at the top instead; the input still shows that value,
+    // and typing a few characters brings it into the rendered set.
+    if (highlighted >= renderedCount()) highlighted = 0;
     renderPopupBody();
   };
+
+  // How many of `items` the popup actually draws.
+  const renderedCount = () => Math.min(items.length, POPUP_MAX_RENDERED);
 
   const renderPopupBody = () => {
     if (items.length === 0) {
       popup.innerHTML = '<div class="typeable-dropdown-empty">No matches</div>';
       return;
     }
+    const shown = renderedCount();
     let html = "";
-    for (let i = 0; i < items.length; i++) {
+    for (let i = 0; i < shown; i++) {
       const cls =
         "typeable-dropdown-item" +
         (i === highlighted ? " highlighted" : "") +
@@ -143,6 +239,15 @@ function upgradeSelect(select: HTMLSelectElement): void {
         '" role="option">' +
         escapeForHtml(items[i].label) +
         "</div>";
+    }
+    // Truncation notice. Deliberately NOT a .typeable-dropdown-item, so the
+    // mousedown / mousemove handlers below (which match on that class) can't
+    // select or highlight it — it is a label, not an option.
+    if (items.length > shown) {
+      html +=
+        '<div class="typeable-dropdown-more">' +
+        (items.length - shown) +
+        " more — keep typing to narrow</div>";
     }
     popup.innerHTML = html;
   };
@@ -217,7 +322,7 @@ function upgradeSelect(select: HTMLSelectElement): void {
   };
 
   const setHighlighted = (idx: number) => {
-    if (idx < 0 || idx >= items.length) return;
+    if (idx < 0 || idx >= renderedCount()) return;
     const prev = popup.children[highlighted];
     if (prev) prev.classList.remove("highlighted");
     highlighted = idx;
@@ -277,7 +382,7 @@ function upgradeSelect(select: HTMLSelectElement): void {
         open(input.value);
         return;
       }
-      setHighlighted(Math.min(highlighted + 1, items.length - 1));
+      setHighlighted(Math.min(highlighted + 1, renderedCount() - 1));
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
       if (popup.hidden) {

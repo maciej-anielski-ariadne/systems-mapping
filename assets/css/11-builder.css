@@ -253,6 +253,39 @@
   box-shadow: inset 0 0 0 2px var(--danger);
 }
 
+/* Row virtualization spacers (16b-builder-render.ts). Above ~150 rows a step
+ * materializes only a window of rows and puts one of these in place of
+ * everything above and below it, so the scrollbar still measures the full
+ * table. They must contribute height and nothing else — no padding, no
+ * background, no hit target, nothing a row selector can catch. */
+.builder-table tr.builder-virtual-spacer {
+  pointer-events: none;
+}
+.builder-table tr.builder-virtual-spacer > td {
+  padding: 0;
+  background: none;
+}
+
+/* Un-upgraded <select> cells must be indistinguishable from upgraded ones.
+ * Builder table selects are upgraded into typable dropdowns lazily now (on
+ * first focus — see upgradeSelectsLazilyIn in 04b), so at rest a cell shows a
+ * native <select> and after a click it shows `.typeable-dropdown-input`. These
+ * declarations are the chevron + right gutter from `.typeable-dropdown-input`
+ * (14-typeable-dropdown.css); the rest of the box already matches via the
+ * shared `.builder-table input, .builder-table select` rule above. Keep the
+ * two in step — a drift here shows up as cells that visibly twitch on click. */
+.builder-table select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: var(--space-6);
+  background-image:
+    linear-gradient(45deg,  transparent 50%, var(--text-secondary) 50%),
+    linear-gradient(135deg, var(--text-secondary) 50%, transparent 50%);
+  background-position: calc(100% - 14px) 50%, calc(100% - 9px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
 .builder-table input[type="color"] {
   width: 40px;
   height: 28px;

@@ -38,6 +38,17 @@ import { EDGES, NODES, layout, nodeById, state } from "./03-state";
 
 export const UNDO_TOAST_DURATION_MS = 6000;
 export const HISTORY_CAP = 50;
+// Total UTF-16 units allowed across past + future COMBINED. A snapshot is the
+// whole map serialized to CSV, so on a 5000-box map each one runs to megabytes
+// and a plain 50-deep stack (plus 50 redo entries) would retain hundreds of
+// megabytes for the lifetime of the tab. The budget caps retained characters
+// rather than entries: a small map still gets the full 50 steps, a huge one
+// gets however many fit. Both limits apply — the effective depth is whichever
+// bites first.
+export const HISTORY_CHAR_BUDGET = 24_000_000;
+// Above this many live elements the "what changed?" diff behind the undo flash
+// is skipped entirely — see _shouldDiffUndo().
+export const UNDO_DIFF_MAX_ELEMENTS = 2000;
 // How long the pulse on undone/redone elements stays up before auto-clearing.
 // Matches the edge-click flash (06-detail-panel.css) so the two feel of a piece.
 export const UNDO_FLASH_DURATION_MS = 1400;
@@ -53,12 +64,49 @@ export function clearHistory(): void {
   state.history.future.length = 0;
 }
 
+// Total characters currently retained by both stacks.
+export function historyCharCount(): number {
+  let total = 0;
+  for (const csv of state.history.past)   total += csv.length;
+  for (const csv of state.history.future) total += csv.length;
+  return total;
+}
+
+// Trim both stacks back inside HISTORY_CAP and HISTORY_CHAR_BUDGET. Oldest
+// past entries go first — the deepest undo steps are the least likely to be
+// reached — then oldest future ones. Each stack always keeps its newest entry,
+// so a single snapshot larger than the whole budget still leaves one undo (and
+// one redo) working rather than silently disabling the feature.
+//
+// Called after every push, from the one push helper below and from
+// historyUndo / historyRedo. Nothing else should touch state.history directly.
+export function _enforceHistoryLimits(): void {
+  const past   = state.history.past;
+  const future = state.history.future;
+  while (past.length   > HISTORY_CAP) past.shift();
+  while (future.length > HISTORY_CAP) future.shift();
+  let total = historyCharCount();
+  while (total > HISTORY_CHAR_BUDGET && past.length   > 1) total -= past.shift()!.length;
+  while (total > HISTORY_CHAR_BUDGET && future.length > 1) total -= future.shift()!.length;
+}
+
+// The single "an edit is about to happen" push site: stack the PREVIOUS state's
+// CSV as the thing Undo returns to, and drop the redo branch (a fresh edit
+// invalidates it). applyCanvasMutation (16f) calls this instead of inlining the
+// stack bookkeeping, so the size budget is enforced everywhere by construction.
+export function pushHistorySnapshot(csv: string | null | undefined): void {
+  if (!csv) return;
+  state.history.past.push(csv);
+  state.history.future.length = 0;
+  _enforceHistoryLimits();
+}
+
 export function historyUndo(): boolean {
   if (state.history.past.length === 0) return false;
   const beforeCsv = state.history.past.pop();
   const currentCsv = (typeof serializeLiveStateToCsv === "function") ? serializeLiveStateToCsv() : state.lastCsvSnapshot;
   if (currentCsv) state.history.future.push(currentCsv);
-  if (state.history.future.length > HISTORY_CAP) state.history.future.shift();
+  _enforceHistoryLimits();
   return _restoreSnapshot(beforeCsv!);
 }
 
@@ -67,7 +115,7 @@ export function historyRedo(): boolean {
   const afterCsv = state.history.future.pop();
   const currentCsv = (typeof serializeLiveStateToCsv === "function") ? serializeLiveStateToCsv() : state.lastCsvSnapshot;
   if (currentCsv) state.history.past.push(currentCsv);
-  if (state.history.past.length > HISTORY_CAP) state.history.past.shift();
+  _enforceHistoryLimits();
   return _restoreSnapshot(afterCsv!);
 }
 
@@ -88,6 +136,17 @@ export interface UndoFocus {
   flashNodeIds: Set<string>;
   flashEdgeIds: Set<string>;
   focusNodeIds: string[];
+}
+
+// Is the map small enough to be worth diffing? _snapshotSignatures runs a
+// JSON.stringify per node and per edge, and _restoreSnapshot calls it twice —
+// so on a 5000-box / 20000-link map an undo pays ~50k stringifies purely to
+// decide which elements pulse for 1.4 seconds. Above the threshold we skip the
+// diff outright: no flash, no recenter scan. The map visibly changing under the
+// user IS the feedback at that size, and the restore itself stays responsive.
+// At or below it, behaviour is byte-for-byte what it has always been.
+export function _shouldDiffUndo(): boolean {
+  return NODES.length + EDGES.length <= UNDO_DIFF_MAX_ELEMENTS;
 }
 
 // Per-element content signatures of the LIVE state, keyed by id. Reuses the
@@ -194,8 +253,9 @@ export function _flashUndoChange(nodeIds: Set<string> | null, edgeIds: Set<strin
 // jump the user away from what they were doing.
 export function _restoreSnapshot(csv: string): boolean {
   // Signatures of the state we're leaving — diffed against the restored state
-  // below to discover which elements the undo/redo actually changed.
-  const before = _snapshotSignatures();
+  // below to discover which elements the undo/redo actually changed. Skipped
+  // wholesale on a big map (see _shouldDiffUndo).
+  const before = _shouldDiffUndo() ? _snapshotSignatures() : null;
   const saved = {
     selectedNodeId: state.selectedNodeId,
     selectedEdgeId: state.selectedEdgeId || null,
@@ -245,13 +305,18 @@ export function _restoreSnapshot(csv: string): boolean {
   // Highlight what this undo/redo changed: diff against the pre-restore state,
   // pulse the affected elements, and recenter only if none are already on
   // screen (scroll position was just restored above, so the check is accurate).
-  const focus = _computeUndoFocus(before, _snapshotSignatures());
-  if (focus.focusNodeIds.length &&
-      !focus.focusNodeIds.some(_isNodeInViewport) &&
-      typeof scrollNodeIntoView === "function") {
-    scrollNodeIntoView(focus.focusNodeIds[0]);
+  // `before` is null — and the restored map is re-checked — when either side of
+  // the round-trip is too big to diff cheaply; then the restore stands on its
+  // own with no flash and no recenter scan.
+  if (before && _shouldDiffUndo()) {
+    const focus = _computeUndoFocus(before, _snapshotSignatures());
+    if (focus.focusNodeIds.length &&
+        !focus.focusNodeIds.some(_isNodeInViewport) &&
+        typeof scrollNodeIntoView === "function") {
+      scrollNodeIntoView(focus.focusNodeIds[0]);
+    }
+    _flashUndoChange(focus.flashNodeIds, focus.flashEdgeIds);
   }
-  _flashUndoChange(focus.flashNodeIds, focus.flashEdgeIds);
   return true;
 }
 

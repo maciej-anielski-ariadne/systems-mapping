@@ -71,6 +71,26 @@ export const BUILDER_LAST_STEP = BUILDER_STEPS.length;
 // row table). See renderBuilder() in 16b-builder-render.js.
 export const BUILDER_SPLIT = "<!--builder-split-->";
 
+// The editable fields of one row, in the exact left-to-right order the step's
+// table renders them. This is the DATA MODEL of a table row — Tab / Shift-Tab
+// / Enter navigation (16d) walks it instead of walking the live DOM, which is
+// what lets a virtualized table (only a window of rows materialized, see
+// 16b-builder-render.js) navigate into a row that isn't rendered yet.
+//
+// Keep in step with the step renderers in 16b: a column added there without a
+// matching entry here becomes unreachable by keyboard. tests/builder-scale
+// asserts the two agree.
+export const BUILDER_ROW_FIELDS: Record<string, string[]> = {
+  streams:    ["id", "label", "short", "color"],
+  stages:     ["id", "label"],
+  categories: ["id", "label", "color", "textColor", "class"],
+  nodes:      ["id", "label", "description", "stream", "stage", "category",
+               "baseline", "unit", "controllable", "direction", "sliderMax",
+               "combine", "formula", "minValue", "maxValue"],
+  edges:      ["from", "to", "effect", "elasticity", "style", "description"],
+  params:     ["id", "value", "description"],
+};
+
 // ───── Open / close ───────────────────────────────────────────────────────
 export function openBuilder(options?: { fromLoadedData?: boolean }): void {
   const fromLoadedData = options && options.fromLoadedData;
@@ -112,6 +132,7 @@ export function seedBuilderEmpty(): void {
   state.builder.focusAfterRender = null;
   state.builder.sort = {};
   clearBuilderSelection();
+  invalidateBuilderCaches();
 }
 
 export function seedBuilderFromLiveData(): void {
@@ -166,6 +187,7 @@ export function seedBuilderFromLiveData(): void {
   state.builder.focusAfterRender = null;
   state.builder.sort = {};
   clearBuilderSelection();
+  invalidateBuilderCaches();
 }
 
 // "Start from sample" button on step 1 — pre-fills streams/stages/categories
@@ -204,6 +226,7 @@ export function seedBuilderFromSample(): void {
       if (row.key === ELASTICITY_KEYS.decreases) state.builder.defaults.decreases = v;
     }
   }
+  invalidateBuilderCaches();
 }
 
 // ───── Small helpers ──────────────────────────────────────────────────────
@@ -264,15 +287,51 @@ export function builderSortCompare(x: unknown, y: unknown): number {
   return String(x).localeCompare(String(y));
 }
 
+// ───── Cache invalidation ─────────────────────────────────────────────────
+// Two derived things are cached below: the display order of a sorted table
+// (sortedBuilderIndices) and, per render pass, the validation result. Both are
+// pure functions of state.builder, so anything that WRITES state.builder has to
+// say so. That is what this counter is for — it is part of the sort cache's key,
+// so bumping it retires every cached order in one assignment.
+//
+// Call it from every mutation of state.builder: the row add / duplicate /
+// delete / bulk helpers below, and the field writers and drag-reorder in 16d.
+// renderBuilder() also calls it defensively at the top of a render, so a missed
+// call can at worst produce one stale keyboard hop, never a stale table.
+let _builderRevision = 0;
+const _sortedIndexCache = new Map<string, number[]>();
+
+export function invalidateBuilderCaches(): void {
+  _builderRevision++;
+  _sortedIndexCache.clear();
+}
+
+export function builderRevision(): number {
+  return _builderRevision;
+}
+
 // Returns an array of ORIGINAL row indices in the order they should be shown.
 // Identity order when no sort is active for the section. Blank/undefined values
 // always sort to the bottom (applied before the direction multiply so they
 // don't flip to the top under descending sort).
+//
+// Memoized on (section, sort spec, row count, revision): a render used to
+// re-sort the whole table, and then Enter re-sorted it a second time just to
+// find the row below the caret. The returned array is shared — callers read it,
+// they must not sort or splice it in place.
 export function sortedBuilderIndices(section: BuilderSection): number[] {
   const arr = (state.builder[section] || []) as unknown as Record<string, unknown>[];
-  const order = arr.map((_, i) => i);
   const s = state.builder.sort && state.builder.sort[section];
-  if (!s || !s.key || !s.dir) return order;
+  const cacheKey = section + "|" + (s && s.key ? s.key : "") + "|" +
+                   (s && s.dir ? s.dir : "") + "|" + arr.length + "|" + _builderRevision;
+  const cached = _sortedIndexCache.get(cacheKey);
+  if (cached) return cached;
+
+  const order = arr.map((_, i) => i);
+  if (!s || !s.key || !s.dir) {
+    _sortedIndexCache.set(cacheKey, order);
+    return order;
+  }
   const dir = s.dir === "desc" ? -1 : 1;
   const isBlank = (v: unknown) => v === undefined || v === null || v === "";
   order.sort((a, b) => {
@@ -283,6 +342,7 @@ export function sortedBuilderIndices(section: BuilderSection): number[] {
     if (bb) return -1;
     return dir * builderSortCompare(va, vb);
   });
+  _sortedIndexCache.set(cacheKey, order);
   return order;
 }
 
@@ -295,6 +355,15 @@ export function nextBuilderDisplayIndex(section: BuilderSection, index: number):
   const pos = order.indexOf(index);
   if (pos === -1 || pos + 1 >= order.length) return -1;
   return order[pos + 1];
+}
+
+// Mirror of the above for Shift+Tab: the array index of the row shown directly
+// ABOVE `index`, or -1 when `index` is the first visible row.
+export function prevBuilderDisplayIndex(section: BuilderSection, index: number): number {
+  const order = sortedBuilderIndices(section);
+  const pos = order.indexOf(index);
+  if (pos <= 0) return -1;
+  return order[pos - 1];
 }
 
 // The ▲ / ▼ glyph (or empty string) for a column header, reflecting the active
@@ -329,7 +398,7 @@ export function clearBuilderSelection(): void {
 // ───── Validation ────────────────────────────────────────────────────────
 // Returns { errors: [...], dup*: Set, *Ids: Set } used by the renderer to
 // mark invalid inputs and by the footer to show the issue count.
-export function validateBuilder(): {
+export interface BuilderValidation {
   errors: string[];
   dupStreams: Set<string>;
   dupStages: Set<string>;
@@ -345,7 +414,41 @@ export function validateBuilder(): {
   clashParams: Set<string>;
   /** Row indices whose constant value isn't a number the loader could read. */
   badParamValueRows: Set<number>;
-} {
+}
+
+// One render of the wizard asks for validation up to three times: the step
+// renderer marks its invalid cells with it, the footer counts issues with it,
+// and the Review step lists the messages from it. Each call re-scans every
+// builder array, which on a big map is the single most expensive thing a render
+// does — and all three see identical state, because nothing mutates
+// state.builder part-way through a synchronous render.
+//
+// So: memoize for the duration of a render pass and no longer. renderBuilder
+// wraps its body in withBuilderValidationMemo(), the three calls inside collapse
+// to one scan, and the moment the pass ends the memo is dropped. There is no
+// invalidation to get wrong — a memo that only lives inside one synchronous
+// call cannot go stale.
+let _validationMemo: BuilderValidation | null = null;
+let _validationMemoDepth = 0;
+
+export function withBuilderValidationMemo<T>(fn: () => T): T {
+  _validationMemoDepth++;
+  try {
+    return fn();
+  } finally {
+    _validationMemoDepth--;
+    if (_validationMemoDepth === 0) _validationMemo = null;
+  }
+}
+
+export function validateBuilder(): BuilderValidation {
+  if (_validationMemoDepth > 0 && _validationMemo) return _validationMemo;
+  const result = computeBuilderValidation();
+  if (_validationMemoDepth > 0) _validationMemo = result;
+  return result;
+}
+
+function computeBuilderValidation(): BuilderValidation {
   const b = state.builder;
   const errors: string[] = [];
 
@@ -500,6 +603,7 @@ export function addBuilderRow(section: BuilderSection): number {
   }
   // `params` is optional on BuilderState (an absent list means "the wizard
   // never saw the map's constants"), hence the guard rather than a bare index.
+  invalidateBuilderCaches();
   const arr = state.builder[section];
   return arr ? arr.length - 1 : -1;
 }
@@ -512,6 +616,7 @@ export function duplicateBuilderRow(section: BuilderSection, index: number): num
   // Wipe the id of the duplicated row — duplicates would fail validation.
   if (copy.id !== undefined) copy.id = "";
   arr.splice(index + 1, 0, copy);
+  invalidateBuilderCaches();
   return index + 1;
 }
 
@@ -527,6 +632,7 @@ export function deleteBuilderSelectedRows(section: BuilderSection): number {
   indices.sort((a, b) => b - a);
   for (const i of indices) arr.splice(i, 1);
   clearBuilderSelection();
+  invalidateBuilderCaches();
   return indices.length;
 }
 
@@ -559,5 +665,6 @@ export function applyBuilderBulkField(section: BuilderSection, field: string, va
     if (section === "nodes" && field === "category") reconcileBuilderNodeCategories(row as unknown as BuilderNode, v as string);
     changed++;
   }
+  if (changed) invalidateBuilderCaches();
   return changed;
 }

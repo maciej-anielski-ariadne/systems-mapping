@@ -109,6 +109,18 @@
   font-size: var(--fs-body);
 }
 
+/* Truncation notice at the foot of a long list. The popup renders at most
+ * POPUP_MAX_RENDERED matches (04b-typeable-dropdown.ts); this row says how many
+ * were left out. Styled like the empty state, and deliberately NOT
+ * `.typeable-dropdown-item`, so it can't be highlighted or picked. */
+.typeable-dropdown-more {
+  padding: var(--pad-row);
+  color: var(--text-tertiary);
+  font-style: italic;
+  font-size: var(--fs-body);
+  cursor: default;
+}
+
 /* Inside builder tables, fall back to mono font (matches the cell inputs). */
 .builder-table .typeable-dropdown-popup {
   font-family: var(--font-mono);
