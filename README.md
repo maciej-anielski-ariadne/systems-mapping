@@ -232,6 +232,7 @@ systems_mapping/
     │   ├── 05a-csv-serializer.ts    Multi-section CSV serializer (data → CSV)
     │   ├── 06-data-loader.ts        loadDataFromCsv + rebuildIndexes
     │   ├── 07-simulation-engine.ts  Cobb-Douglas propagation + applySimMultiplier
+    │   ├── 07a-formula.ts           Safe formula language for per-node rules (parser + evaluator, min/max/clamp/delay)
     │   ├── 08-layout.ts             Node positioning
     │   ├── 09-graph-selection.ts    Ancestor/descendant traversal + selectNode
     │   ├── 10-filters.ts            Stream / category visibility
