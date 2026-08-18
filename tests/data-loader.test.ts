@@ -143,9 +143,11 @@ describe("loadDataFromCsv — per-box calculation columns", () => {
     expect(nodeById.demand.maxValue).toBeUndefined();
   });
 
-  it("changes nothing about how the map computes (this wave is data-only)", () => {
-    expect(state.explanations).toEqual({});
+  it("feeds the columns straight into the engine (formula wins, trace recorded)", () => {
+    // served = clamp(min(demand, capacity), 0, 200) = min(100, 80) = 80.
     expect(state.computedValues.served).toBe(80);
+    expect(state.explanations.served.rule).toBe("formula");
+    expect(state.explanations.total.rule).toBe("additive");
   });
 });
 

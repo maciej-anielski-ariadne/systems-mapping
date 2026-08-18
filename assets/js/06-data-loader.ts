@@ -72,7 +72,13 @@ import {
 import { computeMaxHighlightDepth } from "./09-graph-selection";
 import { applyHighlightDepth } from "./17-events";
 import { computeLayout } from "./08-layout";
-import { recomputeValues } from "./07-simulation-engine";
+import {
+  recomputeValues,
+  rebuildFormulaCache,
+  getParsedFormula,
+  getFormulaParseFailures,
+  usesFormula,
+} from "./07-simulation-engine";
 import { renderSidebar } from "./13-sidebar";
 import { render } from "./11-rendering";
 import { renderDetailPanel } from "./15-detail-panel";
@@ -136,6 +142,13 @@ export function rebuildIndexes(): void {
   for (let stageIdx = 0; stageIdx < STAGES.length; stageIdx++) {
     stageById[STAGES[stageIdx].id] = { ...STAGES[stageIdx], index: stageIdx };
   }
+
+  // A box's parsed formula is a derived index too — text in, calculation tree
+  // out — so it is rebuilt here with the rest. Rebuilding it in ONE place means
+  // every path that changes the map (a fresh CSV, an undo, a canvas edit) leaves
+  // the engine's cache in step with NODES, and the tree is parsed once per load
+  // rather than once per solver sweep. See 07-simulation-engine.ts.
+  rebuildFormulaCache();
 
   // ───── Topological sort (Kahn's algorithm) ─────────────────────────────
   // Sort nodes so every node comes after the nodes whose arrows point INTO it.
@@ -266,6 +279,195 @@ export function detectCycles(): void {
   });
   if (backEdgeIds.size > 0) {
     console.info(cycleInfo.loopCount + " feedback loop(s) detected — solved iteratively.");
+  }
+}
+
+// =============================================================================
+// CALCULATION-RULE VALIDATION (formulas, and how they square with the arrows)
+// -----------------------------------------------------------------------------
+// A formula is the one part of a box that can't be checked row-by-row: it names
+// other boxes and params, and it has to agree with the arrows drawn into the
+// box. So this runs once, after every section is loaded and the indexes (and the
+// engine's parsed-formula cache) are built.
+//
+// Everything here is a WARNING, never fatal — the map still loads and still
+// computes. The point is that the user is TOLD, in the same list as every other
+// load warning, rather than quietly getting a number that doesn't mean what they
+// think. The guiding rule: the arrows on the map must stay an honest picture of
+// what feeds what, even when the arithmetic moved into a formula.
+// (See docs/CALCULATION-ENGINE-DESIGN.md §5.)
+// =============================================================================
+function validateCalculationRules(errors: string[]): void {
+  // 1. Formulas whose TEXT couldn't be read. The box falls back to its arrows
+  //    (i.e. behaves as if it had no formula), so we say so.
+  const failedToParse = new Set<string>();
+  for (const failure of getFormulaParseFailures()) {
+    failedToParse.add(failure.nodeId);
+    errors.push(
+      "Box `" + failure.nodeId + "` has a formula that can't be read: " + failure.message +
+      ". The formula is ignored.",
+    );
+  }
+
+  for (const node of NODES) {
+    if (!node.formula || failedToParse.has(node.id)) continue;
+
+    // 2. A slider always wins: a controllable box is pinned, never recomputed,
+    //    so its formula is dead text. Nothing further to check about it.
+    if (node.controllable) {
+      errors.push(
+        "Box `" + node.id + "` is a slider input and also has a formula. " +
+        "The slider pins the box, so the formula is ignored.",
+      );
+      continue;
+    }
+
+    // 3. `combine` describes how ARROWS aggregate; a formula replaces them.
+    if (node.combine) {
+      errors.push(
+        "Box `" + node.id + "` has both a combine rule (`" + node.combine + "`) and a formula. " +
+        "The formula wins; the combine rule is ignored.",
+      );
+    }
+
+    const parsed = getParsedFormula(node.id);
+    if (!parsed) continue;
+
+    // Which boxes actually point into this one, for the cross-checks below.
+    const linkedSources = new Set<string>();
+    for (const edge of incomingEdges[node.id] || []) linkedSources.add(edge.from);
+
+    // 4. Every name the formula mentions — read directly or through delay() —
+    //    must be a real box or a real param.
+    const referenced = new Set<string>();
+    for (const id of parsed.references.concat(parsed.delayReferences)) {
+      if (referenced.has(id)) continue;
+      referenced.add(id);
+
+      if (paramById[id]) continue;              // a hidden constant — nothing to draw
+      if (!nodeById[id]) {
+        errors.push(
+          "Box `" + node.id + "` has a formula that mentions `" + id +
+          "`, which is not a box or a parameter. It will be read as 0.",
+        );
+        continue;
+      }
+
+      // 5. Referencing a BOX means there is a causal link, so the map has to
+      //    show one. This is the rule that keeps the picture honest.
+      if (!linkedSources.has(id)) {
+        errors.push(
+          "Box `" + node.id + "` has a formula that uses `" + id +
+          "`, but no arrow joins them — the map's arrows must show every causal input — " +
+          "add a link from `" + id + "` to `" + node.id + "` or remove it from the formula.",
+        );
+      }
+
+      // 6. A box with no starting value has no number to give.
+      if (nodeById[id].baseline === undefined || nodeById[id].baseline === null) {
+        errors.push(
+          "Box `" + node.id + "` has a formula that uses `" + id +
+          "`, which has no starting value — it will be read as missing (0).",
+        );
+      }
+    }
+
+    // 7. The reverse check: an arrow the formula never reads still draws on the
+    //    map but changes nothing. Worth saying out loud.
+    for (const sourceId of linkedSources) {
+      if (referenced.has(sourceId)) continue;
+      errors.push(
+        "Box `" + node.id + "` has an arrow from `" + sourceId +
+        "` that its formula never uses — that link is descriptive only and does not " +
+        "change the number.",
+      );
+    }
+  }
+
+  reportFormulaCyclesWithoutDelay(errors);
+}
+
+// The SAME-SWEEP dependencies of one box: what its value needs to already know
+// this pass. For a formula box that's the boxes it reads directly — a delay()
+// read deliberately does NOT count, because it takes the previous sweep's number
+// and so can't depend on this sweep. Every other box depends on the boxes its
+// incoming arrows come from, exactly as it always has.
+function sameSweepDependencies(node: GraphNode): string[] {
+  const parsed = getParsedFormula(node.id);
+  if (parsed && usesFormula(node)) {
+    return parsed.references.filter((id) => nodeById[id] !== undefined);
+  }
+  return (incomingEdges[node.id] || []).map((edge) => edge.from);
+}
+
+// A loop in that same-sweep graph passing through a formula box is a box whose
+// value depends on itself WITHIN one sweep — there is no order that computes it
+// correctly, so the answer would depend on which box happens to be declared
+// first. `delay()` breaks the knot (the standard "unit delay": read the previous
+// sweep's number). We warn rather than refuse: the solver still iterates and may
+// well settle, but the user should know the model isn't well-defined.
+//
+// Loops made only of classic arrow-based boxes are NOT reported — those have
+// always been solved by iterating and are reported through the feedback-loop
+// status instead.
+//
+// The walk is the same depth-first colouring as detectCycles() above (white =
+// unvisited, gray = on the path we're walking, black = done), with an explicit
+// stack so a deep map can't overflow the JS call stack.
+function reportFormulaCyclesWithoutDelay(errors: string[]): void {
+  const WHITE = 0, GRAY = 1, BLACK = 2;
+  const color: Record<string, number> = {};
+  const dependencies: Record<string, string[]> = {};
+  for (const node of NODES) {
+    color[node.id] = WHITE;
+    dependencies[node.id] = sameSweepDependencies(node);
+  }
+
+  const reported = new Set<string>();
+
+  for (const startNode of NODES) {
+    if (color[startNode.id] !== WHITE) continue;
+
+    const stack: { id: string; depIndex: number }[] = [{ id: startNode.id, depIndex: 0 }];
+    color[startNode.id] = GRAY;
+
+    while (stack.length > 0) {
+      const frame = stack[stack.length - 1];
+      const deps = dependencies[frame.id] || [];
+
+      if (frame.depIndex < deps.length) {
+        const dep = deps[frame.depIndex++];
+        if (color[dep] === GRAY) {
+          // We've walked back onto our own path: everything on the stack from
+          // `dep` upward is one loop. The stack reads "needs" — stack[i] needs
+          // stack[i+1] — so reversing it gives the causal direction people read.
+          const needsChain: string[] = [];
+          for (let i = stack.length - 1; i >= 0; i--) {
+            needsChain.unshift(stack[i].id);
+            if (stack[i].id === dep) break;
+          }
+          const throughFormula = needsChain.some((id) => usesFormula(nodeById[id]));
+          const key = needsChain.slice().sort().join(">");
+          if (throughFormula && !reported.has(key)) {
+            reported.add(key);
+            const causalChain = needsChain.slice().reverse();
+            const drawn = causalChain.concat([causalChain[0]]).map((id) => "`" + id + "`").join(" → ");
+            errors.push(
+              "Boxes " + drawn + " form a calculation loop through a formula with no delay(), " +
+              "so each one needs the others' value before it exists. Wrap one of the inputs " +
+              "in delay(...) to make the loop well-defined.",
+            );
+          }
+        } else if (color[dep] === WHITE) {
+          color[dep] = GRAY;
+          stack.push({ id: dep, depIndex: 0 });
+        }
+        // BLACK dependencies are fully explored — nothing to do.
+      } else {
+        color[frame.id] = BLACK;
+        stack.pop();
+      }
+    }
   }
 }
 
@@ -411,9 +613,9 @@ export function loadDataFromCsv(csvText: string): boolean {
     }
 
     // `formula` is kept as raw text here — the expression is only meaningful
-    // once the whole map is known (it can name any box or param), so it is
-    // parsed later rather than at row level.
-    // (formula syntax/reference validation is wired in by the engine change — see design doc §5)
+    // once the whole map is known (it can name any box or param, and has to
+    // agree with the arrows drawn into this box), so both parsing and checking
+    // happen after every section is in: see validateCalculationRules() below.
     const formulaValue = (row.formula || "").trim();
     if (formulaValue !== "") node.formula = formulaValue;
 
@@ -519,9 +721,14 @@ export function loadDataFromCsv(csvText: string): boolean {
   state.highlightedEdgeIds = new Set();
   state.userOverrides = {};
   state.dataLoaded = true;
+  // Same array object that validateCalculationRules() pushes into below, so the
+  // formula warnings it adds after the indexes are built land here too.
   state.loadErrors = errors;
 
   rebuildIndexes();
+  // Formula checks need the whole map (indexes, params, and the parsed formulas
+  // rebuildIndexes() just cached), so they run here rather than row-by-row.
+  validateCalculationRules(errors);
   setLayout(computeLayout());
 
   recomputeValues();
