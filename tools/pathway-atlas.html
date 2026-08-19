@@ -292,6 +292,28 @@ details.alt[open]>summary::before{content:"▾"}
 .tag.all{background:var(--bg-mid);color:var(--text-tertiary)}
 .tag.straight{background:var(--bg-mid);color:var(--text-tertiary);font-style:italic}
 
+/* ── 7. LOOPS ──────────────────────────────────────────────────────────── */
+.loopgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(292px,1fr));gap:12px}
+.loopcard{border:1px solid var(--border-subtle);border-left:4px solid var(--c2);
+  border-radius:var(--r-s);background:var(--bg-deep);padding:10px 12px 12px}
+.loopcard.r{border-left-color:var(--c1)}
+.loopcard header{display:flex;flex-wrap:wrap;gap:6px;align-items:baseline;margin-bottom:2px}
+.loopcard .pol{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--c2)}
+.loopcard .pol.r{color:var(--c1)}
+.loopcard .m{font-family:var(--font-mono);font-size:10.5px;color:var(--text-tertiary);
+  font-variant-numeric:tabular-nums}
+.loopcard .hint{margin-top:6px}
+svg.ring{display:block;height:auto}
+svg.ring .lk{stroke:var(--border-strong);stroke-width:1.6;fill:none}
+svg.ring .ah{fill:var(--border-strong)}
+svg.ring .bx{fill:var(--bg-deepest);stroke:var(--text-secondary);stroke-width:1.6}
+svg.ring .bl{font-family:var(--font-ui);font-size:9.5px;fill:var(--text-secondary)}
+svg.ring .sg{font-family:var(--font-mono);font-size:13px;font-weight:600;fill:var(--text-primary);text-anchor:middle}
+svg.ring .rb{font-family:var(--font-ui);font-size:26px;font-weight:700;fill:var(--c2);opacity:.85}
+svg.ring .rb.r{fill:var(--c1)}
+.flatloop{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin:8px 0 2px}
+.flatloop .back{font-size:11px;color:var(--text-tertiary);font-family:var(--font-mono)}
+
 .tip{position:fixed;z-index:50;pointer-events:none;background:var(--bg-deepest);color:var(--text-primary);
   border:1px solid var(--border-strong);border-radius:var(--r-i);padding:6px 9px;font-size:12px;
   box-shadow:var(--shadow-float);max-width:280px;display:none}
@@ -314,6 +336,7 @@ details.alt[open]>summary::before{content:"▾"}
       <select id="map-pick">
         <option value="lanes">Demo — multi-word lanes</option>
         <option value="big">Demo — 296 boxes, 818 links</option>
+        <option value="tangle">Demo — a nasty feedback tangle</option>
         <option value="own">Your own CSV</option>
       </select>
     </div>
@@ -381,6 +404,7 @@ details.alt[open]>summary::before{content:"▾"}
       <button role="tab" data-v="strands">Strands</button>
       <button role="tab" data-v="grid">Lane grid</button>
       <button role="tab" data-v="step">Step through</button>
+      <button role="tab" data-v="loops">Loops</button>
       <button role="tab" data-v="outline">Outline</button>
     </nav>
     <p class="viewnote" id="viewnote"></p>
@@ -514,6 +538,44 @@ function demoBig() {
   for (const lane of lanes.slice(0, 4))
     edges.push(E(lane + "|User Demand", lane + "|Street Price", -0.3));
   return { nodes, edges, name: "296-box demo" };
+}
+
+// A map wired so its feedback is genuinely hard: cross-lane links that wrap
+// round, producing one tangle of about a hundred boxes holding dozens of loops.
+// This is the case the Loops view exists for — the earlier tool showed it as a
+// single chip labelled with a hundred names.
+function demoTangle() {
+  const nodes = [], edges = [];
+  const add = (id, label) => { nodes.push(N(id, label)); return id; };
+  const lanes = ["Cannabis", "Cocaine", "Heroin", "Cat A", "Cat B", "Class A Drug"];
+  const roles = ["Import", "Seizure", "Testing", "Charging", "Prosecution", "Sentencing",
+                 "Supply Chain", "Street Supply", "Street Price", "User Demand",
+                 "Treatment Referral", "Treatment Uptake", "Reoffending", "County Lines"];
+  const shared = [];
+  for (let i = 0; i < 40; i++) shared.push(add("sh" + i, "Shared Factor " + String.fromCharCode(65 + (i % 26)) + (i > 25 ? "2" : "")));
+  add("start", "Enforcement Budget"); add("end", "Total Drug Harm");
+  for (const lane of lanes) for (const role of roles) add(lane + "|" + role, lane + " " + role);
+  for (const lane of lanes) {
+    for (let i = 0; i + 1 < roles.length; i++) edges.push(E(lane + "|" + roles[i], lane + "|" + roles[i + 1]));
+    edges.push(E("start", lane + "|" + roles[0]));
+    edges.push(E(lane + "|" + roles[roles.length - 1], "end"));
+    for (let i = 0; i + 3 < roles.length; i += 2) edges.push(E(lane + "|" + roles[i], lane + "|" + roles[i + 3]));
+  }
+  shared.forEach((s, i) => {
+    edges.push(E("start", s), E(s, "end"));
+    edges.push(E(lanes[i % lanes.length] + "|" + roles[i % roles.length], s));
+    edges.push(E(s, lanes[(i + 1) % lanes.length] + "|" + roles[(i + 3) % roles.length]));
+    if (i % 3 === 0) edges.push(E(s, shared[(i + 7) % shared.length]));
+  });
+  // Half these come out reinforcing and half balancing, so the view has both
+  // to show rather than a wall of one colour.
+  // Back edges only — the forward links are already in the lane chain, and
+  // adding a second one between the same pair would just be a contradiction.
+  lanes.slice(0, 4).forEach((lane, i) => {
+    edges.push(E(lane + "|User Demand", lane + "|Street Price", i % 2 ? -0.3 : 0.3));
+    edges.push(E(lane + "|County Lines", lane + "|Street Supply", i % 2 ? 0.25 : -0.25));
+  });
+  return { nodes, edges, name: "feedback tangle demo" };
 }
 
 // ATLAS-ENGINE-START (kept verbatim; tests/pathway-atlas.test.ts reads it from here)
@@ -824,6 +886,114 @@ function collapseLoops(scope, edges) {
 }
 
 // ---------------------------------------------------------------------------
+// 2b. WHAT IS ACTUALLY INSIDE A FEEDBACK LOOP
+// ---------------------------------------------------------------------------
+// Contracting a tangle to one element keeps the counting honest, but on its own
+// it turns the most interesting part of a map into a black box. One tangle on a
+// map this size held 108 boxes and 79 independent loops, and the only thing the
+// page said about it was 108 names joined by arrows.
+//
+// A tangle is not one loop. It is many loops sharing edges, and the unit people
+// actually think in is the single loop with its POLARITY:
+//
+//   reinforcing  an even number of negative links — a nudge comes back amplified
+//   balancing    an odd number — a nudge comes back opposed, and it settles
+//
+// Both fall straight out of the elasticities already in the CSV: multiply the
+// signs for polarity, multiply the magnitudes for gain. Neither was being used.
+//
+// Which loops to show is the real question, because a tangle can hold more
+// loops than anyone will read. Taking the SHORTEST loop through each box, then
+// ranking by gain, gives a set with two properties worth having: no box in the
+// tangle is left without a story, and the ones that actually move the system
+// come first.
+// ---------------------------------------------------------------------------
+function shortestCycleThrough(box, adj) {
+  if ((adj.get(box) || []).some(e => e.to === box)) return [box];
+  const prev = new Map(), queue = [];
+  for (const e of adj.get(box) || [])
+    if (!prev.has(e.to)) { prev.set(e.to, box); queue.push(e.to); }
+  for (let head = 0; head < queue.length; head++) {
+    const n = queue[head];
+    for (const e of adj.get(n) || []) {
+      if (e.to === box) {
+        const path = [n];
+        for (let x = prev.get(n); x !== box; x = prev.get(x)) path.push(x);
+        path.push(box);
+        return path.reverse();
+      }
+      if (!prev.has(e.to)) { prev.set(e.to, n); queue.push(e.to); }
+    }
+  }
+  return null;
+}
+
+// Rotations of one loop are the same loop, so name each by the rotation that
+// starts at its first box alphabetically.
+function canonicalCycle(cycle) {
+  let k = 0;
+  for (let i = 1; i < cycle.length; i++) if (cycle[i] < cycle[k]) k = i;
+  return cycle.slice(k).concat(cycle.slice(0, k)).join(">");
+}
+
+function analyseTangle(boxes, edges, outsideIn, outsideOut) {
+  const set = new Set(boxes);
+  const inner = edges.filter(e => set.has(e.from) && set.has(e.to));
+
+  // Two boxes can be joined twice, and the two links can disagree about sign —
+  // in which case the polarity of every loop through them depends on which one
+  // you take. Taking whichever happened to be listed first would make the
+  // answer silently arbitrary, so the stronger link wins and the count of
+  // disagreements is reported rather than swallowed.
+  const strongest = new Map();
+  let parallel = 0, contradictory = 0;
+  for (const e of inner) {
+    const key = e.from + "\u0001" + e.to;
+    const had = strongest.get(key);
+    if (!had) { strongest.set(key, e); continue; }
+    parallel++;
+    if ((had.elasticity < 0) !== (e.elasticity < 0)) contradictory++;
+    if (Math.abs(e.elasticity) > Math.abs(had.elasticity)) strongest.set(key, e);
+  }
+  const adj = new Map(boxes.map(b => [b, []]));
+  for (const e of strongest.values()) adj.get(e.from).push(e);
+
+  const loops = [], seen = new Set();
+  for (const box of boxes) {
+    const cycle = shortestCycleThrough(box, adj);
+    if (!cycle) continue;
+    const key = canonicalCycle(cycle);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    let sign = 1, gain = 1;
+    const links = [];
+    for (let i = 0; i < cycle.length; i++) {
+      const from = cycle[i], to = cycle[(i + 1) % cycle.length];
+      const e = adj.get(from).find(x => x.to === to);
+      if (!e) { sign = 0; break; }
+      links.push(e);
+      sign *= e.elasticity < 0 ? -1 : 1;
+      gain *= Math.abs(e.elasticity);
+    }
+    if (!sign) continue;
+    loops.push({ key, cycle, links, sign, gain, reinforcing: sign > 0 });
+  }
+  loops.sort((a, b) => b.gain - a.gain || a.cycle.length - b.cycle.length);
+
+  return {
+    boxes, loops,
+    linkCount: inner.length,
+    parallel, contradictory,
+    // How many loops it would take to generate every loop in here. The plain
+    // count of loops can run to thousands; this one is small and exact.
+    independent: inner.length - boxes.length + 1,
+    waysIn: [...outsideIn], waysOut: [...outsideOut],
+    reinforcing: loops.filter(l => l.reinforcing).length,
+    balancing: loops.filter(l => !l.reinforcing).length,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // 3. REFINE THE GROUPING UNTIL IT IS TRUE
 // ---------------------------------------------------------------------------
 // Start from what the names propose, then repeatedly split any group whose
@@ -995,6 +1165,20 @@ function buildAtlas(G, startId, opts = {}) {
     initial.set(gid, g.loop ? "LOOP:" + roles.join("+") : roles[0]);
   }
 
+  // Unpack every tangle once, before anything is folded, so polarity and gain
+  // are read off the real links rather than off the grouped ones.
+  const tangles = new Map();
+  for (const [gid, g] of L.groups) {
+    if (!g.loop) continue;
+    const set = new Set(g.boxes);
+    const inSide = new Set(), outSide = new Set();
+    for (const e of scopedEdges) {
+      if (!set.has(e.from) && set.has(e.to)) inSide.add(e.to);
+      if (set.has(e.from) && !set.has(e.to)) outSide.add(e.from);
+    }
+    tangles.set(gid, analyseTangle(g.boxes, scopedEdges, inSide, outSide));
+  }
+
   const gids = [...L.groups.keys()];
   const refined = refineForward(gids, L.succ, initial, opts.grouping === "strict");
   const classOf = refined.cls;
@@ -1005,12 +1189,13 @@ function buildAtlas(G, startId, opts = {}) {
     const cid = classOf.get(gid);
     let node = nodes.get(cid);
     if (!node) {
-      nodes.set(cid, node = { id: cid, loop: false, boxes: [], lanes: new Set(), copies: 0, roles: new Set() });
+      nodes.set(cid, node = { id: cid, loop: false, boxes: [], lanes: new Set(), copies: 0, roles: new Set(), tangles: [] });
       succ.set(cid, new Set()); pred.set(cid, new Set());
     }
     const g = L.groups.get(gid);
     node.copies++;
     node.loop = node.loop || g.loop;
+    if (g.loop && tangles.has(gid)) node.tangles.push(tangles.get(gid));
     for (const b of g.boxes) {
       node.boxes.push(b);
       node.roles.add(lanes.roleOf.get(b));
@@ -1050,7 +1235,7 @@ function buildAtlas(G, startId, opts = {}) {
   for (const node of nodes.values()) {
     const roles = [...node.roles];
     node.label = node.loop
-      ? "loop: " + roles.map(r => roleLabel(r, G.byId)).join(" ↔ ")
+      ? loopLabel(node, G)
       : roles.length === 1 && node.boxes.length > 1
         ? roleLabel(roles[0], G.byId)
         : (G.byId.get(node.boxes[0]) || {}).label || node.boxes[0];
@@ -1092,6 +1277,7 @@ function buildAtlas(G, startId, opts = {}) {
     everyStepShared: partialSteps === 0,
     partialSteps, totalSteps: stepTakenBy.size,
     loops: [...nodes.values()].filter(n => n.loop),
+    feedback: gatherFeedback(nodes),
     shapes: paths.get(start) || 0n,
     pathways: rawPaths.get(startGroup) || 0n,
     boxesInScope: scope.size,
@@ -1104,6 +1290,20 @@ function buildAtlas(G, startId, opts = {}) {
     refineRounds: refined.rounds,
     ms: Date.now() - t0,
   };
+}
+
+// A loop is named after its strongest loop when that is short enough to read,
+// and by its size when it is not. Reciting 108 member names, which is what this
+// used to do, is the opposite of a name.
+function loopLabel(node, G) {
+  const t = node.tangles[0];
+  if (!t || !t.loops.length) return `feedback loop of ${node.boxes.length} boxes`;
+  // One loop can be named after itself. A tangle of many cannot — naming it
+  // after the strongest implies the others are variations on it, and they are
+  // not, so it is named by what it is instead.
+  if (t.loops.length === 1)
+    return t.loops[0].cycle.map(b => (G.byId.get(b) || {}).label || b).join(" ⇄ ");
+  return `feedback tangle · ${t.loops.length} loops`;
 }
 
 // Walk the spine from `entry` to `stop`, opening a nested choice wherever the
@@ -1181,6 +1381,21 @@ function formatCount(n) {
   const s = n.toString();
   return s[0] + "." + s.slice(1, 3) + " × 10^" + (s.length - 1);
 }
+
+// Every loop on the map in one list, strongest first, each knowing which
+// element it lives in and how many places that element stands for.
+function gatherFeedback(nodes) {
+  const out = [];
+  for (const node of nodes.values()) {
+    if (!node.loop || !node.tangles.length) continue;
+    const t = node.tangles[0];
+    for (const loop of t.loops)
+      out.push({ ...loop, element: node.id, elementLabel: node.label,
+                 copies: node.tangles.length, lanes: node.lanes,
+                 tangleSize: t.boxes.length, independent: t.independent });
+  }
+  return out.sort((a, b) => b.gain - a.gain || a.cycle.length - b.cycle.length);
+}
 // ATLAS-ENGINE-END
 
 // ===========================================================================
@@ -1195,6 +1410,7 @@ let G = null, ATLAS = null, START = null, QUERY = "", VIEW = "flow";
 let ZOOM = null;        // Blocks: which sequence is filling the frame
 let STRANDROOT = null, STRANDPATH = [];   // Strands: the same, for the spine
 let GRID_ALL = false;   // Lane grid: include elements that belong to no lane
+let LOOP_SORT = "gain";  // Loops: how the cards are ordered
 let ZOOMPATH = [];      // …and how we got there
 let STEP = null;        // Step through: where we are standing
 let STEPPATH = [];
@@ -1622,7 +1838,9 @@ function elHtml(id, A) {
   if (id === A.start) cls.push("start");
   if (node.loop) cls.push("loop");
   else if (node.boxes.length > 1) cls.push("folded");
-  const many = node.loop ? `<span class="x">loop of ${node.boxes.length}</span>`
+  const t = node.loop && node.tangles.length ? node.tangles[0] : null;
+  const many = node.loop
+    ? `<span class="x">${t ? `${t.reinforcing}R / ${t.balancing}B` : ""} · ${node.boxes.length} boxes</span>`
     : node.boxes.length > 1 ? `<span class="x">×${node.boxes.length}</span>` : "";
   const tip = node.boxes.slice(0, 10).map(b => (G.byId.get(b) || {}).label || b).join(" · ");
   return `<span class="${cls.join(" ")}" data-el="${esc(id)}" title="${esc(tip)}">${esc(node.label)}${many}</span>`;
@@ -1669,6 +1887,158 @@ function outlineSeq(seq, depth, A) {
 }
 
 // ---------------------------------------------------------------------------
+// 7. LOOPS — the ring diagram
+// ---------------------------------------------------------------------------
+// The canonical causal-loop picture, one card per loop: the boxes set round a
+// circle, arrows following it, a + or − on every link, and R or B in the middle.
+// A tangle stops being a wall of names and becomes a grid of small rings.
+//
+// Past eight boxes a ring stops being readable — the labels collide and the
+// polygon stops looking like a circle — so a long loop is laid out flat
+// instead, with the closing link drawn as a return. Forcing it into a circle
+// anyway would be prettier and less legible.
+// ---------------------------------------------------------------------------
+const RING_MAX = 8;
+const boxLabel = id => (G.byId.get(id) || {}).label || id;
+
+function loopSign(link) { return link.elasticity < 0 ? "−" : "+"; }
+
+let ringSeq = 0;
+
+// When every box in a loop sits in the same lane, the card says so once and the
+// ring drops it. "Cat A Treatment Referral" clipped to "Cat A Treatmen…" tells
+// you nothing; "Treatment Referral" tells you everything.
+function ringLabels(loop) {
+  const lanes = new Set();
+  for (const b of loop.cycle) { const l = ATLAS.lanes.laneOf.get(b); if (l) lanes.add(l); }
+  const only = lanes.size === 1 ? [...lanes][0] : null;
+  return loop.cycle.map(b => {
+    const full = boxLabel(b);
+    if (!only) return full;
+    const trimmed = full.replace(new RegExp("\\b" + only.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "i"), "").replace(/\s+/g, " ").trim();
+    return trimmed || full;
+  });
+}
+
+function ringSvg(loop) {
+  // Each ring needs its own arrowhead id. Sharing one across cards makes them
+  // collide, and the arrows — the entire point of a causal loop diagram —
+  // silently vanish.
+  const ar = "ar" + (ringSeq++);
+  const n = loop.cycle.length;
+  if (n > RING_MAX) return flatLoop(loop);
+  const names = ringLabels(loop);
+  const W = 290, H = n <= 2 ? 138 : n <= 5 ? 168 : 208, cx = W / 2, cy = H / 2,
+        R = n <= 2 ? 28 : n <= 5 ? 40 : 50;
+  const pt = i => {
+    const a = (-Math.PI / 2) + (i * 2 * Math.PI) / n;
+    return [cx + R * Math.cos(a), cy + R * Math.sin(a)];
+  };
+  // Links stop short of the boxes at both ends. Run them all the way and the
+  // box circle — drawn afterwards, on top — hides the arrowhead, which is the
+  // one mark on a causal loop diagram that cannot be left out.
+  const trim = (ax, ay, bx, by, head, tail) => {
+    const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
+    return [ax + (dx / len) * tail, ay + (dy / len) * tail,
+            bx - (dx / len) * head, by - (dy / len) * head];
+  };
+  const parts = [];
+  for (let i = 0; i < n; i++) {
+    const [rx1, ry1] = pt(i), [rx2, ry2] = pt((i + 1) % n);
+    const [x1, y1, x2, y2] = trim(rx1, ry1, rx2, ry2, 12, 7);
+    if (n === 1) {                                  // a box feeding itself
+      parts.push(`<circle class="lk" cx="${cx}" cy="${cy - 20}" r="18" fill="none"></circle>`);
+      break;
+    }
+    if (n === 2) {                                  // two boxes, bowed apart
+      const bow = i === 0 ? 26 : -26;
+      const mx = (rx1 + rx2) / 2 + bow, my = (ry1 + ry2) / 2;
+      parts.push(`<path class="lk" d="M${x1} ${y1}Q${mx} ${my} ${x2} ${y2}" marker-end="url(#${ar})"></path>`);
+      parts.push(`<text class="sg" x="${mx + (i === 0 ? 10 : -10)}" y="${my + 4}">${loopSign(loop.links[i])}</text>`);
+      continue;
+    }
+    parts.push(`<line class="lk" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" marker-end="url(#${ar})"></line>`);
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+    parts.push(`<text class="sg" x="${mx + (mx - cx) * 0.34}" y="${my + (my - cy) * 0.34 + 4}">${loopSign(loop.links[i])}</text>`);
+  }
+  for (let i = 0; i < n; i++) {
+    const [x, y] = pt(i);
+    const outward = n === 1 ? 0 : (x - cx) / R;
+    const anchor = Math.abs(outward) < 0.35 ? "middle" : outward > 0 ? "start" : "end";
+    const lx = x + outward * 12, ly = y + ((y - cy) / R) * 12 + (Math.abs(outward) < 0.35 ? (y < cy ? -10 : 16) : 4);
+    parts.push(`<circle class="bx" cx="${x}" cy="${y}" r="5"></circle>`);
+    parts.push(`<text class="bl" x="${lx}" y="${ly}" text-anchor="${anchor}">${esc(clip(names[i], 20))}</text>`);
+  }
+  parts.push(`<text class="rb ${loop.reinforcing ? "r" : "b"}" x="${cx}" y="${cy + 8}" text-anchor="middle">${loop.reinforcing ? "R" : "B"}</text>`);
+  return `<svg class="ring" viewBox="0 0 ${W} ${H}" width="100%" role="img"
+    aria-label="${loop.reinforcing ? "Reinforcing" : "Balancing"} loop: ${esc(loop.cycle.map(boxLabel).join(" then "))}, back to the start">
+    <defs><marker id="${ar}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M0 0 10 5 0 10z" class="ah"></path></marker></defs>${parts.join("")}</svg>`;
+}
+
+function flatLoop(loop) {
+  const chain = loop.cycle.map((id, i) =>
+    `<span class="el">${esc(clip(boxLabel(id), 22))}</span>` +
+    `<span class="arrow">${loopSign(loop.links[i])}→</span>`).join("");
+  return `<div class="flatloop">${chain}<span class="back">↩ back to ${esc(clip(boxLabel(loop.cycle[0]), 22))}</span></div>`;
+}
+
+function loopCard(loop, A) {
+  const own = new Set();
+  for (const b of loop.cycle) { const l = A.lanes.laneOf.get(b); if (l) own.add(l); }
+  const lanes = [...own].sort();
+  return `<article class="loopcard ${loop.reinforcing ? "r" : "b"}" data-loopel="${esc(loop.element)}">
+    <header>
+      <span class="pol ${loop.reinforcing ? "r" : "b"}">${loop.reinforcing ? "Reinforcing" : "Balancing"}</span>
+      <span class="m">gain ${loop.gain < 0.0005 ? "≈0" : loop.gain.toFixed(3)}</span>
+      <span class="m">${loop.cycle.length} ${plural(loop.cycle.length, "box", "boxes")}</span>
+      ${loop.copies > 1 ? `<span class="m">in ${loop.copies} places</span>` : ""}
+    </header>
+    ${ringSvg(loop)}
+    <p class="hint">${loop.reinforcing
+      ? "A nudge here comes back amplified — it runs away or collapses unless something else holds it."
+      : "A nudge here comes back opposed — it settles, and resists being pushed."}</p>
+    ${lanes.length ? `<p class="hint">${lanes.length === 1 ? "In the " + esc(lanes[0]) + " lane"
+        : "Across " + esc(lanes.slice(0, 4).join(", ")) + (lanes.length > 4 ? " and " + (lanes.length - 4) + " more" : "")}${
+        loop.copies > 1 ? `, and the same shape runs in ${loop.copies} places` : ""}.</p>` : ""}
+  </article>`;
+}
+
+function viewLoops(A, M) {
+  const all = A.feedback || [];
+  if (!all.length)
+    return `<p class="lede">This map has no feedback at all downstream of
+      <b>${esc(boxLabel(A.startId))}</b> — every pathway runs one way and stops.</p>`;
+
+  const r = all.filter(l => l.reinforcing).length;
+  const tangles = A.loops.length;
+  const biggest = Math.max(...A.loops.map(n => n.tangles[0] ? n.tangles[0].boxes.length : 0));
+  const independent = A.loops.reduce((a, n) => a + (n.tangles[0] ? n.tangles[0].independent : 0), 0);
+  const sorted = LOOP_SORT === "length"
+    ? [...all].sort((a, b) => a.cycle.length - b.cycle.length || b.gain - a.gain)
+    : LOOP_SORT === "polarity"
+      ? [...all].sort((a, b) => Number(b.reinforcing) - Number(a.reinforcing) || b.gain - a.gain)
+      : all;
+
+  return `<div class="legend">
+      <span><i style="background:var(--c1)"></i><b>R</b> reinforcing — a nudge comes back amplified</span>
+      <span><i style="background:var(--c2)"></i><b>B</b> balancing — a nudge comes back opposed</span>
+      <span>gain is the elasticities multiplied round the ring</span>
+    </div>
+    <p class="lede" style="margin-bottom:10px"><b>${tangles}</b> ${plural(tangles, "tangle")} of feedback,
+      the largest holding <b>${biggest}</b> boxes. It would take <b>${independent}</b> ${plural(independent, "loop")} to generate
+      every loop in there; below is the shortest loop through each box — <b>${all.length}</b> of
+      ${all.length === 1 ? "it" : "them"} — so no box is left without a story. <b>${r}</b> reinforcing, <b>${all.length - r}</b> balancing.</p>
+    <div class="row-btns" style="margin-bottom:14px">
+      ${["gain", "length", "polarity"].map(k =>
+        `<button class="btn" type="button" data-loopsort="${k}" ${LOOP_SORT === k ? 'style="background:var(--act);border-color:var(--act);color:#fff"' : ""}>${
+          k === "gain" ? "Strongest first" : k === "length" ? "Shortest first" : "Group by polarity"}</button>`).join("")}
+    </div>
+    <div class="loopgrid">${sorted.slice(0, 60).map(l => loopCard(l, A)).join("")}</div>
+    ${sorted.length > 60 ? `<p class="hint" style="margin-top:12px">Showing the first 60 of ${sorted.length}.</p>` : ""}`;
+}
+
+// ---------------------------------------------------------------------------
 // SHELL
 // ---------------------------------------------------------------------------
 const VIEW_NOTES = {
@@ -1678,8 +2048,10 @@ const VIEW_NOTES = {
   grid: "One row per element, one column per lane. A row with gaps is somewhere the lanes stop behaving alike — this view says nothing else, and says it in one screen.",
   step: "One decision at a time. The least on screen of the six: you walk a pathway rather than read one.",
   outline: "The original. Everything at once, nested, complete — and the hardest to skim.",
+  loops: "Every feedback loop, one ring each, with its polarity and its gain. A tangle of many loops sharing boxes becomes a grid of small readable rings rather than one opaque blob.",
 };
-const VIEWS = { flow: viewFlow, blocks: viewBlocks, strands: viewStrands, grid: viewGrid, step: viewStep, outline: viewOutline };
+const VIEWS = { flow: viewFlow, blocks: viewBlocks, strands: viewStrands, grid: viewGrid,
+                step: viewStep, loops: viewLoops, outline: viewOutline };
 
 function renderStats() {
   const A = ATLAS;
@@ -1689,7 +2061,9 @@ function renderStats() {
     ["Pathways", formatCount(A.pathways), ""],
     ["Readings", formatCount(A.shapes), A.shapes < A.pathways ? "good" : ""],
     ["Elements", String(A.elements), A.elements < A.elementsUngrouped ? "good" : ""],
-    ["Feedback loops", String(A.loops.length), ""],
+    ["Feedback", A.loops.length
+      ? `${A.loops.length} ${plural(A.loops.length, "tangle")} · ${(A.feedback || []).length} ${plural((A.feedback || []).length, "loop")}`
+      : "none", ""],
     ["Built in", A.ms < 1000 ? A.ms + "ms" : (A.ms / 1000).toFixed(1) + "s", "good"],
   ];
   $("stats").innerHTML = cells.map(([k, v, tone]) =>
@@ -1742,9 +2116,13 @@ function showElement(id) {
   if (!node) { box.hidden = true; return; }
   box.hidden = false;
   const boxes = node.boxes.map(b => (G.byId.get(b) || {}).label || b).sort();
+  const t = node.loop && node.tangles.length ? node.tangles[0] : null;
   box.innerHTML = `<h3>${esc(node.label)}</h3>
     <p class="hint" style="margin-bottom:6px">${boxes.length} ${plural(boxes.length, "box", "boxes")}${
-      node.loop ? " in a feedback loop" : node.copies > 1 ? `, grouped from ${node.copies} places` : ""}</p>` +
+      node.loop ? " in a feedback tangle" : node.copies > 1 ? `, grouped from ${node.copies} places` : ""}</p>` +
+    (t ? `<p class="hint" style="margin-bottom:6px"><b>${t.reinforcing}</b> reinforcing,
+       <b>${t.balancing}</b> balancing · ${t.independent} independent ·
+       ${t.waysIn.length} ${plural(t.waysIn.length, "way")} in, ${t.waysOut.length} out</p>` : "") +
     boxes.slice(0, 30).map(b => `<div class="fam"><b>${esc(b)}</b></div>`).join("") +
     (boxes.length > 30 ? `<p class="hint">…and ${boxes.length - 30} more</p>` : "");
 }
@@ -1877,6 +2255,8 @@ $("stage").addEventListener("click", e => {
     return;
   }
   if (e.target.closest("[data-grid]")) { GRID_ALL = !GRID_ALL; renderView(); return; }
+  const ls = e.target.closest("[data-loopsort]");
+  if (ls) { LOOP_SORT = ls.dataset.loopsort; renderView(); return; }
 
   const stepBtn = e.target.closest("[data-step]");
   if (stepBtn) {
@@ -1888,7 +2268,13 @@ $("stage").addEventListener("click", e => {
     return;
   }
   const el = e.target.closest("[data-el]");
-  if (el) showElement(el.dataset.el);
+  if (el) {
+    showElement(el.dataset.el);
+    // A loop chip is the one element whose whole point is hidden inside it, so
+    // clicking one opens the rings rather than just listing its members.
+    const node = ATLAS.nodes.get(el.dataset.el);
+    if (node && node.loop && VIEW !== "loops") { VIEW = "loops"; renderView(); }
+  }
 });
 
 // Only the choice directly in the frame is searched, so clicking a block always
@@ -1929,7 +2315,8 @@ $("stage").addEventListener("click", e => {
 $("map-pick").addEventListener("change", e => {
   const own = e.target.value === "own";
   $("own-wrap").hidden = !own;
-  if (!own) loadMap(e.target.value === "big" ? demoBig() : demoLanes());
+  if (!own) loadMap(e.target.value === "big" ? demoBig()
+    : e.target.value === "tangle" ? demoTangle() : demoLanes());
 });
 $("pick-file").addEventListener("click", () => $("csv-file").click());
 $("csv-file").addEventListener("change", e => readFile(e.target.files[0]));

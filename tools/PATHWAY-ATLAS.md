@@ -97,12 +97,12 @@ it survives.
 
 ---
 
-## Six ways to read it
+## Seven ways to read it
 
 The structure and the presentation are separate problems, and the first version
 only solved the first one. A complete nested outline of 129 elements is still a
 wall of words and arrows. The view switcher offers the same atlas — the identical
-numbers, nothing recomputed per view — in six forms. Measured on the 296-box
+numbers, nothing recomputed per view — in seven forms. Measured on the 296-box
 demo, from one box that reaches all 296:
 
 | View | What it is for | Height on screen |
@@ -112,6 +112,7 @@ demo, from one box that reaches all 296:
 | **Strands** | A spine with branches that leave and rejoin, the way people describe a pathway out loud. Named *and* coloured, so identity is never colour alone. | 1,007px |
 | **Lane grid** | One row per element, one column per lane. A row with gaps is where the lanes stop behaving alike, and the view says nothing else. | one screen |
 | **Step through** | One decision at a time. The least on screen of the six — you walk a pathway rather than read one. | one screen |
+| **Loops** | Every feedback loop as a ring diagram with its polarity and gain. See below. | one screen |
 | **Outline** | The original: everything at once, nested, complete. Kept for comparison. | 1,686px |
 
 Two of these needed a limit to be worth having. Drawn to full depth, Strands came
@@ -119,6 +120,53 @@ out 11,482px tall — worse than the outline it exists to replace — and Blocks
 recursed until the blocks were slivers a few pixels wide, destroying the one
 thing that view is for. Both now draw a level or two and then offer a way in,
 which is what the drill-down is for.
+
+## Feedback loops
+
+Contracting a tangle to one element keeps the counting honest, but on its own it
+turns the most interesting part of a map into a black box. On a test map one
+tangle held **108 boxes and 79 independent loops**, and the only thing the page
+said about it was 108 names joined by arrows.
+
+Three things fixed that.
+
+**A tangle is not a loop.** It is many loops sharing edges. The unit people
+actually think in is the single loop, so the tool now decomposes each tangle into
+individual loops rather than showing the tangle whole.
+
+**Polarity and gain, which were being thrown away.** Both fall straight out of
+the elasticities already in the CSV — multiply the signs for one, the magnitudes
+for the other — and neither was being used:
+
+| | | |
+| --- | --- | --- |
+| **Reinforcing** | an even number of negative links | a nudge comes back amplified; it runs away or collapses unless something else holds it |
+| **Balancing** | an odd number | a nudge comes back opposed; it settles, and resists being pushed |
+
+**Which loops to show.** A tangle can hold more loops than anyone will read. The
+page takes the *shortest loop through each box*, then ranks by gain. That gives
+two properties worth having: no box in the tangle is left without a story, and
+the ones that actually move the system come first. On the 108-box tangle it turns
+79 independent loops into 43 readable ones.
+
+Each loop is drawn as a **ring**: boxes round a circle, arrows following it, a
+`+` or `−` on every link, and a big **R** or **B** in the middle. Past eight
+boxes a ring stops being readable — labels collide and it stops looking circular
+— so a long loop is laid out flat with the closing link drawn as a return.
+Where every box in a loop sits in one lane, the card names the lane once and the
+ring drops it, so `Cat A Treatment Referral` reads as `Treatment Referral`
+instead of being clipped to `Cat A Treatmen…`.
+
+Loops live in two places: a **Loops view** listing every one on the map, sortable
+by gain, length or polarity; and inline in the pathway views, where a tangle
+stays one chip carrying its polarity mix (`3R / 1B · 108 boxes`) and opens into
+the rings when clicked.
+
+**One thing worth knowing about your data.** If two boxes are joined by two links
+that disagree about sign, the polarity of every loop through them depends on
+which link you take. Silently picking whichever was listed first would make the
+answer arbitrary, so the stronger link wins and the count of disagreements is
+reported rather than swallowed.
 
 ## Reading the page
 

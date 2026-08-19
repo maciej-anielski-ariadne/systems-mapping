@@ -235,6 +235,90 @@ describe("feedback loops", () => {
   });
 });
 
+describe("what is inside a feedback loop", () => {
+  // Enforcement raises Displacement raises Street Price raises Enforcement —
+  // three positive links, so a nudge comes back amplified. Street Price also
+  // lowers User Demand, which raises Street Price back: one negative link, so
+  // that one settles instead.
+  function twoLoops() {
+    const nodes = [N("a", "Enforcement"), N("b", "Displacement"), N("c", "Street Price"),
+                   N("d", "User Demand"), N("e", "Harm")];
+    const edges = [E("a", "b"), E("b", "c"), E("c", "a"),
+                   E("c", "d", -0.5), E("d", "c", 0.4), E("c", "e")];
+    return { nodes, edges, name: "two loops" };
+  }
+
+  const atlas = engine.buildAtlas(engine.buildGraph(twoLoops()), "a");
+  const tangle = atlas.loops[0].tangles[0];
+
+  it("finds both loops in one tangle", () => {
+    expect(atlas.loops).toHaveLength(1);
+    expect(tangle.loops).toHaveLength(2);
+    expect(tangle.independent).toBe(2);
+  });
+
+  it("reads polarity off the link signs", () => {
+    const byLen = Object.fromEntries(tangle.loops.map((l: any) => [l.cycle.length, l]));
+    expect(byLen[2].reinforcing).toBe(false);   // one negative link — balancing
+    expect(byLen[3].reinforcing).toBe(true);    // none — reinforcing
+  });
+
+  it("reads gain off the link magnitudes", () => {
+    const byLen = Object.fromEntries(tangle.loops.map((l: any) => [l.cycle.length, l]));
+    expect(byLen[2].gain).toBeCloseTo(0.5 * 0.4, 10);
+    expect(byLen[3].gain).toBeCloseTo(0.3 ** 3, 10);
+  });
+
+  it("orders them strongest first", () => {
+    expect(tangle.loops[0].gain).toBeGreaterThanOrEqual(tangle.loops[1].gain);
+    expect(atlas.feedback[0].gain).toBeGreaterThanOrEqual(atlas.feedback[1].gain);
+  });
+
+  it("leaves no box in the tangle without a loop", () => {
+    const covered = new Set(tangle.loops.flatMap((l: any) => l.cycle));
+    expect([...tangle.boxes].filter((b: string) => !covered.has(b))).toEqual([]);
+  });
+
+  it("counts the ways in and out rather than hiding them", () => {
+    expect(tangle.waysOut).toContain("c");      // Street Price is what reaches Harm
+    expect(tangle.boxes).toHaveLength(4);
+  });
+
+  it("names the tangle without reciting its members", () => {
+    expect(atlas.loops[0].label).not.toContain("Displacement");
+    expect(atlas.loops[0].label).toMatch(/tangle|⇄/);
+  });
+
+  it("takes the stronger link when two links join the same pair, and says so", () => {
+    // Two links from a to b that disagree about sign: whichever is listed first
+    // would otherwise decide the polarity of every loop through them.
+    const nodes = [N("a", "One"), N("b", "Two")];
+    const edges = [E("a", "b", 0.2), E("a", "b", -0.9), E("b", "a", 0.5)];
+    const t = engine.buildAtlas(engine.buildGraph({ nodes, edges, name: "dup" }), "a")
+      .loops[0].tangles[0];
+    expect(t.parallel).toBe(1);
+    expect(t.contradictory).toBe(1);
+    expect(t.loops[0].gain).toBeCloseTo(0.9 * 0.5, 10);   // the stronger one
+    expect(t.loops[0].reinforcing).toBe(false);           // and its sign
+  });
+
+  it("handles a box that feeds itself", () => {
+    const nodes = [N("a", "One"), N("b", "Two")];
+    const edges = [E("a", "a", -0.4), E("a", "b")];
+    const t = engine.buildAtlas(engine.buildGraph({ nodes, edges, name: "self" }), "a")
+      .loops[0].tangles[0];
+    expect(t.loops).toHaveLength(1);
+    expect(t.loops[0].cycle).toEqual(["a"]);
+    expect(t.loops[0].reinforcing).toBe(false);
+  });
+
+  it("says nothing about feedback on a map that has none", () => {
+    const flat = engine.buildAtlas(engine.buildGraph(lanesMap()), "policy");
+    expect(flat.loops).toHaveLength(0);
+    expect(flat.feedback).toEqual([]);
+  });
+});
+
 describe("counting", () => {
   it("counts pathways exactly, without walking any of them", () => {
     const map = lanesMap();
