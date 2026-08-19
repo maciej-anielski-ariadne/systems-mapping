@@ -45,6 +45,7 @@ import { suggestStrandsThrough } from "./09a-pathways";
 import { showSuggestedStrand } from "./09b-pathway-ui";
 import { applySimMultiplier, updateDetailPanelDeltaInline } from "./14-simulation-panel";
 import { applySelectionClass } from "./17-events";
+import { atlasIsOpen, atlasPanelHtml, openAtlas } from "./21-atlas-view";
 import { deleteEdgeById, commitNewEdge, deleteSelection } from "./16e-canvas-edit";
 import { applyCanvasMutation } from "./16f-canvas-mutations";
 
@@ -54,6 +55,14 @@ export function renderDetailPanel(): void {
 
   // In reading mode the panel is closed until there's something in it.
   if (typeof applySelectionClass === "function") applySelectionClass();
+
+  if (typeof atlasIsOpen === "function" && atlasIsOpen()) {
+    emptyState.style.display   = "none";
+    contentState.style.display = "block";
+    contentState.classList.remove("is-editing", "just-unlocked");
+    contentState.innerHTML = atlasPanelHtml();
+    return;
+  }
 
   // Nothing selected → show the empty-state placeholder.
   if (!state.selectedNodeId) {
@@ -73,6 +82,15 @@ export function renderDetailPanel(): void {
 
   emptyState.style.display   = "none";
   contentState.style.display = "block";
+
+  // While an atlas is open the panel belongs to it — one inspector in the app,
+  // not two. The atlas writes its own markup and wires its own buttons through
+  // the stage's delegated listener.
+  if (typeof atlasIsOpen === "function" && atlasIsOpen()) {
+    contentState.classList.remove("is-editing", "just-unlocked");
+    contentState.innerHTML = atlasPanelHtml();
+    return;
+  }
 
   // The per-box edit form is an authoring tool: reading mode never shows it,
   // however the flag was left.
@@ -181,6 +199,12 @@ export function renderNodeSkeleton(node: GraphNode, editMode: boolean): string {
   const strands = editMode ? "" : renderStrandSuggestions(node, reading);
 
   if (reading) {
+    // The way into the atlas. Only offered where it has something to say — a
+    // box with nothing downstream would open a picture of one circle.
+    if (directImpacts.length) {
+      html += '<div class="detail-mode-toggle"><button class="detail-mode-button" ' +
+        'data-action="open-atlas">Everything downstream →</button></div>';
+    }
     html += causes;
     html += effects;
     html += numbers;
@@ -767,6 +791,14 @@ export function wireSharedHandlers(node: GraphNode, contentState: HTMLElement): 
         state.canvasEdit._justUnlocked = true;   // pulse the fields on view→edit
       }
       renderDetailPanel();
+    });
+  }
+
+  // Open the atlas on this box: everything downstream of it, as one picture.
+  const atlasButton = contentState.querySelector("[data-action='open-atlas']");
+  if (atlasButton) {
+    atlasButton.addEventListener("click", () => {
+      if (typeof openAtlas === "function") openAtlas(node.id);
     });
   }
 

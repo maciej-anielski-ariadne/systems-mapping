@@ -74,6 +74,7 @@ import {
 import { computeMaxHighlightDepth } from "./09-graph-selection";
 import { resetPathwayCaches, revalidatePathway } from "./09a-pathways";
 import { applyHighlightDepth, fitMapToFrame } from "./17-events";
+import { closeAtlas } from "./21-atlas-view";
 import { computeLayout } from "./08-layout";
 import {
   recomputeValues,
@@ -788,6 +789,10 @@ export function loadDataFromCsv(csvText: string): boolean {
   // Same array object that validateCalculationRules() pushes into below, so the
   // formula warnings it adds after the indexes are built land here too.
   state.loadErrors = errors;
+
+  // An atlas is everything downstream of one box in THIS map; a different map
+  // makes it a picture of something that is no longer there.
+  if (typeof closeAtlas === "function") closeAtlas();
 
   rebuildIndexes();
   // Formula checks need the whole map (indexes, params, and the parsed formulas

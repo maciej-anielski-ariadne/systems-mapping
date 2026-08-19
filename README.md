@@ -338,7 +338,8 @@ systems_mapping/
     │   │                            (there is no 12-*.css — the number is retired, not missing)
     │   ├── 13-search.css            Search dropdown + map-match halo
     │   ├── 14-typeable-dropdown.css Typable / filterable <select> replacement
-    │   └── 15-pathway.css           Pathway mode: strand styling, route chip, straightened view
+    │   ├── 15-pathway.css           Pathway mode: strand styling, route chip, straightened view
+    │   └── 16-atlas.css             Pathway atlas: the picture, the wheel inside a tangle, the panel
     │                                (flat look = `border: 0` in 02-base.css;
     │                                 state shown via drop-shadow / box-shadow rings)
     ├── js/
@@ -381,6 +382,8 @@ systems_mapping/
     │   ├── 17a-search.ts            Fuzzy search: scoring, dropdown, map highlights
     │   ├── 18-main.ts               Startup — single entry point, restores persisted state
     │   ├── 19-export.ts             Export canvas → image (PNG + SVG) + view-only HTML
+    │   ├── 20-atlas-engine.ts       Pathway atlas: scope → contract loops → group → count (exact)
+    │   ├── 21-atlas-view.ts         Pathway atlas: the picture, the wheel, the tour, the panel
     │   └── types.ts                 Shared TypeScript types every module imports (the data model)
     └── data/
         ├── sample.csv               Small neutral example (3 rows, 12 boxes, 12 links).

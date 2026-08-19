@@ -91,6 +91,11 @@ export const state: AppState = {
   searchMatches: [],
   searchFocusIndex: 0,
 
+  // The pathway atlas — everything downstream of one box, drawn over the map.
+  // null when closed. Transient for the same reason a strand is: it is a way of
+  // reading the map rather than part of it.
+  atlas: null,
+
   // Pathway mode — the single strand currently being followed, if any. An
   // empty `routes` array means the mode is off; every other module tests that.
   // Deliberately NOT persisted: a strand is a way of reading the map, not a

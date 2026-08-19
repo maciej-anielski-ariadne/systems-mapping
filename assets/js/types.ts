@@ -429,6 +429,10 @@ export interface AppState {
   /** Pathway mode — one strand traced from start to finish. Transient:
    *  never persisted, so a refresh drops you back on the whole map. */
   pathway: PathwayState;
+  /** The pathway atlas — everything downstream of one box, open over the map.
+   *  null when it is closed. Transient, like a strand: it is a way of reading
+   *  the map, not a property of it. */
+  atlas: { startId: string } | null;
   canvasEdit: CanvasEditState;
   history: History;
   lastCsvSnapshot: string | null;

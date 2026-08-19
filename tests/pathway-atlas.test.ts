@@ -1,8 +1,8 @@
 // =============================================================================
 // PATHWAY ATLAS ENGINE
 // -----------------------------------------------------------------------------
-// tools/pathway-atlas.html is a standalone page, not part of the app, but the
-// engine inside it makes two claims strong enough to be worth pinning:
+// The engine behind "everything downstream of this box" makes two claims strong
+// enough to be worth pinning:
 //
 //   complete  every pathway in the map is one of the readings it shows, so an
 //             impact cannot be missed however far it meanders
@@ -14,29 +14,22 @@
 // values of differing length in one family, decoy families that must not be
 // grouped, and feedback loops.
 //
-// The engine is read out of the HTML rather than duplicated, so there is only
-// ever one copy of it to be wrong.
+// These run against assets/js/20-atlas-engine.ts — the copy the app itself
+// uses. tools/pathway-atlas.html keeps a standalone copy for dropping a CSV
+// into without the app; the app's is the one that has to be right.
 // =============================================================================
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
+import { buildGraph, buildAtlas, detectLanes, END, familyLabel } from "../assets/js/20-atlas-engine";
 
+// The standalone page still ships, and the last describe block below checks the
+// few things about it that are promises rather than implementation.
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const html = readFileSync(resolve(root, "tools/pathway-atlas.html"), "utf8");
 
-const block = /\/\/ ATLAS-ENGINE-START[^\n]*\n([\s\S]*?)\/\/ ATLAS-ENGINE-END/.exec(html);
-if (!block) throw new Error("tools/pathway-atlas.html no longer has an ATLAS-ENGINE-START block");
-
-const engine = new Function(
-  block[1] + "\nreturn { buildGraph, buildAtlas, detectLanes, END, familyLabel };",
-)() as {
-  buildGraph: (map: any) => any;
-  buildAtlas: (g: any, start: string, opts?: any) => any;
-  detectLanes: (nodes: any[], edges: any[], opts?: any) => any;
-  END: string;
-  familyLabel: (key: string) => string;
-};
+const engine = { buildGraph, buildAtlas, detectLanes, END, familyLabel };
 
 const E = (from: string, to: string, elasticity = 0.3) => ({
   from, to, effect: elasticity < 0 ? "decreases" : "increases", elasticity,

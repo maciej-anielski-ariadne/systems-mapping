@@ -52,6 +52,8 @@ import "./16j-multi-select-bar";
 import "./17-events";
 import "./17a-search";
 import "./19-export";
+import "./20-atlas-engine";
+import "./21-atlas-view";
 
 // ───── Named imports for the boot sequence ──────────────────────────────────
 import { state } from "./03-state";
@@ -66,6 +68,7 @@ import { loadDataFromCsv } from "./06-data-loader";
 import { renderBuilder } from "./16b-builder-render";
 import { initCanvasEdit, bootEmptyStateGrid } from "./16e-canvas-edit";
 import { applyUiMode } from "./17-events";
+import { initAtlasStage } from "./21-atlas-view";
 
 console.log("Ariadne Maps — canvas-edit ready");
 console.log(
@@ -79,6 +82,7 @@ console.log(
 // One-shot wiring for the canvas direct-edit module: mousemove for ghost
 // cell tracking, document keydown for Delete / Esc, undo toast element.
 initCanvasEdit();
+initAtlasStage();
 
 // Reading mode until told otherwise — applyRestoredUiState re-applies this
 // with the saved choice a moment later.

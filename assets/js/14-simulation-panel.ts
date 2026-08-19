@@ -22,6 +22,7 @@ import { patchDetailPanelValues, renderDetailPanel } from "./15-detail-panel";
 import { saveUiStateToStorage, scheduleUiStateSave } from "./04a-storage";
 import { renderSidebar } from "./13-sidebar";
 import { applyPanelPinnedClasses, setFiltersOpen } from "./17-events";
+import { atlasIsOpen, refreshAtlasValues } from "./21-atlas-view";
 
 export function renderSimulationPanel(): void {
   const simPanel = document.getElementById("simulation-panel");
@@ -250,6 +251,8 @@ function applySimUpdate(nodeId: string, originElement: Element | null): void {
   // can't apply cleanly (a delta label must appear or disappear) do we fall back
   // to a coalesced full render.
   if (!updateSimulationValuesInPlace()) scheduleRender();
+  // The atlas, if it is open, is looking at the same numbers.
+  if (typeof atlasIsOpen === "function" && atlasIsOpen()) refreshAtlasValues();
 }
 
 // Show or hide the feedback-loop warning in the sim panel. The simulation works
@@ -385,6 +388,7 @@ export function toggleSimulationMode(): void {
   if (state.simulationMode && typeof setFiltersOpen === "function") setFiltersOpen(false);
 
   document.body.classList.toggle("sim-mode", state.simulationMode);
+  if (typeof atlasIsOpen === "function" && atlasIsOpen()) refreshAtlasValues();
   renderSidebar();
   render();
   renderDetailPanel();

@@ -84,6 +84,7 @@
   <link rel="stylesheet" href="assets/css/13-search.css">
   <link rel="stylesheet" href="assets/css/14-typeable-dropdown.css">
   <link rel="stylesheet" href="assets/css/15-pathway.css">
+  <link rel="stylesheet" href="assets/css/16-atlas.css">
 </head>
 <body>
 
@@ -291,6 +292,11 @@
       </div>
 
     </div>
+
+    <!-- The pathway atlas — everything downstream of one box, drawn over the
+         map as one picture you zoom into. Filled by 21-atlas-view.ts when a
+         box's "Everything downstream" is opened; empty and hidden otherwise. -->
+    <div id="atlas-stage" class="atlas-stage" hidden></div>
 
     <!-- Pathway mode: the straightened view of the current strand, and the
          route chip that floats over the map. Both are filled by

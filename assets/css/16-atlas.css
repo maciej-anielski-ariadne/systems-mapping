@@ -1,0 +1,342 @@
+/* =============================================================================
+ * PATHWAY ATLAS — everything downstream of one box
+ * -----------------------------------------------------------------------------
+ * The atlas fills the map's own container rather than opening somewhere else,
+ * so going into it and coming back is one place changing rather than two places
+ * to keep track of. Its coordinate space is the picture's, not the screen's:
+ * --z (set in JS on every frame) is how many screen pixels one world unit is
+ * worth, and text / hairlines divide by it so they stay put while the frame
+ * closes in.
+ *
+ * Colours come from the app's tokens: the interactive blue for elements, amber
+ * for feedback (the same amber the map uses for effects), green / orange for
+ * reinforcing / balancing loops.
+ * ========================================================================== */
+
+.atlas-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--gutter) var(--gutter);
+  background: var(--bg-deepest);
+}
+
+.atlas-stage[hidden] { display: none; }
+
+/* The map underneath is still rendered — it just isn't the thing on screen. */
+body.atlas-open .viz-controls-cluster { display: none; }
+
+/* === Legend === */
+.atlas-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  align-items: center;
+  font-size: var(--fs-cap);
+  color: var(--text-tertiary);
+  flex: 0 0 auto;
+}
+
+.atlas-legend b { color: var(--text-secondary); font-weight: var(--fw-semibold); }
+
+.atlas-legend .sw {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  margin-right: var(--space-1_5);
+  vertical-align: -1px;
+}
+
+.sw-el   { background: var(--act); }
+.sw-loop { background: color-mix(in srgb, var(--accent-amber) 55%, transparent);
+           border: 1px solid var(--accent-amber); }
+
+/* === The picture === */
+.atlaswrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-surface);
+  background: var(--bg-deep);
+  overflow: hidden;
+}
+
+svg.atlas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+svg.atlas.inside  { cursor: grab; }
+svg.atlas.panning { cursor: grabbing; }
+
+/* Steps between elements. Thick enough to compare, never thick enough to
+ * become the picture. */
+.atlas .fl {
+  fill: none;
+  stroke: var(--act);
+  opacity: 0.17;
+  stroke-linecap: round;
+  transition: opacity var(--dur-base) ease, stroke var(--dur-base) ease;
+}
+
+.atlas .fl.hot { stroke: var(--accent-amber); opacity: 0.7; }
+.atlas.busy .fl:not(.hot) { opacity: 0.045; }
+
+/* Elements. Area is the measure — the radius is its square root. */
+.atlas .bub { fill: var(--act); opacity: 0.82; transition: opacity var(--dur-base) ease; }
+.atlas .bub.start { fill: var(--act-hi); }
+.atlas .bub.loop {
+  fill: color-mix(in srgb, var(--accent-amber) 55%, transparent);
+  stroke: var(--accent-amber);
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+}
+
+.atlas.busy g.n:not(.on):not(.near) .bub { opacity: 0.16; }
+.atlas g.n { cursor: pointer; }
+.atlas g.n:hover .bub { opacity: 1; }
+.atlas g.n.on .bub {
+  stroke: var(--text-primary);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+  opacity: 1;
+}
+
+/* The browser's own focus ring is a rectangle round a circle; the ring goes on
+ * the circle instead. */
+/* The browser draws a rectangle round a circle, and after a click it is a
+ * plain :focus, not :focus-visible — so both are cleared and the ring is put
+ * on the circle instead. */
+.atlas g.n:focus,
+.atlas g.n:focus-visible { outline: none; }
+.atlas g.n:focus-visible .bub {
+  stroke: var(--act-hi);
+  stroke-width: 3;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Nothing is named until you point at it. */
+.atlas text {
+  font-family: var(--font-ui);
+  font-size: calc(12px / var(--z));
+  fill: var(--text-primary);
+  paint-order: stroke fill;
+  stroke: var(--bg-deep);
+  stroke-width: calc(3.5px / var(--z));
+  stroke-linejoin: round;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-fast) ease;
+}
+
+.atlas g.n:hover > text,
+.atlas g.n.on > text { opacity: 1; }
+.atlas.inside g.n:not(.focus) > text { opacity: 0; }
+
+/* === Inside a tangle: the wheel === */
+.atlas .ch { fill: none; vector-effect: non-scaling-stroke; transition: opacity var(--dur-base) ease; }
+.atlas .ch.fw { stroke: var(--text-tertiary); opacity: 0.2; stroke-width: 0.7; }
+.atlas .ch.bk { opacity: 0.55; }
+.atlas g.n.picked .ch { opacity: 0.07; }
+.atlas g.n.picked .ch.on { opacity: 0.5; }
+
+.atlas .nd {
+  fill: var(--accent-amber);
+  opacity: 0.55;
+  pointer-events: none;
+  transition: opacity var(--dur-base) ease;
+}
+
+.atlas g.n.focus .nd { pointer-events: auto; cursor: pointer; }
+.atlas g.n.focus .nd:hover { fill: var(--text-primary); opacity: 1; }
+.atlas g.n.picked .nd { opacity: 0.18; }
+.atlas g.n.picked .nd.on { opacity: 0.95; }
+.atlas g.n.picked .nd.sel { fill: var(--text-primary); opacity: 1; }
+
+/* Rim labels: named because you asked for THIS box, so they override the
+ * "nothing is named until you point at it" default above. */
+.atlas .bl {
+  font-family: var(--font-ui);
+  font-size: calc(11px / var(--z));
+  fill: var(--text-primary);
+  paint-order: stroke fill;
+  stroke: var(--bg-deep);
+  stroke-width: calc(3.5px / var(--z));
+  stroke-linejoin: round;
+  opacity: 1;
+  pointer-events: none;
+}
+
+/* A loop being drawn round, and the ones already drawn sitting under it. */
+.atlas .trace path,
+.atlas .tl path {
+  fill: none;
+  stroke-width: calc(2.6px / var(--z));
+  stroke-linecap: round;
+}
+
+.atlas .trace { pointer-events: none; }
+.atlas .ch { pointer-events: none; }
+.atlas.inside g.n:not(.focus) { pointer-events: none; }
+.atlas .tl { opacity: 0.95; transition: opacity var(--dur-slow) ease; }
+.atlas .tl.done { opacity: 0.28; }
+
+/* Reinforcing / balancing, in the app's data hues. */
+.atlas { --c1: var(--accent-amber); --c2: var(--act); }
+
+/* === Controls over the picture === */
+.atlas-controls {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  display: flex;
+  gap: var(--space-1_5);
+  z-index: 2;
+}
+
+.atlas-controls .zoomctl { display: flex; gap: var(--space-1_5); }
+.atlas-controls .zoomctl[hidden] { display: none; }
+
+.atlas-btn {
+  font-family: var(--font-mono);
+  font-size: var(--fs-cap);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: var(--pad-button);
+  border-radius: var(--radius-interactive);
+  background: var(--bg-mid);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+
+.atlas-btn:hover { background: var(--act-tint); color: var(--text-primary); }
+
+/* === Arriving === */
+@keyframes atlas-pop  { from { opacity: 0; transform: scale(0.45); } to { opacity: 1; transform: none; } }
+@keyframes atlas-fade { from { opacity: 0; } }
+
+.atlas.reveal g.n {
+  animation: atlas-pop 0.55s cubic-bezier(0.2, 0.85, 0.3, 1) backwards;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.atlas.reveal .fl { animation: atlas-fade 0.9s ease backwards; }
+
+@media (prefers-reduced-motion: reduce) {
+  .atlas.reveal g.n,
+  .atlas.reveal .fl { animation: none; }
+}
+
+/* === The panel, while the atlas owns it === */
+.ins > header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 11px;
+  align-items: baseline;
+  margin-bottom: var(--heading-gap);
+}
+
+.ins > header b { font-size: var(--fs-title); font-weight: var(--fw-semibold); color: var(--text-primary); }
+.ins .m {
+  font-family: var(--font-mono);
+  font-size: var(--fs-cap);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  margin: 5px 0 0;
+}
+
+.ins .cap  { margin: 5px 0 0; font-size: var(--fs-body); color: var(--text-secondary); }
+.ins .cap b { color: var(--text-primary); font-weight: var(--fw-semibold); }
+.ins .lede { margin: 0; font-size: var(--fs-body); color: var(--text-secondary); }
+.ins .hint {
+  margin: 10px 0 0;
+  padding-top: 9px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--fs-cap);
+  color: var(--text-tertiary);
+}
+
+.ins .chain {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 5px;
+  align-items: center;
+  margin: 6px 0 0;
+  font-size: var(--fs-cap);
+}
+
+.ins .chain em {
+  font-style: normal;
+  padding: 1.5px 6px;
+  border-radius: 4px;
+  background: var(--bg-mid);
+  color: var(--text-secondary);
+}
+
+.ins .chain em.head {
+  background: color-mix(in srgb, var(--accent-amber) 26%, transparent);
+  color: var(--text-primary);
+  font-weight: var(--fw-semibold);
+}
+
+.ins .chain i {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: var(--fs-cap);
+  color: var(--text-tertiary);
+}
+
+.ins .wires { display: flex; gap: var(--space-2); align-items: baseline; margin-top: var(--space-2); }
+.ins .wires .k {
+  font-size: var(--fs-cap);
+  letter-spacing: var(--tracking-cap);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  flex: 0 0 88px;
+  text-align: right;
+}
+
+.ins .wires .chain { margin: 0; }
+
+.ins .row-btns { display: flex; flex-wrap: wrap; gap: var(--space-1_5); }
+.ins .btn {
+  font-family: var(--font-mono);
+  font-size: var(--fs-cap);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: var(--pad-button);
+  border-radius: var(--radius-interactive);
+  background: var(--bg-mid);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.ins .btn:hover { background: var(--act-tint); color: var(--text-primary); }
+
+/* === What simulation is doing ===
+ * Colour says which way a place has moved; size still says how much runs
+ * through it. Merit colours (the map's own good / bad) where the boxes agree
+ * on which way is better, plain up / down where they don't. */
+.atlas.simulating g.n.good .bub { fill: var(--status-good); }
+.atlas.simulating g.n.bad  .bub { fill: var(--status-bad); }
+.atlas.simulating g.n.up   .bub { fill: var(--edge-increases); }
+.atlas.simulating g.n.down .bub { fill: var(--edge-decreases); }
+.atlas.simulating g.n.good .bub.loop,
+.atlas.simulating g.n.bad  .bub.loop,
+.atlas.simulating g.n.up   .bub.loop,
+.atlas.simulating g.n.down .bub.loop { fill-opacity: 0.55; }
+.sw-good { background: linear-gradient(90deg, var(--status-bad) 0 50%, var(--status-good) 50% 100%); }
+
+/* The simulation line is written once and shown only while it is true, so
+ * turning the sliders on doesn't have to redraw the picture to explain them. */
+.atlas-legend .sim-only { display: none; }
+body.sim-mode .atlas-legend .sim-only { display: inline; }
