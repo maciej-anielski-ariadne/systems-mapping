@@ -30,9 +30,14 @@
 
  HOW YOU LOOK AT IT. The structure is one thing; the presentation is another.
  Six were prototyped — blocks, strands, a lane grid, one step at a time, a
- nested outline — and Flow won: the whole atlas as one picture, columns for how
- far along a pathway you are, height and thickness for how much runs through.
- Loops sits beside it, on its own tab, until the two are drawn as one picture.
+ nested outline, a flow of bars — and what stayed is one picture: every element
+ a circle whose AREA is the share of readings running through it, left to right
+ for how far along a pathway you are, and nothing named until you point at it.
+
+ A knot of feedback is a circle already, so it is drawn as the wheel it
+ contains. Clicking one closes the frame in on it — a zoom, not a panel — and
+ its loops play through, each drawing itself round and staying while the next
+ one draws. Click a box on its rim to follow that box's own loop.
 
  See tools/PATHWAY-ATLAS.md for how it works and what it was measured against.
 ================================================================================
@@ -199,96 +204,97 @@ ul.members li em{font-style:normal;color:var(--text-tertiary);font-family:var(--
 .el.loop .x{color:var(--accent-amber)}
 .arrow{color:var(--text-tertiary)}
 
-/* ── 1. FLOW ───────────────────────────────────────────────────────────── */
-.flowwrap{overflow-x:auto;overflow-y:hidden;position:relative}
-.flow text{font-family:var(--font-ui);font-size:10.5px;fill:var(--text-secondary)}
-.flow text.big{fill:var(--text-primary);font-weight:600}
-.flow .node{fill:var(--act);opacity:.85}
-.flow .node.loop{fill:var(--accent-amber)}
-.flow .node.start{fill:var(--act-hi)}
-.flow .link{fill:var(--act);opacity:.16}
-.flow .node:hover{opacity:.95}
-.flow g.n{cursor:pointer}
-.flow g.n:focus-visible{outline:none}
-.flow g.n:focus-visible rect{stroke:var(--act-hi);stroke-width:2.5}
-.flow .turn{fill:var(--bg-deepest);font-weight:700;font-size:11px;pointer-events:none}
+/* ── THE PICTURE ───────────────────────────────────────────────────────── */
+.atlaswrap{position:relative;border:1px solid var(--border-subtle);border-radius:var(--r-s);
+  background:var(--bg-deepest);overflow:hidden}
+svg.atlas{display:block;width:100%;height:min(64vh,660px);touch-action:none}
+svg.atlas.zoomed{cursor:grab}
+svg.atlas.panning{cursor:grabbing}
+.atlas .fl{fill:none;stroke:var(--act);opacity:.17;stroke-linecap:round;
+  transition:opacity .22s ease,stroke .22s ease}
+.atlas .fl.hot{stroke:var(--accent-amber);opacity:.7}
+.atlas.busy .fl:not(.hot){opacity:.045}
+.atlas .bub{fill:var(--act);opacity:.82;transition:opacity .22s ease}
+.atlas .bub.start{fill:var(--act-hi)}
+.atlas .bub.loop{fill:color-mix(in srgb,var(--accent-amber) 55%,transparent);
+  stroke:var(--accent-amber);stroke-width:1.2;vector-effect:non-scaling-stroke;
+  transition:fill .3s ease}
+.atlas g.n.focus .bub.loop{fill:color-mix(in srgb,var(--accent-amber) 13%,transparent)}
+.atlas.busy g.n:not(.on):not(.near) .bub{opacity:.16}
+.atlas g.n{cursor:pointer}
+.atlas g.n:hover .bub{opacity:1}
+.atlas g.n.on .bub{stroke:var(--text-primary);stroke-width:2;vector-effect:non-scaling-stroke;opacity:1}
+/* Chrome draws its own rectangle round a focused <g>, which on a picture of
+   circles reads as a bug. The ring is put on the circle instead. */
+.atlas g.n:focus,.atlas g.n:focus-visible{outline:none}
+.atlas g.n:focus-visible .bub{stroke:var(--act-hi);stroke-width:3;vector-effect:non-scaling-stroke}
 
-/* One tangle opened where it stands. The rest of the picture stays put and
-   fades back; the ribbons into and out of the tangle come forward, so what is
-   on screen is the feedback AND where in the flow it sits. */
-.flow.opened .link{opacity:.05}
-.flow.opened .link.hot{fill:var(--accent-amber);opacity:.55}
-.flow.opened .node:not(.open){opacity:.3}
-.flow.opened text{opacity:.45}
-.flow.opened g.open text{opacity:1}
-.flow .node.open{stroke:var(--text-primary);stroke-width:2;opacity:1}
-.flow .lead{stroke:var(--accent-amber);stroke-width:2;fill:none;opacity:.8}
-.flow .leadend{fill:var(--accent-amber)}
+/* Nothing is named until you point at it. A hundred names at once is fog. */
+.atlas text{font-family:var(--font-ui);font-size:calc(12px / var(--z));fill:var(--text-primary);
+  paint-order:stroke fill;stroke:var(--bg-deepest);stroke-width:calc(3.5px / var(--z));
+  stroke-linejoin:round;opacity:0;pointer-events:none;transition:opacity .15s ease}
+.atlas g.n:hover>text,.atlas g.n.on>text{opacity:1}
+.atlas.inside g.n:not(.focus)>text{opacity:0}
+/* inside a tangle, the rest of the map is scenery — clicking through it would
+   take you somewhere you did not ask to go */
+.atlas.inside g.n:not(.focus){pointer-events:none}
+/* what feeds the tangle is context once you are inside it, not the subject */
+.atlas.inside .fl.hot{opacity:.3}
 
-.loopdrawer{position:absolute;z-index:5;background:var(--bg-deepest);overscroll-behavior:contain;
-  border:1px solid var(--accent-amber);border-radius:var(--r-s);
-  box-shadow:var(--shadow-float);padding:11px 12px 12px;overflow:auto}
-.loopdrawer>header{display:flex;align-items:baseline;gap:8px;margin-bottom:3px}
-.loopdrawer>header b{font-size:13.5px;flex:1 1 auto}
-.loopdrawer .m{font-family:var(--font-mono);font-size:10.5px;color:var(--text-tertiary);
-  font-variant-numeric:tabular-nums;margin:0}
-.loopdrawer .ctx{margin:5px 0 0;font-size:12px;color:var(--text-secondary)}
-.loopdrawer .ctx b{font-weight:600;color:var(--text-primary)}
-.loopdrawer .drawerloops{display:grid;gap:9px;margin-top:9px}
-.loopdrawer .loopcard{background:var(--bg-deep)}
-.closex{background:none;border:0;color:var(--text-tertiary);font:inherit;font-size:12px;
-  cursor:pointer;padding:2px 5px;border-radius:4px;flex:none}
-.closex:hover{background:var(--bg-mid);color:var(--text-primary)}
+/* the wheel a tangle is drawn as, at every zoom */
+.atlas .ch{fill:none;vector-effect:non-scaling-stroke;transition:opacity .22s ease;pointer-events:none}
+.atlas .ch.fw{stroke:var(--text-tertiary);opacity:.2;stroke-width:.7}
+.atlas .ch.bk{opacity:.55}
+.atlas g.n.picked .ch{opacity:.07}
+.atlas g.n.picked .ch.on{opacity:.5}
+.atlas .nd{fill:var(--accent-amber);opacity:.55;pointer-events:none;transition:opacity .2s ease}
+.atlas g.n.focus .nd{pointer-events:auto;cursor:pointer}
+.atlas g.n.focus .nd:hover{fill:var(--text-primary);opacity:1}
+.atlas g.n.picked .nd{opacity:.18}
+.atlas g.n.picked .nd.on{opacity:.95}
+.atlas g.n.picked .nd.sel{fill:var(--text-primary);opacity:1}
+.atlas .bl{font-family:var(--font-ui);font-size:calc(11px / var(--z));fill:var(--text-primary);
+  paint-order:stroke fill;stroke:var(--bg-deepest);stroke-width:calc(3.5px / var(--z));
+  stroke-linejoin:round;opacity:1;pointer-events:none}
+.atlas .trace{pointer-events:none}
+.atlas .ch{pointer-events:none}
+.atlas .trace path,.atlas .tl path{fill:none;stroke-width:calc(2.6px / var(--z));stroke-linecap:round}
+.atlas .tl{opacity:.95;transition:opacity .5s ease}
+.atlas .tl.done{opacity:.28}
 
-/* ── 1b. CIRCLES ───────────────────────────────────────────────────────── */
-.circ text{font-family:var(--font-ui);font-size:10.5px;fill:var(--text-secondary);
-  paint-order:stroke fill;stroke:var(--bg-deepest);stroke-width:3px;stroke-linejoin:round}
-.circ text.big{fill:var(--text-primary);font-weight:600}
-.circ .bub{fill:var(--act);opacity:.8}
-.circ .bub.start{fill:var(--act-hi)}
-.circ .bub.loop{fill:color-mix(in srgb,var(--accent-amber) 60%,transparent);
-  stroke:var(--accent-amber);stroke-width:1.4}
-.circ .flowline{fill:none;stroke:var(--act);opacity:.2;stroke-linecap:round}
-.circ g.n{cursor:pointer}
-.circ g.n:hover .bub{opacity:1}
-.circ .mini{fill:none;stroke:var(--accent-amber);opacity:.75;stroke-width:1}
-.circ .minid{fill:var(--accent-amber);opacity:.5}
-.circ.opened .flowline{opacity:.05}
-.circ.opened .flowline.hot{stroke:var(--accent-amber);opacity:.6}
-.circ.opened .bub:not(.open){opacity:.22}
-.circ.opened text{opacity:.4}
-.circ.opened g.open text{opacity:1}
-.circ .bub.open{stroke:var(--text-primary);stroke-width:2;opacity:1}
+.zoomctl{position:absolute;top:10px;left:10px;display:flex;gap:6px;z-index:2}
+.zoomctl[hidden]{display:none}
 
-/* ── the wheel ─────────────────────────────────────────────────────────── */
-svg.wheel{display:block;margin:2px auto 0;touch-action:manipulation}
-svg.wheel .ch{fill:none;transition:opacity .18s ease}
-svg.wheel .fw{stroke:var(--text-tertiary);opacity:.22;stroke-width:.7}
-svg.wheel .nd{fill:var(--act);cursor:pointer;transition:opacity .18s ease}
-svg.wheel .nd:hover{stroke:var(--text-primary);stroke-width:1.5}
-svg.wheel .nd.on{fill:var(--accent-amber)}
-svg.wheel .nd.sel{fill:var(--text-primary);stroke:var(--bg-deepest);stroke-width:2}
-svg.wheel .bl{font-family:var(--font-ui);font-size:9px;fill:var(--text-tertiary)}
-svg.wheel .bl.on{fill:var(--text-primary);font-weight:600}
-svg.wheel.picked .ch{opacity:.06}
-svg.wheel.picked .ch.on{opacity:.5}
-svg.wheel.picked .nd{opacity:.28}
-svg.wheel.picked .nd.on,svg.wheel.picked .nd.sel{opacity:1}
-svg.wheel .trace path{fill:none;stroke-linecap:round}
-svg.wheel .hub{fill:var(--text-tertiary);font-family:var(--font-mono);font-size:10px;text-anchor:middle}
+@keyframes atlas-pop{from{opacity:0;transform:scale(.45)}to{opacity:1;transform:none}}
+@keyframes atlas-fade{from{opacity:0}}
+.atlas.reveal g.n{animation:atlas-pop .55s cubic-bezier(.2,.85,.3,1) backwards;
+  transform-box:fill-box;transform-origin:center}
+.atlas.reveal .fl{animation:atlas-fade .9s ease backwards}
 
-.wheelfoot{margin-top:8px;border-top:1px solid var(--border-subtle);padding-top:9px}
-.wheelfoot select{width:100%;background:var(--bg-deepest);color:var(--text-primary);
-  border:1px solid var(--border-strong);border-radius:var(--r-i);padding:5px 7px;font:inherit;font-size:12px}
-.wheelfoot .cap{margin:8px 0 0;font-size:12.5px;color:var(--text-secondary)}
-.wheelfoot .cap b{color:var(--text-primary)}
-.wheelfoot .chain{margin:6px 0 0;font-size:11.5px;color:var(--text-secondary);
-  display:flex;flex-wrap:wrap;gap:3px 5px;align-items:center}
-.wheelfoot .chain i{font-style:normal;font-family:var(--font-mono);font-size:10.5px;color:var(--text-tertiary)}
-.wheelfoot .chain em{font-style:normal;padding:1px 5px;border-radius:4px;background:var(--bg-mid)}
-.wheelfoot .chain em.head{background:color-mix(in srgb,var(--accent-amber) 26%,transparent)}
+/* ── THE INSPECTOR ─────────────────────────────────────────────────────── */
+.inspector{margin-top:12px}
+.ins{border:1px solid var(--border-subtle);border-radius:var(--r-s);background:var(--bg-deep);
+  padding:12px 14px}
+.ins>header{display:flex;flex-wrap:wrap;gap:3px 11px;align-items:baseline;margin-bottom:5px}
+.ins>header b{font-size:14.5px;font-weight:600}
+.ins .m{font-family:var(--font-mono);font-size:11px;color:var(--text-tertiary);
+  font-variant-numeric:tabular-nums;margin:5px 0 0}
+.ins .cap{margin:5px 0 0;font-size:13px;color:var(--text-secondary)}
+.ins .cap b{color:var(--text-primary);font-weight:600}
+.ins .lede{margin:0;font-size:13px;max-width:82ch}
+.ins .hint{margin:10px 0 0;padding-top:9px;border-top:1px solid var(--border-subtle);max-width:82ch}
+.ins .chain{display:flex;flex-wrap:wrap;gap:3px 5px;align-items:center;margin:6px 0 0;font-size:11.5px}
+.ins .chain em{font-style:normal;padding:1.5px 6px;border-radius:4px;background:var(--bg-mid);
+  color:var(--text-secondary)}
+.ins .chain em.head{background:color-mix(in srgb,var(--accent-amber) 26%,transparent);
+  color:var(--text-primary);font-weight:600}
+.ins .chain i{font-style:normal;font-family:var(--font-mono);font-size:10.5px;color:var(--text-tertiary)}
+.ins .wires{display:flex;gap:10px;align-items:baseline;margin-top:8px}
+.ins .wires .k{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--text-tertiary);
+  flex:0 0 88px;text-align:right}
+.ins .wires .chain{margin:0}
 
-/* ── 2. LOOPS ──────────────────────────────────────────────────────────── */
+/* ── LOOPS (the index) ──────────────────────────────────────────────────────────── */
 .loopgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(292px,1fr));gap:12px}
 .loopcard{border:1px solid var(--border-subtle);border-left:4px solid var(--c2);
   border-radius:var(--r-s);background:var(--bg-deep);padding:10px 12px 12px}
@@ -354,8 +360,7 @@ svg.ring .rb.r{fill:var(--c1)}
     <div class="stats" id="stats"></div>
     <div id="warn"></div>
     <nav class="views" id="views" role="tablist" aria-label="How to read the atlas">
-      <button role="tab" data-v="flow">Flow</button>
-      <button role="tab" data-v="circles">Circles</button>
+      <button role="tab" data-v="atlas">The map</button>
       <button role="tab" data-v="loops">Loops</button>
     </nav>
     <p class="viewnote" id="viewnote"></p>
@@ -1365,9 +1370,14 @@ function gatherFeedback(nodes) {
 // Both are driven by exactly the same atlas — nothing is recomputed or
 // approximated per view, so switching between them cannot change the answer.
 // ===========================================================================
-let G = null, ATLAS = null, START = null, QUERY = "", VIEW = "flow";
+let G = null, ATLAS = null, START = null, QUERY = "", VIEW = "atlas";
 let LOOP_SORT = "gain";   // Loops: how the cards are ordered
-let OPEN_LOOP = null;     // Flow: which tangle is unfurled where it stands
+const CHAIN_MAX = 7;      // boxes named under a loop; the rest are on the wheel
+const WHEELS = new Map(); // one wheel layout per tangle, built when first drawn
+let WHEEL_PICK = null;    // the box being explained inside a tangle
+let WHEEL_LOOP = 0;       // which of its loops, when it has several
+let WHEEL_TANGLE = null;  // the tangle that box belongs to
+let traceRAF = 0;
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -1407,21 +1417,48 @@ function measure(A) {
 const pct = f => (f >= 0.1 ? (f * 100).toFixed(0) : f >= 0.001 ? (f * 100).toFixed(1) : "<0.1") + "%";
 
 // ---------------------------------------------------------------------------
-// 1. FLOW — the whole thing as one picture
+// THE PICTURE — circles, and a zoom into the feedback
 // ---------------------------------------------------------------------------
-// Columns are how far along a pathway you are; the height of a block and the
-// thickness of a ribbon are how much runs through it. Nothing to read in order:
-// the shape of the answer is the picture.
+// One drawing, one measure. Every element is a circle whose AREA is how much of
+// everything runs through it; every step is a line of the same thickness rule.
+// Left to right is how far along a pathway you are — the only thing on the page
+// that says which way round the story goes.
 //
-// Feedback opens where it stands. A tangle is one amber block, and clicking it
-// unfurls its loops beside it rather than sending you to another tab: the
-// picture stays exactly where it was, the ribbons into and out of the tangle
-// come forward in amber, and everything else fades back. Feedback read on its
-// own is a diagram; feedback read next to what feeds it is an explanation.
+// A tangle of feedback is a circle already, so it is drawn as the wheel it
+// contains: its boxes round the rim, its loops as chords across the middle. It
+// is not a link to another view, it IS the other view, seen from far away. So
+// opening one is a zoom — the picture stays put and the frame closes in — and
+// there is no panel floating over the map to lose your place behind.
+//
+// Nothing is labelled until you point at it. A hundred names on screen at once
+// is not information, it is fog.
 // ---------------------------------------------------------------------------
-const DRAWER_W = 520;
-function viewFlow(A, M) {
-  const COL_W = 190, PAD = 26, H = Math.max(520, Math.min(1100, A.elements * 7));
+const WORLD_H = 900;          // the picture's own coordinate space
+const MAX_R = 62;             // radius of the busiest element
+const TOUR_MAX = 14;          // loops played through on entering a tangle
+const REVEAL = 900;           // how long the picture takes to draw itself in
+
+let WORLD = null;             // where everything is, in world coordinates
+let FOCUS = null;             // the tangle we are inside
+let SELECT = null;            // the element being explained
+let VB = null;                // the frame we are looking through
+let vbRAF = 0, tourRAF = 0, tourAt = -1;
+
+const reduced = () =>
+  typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function wheelFor(id, t) {
+  if (!WHEELS.has(id)) WHEELS.set(id, wheelOf(t));
+  return WHEELS.get(id);
+}
+
+// A chord bowed toward the middle, so two links between distant boxes do not
+// lie on top of each other.
+const chordPath = (x1, y1, x2, y2, cx, cy, pull) =>
+  `M${x1.toFixed(1)} ${y1.toFixed(1)}Q${(cx + (x1 + x2 - 2 * cx) * pull).toFixed(1)} ${
+    (cy + (y1 + y2 - 2 * cy) * pull).toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`;
+
+function viewAtlas(A, M) {
   const cols = [];
   for (const [id] of A.nodes) {
     if (id === END) continue;
@@ -1432,209 +1469,32 @@ function viewFlow(A, M) {
   const used = cols.filter(Boolean);
   if (!used.length) return `<p class="busy">Nothing to draw.</p>`;
 
-  // Order each column near the average height of what feeds it, twice over, so
-  // the ribbons cross as little as they are going to without real effort.
-  const y = new Map(), h = new Map();
-  const place = () => {
-    for (const col of used) {
-      const totalW = col.reduce((a, id) => a + Math.max(M.weight(id), 0.0004), 0);
-      const gap = Math.min(9, (H - 2 * PAD) / (col.length * 2 + 1));
-      const avail = H - 2 * PAD - gap * (col.length - 1);
-      let cur = PAD;
-      for (const id of col) {
-        const hh = Math.max(5, (Math.max(M.weight(id), 0.0004) / totalW) * avail);
-        y.set(id, cur); h.set(id, hh);
-        cur += hh + gap;
-      }
-    }
-  };
-  place();
-  for (let pass = 0; pass < 2; pass++) {
-    for (let c = 1; c < used.length; c++) {
-      used[c].sort((a, b) => bary(a) - bary(b));
-    }
-    place();
-  }
-  function bary(id) {
-    const ps = [...A.pred.get(id)].filter(p => y.has(p));
-    if (!ps.length) return y.get(id) || 0;
-    return ps.reduce((s, p) => s + (y.get(p) + h.get(p) / 2), 0) / ps.length;
-  }
-
-  const W = PAD + used.length * COL_W;
-  const parts = [];
-  const open = OPEN_LOOP && A.nodes.has(OPEN_LOOP) && A.nodes.get(OPEN_LOOP).loop ? OPEN_LOOP : null;
-  // Ribbons first, so the blocks sit on top of them.
-  for (const [a, outs] of A.succ) {
-    if (a === END || !y.has(a)) continue;
-    let offA = 0;
-    for (const b of outs) {
-      if (b === END || !y.has(b)) continue;
-      const w = M.linkWeight(a, b);
-      const t = Math.max(1.2, w * (H - 2 * PAD) * 0.9);
-      const x1 = PAD + M.depth.get(a) * COL_W + 13;
-      const x2 = PAD + M.depth.get(b) * COL_W;
-      const y1 = y.get(a) + Math.min(offA + t / 2, h.get(a));
-      const y2 = y.get(b) + h.get(b) / 2;
-      const mx = (x1 + x2) / 2;
-      offA += t;
-      parts.push(`<path class="link${open && (a === open || b === open) ? " hot" : ""}" d="M${x1} ${y1 - t / 2}C${mx} ${y1 - t / 2} ${mx} ${y2 - t / 2} ${x2} ${y2 - t / 2}` +
-        `L${x2} ${y2 + t / 2}C${mx} ${y2 + t / 2} ${mx} ${y1 + t / 2} ${x1} ${y1 + t / 2}Z"></path>`);
-    }
-  }
-  for (const col of used) for (const id of col) {
-    const node = A.nodes.get(id);
-    const x = PAD + M.depth.get(id) * COL_W;
-    const hh = h.get(id), yy = y.get(id), w = M.weight(id);
-    const cls = "node" + (id === A.start ? " start" : node.loop ? " loop" : "") +
-      (id === open ? " open" : "");
-    const showLabel = hh >= 11;
-    // A tangle is a button, and says so, because the one thing you can do to
-    // this picture is open one.
-    const act = node.loop
-      ? ` tabindex="0" role="button" aria-expanded="${id === open}"` +
-        ` aria-label="Feedback: ${node.boxes.length} boxes. Open its loops."`
-      : "";
-    parts.push(`<g class="n${id === open ? " open" : ""}" data-el="${esc(id)}"${
-        node.loop ? ' data-loop="1"' : ""} data-w="${pct(w)}"${act}>` +
-      `<rect class="${cls}" x="${x}" y="${yy}" width="13" height="${hh}" rx="3"></rect>` +
-      (node.loop && hh < 16
-        ? `<rect fill="transparent" x="${x - 4}" y="${yy + hh / 2 - 9}" width="21" height="18"></rect>` : "") +
-      (node.loop && hh >= 17 ? `<text class="turn" x="${x + 6.5}" y="${yy + hh / 2 + 4}" text-anchor="middle">↻</text>` : "") +
-      (showLabel && id !== open
-        ? `<text class="${hh > 20 ? "big" : ""}" x="${x + 19}" y="${yy + hh / 2 + 3.5}">` +
-          (node.loop ? "↻ " : "") + esc(clip(node.label, 22)) +
-          (node.boxes.length > 1 && !node.loop ? " ×" + node.boxes.length : "") + `</text>`
-        : "") + `</g>`);
-  }
-
-  // The drawer is placed in the picture's own coordinates — the SVG is drawn at
-  // 1 unit per pixel and shares the wrapper's scroll — so it stays pinned to
-  // its block rather than floating over the middle of the screen.
-  let drawer = "", wrapStyle = "";
-  if (open) {
-    const bx = PAD + M.depth.get(open) * COL_W, by = y.get(open), bh = h.get(open);
-    const toRight = bx + 56 + DRAWER_W <= W - 4;
-    const px = toRight ? bx + 56 : Math.max(6, bx - 44 - DRAWER_W);
-    // The wheel wants more height than a short map's picture has. Rather than
-    // squeezing it, the drawer keeps its size and the wrapper grows to hold it
-    // — see fitDrawer, which measures the real thing once it is in the page.
-    const dh = 860;
-    const py = Math.max(10, Math.min(Math.max(10, H - dh - 10), by + bh / 2 - dh / 2));
-    const sx = toRight ? bx + 13 : bx, sy = by + bh / 2;
-    const ex = toRight ? px : px + DRAWER_W;
-    const ey = Math.max(py + 22, Math.min(py + dh - 22, sy));
-    const mx = (sx + ex) / 2;
-    parts.push(`<path class="lead" d="M${sx} ${sy}C${mx} ${sy} ${mx} ${ey} ${ex} ${ey}"></path>`);
-    parts.push(`<circle class="leadend" cx="${sx}" cy="${sy}" r="3.5"></circle>`);
-    drawer = loopDrawer(open, A, `left:${px}px;top:${py}px;width:${DRAWER_W}px;max-height:${dh}px`);
-    wrapStyle = ` style="min-height:${py + dh + 14}px"`;
-  }
-
-  return `<div class="legend">
-      <span><i style="background:var(--act)"></i>an element — height is how much of everything runs through it</span>
-      <span><i style="background:var(--accent-amber)"></i>↻ feedback — click it to open its loops here</span>
-      <span>ribbon thickness is the same measure, for a step</span>
-    </div>
-    <div class="flowwrap"${wrapStyle}><svg class="flow${open ? " opened" : ""}" width="${W}" height="${H}" role="img"
-      aria-label="Flow diagram of every pathway downstream of ${esc(labelOf(A.start))}">${parts.join("")}</svg>${drawer}</div>`;
-}
-
-// What a tangle is, where it sits, and every loop in it — beside the block it
-// belongs to. The ways in and out are named from the picture itself, so the
-// answer to "what feeds this" is in the same panel as "what goes round".
-function loopDrawer(id, A, style) {
-  const node = A.nodes.get(id);
-  const t = node.tangles[0];
-  // One element can stand for the same tangle in several lanes. The wheel is
-  // one copy's worth — saying "2 boxes" of an element covering four copies of
-  // them would be wrong, and summing them into "8 boxes" would be wronger.
-  const copies = node.tangles.length;
-  const sum = k => node.tangles.reduce((a, x) => a + (Array.isArray(x[k]) ? x[k].length : x[k]), 0);
-  const w = wheelFor(id, t);
-  WHEEL_TANGLE = t;
-  const r = w.loops.filter(l => l.reinforcing).length;
-  const names = set => {
-    const list = [...set].filter(x => x !== END).map(labelOf);
-    if (!list.length) return "";
-    return list.slice(0, 2).map(n => `<b>${esc(clip(n, 22))}</b>`).join(", ") +
-      (list.length > 2 ? ` +${list.length - 2}` : "");
-  };
-  const from = names(A.pred.get(id) || new Set()), to = names(A.succ.get(id) || new Set());
-  const byLoops = [...t.boxes].sort((a, b) => (w.share.get(b) - w.share.get(a)) ||
-    (boxLabel(a) < boxLabel(b) ? -1 : 1));
-  return `<aside class="loopdrawer" style="${style}">
-    <header><b>↻ Feedback here</b>
-      <button class="closex" type="button" data-closeloop>Close</button></header>
-    <p class="m">${t.boxes.length} ${plural(t.boxes.length, "box", "boxes")}${
-      copies > 1 ? ` in each of ${copies} places` : ""} · ${w.back.length}
-      ${plural(w.back.length, "link")} back · ${r}R / ${w.loops.length - r}B${
-      t.independent > w.loops.length ? ` · ${t.independent} independent` : ""}</p>
-    <p class="ctx">${from ? `From ${from}.` : "Nothing upstream in this scope."}
-      ${to ? `Into ${to}.` : "Nothing leaves it."}
-      <span class="m">${sum("waysIn")} in, ${sum("waysOut")} out${
-        sum("contradictory") ? ` · ${sum("contradictory")} contradictory` : ""}</span></p>
-    ${wheelSvg(w)}
-    <div class="wheelfoot">
-      <select id="wheel-pick" aria-label="Pick a box in the tangle">
-        <option value="">Pick a box — or click one on the rim</option>
-        ${byLoops.map(b => `<option value="${esc(b)}"${b === WHEEL_PICK ? " selected" : ""}>${
-          esc(clip(boxLabel(b), 40))} — in ${w.share.get(b)} ${plural(w.share.get(b), "loop")}</option>`).join("")}
-      </select>
-      <div id="wheel-cap"></div>
-    </div>
-  </aside>`;
-}
-
-// ---------------------------------------------------------------------------
-// 1b. CIRCLES — the same atlas, drawn as area rather than height
-// ---------------------------------------------------------------------------
-// Flow says how much runs through an element with the height of a bar. This
-// says it with the area of a circle. The reason to prefer it is not the
-// encoding — a bar is easier to compare than a disc — but the shape: a tangle
-// of feedback IS a circle, so here it can be drawn as a small wheel sitting in
-// the flow, and opening it is a zoom rather than a change of subject.
-//
-// Left-to-right is still how far along a pathway you are. That much is worth
-// keeping: it is the only thing on the page that says which way round the
-// story goes.
-// ---------------------------------------------------------------------------
-const MINI_RIM = 26;      // rim dots on a tangle drawn small
-const MINI_CH = 12;       // and chords across it
-
-function viewCircles(A, M) {
-  const COL_W = 162, PAD = 34, H = Math.max(520, Math.min(1150, A.elements * 7));
-  const open = OPEN_LOOP && A.nodes.has(OPEN_LOOP) && A.nodes.get(OPEN_LOOP).loop ? OPEN_LOOP : null;
-  const cols = [];
-  for (const [id] of A.nodes) {
-    if (id === END) continue;
-    const d = M.depth.get(id);
-    if (d === undefined) continue;
-    (cols[d] || (cols[d] = [])).push(id);
-  }
-  const used = cols.filter(Boolean);
-  if (!used.length) return `<p class="busy">Nothing to draw.</p>`;
+  const H = WORLD_H, PAD = 40;
+  const COL_W = Math.max(56, Math.min(300, 1900 / Math.max(1, used.length)));
+  const W = PAD * 2 + (used.length - 1) * COL_W;
 
   // Area is the measure, so the radius is its square root. One scale for the
   // whole picture, set by whichever column is fullest — otherwise two circles
   // of the same size in different columns would mean different things.
-  const sq = id => Math.sqrt(Math.max(M.weight(id), 0.000015));
+  const sq = id => Math.sqrt(Math.max(M.weight(id), 0.000012));
   let k = Infinity;
   for (const col of used) {
     const sum = col.reduce((a, id) => a + sq(id), 0);
-    k = Math.min(k, (H - 2 * PAD - 6 * (col.length - 1)) / (2 * sum));
+    k = Math.min(k, (H - 2 * PAD - 5 * (col.length - 1)) / (2 * sum));
   }
-  k = Math.min(k, 52 / Math.max(...used.flat().map(sq)));
-  const rOf = id => Math.max(2.6, k * sq(id));
+  k = Math.min(k, MAX_R / Math.max(...used.flat().map(sq)));
+  const rOf = new Map(used.flat().map(id => [id, Math.max(2.4, k * sq(id))]));
 
   const y = new Map();
   const place = () => {
     for (const col of used) {
-      const need = col.reduce((a, id) => a + 2 * rOf(id), 0);
+      const need = col.reduce((a, id) => a + 2 * rOf.get(id), 0);
       const room = H - 2 * PAD - need;
-      const gap = Math.max(3, Math.min(26, room / Math.max(1, col.length - 1)));
+      // Spread a column across the frame rather than huddling it in the middle —
+      // the empty half of the picture was telling the reader nothing.
+      const gap = Math.max(4, Math.min(78, room / Math.max(1, col.length - 1)));
       let cur = PAD + Math.max(0, (room - gap * (col.length - 1)) / 2);
-      for (const id of col) { y.set(id, cur + rOf(id)); cur += 2 * rOf(id) + gap; }
+      for (const id of col) { y.set(id, cur + rOf.get(id)); cur += 2 * rOf.get(id) + gap; }
     }
   };
   place();
@@ -1646,230 +1506,480 @@ function viewCircles(A, M) {
     for (let c = 1; c < used.length; c++) used[c].sort((a, b) => bary(a) - bary(b));
     place();
   }
-  const x = id => PAD + M.depth.get(id) * COL_W + 26;
+  const at = new Map(used.flat().map(id => [id, [PAD + M.depth.get(id) * COL_W, y.get(id)]]));
+  WORLD = { W, H, at, rOf, A, M };
 
   const parts = [];
   for (const [a, outs] of A.succ) {
-    if (a === END || !y.has(a)) continue;
+    if (a === END || !at.has(a)) continue;
     for (const b of outs) {
-      if (b === END || !y.has(b)) continue;
-      const x1 = x(a) + rOf(a), x2 = x(b) - rOf(b), y1 = y.get(a), y2 = y.get(b);
-      // A line as wide as the circles it joins stops reading as a line. Thick
-      // enough to compare, never thick enough to become the picture.
-      const t = Math.max(0.6, Math.min(26, 0.9 * Math.min(rOf(a), rOf(b)),
-        M.linkWeight(a, b) * H * 0.55));
-      const mx = (x1 + x2) / 2;
-      parts.push(`<path class="flowline${open && (a === open || b === open) ? " hot" : ""}"
-        stroke-width="${t.toFixed(2)}" d="M${x1.toFixed(1)} ${y1.toFixed(1)}C${mx.toFixed(1)} ${
-        y1.toFixed(1)} ${mx.toFixed(1)} ${y2.toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}"></path>`);
+      if (b === END || !at.has(b)) continue;
+      const [ax, ay] = at.get(a), [bx, by] = at.get(b);
+      const x1 = ax + rOf.get(a), x2 = bx - rOf.get(b), mx = (x1 + x2) / 2;
+      // A line as wide as the circles it joins stops being a line. Thick enough
+      // to compare, never thick enough to become the picture.
+      const t = Math.max(0.7, Math.min(24, 0.85 * Math.min(rOf.get(a), rOf.get(b)),
+        M.linkWeight(a, b) * H * 0.5));
+      parts.push(`<path class="fl" data-a="${esc(a)}" data-b="${esc(b)}" stroke-width="${t.toFixed(2)}"
+        d="M${x1.toFixed(1)} ${ay.toFixed(1)}C${mx.toFixed(1)} ${ay.toFixed(1)} ${
+        mx.toFixed(1)} ${by.toFixed(1)} ${x2.toFixed(1)} ${by.toFixed(1)}"></path>`);
     }
   }
-  for (const col of used) for (const id of col) {
-    const node = A.nodes.get(id), r = rOf(id), cx = x(id), cy = y.get(id);
-    const cls = "bub" + (id === A.start ? " start" : node.loop ? " loop" : "") + (id === open ? " open" : "");
-    const act = node.loop
-      ? ` tabindex="0" role="button" aria-expanded="${id === open}"` +
-        ` aria-label="Feedback: ${node.boxes.length} boxes. Open its wheel."`
-      : "";
-    parts.push(`<g class="n${id === open ? " open" : ""}" data-el="${esc(id)}"${
-        node.loop ? ' data-loop="1"' : ""} data-w="${pct(M.weight(id))}"${act}>` +
+  for (const id of used.flat()) {
+    const node = A.nodes.get(id), r = rOf.get(id), [cx, cy] = at.get(id);
+    const cls = "bub" + (id === A.start ? " start" : node.loop ? " loop" : "");
+    parts.push(`<g class="n${node.loop ? " tangle" : ""}" data-el="${esc(id)}"${
+        node.loop ? ' data-loop="1"' : ""} tabindex="0" role="button"
+        aria-label="${esc(node.label)}, ${pct(M.weight(id))} of everything${
+          node.loop ? ". Feedback — opens as a wheel" : ""}">` +
       `<circle class="${cls}" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}"></circle>` +
-      (node.loop ? miniWheel(node, cx, cy, r) : "") +
-      // A big circle's name goes underneath it. Beside it, the name of a large
-      // element runs straight through whatever sits in the next column.
-      (r >= 7 || id === A.start
-        ? (r >= 18
-            ? `<text class="big" x="${cx.toFixed(1)}" y="${(cy + r + 15).toFixed(1)}" text-anchor="middle">${
-                node.loop ? "↻ " : ""}${esc(clip(node.label, 26))}${
-                node.boxes.length > 1 && !node.loop ? " ×" + node.boxes.length : ""}</text>`
-            : `<text x="${(cx + r + 6).toFixed(1)}" y="${(cy + 3.5).toFixed(1)}">${
-                node.loop ? "↻ " : ""}${esc(clip(node.label, 20))}${
-                node.boxes.length > 1 && !node.loop ? " ×" + node.boxes.length : ""}</text>`)
-        : "") + `</g>`);
+      (node.loop ? tangleWheel(node, cx, cy, r) : "") +
+      `<text x="${cx.toFixed(1)}" y="${(cy + r + 15).toFixed(1)}" text-anchor="middle">${
+        node.loop ? "↻ " : ""}${esc(clip(node.label, 30))}${
+        node.boxes.length > 1 && !node.loop ? " ×" + node.boxes.length : ""}</text></g>`);
   }
 
-  const W = PAD + used.length * COL_W + 130;
-  let drawer = "", wrapStyle = "";
-  if (open) {
-    const spot = anchorDrawer(x(open) + rOf(open), y.get(open), W, H, parts);
-    drawer = loopDrawer(open, A, spot.style);
-    wrapStyle = ` style="min-height:${spot.need}px"`;
-  }
   return `<div class="legend">
-      <span><i style="background:var(--act);border-radius:50%"></i>an element — its <b>area</b> is how much of everything runs through it</span>
-      <span><i style="background:color-mix(in srgb,var(--accent-amber) 60%,transparent);border-radius:50%"></i>↻ a tangle, drawn as the wheel it opens into</span>
-      <span>line thickness is the same measure, for a step</span>
+      <span><i style="background:var(--act);border-radius:50%"></i>an element — its <b>area</b> is
+        the share of readings that pass through it</span>
+      <span><i style="background:color-mix(in srgb,var(--accent-amber) 60%,transparent);border-radius:50%;
+        border:1px solid var(--accent-amber)"></i>↻ feedback — click to go inside it</span>
+      <span>point at anything to name it · drag to move · ${
+        pctNote()}</span>
     </div>
-    <div class="flowwrap"${wrapStyle}><svg class="circ${open ? " opened" : ""}" width="${W}" height="${H}"
-      role="img" aria-label="Every pathway downstream of ${esc(labelOf(A.start))}, drawn as circles">${
-      parts.join("")}</svg>${drawer}</div>`;
+    <div class="atlaswrap">
+      <svg class="atlas" viewBox="0 0 ${W} ${H}" style="--z:1" role="application"
+        aria-label="Every pathway downstream of ${esc(labelOf(A.start))}">${parts.join("")}</svg>
+      <div class="zoomctl" id="zoomctl" hidden>
+        <button class="btn" type="button" data-zoomout>← Back out</button>
+        <button class="btn" type="button" data-replay>Replay the loops</button>
+      </div>
+    </div>
+    <div class="inspector" id="inspector"></div>`;
 }
 
-// A tangle is a circle already, so draw it as the wheel it opens into: the
-// same rim, the same chords across the middle, sampled down to what fits.
-function miniWheel(node, cx, cy, r) {
-  if (r < 13 || !node.tangles.length) return "";
-  const w = wheelFor(node.id, node.tangles[0]);
+// The share every percentage on this page is a share of. Said once, in the
+// legend, and again in full whenever a number is shown.
+const pctNote = () =>
+  `<b>%</b> is the share of all readings that pass through`;
+
+// A tangle drawn as what it contains: boxes round the rim in an order that
+// makes almost every link run clockwise, and the few that run the other way —
+// the feedback — as chords across the middle. Far away it is a texture; zoomed
+// in it is the whole diagram.
+function tangleWheel(node, cx, cy, r) {
+  const t = node.tangles[0];
+  if (!t) return "";
+  const w = wheelFor(node.id, t);
   const n = w.order.length;
-  const rim = Math.min(MINI_RIM, n);
-  const R = r * 0.74;
-  const at = i => {
+  const R = r * 0.8;
+  const at = new Map(w.order.map((b, i) => {
     const a = (-Math.PI / 2) + (i * 2 * Math.PI) / n;
-    return [cx + R * Math.cos(a), cy + R * Math.sin(a)];
-  };
-  const out = [];
-  for (let i = 0; i < rim; i++) {
-    const [px, py] = at(Math.round((i * n) / rim));
-    out.push(`<circle class="minid" cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="1.3"></circle>`);
-  }
-  for (const l of [...w.loops].sort((a, b) => b.gain - a.gain).slice(0, MINI_CH)) {
-    const [x1, y1] = at(w.pos.get(l.back.from)), [x2, y2] = at(w.pos.get(l.back.to));
-    out.push(`<path class="mini" d="${chordPath(x1, y1, x2, y2, cx, cy, 0.22)}"></path>`);
-  }
-  return out.join("");
-}
-
-// Both pictures put the panel beside the thing it belongs to, connected by a
-// leader line, so the placement is worked out once.
-function anchorDrawer(sx, sy, W, H, parts) {
-  const dh = 860, gap = 46;
-  const toRight = sx + gap + DRAWER_W <= W - 4;
-  const px = toRight ? sx + gap : Math.max(6, sx - gap - DRAWER_W);
-  const py = Math.max(10, Math.min(Math.max(10, H - dh - 10), sy - dh / 2));
-  const ex = toRight ? px : px + DRAWER_W;
-  const ey = Math.max(py + 22, Math.min(py + dh - 22, sy));
-  const mx = (sx + ex) / 2;
-  parts.push(`<path class="lead" d="M${sx.toFixed(1)} ${sy.toFixed(1)}C${mx.toFixed(1)} ${
-    sy.toFixed(1)} ${mx.toFixed(1)} ${ey.toFixed(1)} ${ex.toFixed(1)} ${ey.toFixed(1)}"></path>`);
-  parts.push(`<circle class="leadend" cx="${sx.toFixed(1)}" cy="${sy.toFixed(1)}" r="3.5"></circle>`);
-  return { style: `left:${px}px;top:${py}px;width:${DRAWER_W}px;max-height:${dh}px`,
-           need: py + dh + 14 };
-}
-
-// ---------------------------------------------------------------------------
-// THE WHEEL — a tangle as one picture, and one loop at a time inside it
-// ---------------------------------------------------------------------------
-// Boxes sit on the rim in an order that makes almost every link run clockwise;
-// the few that run the other way are the feedback, and they are drawn as
-// coloured chords across the middle. That is the whole tangle in one glyph.
-//
-// Then: click a box and the picture answers "how does this come back to
-// itself". Everything it touches lights up, everything else falls away, and
-// the shortest loop through it draws itself link by link, over and over, so
-// the return is something you watch rather than something you reconstruct.
-// ---------------------------------------------------------------------------
-const CHAIN_MAX = 7;               // boxes named under the wheel; the rest are on it
-const WHEELS = new Map();          // one layout per element, built when opened
-let WHEEL_GEO = null;              // where each box sits, for repainting
-let WHEEL_PICK = null;             // the box being explained
-let WHEEL_LOOP = 0;                // which of its loops, when it has several
-let WHEEL_TANGLE = null;
-let traceRAF = 0;
-
-function wheelFor(id, t) {
-  if (!WHEELS.has(id)) WHEELS.set(id, wheelOf(t));
-  return WHEELS.get(id);
-}
-
-const chordPath = (x1, y1, x2, y2, cx, cy, pull) =>
-  `M${x1.toFixed(1)} ${y1.toFixed(1)}Q${(cx + (x1 + x2 - 2 * cx) * pull).toFixed(1)} ${
-    (cy + (y1 + y2 - 2 * cy) * pull).toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`;
-
-function wheelSvg(w) {
-  const order = w.order, n = order.length;
-  const S = 496, C = S / 2;
-  const R = Math.max(46, Math.min(108, n * 1.9));
-  const at = i => {
-    const a = (-Math.PI / 2) + (i * 2 * Math.PI) / n;
-    return [C + R * Math.cos(a), C + R * Math.sin(a), a];
-  };
-  const pt = new Map(order.map((b, i) => [b, at(i)]));
-  // Two sets of loops end up on this wheel and both are worth having: the one
-  // each back link closes, which is what the chords ARE, and the shortest loop
-  // through each box, which is what a reader asking "how does this come round"
-  // actually wants. Same shape, so they merge; duplicates are the same loop
-  // written from a different starting box.
-  const all = [], seenLoop = new Set();
-  for (const l of [...(WHEEL_TANGLE ? WHEEL_TANGLE.loops : []), ...w.loops]) {
-    const k = canonicalCycle(l.cycle);
-    if (seenLoop.has(k)) continue;
-    seenLoop.add(k);
-    all.push(l);
-  }
-  WHEEL_GEO = { pt, C, R, S, n, w, all };
-
-  const maxShare = Math.max(...w.share.values(), 1);
+    return [b, [cx + R * Math.cos(a), cy + R * Math.sin(a), a]];
+  }));
+  w.at = at; w.centre = [cx, cy]; w.radius = R;
+  const key = e => e.from + "" + e.to;
+  const polar = new Map(w.loops.map(l => [key(l.back), l]));
   const maxGain = Math.max(...w.loops.map(l => l.gain), 0.0001);
-  const key = e => e.from + "\u0001" + e.to;
-  const polar = new Map();
-  for (const l of w.loops) polar.set(key(l.back), l);
-
-  const parts = [];
+  const out = [];
   for (const e of w.forward) {
-    const [x1, y1] = pt.get(e.from), [x2, y2] = pt.get(e.to);
-    parts.push(`<path class="ch fw" data-k="${esc(key(e))}" d="${chordPath(x1, y1, x2, y2, C, C, 0.3)}"></path>`);
+    const [x1, y1] = at.get(e.from), [x2, y2] = at.get(e.to);
+    out.push(`<path class="ch fw" data-k="${esc(key(e))}" d="${chordPath(x1, y1, x2, y2, cx, cy, 0.3)}"></path>`);
   }
   for (const e of w.back) {
     const l = polar.get(key(e));
-    const [x1, y1] = pt.get(e.from), [x2, y2] = pt.get(e.to);
-    parts.push(`<path class="ch" data-k="${esc(key(e))}" d="${chordPath(x1, y1, x2, y2, C, C, 0.22)}"
-      stroke="${l && l.reinforcing ? "var(--c1)" : "var(--c2)"}" opacity="0.7"
-      stroke-width="${l ? (1 + (l.gain / maxGain) * 2.2).toFixed(2) : 1}"></path>`);
+    const [x1, y1] = at.get(e.from), [x2, y2] = at.get(e.to);
+    out.push(`<path class="ch bk" data-k="${esc(key(e))}" d="${chordPath(x1, y1, x2, y2, cx, cy, 0.22)}"
+      stroke="${l && l.reinforcing ? "var(--c1)" : "var(--c2)"}"
+      stroke-width="${l ? (0.9 + (l.gain / maxGain) * 1.8).toFixed(2) : 1}"></path>`);
   }
-  parts.push(`<g class="trace"></g>`);
-  for (const b of order) {
-    const [x, y] = pt.get(b), sh = w.share.get(b) / maxShare;
-    parts.push(`<circle class="nd" data-box="${esc(b)}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}"
-      r="${(2.2 + sh * 3).toFixed(1)}" opacity="${(0.45 + sh * 0.55).toFixed(2)}"><title>${
-      esc(boxLabel(b))} — in ${w.share.get(b)} ${plural(w.share.get(b), "loop")}</title></circle>`);
+  out.push(`<g class="trace"></g>`);
+  const maxShare = Math.max(...w.share.values(), 1);
+  for (const b of w.order) {
+    const [x, yy] = at.get(b);
+    const rr = (R / n) * 2.2 * (0.5 + (w.share.get(b) / maxShare) * 0.9);
+    out.push(`<circle class="nd" data-box="${esc(b)}" cx="${x.toFixed(1)}" cy="${yy.toFixed(1)}"
+      r="${Math.max(0.7, Math.min(R / 7, rr)).toFixed(2)}"></circle>`);
   }
-  parts.push(`<g class="labs"></g>`);
-  parts.push(`<text class="hub" x="${C}" y="${C - 4}">${n}</text>
-    <text class="hub" x="${C}" y="${C + 9}">boxes</text>`);
-  return `<svg class="wheel" width="100%" viewBox="0 0 ${S} ${S}" role="img"
-    aria-label="The tangle as a wheel: ${n} boxes on the rim, ${w.back.length} links running back across it">
-    ${parts.join("")}</svg>`;
+  out.push(`<g class="labs"></g>`);
+  return out.join("");
 }
 
-// Labels are redrawn on every pick, because which names matter depends on
-// what is selected: the hubs when nothing is, the loop's own boxes when
-// something is.
-function wheelLabels(picked, cycle) {
-  const { pt, C, R, w, n } = WHEEL_GEO;
-  const apart = Math.max(2, Math.round(n / 30));
-  const spaced = (list, cap, keep) => {
-    const out = keep ? [keep] : [];
-    for (const b of list) {
-      if (out.length >= cap) break;
-      if (out.some(o => Math.abs(w.pos.get(o) - w.pos.get(b)) < apart)) continue;
-      out.push(b);
-    }
-    return out;
+// ---------------------------------------------------------------------------
+// LOOKING AT IT — zoom, pan, and what is lit up
+// ---------------------------------------------------------------------------
+const svgEl = () => $("stage").querySelector("svg.atlas");
+
+// One world unit is this many screen pixels. Text and hairlines divide by it,
+// so they stay the same size on screen however far in the frame has closed.
+function setScale() {
+  const svg = svgEl();
+  if (!svg || !VB) return;
+  const box = svg.getBoundingClientRect();
+  const z = Math.min(box.width / VB.w, box.height / VB.h) || 1;
+  svg.style.setProperty("--z", z.toFixed(4));
+  svg.setAttribute("viewBox", `${VB.x.toFixed(1)} ${VB.y.toFixed(1)} ${VB.w.toFixed(1)} ${VB.h.toFixed(1)}`);
+  // The frame moves every animation frame, and what belongs to a zoomed-in
+  // frame — the grab cursor, the way back out — has to keep up with it.
+  const zoomedIn = VB.w < WORLD.W - 1;
+  svg.classList.toggle("zoomed", zoomedIn);
+  const ctl = $("zoomctl");
+  if (ctl) {
+    ctl.hidden = !zoomedIn;
+    const rp = ctl.querySelector("[data-replay]");
+    if (rp) rp.hidden = !FOCUS;
+  }
+}
+
+const wholePicture = () => ({ x: 0, y: 0, w: WORLD.W, h: WORLD.H });
+
+function frameOn(id) {
+  const [cx, cy] = WORLD.at.get(id), r = WORLD.rOf.get(id);
+  const svg = svgEl();
+  const box = svg ? svg.getBoundingClientRect() : { width: 16, height: 9 };
+  const aspect = (box.width || 16) / (box.height || 9);
+  // Close in until the tangle owns the frame, but never so far that a small
+  // one fills the screen with its two neighbours.
+  const h = Math.max(r * 2.9, WORLD.H * 0.12), w = h * aspect;
+  return { x: cx - w / 2, y: cy - h / 2, w, h };
+}
+
+function zoomTo(target, then) {
+  cancelAnimationFrame(vbRAF);
+  const from = VB || wholePicture();
+  if (reduced()) { VB = target; setScale(); if (then) then(); return; }
+  const t0 = performance.now(), MS = 620;
+  const ease = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+  const step = now => {
+    const f = Math.min(1, (now - t0) / MS), e = ease(f);
+    VB = {
+      x: from.x + (target.x - from.x) * e, y: from.y + (target.y - from.y) * e,
+      w: from.w + (target.w - from.w) * e, h: from.h + (target.h - from.h) * e,
+    };
+    setScale();
+    if (f < 1) vbRAF = requestAnimationFrame(step);
+    else if (then) then();
   };
-  const want = cycle
-    ? spaced(cycle, 8, picked)
-    : spaced([...w.order].sort((a, c) => w.share.get(c) - w.share.get(a)), 10, null);
-  return want.map(b => {
-    const p = pt.get(b);
+  vbRAF = requestAnimationFrame(step);
+}
+
+function paintAtlas() {
+  const svg = svgEl();
+  if (!svg || !WORLD) return;
+  const A = WORLD.A, M = WORLD.M;
+  const lit = FOCUS || SELECT;
+  svg.classList.toggle("busy", !!lit);
+  svg.classList.toggle("inside", !!FOCUS);
+
+  for (const g of svg.querySelectorAll("g.n")) {
+    const id = g.dataset.el;
+    g.classList.toggle("on", id === lit);
+    g.classList.toggle("focus", id === FOCUS);
+    g.classList.toggle("near", !!lit && lit !== id &&
+      (A.succ.get(lit) || new Set()).has(id) || (!!lit && (A.succ.get(id) || new Set()).has(lit)));
+  }
+  for (const p of svg.querySelectorAll(".fl"))
+    p.classList.toggle("hot", !!lit && (p.dataset.a === lit || p.dataset.b === lit));
+  setScale();
+  paintWheel();
+  renderInspector();
+}
+
+function selectEl(id) {
+  if (FOCUS && id !== FOCUS) leaveTangle(true);
+  SELECT = id === SELECT ? null : id;
+  WHEEL_PICK = null;
+  paintAtlas();
+  showElement(SELECT);
+}
+
+function enterTangle(id) {
+  if (FOCUS === id) return;
+  stopTour();
+  FOCUS = id; SELECT = id; WHEEL_PICK = null; WHEEL_LOOP = 0;
+  WHEEL_TANGLE = WORLD.A.nodes.get(id).tangles[0];
+  paintAtlas();
+  showElement(id);
+  zoomTo(frameOn(id), playTour);
+}
+
+function leaveTangle(quiet) {
+  if (!FOCUS) return;
+  stopTour();
+  const svg = svgEl();
+  if (svg) { const tr = svg.querySelector("g.n.focus .trace"); if (tr) tr.innerHTML = ""; }
+  FOCUS = null; WHEEL_PICK = null;
+  if (!quiet) SELECT = null;
+  paintAtlas();
+  if (!quiet) zoomTo(wholePicture());
+}
+
+// ---------------------------------------------------------------------------
+// THE TOUR — every loop in the tangle, one after another, left on screen
+// ---------------------------------------------------------------------------
+// Entering a tangle plays its loops through: each draws itself round, then
+// stays, faded, while the next one draws. What builds up is the answer to the
+// question a list of loops cannot answer — how they sit on top of each other.
+// ---------------------------------------------------------------------------
+function stopTour() {
+  cancelAnimationFrame(tourRAF);
+  tourRAF = 0; tourAt = -1;
+}
+
+function tourLoops() {
+  const w = WHEELS.get(FOCUS);
+  if (!w) return [];
+  return [...w.loops].sort((a, b) => b.gain - a.gain || a.cycle.length - b.cycle.length)
+    .slice(0, TOUR_MAX);
+}
+
+function playTour() {
+  if (!FOCUS) return;
+  stopTour();
+  const svg = svgEl();
+  const g = svg && svg.querySelector("g.n.focus .trace");
+  const w = WHEELS.get(FOCUS);
+  if (!g || !w) return;
+  const loops = tourLoops();
+  if (!loops.length) { renderInspector(); return; }
+
+  g.innerHTML = loops.map((l, i) => `<g class="tl" data-i="${i}">${
+    l.links.map(e => {
+      const [x1, y1] = w.at.get(e.from), [x2, y2] = w.at.get(e.to);
+      const backwards = w.pos.get(e.to) <= w.pos.get(e.from);
+      return `<path d="${chordPath(x1, y1, x2, y2, w.centre[0], w.centre[1], backwards ? 0.22 : 0.3)}"
+        stroke="${l.reinforcing ? "var(--c1)" : "var(--c2)"}"></path>`;
+    }).join("")}</g>`).join("");
+
+  const groups = [...g.querySelectorAll("g.tl")];
+  const lens = groups.map(gg => [...gg.querySelectorAll("path")].map(p =>
+    typeof p.getTotalLength === "function" ? p.getTotalLength() : 0));
+  groups.forEach((gg, i) => [...gg.querySelectorAll("path")].forEach((p, j) => {
+    p.style.strokeDasharray = lens[i][j];
+    p.style.strokeDashoffset = lens[i][j];
+  }));
+
+  if (reduced()) {
+    groups.forEach(gg => {
+      gg.classList.add("done");
+      [...gg.querySelectorAll("path")].forEach(p => { p.style.strokeDashoffset = 0; });
+    });
+    tourAt = loops.length;
+    renderInspector();
+    return;
+  }
+
+  const DRAW = 620, HOLD = 260, PER = DRAW + HOLD;
+  const t0 = performance.now();
+  const tick = now => {
+    const t = now - t0;
+    const i = Math.min(loops.length - 1, Math.floor(t / PER));
+    if (i !== tourAt) { tourAt = i; renderInspector(); }
+    groups.forEach((gg, gi) => {
+      const local = (t - gi * PER) / DRAW;
+      const f = Math.max(0, Math.min(1, local));
+      gg.classList.toggle("done", local >= 1);
+      gg.classList.toggle("live", local >= 0 && local < 1);
+      [...gg.querySelectorAll("path")].forEach((p, j) => {
+        const per = 1 / lens[gi].length;
+        const fj = Math.max(0, Math.min(1, (f - j * per) / per));
+        p.style.strokeDashoffset = (lens[gi][j] * (1 - fj)).toFixed(2);
+      });
+    });
+    if (t < loops.length * PER) { tourRAF = requestAnimationFrame(tick); return; }
+    groups.forEach((gg, gi) => {
+      gg.classList.remove("live"); gg.classList.add("done");
+      [...gg.querySelectorAll("path")].forEach(p => { p.style.strokeDashoffset = 0; });
+    });
+    tourAt = loops.length; tourRAF = 0;
+    renderInspector();
+  };
+  tourRAF = requestAnimationFrame(tick);
+}
+
+// ---------------------------------------------------------------------------
+// THE INSPECTOR — one place for whatever is being looked at
+// ---------------------------------------------------------------------------
+function renderInspector() {
+  const box = $("inspector");
+  if (!box || !WORLD) return;
+  const A = WORLD.A, M = WORLD.M, start = labelOf(A.start);
+  const explain = `<p class="hint">Every <b>%</b> on this page is a share of the
+    <b>readings</b> — the ${formatCount(A.shapes)} distinct pathways this page tells from
+    <b>${esc(start)}</b>. “14% of everything” means fourteen readings in every hundred pass
+    through it.</p>`;
+
+  if (FOCUS) {
+    const node = A.nodes.get(FOCUS), t = node.tangles[0];
+    const w = WHEELS.get(FOCUS);
+    const loops = w ? w.loops : [];
+    const r = loops.filter(l => l.reinforcing).length;
+    const shown = Math.min(TOUR_MAX, loops.length);
+    const playing = tourRAF && tourAt >= 0 && tourAt < shown;
+    const picked = WHEEL_PICK;
+    const through = picked ? loopsThrough(picked) : [];
+    const loop = through.length ? rotateTo(through[WHEEL_LOOP % through.length], picked) : null;
+    box.innerHTML = `<div class="ins">
+      <header><b>↻ Inside a tangle of ${t.boxes.length} ${plural(t.boxes.length, "box", "boxes")}</b>
+        <span class="m">${w ? w.back.length : 0} ${plural(w ? w.back.length : 0, "link")} back ·
+          ${r}R / ${loops.length - r}B · ${t.independent} independent</span></header>
+      <p class="lede">Boxes sit round the rim in an order that makes almost every link run clockwise.
+        The chords across the middle are the ones that run back — <b>they are the feedback</b>, and
+        cutting them would leave a plain sequence.</p>
+      <p class="cap">${playing
+        ? `Playing the loops — <b>${tourAt + 1}</b> of ${shown}${
+            loops.length > shown ? ` (the ${shown} strongest of ${loops.length})` : ""}.`
+        : `<b>${shown}</b> ${plural(shown, "loop")} drawn${
+            loops.length > shown ? ` — the strongest of ${loops.length}` : ""}. Point at a box on the
+            rim to name it; click one to follow its own loop round.`}</p>
+      ${picked ? loopCaption(picked, loop, through) : ""}
+      <div class="row-btns" style="margin-top:9px">
+        <button class="btn" type="button" data-replay>Replay the loops</button>
+        <button class="btn" type="button" data-zoomout>← Back out to the whole map</button>
+      </div>${explain}</div>`;
+    return;
+  }
+
+  if (SELECT && A.nodes.has(SELECT)) {
+    const node = A.nodes.get(SELECT);
+    const names = set => [...set].filter(x => x !== END).map(labelOf);
+    const ins = names(A.pred.get(SELECT) || new Set()), outs = names(A.succ.get(SELECT) || new Set());
+    const list = l => l.length
+      ? l.slice(0, 6).map(n => `<em>${esc(clip(n, 30))}</em>`).join("") +
+        (l.length > 6 ? `<i>+${l.length - 6} more</i>` : "")
+      : `<i>nothing</i>`;
+    const lanes = [...(node.lanes || [])].sort();
+    box.innerHTML = `<div class="ins">
+      <header><b>${esc(node.label)}</b>
+        <span class="m">${pct(M.weight(SELECT))} of everything${
+          node.boxes.length > 1 ? ` · ${node.boxes.length} boxes` : ""}</span></header>
+      <p class="cap"><b>${pct(M.weight(SELECT))}</b> of the readings from <b>${esc(start)}</b> pass
+        through here${node.boxes.length > 1
+          ? `, and this one circle stands for ${node.boxes.length} boxes that behave alike — the rail
+             lists them` : ""}.</p>
+      <div class="wires"><span class="k">reached from</span><div class="chain">${list(ins)}</div></div>
+      <div class="wires"><span class="k">leads to</span><div class="chain">${list(outs)}</div></div>
+      ${lanes.length ? `<p class="hint" style="margin-top:7px">Lanes: ${esc(lanes.slice(0, 8).join(", "))}${
+        lanes.length > 8 ? ` +${lanes.length - 8}` : ""}</p>` : ""}
+      ${explain}</div>`;
+    return;
+  }
+
+  box.innerHTML = `<div class="ins">
+    <header><b>Everything downstream of ${esc(start)}</b>
+      <span class="m">${A.elements} elements · ${formatCount(A.shapes)} readings</span></header>
+    <p class="lede">Point at any circle to name it. Click one to light up what it reaches and what
+      reaches it. Click an amber <b>↻</b> to go inside a knot of feedback and watch its loops.</p>
+    ${explain}</div>`;
+}
+
+function loopCaption(picked, loop, through) {
+  if (!loop) return `<p class="cap"><b>${esc(boxLabel(picked))}</b> — no loop found through it.</p>`;
+  return `<p class="cap"><b>${esc(boxLabel(picked))}</b> comes back to itself
+      ${through.length} ${plural(through.length, "way")}${through.length > 1
+        ? ` — showing ${WHEEL_LOOP % through.length === 0 ? "the shortest"
+            : (WHEEL_LOOP % through.length) + 1 + " of " + through.length}` : ""}.</p>
+    <p class="chain">${loop.cycle.slice(0, CHAIN_MAX).map((b, i) =>
+      `<em class="${b === picked ? "head" : ""}">${esc(clip(boxLabel(b), 24))}</em>` +
+      `<i>${loop.links[i].elasticity < 0 ? "−" : "+"}→</i>`).join("")}${
+      loop.cycle.length > CHAIN_MAX ? `<i>${loop.cycle.length - CHAIN_MAX} more →</i>` : ""}
+      <em class="head">${esc(clip(boxLabel(picked), 24))}</em></p>
+    <p class="m">${loop.reinforcing ? "Reinforcing" : "Balancing"} ·
+      ${loop.cycle.length} ${plural(loop.cycle.length, "box", "boxes")} ·
+      gain ${loop.gain < 0.0005 ? "≈0" : loop.gain.toFixed(3)}</p>
+    ${through.length > 1
+      ? `<div class="row-btns" style="margin-top:7px">
+           <button class="btn" type="button" data-wheelnext>Next loop through it</button></div>` : ""}`;
+}
+
+// ---------------------------------------------------------------------------
+// INSIDE THE TANGLE — one box, and how it comes back to itself
+// ---------------------------------------------------------------------------
+// The tour shows every loop. This shows one: click a box on the rim and its own
+// loop draws itself round, starting and ending where you clicked, because a
+// loop has no beginning but an explanation does.
+// ---------------------------------------------------------------------------
+function paintWheel() {
+  const svg = svgEl();
+  if (!svg) return;
+  const g = FOCUS && svg.querySelector("g.n.focus");
+  if (!g) return;
+  const w = WHEELS.get(FOCUS);
+  if (!w) return;
+  const picked = WHEEL_PICK && w.pos.has(WHEEL_PICK) ? WHEEL_PICK : null;
+  g.classList.toggle("picked", !!picked);
+
+  const through = picked ? loopsThrough(picked) : [];
+  const loop = through.length ? rotateTo(through[WHEEL_LOOP % through.length], picked) : null;
+  const onCycle = new Set(loop ? loop.cycle : picked ? [picked] : []);
+  const key = e => e.from + "" + e.to;
+  const onLink = new Set((loop ? loop.links : []).map(key));
+  if (picked) for (const e of w.touching.get(picked) || []) onLink.add(key(e));
+
+  for (const el of g.querySelectorAll(".ch")) el.classList.toggle("on", onLink.has(el.dataset.k));
+  for (const el of g.querySelectorAll(".nd")) {
+    const mine = el.dataset.box === picked;
+    el.classList.toggle("on", onCycle.has(el.dataset.box));
+    el.classList.toggle("sel", mine);
+  }
+  g.querySelector(".labs").innerHTML = picked ? wheelLabels(picked, [...onCycle]) : "";
+
+  const trace = g.querySelector(".trace");
+  if (picked) {
+    trace.innerHTML = `<g class="tl live">${(loop ? loop.links : []).map(e => {
+      const [x1, y1] = w.at.get(e.from), [x2, y2] = w.at.get(e.to);
+      const backwards = w.pos.get(e.to) <= w.pos.get(e.from);
+      return `<path d="${chordPath(x1, y1, x2, y2, w.centre[0], w.centre[1], backwards ? 0.22 : 0.3)}"
+        stroke="${loop && loop.reinforcing ? "var(--c1)" : "var(--c2)"}"></path>`;
+    }).join("")}</g>`;
+    runTrace(trace);
+  } else if (!tourRAF && tourAt < 0) {
+    trace.innerHTML = "";
+  }
+}
+
+// Names on adjacent rim positions overprint, so they are spaced — and the box
+// being explained is always one of them.
+function wheelLabels(picked, cycle) {
+  const w = WHEELS.get(FOCUS);
+  if (!w || !w.at) return "";
+  const n = w.order.length, apart = Math.max(2, Math.round(n / 30));
+  const out = [picked];
+  for (const b of cycle) {
+    if (out.length >= 9) break;
+    if (out.some(o => Math.abs(w.pos.get(o) - w.pos.get(b)) < apart)) continue;
+    out.push(b);
+  }
+  return out.map(b => {
+    const p = w.at.get(b);
     if (!p) return "";
-    const a = p[2], lx = C + (R + 9) * Math.cos(a), ly = C + (R + 9) * Math.sin(a);
-    const flip = Math.cos(a) < 0;
-    return `<text class="bl${cycle ? " on" : ""}" x="${lx.toFixed(1)}" y="${ly.toFixed(1)}"
-      text-anchor="${flip ? "end" : "start"}"
-      transform="rotate(${((a * 180) / Math.PI + (flip ? 180 : 0)).toFixed(1)} ${lx.toFixed(1)} ${ly.toFixed(1)})"
-      >${esc(clip(boxLabel(b), 18))}</text>`;
+    const a = p[2], lx = w.centre[0] + (w.radius + 6) * Math.cos(a),
+          ly = w.centre[1] + (w.radius + 6) * Math.sin(a);
+    const left = Math.cos(a) < -0.08;
+    return `<text class="bl" x="${lx.toFixed(1)}" y="${(ly + 3).toFixed(1)}"
+      text-anchor="${left ? "end" : Math.cos(a) > 0.08 ? "start" : "middle"}"
+      >${esc(clip(boxLabel(b), 24))}</text>`;
   }).join("");
 }
 
-// Every loop through the picked box, shortest first — so "next" walks from the
-// tightest story it takes part in outwards.
 function loopsThrough(box) {
-  return WHEEL_GEO.all.filter(l => l.cycle.includes(box))
-    .sort((a, b) => a.cycle.length - b.cycle.length || b.gain - a.gain);
+  const w = WHEELS.get(FOCUS);
+  if (!w) return [];
+  const all = [], seen = new Set();
+  // Two sets of loops, both worth having: the one each back link closes, which
+  // is what the chords ARE, and the shortest loop through each box, which is
+  // what a reader asking "how does this come round" actually wants.
+  for (const l of [...(WHEEL_TANGLE ? WHEEL_TANGLE.loops : []), ...w.loops]) {
+    const k = canonicalCycle(l.cycle);
+    if (seen.has(k) || !l.cycle.includes(box)) continue;
+    seen.add(k);
+    all.push(l);
+  }
+  return all.sort((a, b) => a.cycle.length - b.cycle.length || b.gain - a.gain);
 }
 
-// A loop has no beginning, but an explanation does: the reader asked about
-// THIS box, so the story starts and ends there.
+// A loop has no beginning, but an explanation does: the reader asked about THIS
+// box, so the story starts and ends there.
 function rotateTo(loop, box) {
   const i = loop.cycle.indexOf(box);
   if (i <= 0) return loop;
@@ -1878,86 +1988,20 @@ function rotateTo(loop, box) {
     links: loop.links.slice(i).concat(loop.links.slice(0, i)) };
 }
 
-function paintWheel() {
-  const svg = $("stage").querySelector("svg.wheel");
-  if (!svg || !WHEEL_GEO) return;
-  cancelAnimationFrame(traceRAF);
-  const { pt, C, w } = WHEEL_GEO;
-  const picked = WHEEL_PICK && w.pos.has(WHEEL_PICK) ? WHEEL_PICK : null;
-  svg.classList.toggle("picked", !!picked);
-  const trace = svg.querySelector(".trace");
-  const cap = $("wheel-cap");
-
-  if (!picked) {
-    for (const el of svg.querySelectorAll(".ch,.nd")) el.classList.remove("on");
-    svg.querySelector(".labs").innerHTML = wheelLabels(null, null);
-    trace.innerHTML = "";
-    if (cap) cap.innerHTML = `<p class="cap">Every chord across the middle is a link running
-      <b>back</b> — cut those and the tangle is a plain sequence. Click a box to see how it
-      comes round to itself.</p>`;
-    return;
-  }
-
-  const loops = loopsThrough(picked);
-  const loop = loops.length ? rotateTo(loops[WHEEL_LOOP % loops.length], picked) : null;
-  const onCycle = new Set(loop ? loop.cycle : [picked]);
-  const onLink = new Set((loop ? loop.links : []).map(e => e.from + "\u0001" + e.to));
-  for (const e of w.touching.get(picked) || []) onLink.add(e.from + "\u0001" + e.to);
-
-  for (const el of svg.querySelectorAll(".ch"))
-    el.classList.toggle("on", onLink.has(el.dataset.k));
-  for (const el of svg.querySelectorAll(".nd")) {
-    const mine = el.dataset.box === picked;
-    el.classList.toggle("on", onCycle.has(el.dataset.box));
-    el.classList.toggle("sel", mine);
-    // the box being explained is worth finding at a glance on a rim of a hundred
-    if (!el.dataset.r) el.dataset.r = el.getAttribute("r");
-    el.setAttribute("r", mine ? (Number(el.dataset.r) + 2.6).toFixed(1) : el.dataset.r);
-  }
-  svg.querySelector(".labs").innerHTML = wheelLabels(picked, [...onCycle]);
-
-  trace.innerHTML = (loop ? loop.links : []).map(e => {
-    const [x1, y1] = pt.get(e.from), [x2, y2] = pt.get(e.to);
-    const backwards = w.pos.get(e.to) <= w.pos.get(e.from);
-    return `<path d="${chordPath(x1, y1, x2, y2, C, C, backwards ? 0.22 : 0.3)}"
-      stroke="${loop.reinforcing ? "var(--c1)" : "var(--c2)"}" stroke-width="2.6"></path>`;
-  }).join("");
-  if (cap) {
-    cap.innerHTML = `<p class="cap"><b>${esc(boxLabel(picked))}</b> comes back to itself
-      ${loops.length} ${plural(loops.length, "way")}${loops.length > 1
-        ? ` — showing ${WHEEL_LOOP % loops.length === 0 ? "the shortest"
-            : (WHEEL_LOOP % loops.length) + 1 + " of " + loops.length}` : ""}.</p>` +
-      (loop ? `<p class="chain">${loop.cycle.slice(0, CHAIN_MAX).map((b, i) =>
-          `<em class="${b === picked ? "head" : ""}">${esc(clip(boxLabel(b), 22))}</em>` +
-          `<i>${loop.links[i].elasticity < 0 ? "−" : "+"}→</i>`).join("")}${
-         loop.cycle.length > CHAIN_MAX
-           ? `<i>${loop.cycle.length - CHAIN_MAX} more →</i>` : ""}
-         <em class="head">${esc(clip(boxLabel(picked), 22))}</em></p>
-        <p class="m" style="margin-top:6px">${loop.reinforcing ? "Reinforcing" : "Balancing"} ·
-          ${loop.cycle.length} ${plural(loop.cycle.length, "box", "boxes")} ·
-          gain ${loop.gain < 0.0005 ? "≈0" : loop.gain.toFixed(3)}</p>
-        <div class="row-btns" style="margin-top:8px">
-          ${loops.length > 1 ? `<button class="btn" type="button" data-wheelnext>Next loop through it</button>` : ""}
-          <button class="btn" type="button" data-wheelclear>Show the whole tangle</button></div>`
-        : `<p class="hint">No loop found through this box.</p>`);
-  }
-  runTrace(trace);
-}
-
-// The loop draws itself, link by link, and starts again. Watching the line
-// come back round is the part a still picture cannot do — so if the reader has
-// asked for less motion, the whole loop is simply drawn at once instead.
+// The loop draws itself, link by link, and starts again. Watching the line come
+// back round is the part a still picture cannot do — so if the reader has asked
+// for less motion, the whole loop is simply drawn at once instead.
 function runTrace(g) {
+  cancelAnimationFrame(traceRAF);
   const paths = [...g.querySelectorAll("path")];
-  if (!paths.length) return;
-  if (typeof paths[0].getTotalLength !== "function") return;   // not a real browser
+  if (!paths.length || typeof paths[0].getTotalLength !== "function") return;
   const lens = paths.map(p => p.getTotalLength());
   paths.forEach((p, i) => { p.style.strokeDasharray = lens[i]; });
-  if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+  if (reduced()) {
     paths.forEach(p => { p.style.strokeDashoffset = 0; });
     return;
   }
-  const STEP = 380, HOLD = 950, total = paths.length * STEP + HOLD;
+  const STEP = 340, HOLD = 900, total = paths.length * STEP + HOLD;
   const t0 = performance.now();
   const tick = now => {
     const t = (now - t0) % total;
@@ -1971,14 +2015,11 @@ function runTrace(g) {
 }
 
 function pickWheelBox(box) {
+  stopTour();
   WHEEL_PICK = box && box !== WHEEL_PICK ? box : null;
   WHEEL_LOOP = 0;
-  const sel = $("wheel-pick");
-  if (sel) sel.value = WHEEL_PICK || "";
-  paintWheel();
-  fitDrawer();
+  paintAtlas();
 }
-
 
 // ---------------------------------------------------------------------------
 // 2. LOOPS — the ring diagram
@@ -2147,11 +2188,10 @@ function viewLoops(A, M) {
 // SHELL
 // ---------------------------------------------------------------------------
 const VIEW_NOTES = {
-  flow: "The whole atlas as one picture. Columns are how far along you are; height and thickness are how much runs through. Click a block to see the boxes inside it; click an amber <b>↻</b> to open its tangle as a wheel, then click a box on the rim to watch it come round to itself.",
-  circles: "The same atlas drawn as area rather than height, so a tangle can be the wheel it opens into. Left to right is still how far along you are. A prototype — Flow is the one that has been lived with.",
+  atlas: "Every element is a circle whose <b>area</b> is the share of readings running through it, and left to right is how far along you are. Point at anything to name it, click it to light up what it touches, and click an amber <b>↻</b> to go inside a knot of feedback.",
   loops: "Every feedback loop, one ring each, with its polarity and its gain. A tangle of many loops sharing boxes becomes a grid of small readable rings rather than one opaque blob.",
 };
-const VIEWS = { flow: viewFlow, circles: viewCircles, loops: viewLoops };
+const VIEWS = { atlas: viewAtlas, loops: viewLoops };
 
 function renderStats() {
   const A = ATLAS;
@@ -2205,7 +2245,26 @@ function renderView() {
   const M = measure(ATLAS);
   stage.innerHTML = VIEWS[VIEW](ATLAS, M);
   stage.scrollTop = 0;
-  if (OPEN_LOOP && VIEWS[VIEW] !== viewLoops) { paintWheel(); fitDrawer(); }
+  if (VIEW !== "atlas" || !WORLD) return;
+  VB = FOCUS && WORLD.at.has(FOCUS) ? frameOn(FOCUS) : wholePicture();
+  setScale();
+  paintAtlas();
+  revealAtlas();
+  if (FOCUS) playTour();
+}
+
+// The picture draws itself in, column by column, so the first thing a reader
+// sees is the shape arriving rather than a wall of circles already there.
+function revealAtlas() {
+  const svg = svgEl();
+  if (!svg || reduced()) return;
+  const groups = [...svg.querySelectorAll("g.n")];
+  groups.forEach(g => {
+    const [x] = WORLD.at.get(g.dataset.el) || [0];
+    g.style.animationDelay = Math.min(700, (x / WORLD.W) * 620).toFixed(0) + "ms";
+  });
+  svg.classList.add("reveal");
+  setTimeout(() => svg.classList.remove("reveal"), REVEAL + 800);
 }
 
 // Every family opens to show its members, and the list of lane values opens
@@ -2303,7 +2362,8 @@ function run() {
       $("stage").innerHTML = `<p class="lede">That did not work: ${esc(err.message)}</p>`;
       return;
     }
-    OPEN_LOOP = null; WHEEL_PICK = null; WHEEL_LOOP = 0; WHEELS.clear();
+    FOCUS = null; SELECT = null; VB = null; WHEEL_PICK = null; WHEEL_LOOP = 0;
+    WHEELS.clear(); stopTour();
     railLanes(); renderStats(); renderView();
   });
 }
@@ -2357,90 +2417,122 @@ $("views").addEventListener("click", e => {
   renderView();
 });
 
-// Re-rendering the picture must not move it. The one thing worse than having
-// to switch tabs to read a loop is coming back to find the map somewhere else.
-function fitDrawer() {
-  const wrap = $("stage").querySelector(".flowwrap");
-  const d = wrap && wrap.querySelector(".loopdrawer");
-  if (!wrap || !d) return;
-  const svg = wrap.querySelector("svg.flow");
-  const need = d.offsetTop + d.offsetHeight + 14;
-  wrap.style.minHeight = Math.max(svg ? Number(svg.getAttribute("height")) || 0 : 0, need) + "px";
+// ── the picture answers the pointer ───────────────────────────────────────
+let panFrom = null, panMoved = 0;
+
+function atlasPointerDown(e) {
+  const svg = svgEl();
+  if (!svg || !VB || VB.w >= WORLD.W - 1) return;
+  // No pointer capture yet. Capturing here would make the click land on the
+  // whole picture instead of the circle under the pointer, which quietly broke
+  // every click inside a tangle.
+  panFrom = { x: e.clientX, y: e.clientY, vb: { ...VB }, id: e.pointerId };
+  panMoved = 0;
 }
 
-function redrawFlowInPlace() {
-  const wrap = $("stage").querySelector(".flowwrap");
-  const keep = wrap ? wrap.scrollLeft : 0;
-  renderView();
-  const now = $("stage").querySelector(".flowwrap");
-  if (!now) return;
-  now.scrollLeft = keep;
-  const d = now.querySelector(".loopdrawer");
-  if (!d) return;
-  // …and if the drawer opened off the edge, bring just enough of it into view.
-  const left = d.offsetLeft, right = left + d.offsetWidth;
-  if (right > keep + now.clientWidth - 8) now.scrollLeft = right - now.clientWidth + 20;
-  else if (left < keep + 8) now.scrollLeft = Math.max(0, left - 20);
+function atlasPointerMove(e) {
+  if (!panFrom) return;
+  const svg = svgEl();
+  const box = svg.getBoundingClientRect();
+  const z = Math.min(box.width / VB.w, box.height / VB.h) || 1;
+  const dx = e.clientX - panFrom.x, dy = e.clientY - panFrom.y;
+  panMoved = Math.max(panMoved, Math.hypot(dx, dy));
+  if (panMoved > 4 && !panFrom.held) {          // it is a drag after all
+    panFrom.held = true;
+    svg.classList.add("panning");
+    try { svg.setPointerCapture(panFrom.id); } catch (err) { /* not a real pointer */ }
+  }
+  if (!panFrom.held) return;
+  VB = { ...panFrom.vb, x: panFrom.vb.x - dx / z, y: panFrom.vb.y - dy / z };
+  setScale();
 }
 
-function toggleLoop(id) {
-  OPEN_LOOP = OPEN_LOOP === id ? null : id;
-  WHEEL_PICK = null; WHEEL_LOOP = 0;
-  redrawFlowInPlace();
+function atlasPointerUp(e) {
+  const svg = svgEl();
+  if (svg) svg.classList.remove("panning");
+  if (panFrom && panFrom.held && svg)
+    try { svg.releasePointerCapture(e.pointerId); } catch (err) { /* already gone */ }
+  panFrom = null;
 }
+
+$("stage").addEventListener("pointerdown", e => {
+  if (e.target.closest("svg.atlas")) atlasPointerDown(e);
+});
+$("stage").addEventListener("pointermove", atlasPointerMove);
+$("stage").addEventListener("pointerup", atlasPointerUp);
+$("stage").addEventListener("pointercancel", atlasPointerUp);
 
 $("stage").addEventListener("click", e => {
+  // A drag that ends on a circle is not a click on it.
+  if (panMoved > 4) { panMoved = 0; return; }
   const ls = e.target.closest("[data-loopsort]");
-  if (ls) {
-    LOOP_SORT = ls.dataset.loopsort;
-    if (VIEW === "flow") redrawFlowInPlace(); else renderView();
+  if (ls) { LOOP_SORT = ls.dataset.loopsort; renderView(); return; }
+  if (e.target.closest("[data-zoomout]")) {
+    if (FOCUS) leaveTangle();
+    else zoomTo(wholePicture(), () => paintAtlas());
     return;
   }
-  if (e.target.closest("[data-closeloop]")) { OPEN_LOOP = null; redrawFlowInPlace(); return; }
+  if (e.target.closest("[data-replay]")) { WHEEL_PICK = null; paintAtlas(); playTour(); return; }
+  if (e.target.closest("[data-wheelnext]")) { WHEEL_LOOP++; paintAtlas(); return; }
 
-  // Everything inside the drawer repaints the wheel in place. Re-rendering the
-  // flow to answer a click on the rim would throw away the scroll position and
-  // restart the animation for nothing.
-  const nd = e.target.closest("svg.wheel .nd");
+  const nd = e.target.closest("g.n.focus .nd");
   if (nd) { pickWheelBox(nd.dataset.box); return; }
-  if (e.target.closest("[data-wheelnext]")) { WHEEL_LOOP++; paintWheel(); fitDrawer(); return; }
-  if (e.target.closest("[data-wheelclear]")) { pickWheelBox(null); return; }
-  if (e.target.closest(".loopdrawer")) return;   // reading inside it is not a click on the map
 
-  const el = e.target.closest("[data-el]");
-  if (el) {
-    showElement(el.dataset.el);
-    // A tangle is the one element whose whole point is hidden inside it. In the
-    // picture it opens where it stands; in the Loops tab it is already open.
-    const node = ATLAS.nodes.get(el.dataset.el);
-    if (node && node.loop && (VIEW === "flow" || VIEW === "circles")) toggleLoop(el.dataset.el);
+  const g = e.target.closest("svg.atlas g.n");
+  if (g) {
+    if (g.dataset.loop) enterTangle(g.dataset.el);
+    else selectEl(g.dataset.el);
+    return;
   }
+  const el = e.target.closest("[data-el]");
+  if (el) showElement(el.dataset.el);
 });
 
-$("stage").addEventListener("change", e => {
-  if (e.target.id === "wheel-pick") {
-    WHEEL_PICK = e.target.value || null; WHEEL_LOOP = 0; paintWheel(); fitDrawer();
-  }
+$("stage").addEventListener("dblclick", e => {
+  const g = e.target.closest("svg.atlas g.n");
+  if (!g || !WORLD || !WORLD.at.has(g.dataset.el)) return;
+  if (g.dataset.loop) { enterTangle(g.dataset.el); return; }
+  SELECT = g.dataset.el;
+  paintAtlas();
+  zoomTo(frameOn(g.dataset.el), () => paintAtlas());
 });
 
 $("stage").addEventListener("keydown", e => {
-  const g = e.target.closest && e.target.closest("g.n[data-loop]");
-  if (g && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggleLoop(g.dataset.el); }
+  if (e.key !== "Enter" && e.key !== " ") return;
+  const g = e.target.closest && e.target.closest("svg.atlas g.n");
+  if (!g) return;
+  e.preventDefault();
+  if (g.dataset.loop) enterTangle(g.dataset.el); else selectEl(g.dataset.el);
 });
+
 addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
   if (WHEEL_PICK) { pickWheelBox(null); return; }
-  if (OPEN_LOOP) { OPEN_LOOP = null; redrawFlowInPlace(); }
+  if (FOCUS) { leaveTangle(); return; }
+  if (VB && WORLD && VB.w < WORLD.W - 1) { zoomTo(wholePicture(), () => paintAtlas()); return; }
+  if (SELECT) { SELECT = null; paintAtlas(); $("detail-box").hidden = true; }
 });
 
+addEventListener("resize", () => setScale());
+
 $("stage").addEventListener("mouseover", e => {
-  const g = e.target.closest("g.n");
   const tip = $("tip");
-  if (!g || e.target.closest(".loopdrawer")) { tip.style.display = "none"; return; }
-  if (!ATLAS.nodes.has(g.dataset.el)) { tip.style.display = "none"; return; }
+  const nd = e.target.closest("g.n.focus .nd");
+  if (nd) {
+    const w = WHEELS.get(FOCUS);
+    const n = w ? w.share.get(nd.dataset.box) : 0;
+    tip.innerHTML = `<b>${esc(boxLabel(nd.dataset.box))}</b><span>in ${n} ${
+      plural(n, "loop")} of this tangle · click to follow one</span>`;
+    tip.style.display = "block";
+    return;
+  }
+  const g = e.target.closest("svg.atlas g.n");
+  if (!g || !ATLAS || !ATLAS.nodes.has(g.dataset.el)) { tip.style.display = "none"; return; }
   const node = ATLAS.nodes.get(g.dataset.el);
-  tip.innerHTML = `<b>${esc(node.label)}</b><span>${g.dataset.w} of everything · ${
-    node.boxes.length} ${plural(node.boxes.length, "box", "boxes")}</span>`;
+  const M = measure(ATLAS);
+  tip.innerHTML = `<b>${esc(node.label)}</b><span>${pct(M.weight(g.dataset.el))} of all readings pass
+    through · ${node.boxes.length} ${plural(node.boxes.length, "box", "boxes")}${
+    node.loop ? " · click to go inside" : ""}</span>`;
   tip.style.display = "block";
 });
 $("stage").addEventListener("mousemove", e => {
@@ -2476,7 +2568,7 @@ $("start-list").addEventListener("click", e => {
 $("theme-btn").addEventListener("click", () => {
   const root = document.documentElement;
   const now = root.getAttribute("data-theme");
-  const sysDark = matchMedia("(prefers-color-scheme: dark)").matches;
+  const sysDark = typeof matchMedia === "function" && matchMedia("(prefers-color-scheme: dark)").matches;
   root.setAttribute("data-theme", (now ? now === "dark" : sysDark) ? "light" : "dark");
 });
 showEmpty();

@@ -98,83 +98,74 @@ page condenses 292 elements to 129 rather than 254.
 The honest answer to "which members?" is not a switch, it is the element itself:
 click any block and the rail lists every box inside it.
 
-## Flow, which is the whole thing as one picture
+## The picture
 
 The structure and the presentation are separate problems, and the first version
 only solved the first one. A complete nested outline of 129 elements is still a
 wall of words and arrows. Six presentations were built and measured against each
 other — proportional blocks, parallel strands, a lane grid, one step at a time,
-and the outline — and **Flow** is the one that stayed:
+the outline, and a flow of bars — and what stayed is this:
 
-- columns are how far along a pathway you are;
-- the height of a block and the thickness of a ribbon are how much of everything
-  runs through it;
-- there is nothing to open and no reading order — the shape *is* the answer;
-- clicking a block puts its contents in the rail: every box the element stands
-  for, however many.
+**Every element is a circle whose area is the share of readings that pass
+through it.** Left to right is how far along a pathway you are; a line between
+two circles is a step, and its thickness is the same measure. Nothing is named
+until you point at it — a hundred names on screen at once is not information, it
+is fog. The picture draws itself in when a map loads, column by column, so the
+first thing you see is the shape arriving rather than a wall already there.
 
-On the 296-box test map it is one screen. The other five are gone; what they
-were each good at is recorded in the git history if any of it is wanted back.
+### What the percentages mean
 
-### Feedback opens where it stands, as a wheel
+Every figure in **%** on this page is a share of the **readings** — the distinct
+pathways the atlas tells from the box you started at. "14% of everything" means
+fourteen readings in every hundred pass through that element. It is the number
+of readings that reach it multiplied by the number that carry on from it, over
+the total — so an element on the one route everything takes is 100%, and one on
+a rare branch is a fraction of a percent. The inspector under the picture says
+this in full whenever it shows a number.
 
-A tangle is one amber block marked **↻**. Clicking it opens **the whole tangle
-as one picture** beside it, rather than sending you to another tab.
+### Clicking
 
-The picture is a wheel. Boxes sit on the rim in an order chosen so that almost
-every link runs clockwise; the few that run the other way are drawn as chords
-across the middle, and those chords are the feedback — cut them and the tangle
-is a plain sequence. That is what makes a hundred-box knot drawable at all: the
-loops span a space of dozens of independent ones, but the links that have to be
-cut is a far smaller number.
+- **Click an element** and everything it touches lights up while the rest falls
+  back. The inspector names what reaches it, what it leads to, which lanes are
+  in it, and what its share means.
+- **Double-click** anything to close the frame in on it; Escape backs out again.
+  Whenever the frame is closer in than the whole picture, dragging moves it.
+- **Click a tangle** to go inside it.
 
-**Then click a box on the rim.** Everything it touches lights up, everything
-else falls away, and the shortest loop through it draws itself link by link,
-over and over, starting and ending at the box you asked about — so the return
-is something you watch rather than something you reconstruct. Underneath, the
-same loop is written out in words with its polarity and gain, and a box with
-several loops through it offers the next one. A reader who has asked for less
-motion gets the loop drawn all at once instead.
+### Going inside a tangle
 
-The rim of a hundred boxes is hard to aim at, so the same choice is a list
-underneath, ordered by how many loops each box takes part in.
+A tangle of feedback is a circle already, so it is drawn as the wheel it
+contains: its boxes round the rim in an order that makes almost every link run
+clockwise, and the few that run the other way — **the feedback** — as chords
+across the middle. Cut those and the knot is a plain sequence. That gap is what
+makes a tangle drawable at all: on the test map its loops span a space of 80
+independent ones, but only 33 links run backwards.
 
-Beside the wheel:
+Far away it is a texture inside a circle. Click it and **the frame closes in on
+it** — a zoom, not a panel. It is not a link to another view; it *is* the other
+view seen from far away, so going in magnifies what was already on screen, and
+nothing floats over the map to lose your place behind.
 
-- the panel is **anchored to its block** by a leader line, and placed in the
-  picture's own coordinates, so it scrolls with the map instead of floating over
-  the middle of the screen;
-- the ribbons into and out of the tangle **come forward in amber** and
-  everything else fades back, so what you are looking at is the feedback *and*
-  where in the flow it sits;
-- it names what reaches the tangle and what it leads to — from the picture, not
-  from the raw map;
-- nothing moves. The picture is not re-laid out, and the scroll position is
-  kept, so closing the drawer puts you back exactly where you were.
+Then the loops **play through by themselves**: each draws itself round, link by
+link, and stays, faded, while the next one draws. What builds up is the answer a
+list of loops cannot give — how they lie on top of each other, which boxes they
+share, and how much of the tangle is reinforcing (amber) against balancing
+(blue). The strongest fourteen play; the rest are counted.
 
-Escape closes it, as does clicking the block again. The block is a real button:
-tab to it and press Enter. `tests/pathway-atlas-page.test.ts` runs the page in a
-DOM and holds that contract — opens in place, closes three ways, does not change
-the shape of the picture underneath itself.
+**Click a box on the rim** and its own loop takes over: everything it touches
+lights up, the loop draws round and round, and the inspector writes it out with
+its polarity and gain — starting and ending at the box you clicked, because a
+loop has no beginning but an explanation does. A box with several loops through
+it offers the next one.
+
+Escape lets go one layer at a time: the box, then the tangle, then the zoom. A
+reader who has asked for less motion gets every loop drawn at once rather than
+animated. `tests/pathway-atlas-page.test.ts` runs the page in a DOM and holds
+that contract.
 
 **Loops** keeps its own tab as an index: every loop on the map at once, sortable,
 when the question is "what feedback is in here" rather than "what is going on at
 this point".
-
-### Circles — a prototype of the same picture
-
-A second drawing of the identical atlas, on its own tab. Every element is a
-circle whose **area** is how much runs through it, rather than a bar whose
-height is. A bar is easier to compare than a disc, so the encoding is a step
-down; the reason to want it is the shape. **A tangle of feedback is a circle**,
-so here it is drawn as a small wheel sitting in the flow — the same rim, the
-same chords — and opening it is a zoom rather than a change of subject.
-
-Left to right still means how far along a pathway you are: it is the only thing
-on the page that says which way round the story goes.
-
-Flow remains the one that has been lived with. Circles is there to be compared
-against it on a real map, and to be dropped if it does not win.
 
 ## Feedback loops
 
@@ -213,8 +204,8 @@ ring drops it, so `Cat A Treatment Referral` reads as `Treatment Referral`
 instead of being clipped to `Cat A Treatmen…`.
 
 Loops live in two places, sorted by the same rule in both so the order does not
-change under you: **in the Flow picture**, where a tangle opens where it stands
-(above), and in the **Loops tab**, which lists every loop on the map at once.
+change under you: **inside the tangle itself** in the picture (above), and in the
+**Loops tab**, which lists every loop on the map at once.
 
 **One thing worth knowing about your data.** If two boxes are joined by two links
 that disagree about sign, the polarity of every loop through them depends on
@@ -224,13 +215,13 @@ reported rather than swallowed.
 
 ## Reading the page
 
-- **A block** is one element: a box, a group of boxes that behave alike, or a
-  contracted feedback tangle (amber). Its height is how much of everything runs
+- **A circle** is one element: a box, a group of boxes that behave alike, or a
+  contracted feedback tangle (amber). Its area is how much of everything runs
   through it.
 - **`◇ Seizure ×8`** is one element standing for eight boxes. Click it and the
   rail names all eight.
-- **A ribbon** is a step, and its thickness is the same measure — so a thin
-  ribbon out of a tall block is a rare way on from a common place.
+- **A line** is a step, and its thickness is the same measure — so a thin line
+  out of a large circle is a rare way on from a common place.
 - **A contracted tangle** is entered and left but never gone round, which is
   what makes the count finite and matches how people read a strand. Click it for
   its loops.
