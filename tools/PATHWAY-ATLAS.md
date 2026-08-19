@@ -116,19 +116,39 @@ and the outline — and **Flow** is the one that stayed:
 On the 296-box test map it is one screen. The other five are gone; what they
 were each good at is recorded in the git history if any of it is wanted back.
 
-### Feedback opens where it stands
+### Feedback opens where it stands, as a wheel
 
-A tangle is one amber block marked **↻**. Clicking it unfurls its loops beside
-it rather than sending you to another tab:
+A tangle is one amber block marked **↻**. Clicking it opens **the whole tangle
+as one picture** beside it, rather than sending you to another tab.
 
-- the drawer is **anchored to its block** by a leader line, and placed in the
+The picture is a wheel. Boxes sit on the rim in an order chosen so that almost
+every link runs clockwise; the few that run the other way are drawn as chords
+across the middle, and those chords are the feedback — cut them and the tangle
+is a plain sequence. That is what makes a hundred-box knot drawable at all: the
+loops span a space of dozens of independent ones, but the links that have to be
+cut is a far smaller number.
+
+**Then click a box on the rim.** Everything it touches lights up, everything
+else falls away, and the shortest loop through it draws itself link by link,
+over and over, starting and ending at the box you asked about — so the return
+is something you watch rather than something you reconstruct. Underneath, the
+same loop is written out in words with its polarity and gain, and a box with
+several loops through it offers the next one. A reader who has asked for less
+motion gets the loop drawn all at once instead.
+
+The rim of a hundred boxes is hard to aim at, so the same choice is a list
+underneath, ordered by how many loops each box takes part in.
+
+Beside the wheel:
+
+- the panel is **anchored to its block** by a leader line, and placed in the
   picture's own coordinates, so it scrolls with the map instead of floating over
   the middle of the screen;
 - the ribbons into and out of the tangle **come forward in amber** and
   everything else fades back, so what you are looking at is the feedback *and*
   where in the flow it sits;
-- the drawer names what reaches the tangle and what it leads to — from the
-  picture, not from the raw map — alongside its loops;
+- it names what reaches the tangle and what it leads to — from the picture, not
+  from the raw map;
 - nothing moves. The picture is not re-laid out, and the scroll position is
   kept, so closing the drawer puts you back exactly where you were.
 

@@ -30,7 +30,7 @@ const script = /<script>\n([\s\S]*?)<\/script>/.exec(html)![1];
 
 type Page = {
   loadMap: (map: any) => void;
-  state: () => { view: string; open: string | null; atlas: any };
+  state: () => { view: string; open: string | null; pick: string | null; atlas: any };
 };
 let page: Page;
 
@@ -54,11 +54,15 @@ function loopedMap() {
 const tick = () => new Promise(r => setTimeout(r, 60));
 const flowBlocks = () => [...document.querySelectorAll("#stage g.n[data-loop]")] as HTMLElement[];
 const drawer = () => document.querySelector(".loopdrawer");
+const ensureOpen = () => {
+  if (!drawer()) flowBlocks()[0].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+};
 
 beforeAll(async () => {
   document.body.innerHTML = body.replace(/<script>[\s\S]*?<\/script>/, "");
   page = new Function(
-    script + "\nreturn { loadMap, state: () => ({ view: VIEW, open: OPEN_LOOP, atlas: ATLAS }) };",
+    script + "\nreturn { loadMap, state: () => " +
+      "({ view: VIEW, open: OPEN_LOOP, pick: WHEEL_PICK, atlas: ATLAS }) };",
   )() as Page;
   page.loadMap(loopedMap());
   await tick();
@@ -87,22 +91,51 @@ describe("opening a tangle in the flow picture", () => {
     expect(flowBlocks()[0].getAttribute("aria-expanded")).toBe("true");
   });
 
-  it("shows the loops of that tangle, and only those", () => {
+  it("draws that tangle as a wheel — every box on the rim, every link a chord", () => {
     const t = page.state().atlas.loops[0].tangles[0];
-    const cards = document.querySelectorAll(".loopdrawer .loopcard");
-    expect(cards).toHaveLength(t.loops.length);
+    expect(document.querySelectorAll(".loopdrawer svg.wheel .nd")).toHaveLength(t.boxes.length);
+    expect(document.querySelectorAll(".loopdrawer svg.wheel .ch")).toHaveLength(t.links.length);
+    // The back chords are the feedback: cut those and the tangle is a sequence.
+    const back = [...document.querySelectorAll(".loopdrawer svg.wheel .ch:not(.fw)")];
+    expect(back.length).toBeGreaterThan(0);
+    expect(back.length).toBeLessThan(t.links.length);
     expect(drawer()!.textContent).toContain(`${t.boxes.length} boxes`);
     // A → B → C → A has one negative link, so it settles rather than runs away.
     expect(drawer()!.textContent).toContain("0R / 1B");
   });
 
+  it("traces the loop through a box when the box is clicked", () => {
+    const rim = [...document.querySelectorAll(".loopdrawer svg.wheel .nd")] as HTMLElement[];
+    const a = rim.find(n => n.dataset.box === "a")!;
+    a.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(page.state().pick).toBe("a");
+    expect(document.querySelector("svg.wheel.picked")).not.toBeNull();
+    // A → B → C → A is three links, so three chords are drawn over the wheel
+    expect(document.querySelectorAll("svg.wheel .trace path")).toHaveLength(3);
+    // and the story starts at the box that was asked about
+    const cap = document.getElementById("wheel-cap")!;
+    expect(cap.textContent).toContain("A box");
+    expect(cap.querySelector(".chain")!.textContent!.trim().startsWith("A box")).toBe(true);
+  });
+
+  it("lets go of the box before it lets go of the tangle", () => {
+    dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(page.state().pick).toBeNull();
+    expect(drawer()).not.toBeNull();          // still open on the tangle
+    expect(document.querySelector("svg.wheel.picked")).toBeNull();
+    dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(drawer()).toBeNull();
+  });
+
   it("brings the ribbons into and out of the tangle forward", () => {
+    ensureOpen();
     const hot = document.querySelectorAll("#stage .flow .link.hot");
     expect(hot.length).toBeGreaterThan(0);
     expect(hot.length).toBeLessThan(document.querySelectorAll("#stage .flow .link").length);
   });
 
   it("keeps the picture the same shape while it is open", () => {
+    ensureOpen();
     const shape = (): string[] =>
       [...document.querySelectorAll("#stage .flow rect.node")].map(
         r => `${r.getAttribute("x")}/${r.getAttribute("y")}/${r.getAttribute("height")}`);
@@ -130,12 +163,15 @@ describe("opening a tangle in the flow picture", () => {
     dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   });
 
-  it("re-sorts inside the drawer without closing it", () => {
+  it("picks a box from the list as well as from the rim, and keeps the drawer open", () => {
     flowBlocks()[0].dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    document.querySelector('.loopdrawer [data-loopsort="length"]')!
-      .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const sel = document.getElementById("wheel-pick") as HTMLSelectElement;
+    sel.value = "b";
+    sel.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(page.state().pick).toBe("b");
     expect(drawer()).not.toBeNull();
-    expect(page.state().open).not.toBeNull();
+    expect(document.getElementById("wheel-cap")!.textContent).toContain("B box");
+    dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   });
 

@@ -225,7 +225,7 @@ ul.members li em{font-style:normal;color:var(--text-tertiary);font-family:var(--
 .flow .lead{stroke:var(--accent-amber);stroke-width:2;fill:none;opacity:.8}
 .flow .leadend{fill:var(--accent-amber)}
 
-.loopdrawer{position:absolute;z-index:5;background:var(--bg-deepest);
+.loopdrawer{position:absolute;z-index:5;background:var(--bg-deepest);overscroll-behavior:contain;
   border:1px solid var(--accent-amber);border-radius:var(--r-s);
   box-shadow:var(--shadow-float);padding:11px 12px 12px;overflow:auto}
 .loopdrawer>header{display:flex;align-items:baseline;gap:8px;margin-bottom:3px}
@@ -239,6 +239,34 @@ ul.members li em{font-style:normal;color:var(--text-tertiary);font-family:var(--
 .closex{background:none;border:0;color:var(--text-tertiary);font:inherit;font-size:12px;
   cursor:pointer;padding:2px 5px;border-radius:4px;flex:none}
 .closex:hover{background:var(--bg-mid);color:var(--text-primary)}
+
+/* ── the wheel ─────────────────────────────────────────────────────────── */
+svg.wheel{display:block;margin:2px auto 0;touch-action:manipulation}
+svg.wheel .ch{fill:none;transition:opacity .18s ease}
+svg.wheel .fw{stroke:var(--text-tertiary);opacity:.22;stroke-width:.7}
+svg.wheel .nd{fill:var(--act);cursor:pointer;transition:opacity .18s ease}
+svg.wheel .nd:hover{stroke:var(--text-primary);stroke-width:1.5}
+svg.wheel .nd.on{fill:var(--accent-amber)}
+svg.wheel .nd.sel{fill:var(--text-primary);stroke:var(--bg-deepest);stroke-width:2}
+svg.wheel .bl{font-family:var(--font-ui);font-size:9px;fill:var(--text-tertiary)}
+svg.wheel .bl.on{fill:var(--text-primary);font-weight:600}
+svg.wheel.picked .ch{opacity:.06}
+svg.wheel.picked .ch.on{opacity:.5}
+svg.wheel.picked .nd{opacity:.28}
+svg.wheel.picked .nd.on,svg.wheel.picked .nd.sel{opacity:1}
+svg.wheel .trace path{fill:none;stroke-linecap:round}
+svg.wheel .hub{fill:var(--text-tertiary);font-family:var(--font-mono);font-size:10px;text-anchor:middle}
+
+.wheelfoot{margin-top:8px;border-top:1px solid var(--border-subtle);padding-top:9px}
+.wheelfoot select{width:100%;background:var(--bg-deepest);color:var(--text-primary);
+  border:1px solid var(--border-strong);border-radius:var(--r-i);padding:5px 7px;font:inherit;font-size:12px}
+.wheelfoot .cap{margin:8px 0 0;font-size:12.5px;color:var(--text-secondary)}
+.wheelfoot .cap b{color:var(--text-primary)}
+.wheelfoot .chain{margin:6px 0 0;font-size:11.5px;color:var(--text-secondary);
+  display:flex;flex-wrap:wrap;gap:3px 5px;align-items:center}
+.wheelfoot .chain i{font-style:normal;font-family:var(--font-mono);font-size:10.5px;color:var(--text-tertiary)}
+.wheelfoot .chain em{font-style:normal;padding:1px 5px;border-radius:4px;background:var(--bg-mid)}
+.wheelfoot .chain em.head{background:color-mix(in srgb,var(--accent-amber) 26%,transparent)}
 
 /* ── 2. LOOPS ──────────────────────────────────────────────────────────── */
 .loopgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(292px,1fr));gap:12px}
@@ -782,6 +810,7 @@ function analyseTangle(boxes, edges, outsideIn, outsideOut) {
 
   return {
     boxes, loops,
+    links: [...strongest.values()],
     linkCount: inner.length,
     parallel, contradictory,
     // How many loops it would take to generate every loop in here. The plain
@@ -791,6 +820,112 @@ function analyseTangle(boxes, edges, outsideIn, outsideOut) {
     reinforcing: loops.filter(l => l.reinforcing).length,
     balancing: loops.filter(l => !l.reinforcing).length,
   };
+}
+
+// ---------------------------------------------------------------------------
+// 2b. THE WHEEL — an order that makes a tangle drawable
+// ---------------------------------------------------------------------------
+// A tangle is not a random knot. Order its boxes well and MOST of its links run
+// forwards; only a few run back, and those few are the feedback — cut them and
+// what is left is an ordinary sequence. That is what makes the tangle drawable
+// as one picture: the back links are few enough to see.
+//
+// Worth keeping two numbers apart. The loops of a tangle span a space of
+// E − V + 1 independent ones, which on a real tangle runs to dozens and is why
+// listing them fails. The links that must be cut to make it acyclic are far
+// fewer. The second number is the one you can draw.
+//
+// The ordering is the greedy feedback-arc-set of Eades, Lin and Smyth: peel
+// sinks off the back and sources off the front, and when neither exists take
+// the box with the biggest out-minus-in. Linear, and in practice within a hair
+// of the smallest possible set of back links.
+// ---------------------------------------------------------------------------
+function orderTangle(boxes, links) {
+  const outD = new Map(), inD = new Map(), outs = new Map(), ins = new Map();
+  for (const b of boxes) { outD.set(b, 0); inD.set(b, 0); outs.set(b, []); ins.set(b, []); }
+  for (const e of links) {
+    if (!outD.has(e.from) || !inD.has(e.to)) continue;
+    outD.set(e.from, outD.get(e.from) + 1); inD.set(e.to, inD.get(e.to) + 1);
+    outs.get(e.from).push(e.to); ins.get(e.to).push(e.from);
+  }
+  const left = [], right = [], gone = new Set();
+  const drop = v => {
+    gone.add(v);
+    for (const w of outs.get(v)) if (!gone.has(w)) inD.set(w, inD.get(w) - 1);
+    for (const w of ins.get(v)) if (!gone.has(w)) outD.set(w, outD.get(w) - 1);
+  };
+  while (gone.size < boxes.length) {
+    let moved = true;
+    while (moved) {
+      moved = false;
+      for (const v of boxes) if (!gone.has(v) && outD.get(v) === 0) { right.unshift(v); drop(v); moved = true; }
+      for (const v of boxes) if (!gone.has(v) && inD.get(v) === 0 && outD.get(v) > 0) { left.push(v); drop(v); moved = true; }
+    }
+    if (gone.size >= boxes.length) break;
+    let best = null, score = -Infinity;
+    for (const v of boxes) {
+      if (gone.has(v)) continue;
+      const s = outD.get(v) - inD.get(v);
+      if (s > score) { score = s; best = v; }
+    }
+    left.push(best); drop(best);
+  }
+  return left.concat(right);
+}
+
+// Everything the wheel is drawn from. Computed when a tangle is opened rather
+// than when the atlas is built, so a map full of feedback still builds in the
+// time it takes to draw one frame.
+function wheelOf(t) {
+  const order = orderTangle(t.boxes, t.links);
+  const pos = new Map(order.map((b, i) => [b, i]));
+  const forward = [], back = [];
+  for (const e of t.links) (pos.get(e.to) > pos.get(e.from) ? forward : back).push(e);
+
+  // The forward links alone are acyclic, so the way home from a back link is a
+  // shortest path in a DAG — no search, just relax in order. A few back links
+  // cannot get home that way, because their return needs another back link;
+  // those fall back to a plain search, so every back link gets its loop.
+  const fwdOut = new Map(t.boxes.map(b => [b, []]));
+  for (const e of forward) fwdOut.get(e.from).push(e);
+  const allOut = new Map(t.boxes.map(b => [b, []]));
+  for (const e of t.links) allOut.get(e.from).push(e);
+
+  const loops = [];
+  for (const e of back) {
+    const dist = new Map([[e.to, 0]]), prev = new Map();
+    for (const b of order) {
+      if (!dist.has(b)) continue;
+      for (const f of fwdOut.get(b))
+        if (!dist.has(f.to) || dist.get(f.to) > dist.get(b) + 1) {
+          dist.set(f.to, dist.get(b) + 1); prev.set(f.to, f);
+        }
+    }
+    let chain = [];
+    if (dist.has(e.from)) {
+      for (let at = e.from; at !== e.to; ) { const f = prev.get(at); chain.unshift(f); at = f.from; }
+    } else {
+      const seen = new Map(), q = [e.to];
+      for (let i = 0; i < q.length; i++)
+        for (const f of allOut.get(q[i]) || []) {
+          if (seen.has(f.to) || f.to === e.to) continue;
+          seen.set(f.to, f); q.push(f.to);
+        }
+      if (!seen.has(e.from)) continue;
+      for (let at = e.from; at !== e.to; ) { const f = seen.get(at); chain.unshift(f); at = f.from; }
+    }
+    const links = chain.concat([e]);
+    let sign = 1, gain = 1;
+    for (const l of links) { if (l.elasticity < 0) sign = -sign; gain *= Math.abs(l.elasticity); }
+    loops.push({ back: e, links, cycle: links.map(l => l.from), reinforcing: sign > 0, gain });
+  }
+
+  const share = new Map(t.boxes.map(b => [b, 0]));
+  for (const l of loops) for (const b of l.cycle) share.set(b, share.get(b) + 1);
+  const touching = new Map(t.boxes.map(b => [b, []]));
+  for (const e of t.links) { touching.get(e.from).push(e); touching.get(e.to).push(e); }
+
+  return { order, pos, forward, back, loops, share, touching, links: t.links };
 }
 
 // ---------------------------------------------------------------------------
@@ -1216,6 +1351,7 @@ let OPEN_LOOP = null;     // Flow: which tangle is unfurled where it stands
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const plural = (n, one, many) => (n === 1 ? one : many || one + "s");
+const clip = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 const labelOf = id => (ATLAS.nodes.get(id) || {}).label || id;
 
 // ---------------------------------------------------------------------------
@@ -1262,7 +1398,7 @@ const pct = f => (f >= 0.1 ? (f * 100).toFixed(0) : f >= 0.001 ? (f * 100).toFix
 // come forward in amber, and everything else fades back. Feedback read on its
 // own is a diagram; feedback read next to what feeds it is an explanation.
 // ---------------------------------------------------------------------------
-const DRAWER_W = 348;
+const DRAWER_W = 520;
 function viewFlow(A, M) {
   const COL_W = 190, PAD = 26, H = Math.max(520, Math.min(1100, A.elements * 7));
   const cols = [];
@@ -1354,13 +1490,16 @@ function viewFlow(A, M) {
   // The drawer is placed in the picture's own coordinates — the SVG is drawn at
   // 1 unit per pixel and shares the wrapper's scroll — so it stays pinned to
   // its block rather than floating over the middle of the screen.
-  let drawer = "";
+  let drawer = "", wrapStyle = "";
   if (open) {
     const bx = PAD + M.depth.get(open) * COL_W, by = y.get(open), bh = h.get(open);
     const toRight = bx + 56 + DRAWER_W <= W - 4;
     const px = toRight ? bx + 56 : Math.max(6, bx - 44 - DRAWER_W);
-    const dh = Math.min(H - 24, 560);
-    const py = Math.max(10, Math.min(H - dh - 10, by + bh / 2 - dh / 2));
+    // The wheel wants more height than a short map's picture has. Rather than
+    // squeezing it, the drawer keeps its size and the wrapper grows to hold it
+    // — see fitDrawer, which measures the real thing once it is in the page.
+    const dh = 860;
+    const py = Math.max(10, Math.min(Math.max(10, H - dh - 10), by + bh / 2 - dh / 2));
     const sx = toRight ? bx + 13 : bx, sy = by + bh / 2;
     const ex = toRight ? px : px + DRAWER_W;
     const ey = Math.max(py + 22, Math.min(py + dh - 22, sy));
@@ -1368,6 +1507,7 @@ function viewFlow(A, M) {
     parts.push(`<path class="lead" d="M${sx} ${sy}C${mx} ${sy} ${mx} ${ey} ${ex} ${ey}"></path>`);
     parts.push(`<circle class="leadend" cx="${sx}" cy="${sy}" r="3.5"></circle>`);
     drawer = loopDrawer(open, A, `left:${px}px;top:${py}px;width:${DRAWER_W}px;max-height:${dh}px`);
+    wrapStyle = ` style="min-height:${py + dh + 14}px"`;
   }
 
   return `<div class="legend">
@@ -1375,7 +1515,7 @@ function viewFlow(A, M) {
       <span><i style="background:var(--accent-amber)"></i>↻ feedback — click it to open its loops here</span>
       <span>ribbon thickness is the same measure, for a step</span>
     </div>
-    <div class="flowwrap"><svg class="flow${open ? " opened" : ""}" width="${W}" height="${H}" role="img"
+    <div class="flowwrap"${wrapStyle}><svg class="flow${open ? " opened" : ""}" width="${W}" height="${H}" role="img"
       aria-label="Flow diagram of every pathway downstream of ${esc(labelOf(A.start))}">${parts.join("")}</svg>${drawer}</div>`;
 }
 
@@ -1385,37 +1525,279 @@ function viewFlow(A, M) {
 function loopDrawer(id, A, style) {
   const node = A.nodes.get(id);
   const t = node.tangles[0];
-  // One element can stand for the same tangle in several lanes. The loops are
+  // One element can stand for the same tangle in several lanes. The wheel is
   // one copy's worth — saying "2 boxes" of an element covering four copies of
   // them would be wrong, and summing them into "8 boxes" would be wronger.
   const copies = node.tangles.length;
   const sum = k => node.tangles.reduce((a, x) => a + (Array.isArray(x[k]) ? x[k].length : x[k]), 0);
-  const loops = sortLoops((A.feedback || []).filter(l => l.element === id));
-  const r = loops.filter(l => l.reinforcing).length;
+  const w = wheelFor(id, t);
+  WHEEL_TANGLE = t;
+  const r = w.loops.filter(l => l.reinforcing).length;
   const names = set => {
     const list = [...set].filter(x => x !== END).map(labelOf);
     if (!list.length) return "";
-    return list.slice(0, 3).map(n => `<b>${esc(clip(n, 26))}</b>`).join(", ") +
-      (list.length > 3 ? ` and ${list.length - 3} more` : "");
+    return list.slice(0, 2).map(n => `<b>${esc(clip(n, 22))}</b>`).join(", ") +
+      (list.length > 2 ? ` +${list.length - 2}` : "");
   };
   const from = names(A.pred.get(id) || new Set()), to = names(A.succ.get(id) || new Set());
+  const byLoops = [...t.boxes].sort((a, b) => (w.share.get(b) - w.share.get(a)) ||
+    (boxLabel(a) < boxLabel(b) ? -1 : 1));
   return `<aside class="loopdrawer" style="${style}">
     <header><b>↻ Feedback here</b>
       <button class="closex" type="button" data-closeloop>Close</button></header>
     <p class="m">${t.boxes.length} ${plural(t.boxes.length, "box", "boxes")}${
-      copies > 1 ? ` in each of ${copies} places` : ""} · ${loops.length}
-      ${plural(loops.length, "loop")} · ${r}R / ${loops.length - r}B${
-      t.independent > loops.length ? ` · ${t.independent} independent` : ""}</p>
-    <p class="ctx">${from ? `Reached from ${from}.` : "Nothing upstream of it in this scope."}
-      ${to ? `Leaves to ${to}.` : "Nothing leaves it."}</p>
-    <p class="m" style="margin-top:4px">${sum("waysIn")} ${plural(sum("waysIn"), "link")} in,
-      ${sum("waysOut")} out${sum("contradictory") ? ` · ${sum("contradictory")} contradictory` : ""}</p>
-    <div class="row-btns" style="margin-top:9px">${loopSortButtons()}</div>
-    <div class="drawerloops">${loops.map(l => loopCard(l, A)).join("")}</div>
+      copies > 1 ? ` in each of ${copies} places` : ""} · ${w.back.length}
+      ${plural(w.back.length, "link")} back · ${r}R / ${w.loops.length - r}B${
+      t.independent > w.loops.length ? ` · ${t.independent} independent` : ""}</p>
+    <p class="ctx">${from ? `From ${from}.` : "Nothing upstream in this scope."}
+      ${to ? `Into ${to}.` : "Nothing leaves it."}
+      <span class="m">${sum("waysIn")} in, ${sum("waysOut")} out${
+        sum("contradictory") ? ` · ${sum("contradictory")} contradictory` : ""}</span></p>
+    ${wheelSvg(w)}
+    <div class="wheelfoot">
+      <select id="wheel-pick" aria-label="Pick a box in the tangle">
+        <option value="">Pick a box — or click one on the rim</option>
+        ${byLoops.map(b => `<option value="${esc(b)}"${b === WHEEL_PICK ? " selected" : ""}>${
+          esc(clip(boxLabel(b), 40))} — in ${w.share.get(b)} ${plural(w.share.get(b), "loop")}</option>`).join("")}
+      </select>
+      <div id="wheel-cap"></div>
+    </div>
   </aside>`;
 }
 
-const clip = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+// ---------------------------------------------------------------------------
+// THE WHEEL — a tangle as one picture, and one loop at a time inside it
+// ---------------------------------------------------------------------------
+// Boxes sit on the rim in an order that makes almost every link run clockwise;
+// the few that run the other way are the feedback, and they are drawn as
+// coloured chords across the middle. That is the whole tangle in one glyph.
+//
+// Then: click a box and the picture answers "how does this come back to
+// itself". Everything it touches lights up, everything else falls away, and
+// the shortest loop through it draws itself link by link, over and over, so
+// the return is something you watch rather than something you reconstruct.
+// ---------------------------------------------------------------------------
+const CHAIN_MAX = 7;               // boxes named under the wheel; the rest are on it
+const WHEELS = new Map();          // one layout per element, built when opened
+let WHEEL_GEO = null;              // where each box sits, for repainting
+let WHEEL_PICK = null;             // the box being explained
+let WHEEL_LOOP = 0;                // which of its loops, when it has several
+let WHEEL_TANGLE = null;
+let traceRAF = 0;
+
+function wheelFor(id, t) {
+  if (!WHEELS.has(id)) WHEELS.set(id, wheelOf(t));
+  return WHEELS.get(id);
+}
+
+const chordPath = (x1, y1, x2, y2, C, pull) =>
+  `M${x1.toFixed(1)} ${y1.toFixed(1)}Q${(C + (x1 + x2 - 2 * C) * pull).toFixed(1)} ${
+    (C + (y1 + y2 - 2 * C) * pull).toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`;
+
+function wheelSvg(w) {
+  const order = w.order, n = order.length;
+  const S = 496, C = S / 2;
+  const R = Math.max(46, Math.min(108, n * 1.9));
+  const at = i => {
+    const a = (-Math.PI / 2) + (i * 2 * Math.PI) / n;
+    return [C + R * Math.cos(a), C + R * Math.sin(a), a];
+  };
+  const pt = new Map(order.map((b, i) => [b, at(i)]));
+  // Two sets of loops end up on this wheel and both are worth having: the one
+  // each back link closes, which is what the chords ARE, and the shortest loop
+  // through each box, which is what a reader asking "how does this come round"
+  // actually wants. Same shape, so they merge; duplicates are the same loop
+  // written from a different starting box.
+  const all = [], seenLoop = new Set();
+  for (const l of [...(WHEEL_TANGLE ? WHEEL_TANGLE.loops : []), ...w.loops]) {
+    const k = canonicalCycle(l.cycle);
+    if (seenLoop.has(k)) continue;
+    seenLoop.add(k);
+    all.push(l);
+  }
+  WHEEL_GEO = { pt, C, R, S, n, w, all };
+
+  const maxShare = Math.max(...w.share.values(), 1);
+  const maxGain = Math.max(...w.loops.map(l => l.gain), 0.0001);
+  const key = e => e.from + "\u0001" + e.to;
+  const polar = new Map();
+  for (const l of w.loops) polar.set(key(l.back), l);
+
+  const parts = [];
+  for (const e of w.forward) {
+    const [x1, y1] = pt.get(e.from), [x2, y2] = pt.get(e.to);
+    parts.push(`<path class="ch fw" data-k="${esc(key(e))}" d="${chordPath(x1, y1, x2, y2, C, 0.3)}"></path>`);
+  }
+  for (const e of w.back) {
+    const l = polar.get(key(e));
+    const [x1, y1] = pt.get(e.from), [x2, y2] = pt.get(e.to);
+    parts.push(`<path class="ch" data-k="${esc(key(e))}" d="${chordPath(x1, y1, x2, y2, C, 0.22)}"
+      stroke="${l && l.reinforcing ? "var(--c1)" : "var(--c2)"}" opacity="0.7"
+      stroke-width="${l ? (1 + (l.gain / maxGain) * 2.2).toFixed(2) : 1}"></path>`);
+  }
+  parts.push(`<g class="trace"></g>`);
+  for (const b of order) {
+    const [x, y] = pt.get(b), sh = w.share.get(b) / maxShare;
+    parts.push(`<circle class="nd" data-box="${esc(b)}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}"
+      r="${(2.2 + sh * 3).toFixed(1)}" opacity="${(0.45 + sh * 0.55).toFixed(2)}"><title>${
+      esc(boxLabel(b))} — in ${w.share.get(b)} ${plural(w.share.get(b), "loop")}</title></circle>`);
+  }
+  parts.push(`<g class="labs"></g>`);
+  parts.push(`<text class="hub" x="${C}" y="${C - 4}">${n}</text>
+    <text class="hub" x="${C}" y="${C + 9}">boxes</text>`);
+  return `<svg class="wheel" width="100%" viewBox="0 0 ${S} ${S}" role="img"
+    aria-label="The tangle as a wheel: ${n} boxes on the rim, ${w.back.length} links running back across it">
+    ${parts.join("")}</svg>`;
+}
+
+// Labels are redrawn on every pick, because which names matter depends on
+// what is selected: the hubs when nothing is, the loop's own boxes when
+// something is.
+function wheelLabels(picked, cycle) {
+  const { pt, C, R, w, n } = WHEEL_GEO;
+  const apart = Math.max(2, Math.round(n / 30));
+  const spaced = (list, cap, keep) => {
+    const out = keep ? [keep] : [];
+    for (const b of list) {
+      if (out.length >= cap) break;
+      if (out.some(o => Math.abs(w.pos.get(o) - w.pos.get(b)) < apart)) continue;
+      out.push(b);
+    }
+    return out;
+  };
+  const want = cycle
+    ? spaced(cycle, 8, picked)
+    : spaced([...w.order].sort((a, c) => w.share.get(c) - w.share.get(a)), 10, null);
+  return want.map(b => {
+    const p = pt.get(b);
+    if (!p) return "";
+    const a = p[2], lx = C + (R + 9) * Math.cos(a), ly = C + (R + 9) * Math.sin(a);
+    const flip = Math.cos(a) < 0;
+    return `<text class="bl${cycle ? " on" : ""}" x="${lx.toFixed(1)}" y="${ly.toFixed(1)}"
+      text-anchor="${flip ? "end" : "start"}"
+      transform="rotate(${((a * 180) / Math.PI + (flip ? 180 : 0)).toFixed(1)} ${lx.toFixed(1)} ${ly.toFixed(1)})"
+      >${esc(clip(boxLabel(b), 18))}</text>`;
+  }).join("");
+}
+
+// Every loop through the picked box, shortest first — so "next" walks from the
+// tightest story it takes part in outwards.
+function loopsThrough(box) {
+  return WHEEL_GEO.all.filter(l => l.cycle.includes(box))
+    .sort((a, b) => a.cycle.length - b.cycle.length || b.gain - a.gain);
+}
+
+// A loop has no beginning, but an explanation does: the reader asked about
+// THIS box, so the story starts and ends there.
+function rotateTo(loop, box) {
+  const i = loop.cycle.indexOf(box);
+  if (i <= 0) return loop;
+  return { ...loop,
+    cycle: loop.cycle.slice(i).concat(loop.cycle.slice(0, i)),
+    links: loop.links.slice(i).concat(loop.links.slice(0, i)) };
+}
+
+function paintWheel() {
+  const svg = $("stage").querySelector("svg.wheel");
+  if (!svg || !WHEEL_GEO) return;
+  cancelAnimationFrame(traceRAF);
+  const { pt, C, w } = WHEEL_GEO;
+  const picked = WHEEL_PICK && w.pos.has(WHEEL_PICK) ? WHEEL_PICK : null;
+  svg.classList.toggle("picked", !!picked);
+  const trace = svg.querySelector(".trace");
+  const cap = $("wheel-cap");
+
+  if (!picked) {
+    for (const el of svg.querySelectorAll(".ch,.nd")) el.classList.remove("on");
+    svg.querySelector(".labs").innerHTML = wheelLabels(null, null);
+    trace.innerHTML = "";
+    if (cap) cap.innerHTML = `<p class="cap">Every chord across the middle is a link running
+      <b>back</b> — cut those and the tangle is a plain sequence. Click a box to see how it
+      comes round to itself.</p>`;
+    return;
+  }
+
+  const loops = loopsThrough(picked);
+  const loop = loops.length ? rotateTo(loops[WHEEL_LOOP % loops.length], picked) : null;
+  const onCycle = new Set(loop ? loop.cycle : [picked]);
+  const onLink = new Set((loop ? loop.links : []).map(e => e.from + "\u0001" + e.to));
+  for (const e of w.touching.get(picked) || []) onLink.add(e.from + "\u0001" + e.to);
+
+  for (const el of svg.querySelectorAll(".ch"))
+    el.classList.toggle("on", onLink.has(el.dataset.k));
+  for (const el of svg.querySelectorAll(".nd")) {
+    const mine = el.dataset.box === picked;
+    el.classList.toggle("on", onCycle.has(el.dataset.box));
+    el.classList.toggle("sel", mine);
+    // the box being explained is worth finding at a glance on a rim of a hundred
+    if (!el.dataset.r) el.dataset.r = el.getAttribute("r");
+    el.setAttribute("r", mine ? (Number(el.dataset.r) + 2.6).toFixed(1) : el.dataset.r);
+  }
+  svg.querySelector(".labs").innerHTML = wheelLabels(picked, [...onCycle]);
+
+  trace.innerHTML = (loop ? loop.links : []).map(e => {
+    const [x1, y1] = pt.get(e.from), [x2, y2] = pt.get(e.to);
+    const backwards = w.pos.get(e.to) <= w.pos.get(e.from);
+    return `<path d="${chordPath(x1, y1, x2, y2, C, backwards ? 0.22 : 0.3)}"
+      stroke="${loop.reinforcing ? "var(--c1)" : "var(--c2)"}" stroke-width="2.6"></path>`;
+  }).join("");
+  if (cap) {
+    cap.innerHTML = `<p class="cap"><b>${esc(boxLabel(picked))}</b> comes back to itself
+      ${loops.length} ${plural(loops.length, "way")}${loops.length > 1
+        ? ` — showing ${WHEEL_LOOP % loops.length === 0 ? "the shortest"
+            : (WHEEL_LOOP % loops.length) + 1 + " of " + loops.length}` : ""}.</p>` +
+      (loop ? `<p class="chain">${loop.cycle.slice(0, CHAIN_MAX).map((b, i) =>
+          `<em class="${b === picked ? "head" : ""}">${esc(clip(boxLabel(b), 22))}</em>` +
+          `<i>${loop.links[i].elasticity < 0 ? "−" : "+"}→</i>`).join("")}${
+         loop.cycle.length > CHAIN_MAX
+           ? `<i>${loop.cycle.length - CHAIN_MAX} more →</i>` : ""}
+         <em class="head">${esc(clip(boxLabel(picked), 22))}</em></p>
+        <p class="m" style="margin-top:6px">${loop.reinforcing ? "Reinforcing" : "Balancing"} ·
+          ${loop.cycle.length} ${plural(loop.cycle.length, "box", "boxes")} ·
+          gain ${loop.gain < 0.0005 ? "≈0" : loop.gain.toFixed(3)}</p>
+        <div class="row-btns" style="margin-top:8px">
+          ${loops.length > 1 ? `<button class="btn" type="button" data-wheelnext>Next loop through it</button>` : ""}
+          <button class="btn" type="button" data-wheelclear>Show the whole tangle</button></div>`
+        : `<p class="hint">No loop found through this box.</p>`);
+  }
+  runTrace(trace);
+}
+
+// The loop draws itself, link by link, and starts again. Watching the line
+// come back round is the part a still picture cannot do — so if the reader has
+// asked for less motion, the whole loop is simply drawn at once instead.
+function runTrace(g) {
+  const paths = [...g.querySelectorAll("path")];
+  if (!paths.length) return;
+  if (typeof paths[0].getTotalLength !== "function") return;   // not a real browser
+  const lens = paths.map(p => p.getTotalLength());
+  paths.forEach((p, i) => { p.style.strokeDasharray = lens[i]; });
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    paths.forEach(p => { p.style.strokeDashoffset = 0; });
+    return;
+  }
+  const STEP = 380, HOLD = 950, total = paths.length * STEP + HOLD;
+  const t0 = performance.now();
+  const tick = now => {
+    const t = (now - t0) % total;
+    paths.forEach((p, i) => {
+      const f = Math.max(0, Math.min(1, (t - i * STEP) / STEP));
+      p.style.strokeDashoffset = (lens[i] * (1 - f)).toFixed(2);
+    });
+    traceRAF = requestAnimationFrame(tick);
+  };
+  traceRAF = requestAnimationFrame(tick);
+}
+
+function pickWheelBox(box) {
+  WHEEL_PICK = box && box !== WHEEL_PICK ? box : null;
+  WHEEL_LOOP = 0;
+  const sel = $("wheel-pick");
+  if (sel) sel.value = WHEEL_PICK || "";
+  paintWheel();
+  fitDrawer();
+}
+
 
 // ---------------------------------------------------------------------------
 // 2. LOOPS — the ring diagram
@@ -1584,7 +1966,7 @@ function viewLoops(A, M) {
 // SHELL
 // ---------------------------------------------------------------------------
 const VIEW_NOTES = {
-  flow: "The whole atlas as one picture. Columns are how far along you are; height and thickness are how much runs through. Click a block to see the boxes inside it; click an amber <b>↻</b> to open its feedback loops where they stand.",
+  flow: "The whole atlas as one picture. Columns are how far along you are; height and thickness are how much runs through. Click a block to see the boxes inside it; click an amber <b>↻</b> to open its tangle as a wheel, then click a box on the rim to watch it come round to itself.",
   loops: "Every feedback loop, one ring each, with its polarity and its gain. A tangle of many loops sharing boxes becomes a grid of small readable rings rather than one opaque blob.",
 };
 const VIEWS = { flow: viewFlow, loops: viewLoops };
@@ -1634,12 +2016,14 @@ function renderView() {
       <b>${esc((G.byId.get(ATLAS.startId) || {}).label || ATLAS.startId)}</b> following the arrows.</p>`;
     return;
   }
+  cancelAnimationFrame(traceRAF);
   $("views").hidden = false;
   $("viewnote").innerHTML = VIEW_NOTES[VIEW];
   for (const b of $("views").children) b.setAttribute("aria-selected", String(b.dataset.v === VIEW));
   const M = measure(ATLAS);
   stage.innerHTML = VIEWS[VIEW](ATLAS, M);
   stage.scrollTop = 0;
+  if (VIEW === "flow" && OPEN_LOOP) { paintWheel(); fitDrawer(); }
 }
 
 // Every family opens to show its members, and the list of lane values opens
@@ -1737,7 +2121,7 @@ function run() {
       $("stage").innerHTML = `<p class="lede">That did not work: ${esc(err.message)}</p>`;
       return;
     }
-    OPEN_LOOP = null;
+    OPEN_LOOP = null; WHEEL_PICK = null; WHEEL_LOOP = 0; WHEELS.clear();
     railLanes(); renderStats(); renderView();
   });
 }
@@ -1793,6 +2177,15 @@ $("views").addEventListener("click", e => {
 
 // Re-rendering the picture must not move it. The one thing worse than having
 // to switch tabs to read a loop is coming back to find the map somewhere else.
+function fitDrawer() {
+  const wrap = $("stage").querySelector(".flowwrap");
+  const d = wrap && wrap.querySelector(".loopdrawer");
+  if (!wrap || !d) return;
+  const svg = wrap.querySelector("svg.flow");
+  const need = d.offsetTop + d.offsetHeight + 14;
+  wrap.style.minHeight = Math.max(svg ? svg.height.baseVal.value : 0, need) + "px";
+}
+
 function redrawFlowInPlace() {
   const wrap = $("stage").querySelector(".flowwrap");
   const keep = wrap ? wrap.scrollLeft : 0;
@@ -1810,6 +2203,7 @@ function redrawFlowInPlace() {
 
 function toggleLoop(id) {
   OPEN_LOOP = OPEN_LOOP === id ? null : id;
+  WHEEL_PICK = null; WHEEL_LOOP = 0;
   redrawFlowInPlace();
 }
 
@@ -1821,6 +2215,14 @@ $("stage").addEventListener("click", e => {
     return;
   }
   if (e.target.closest("[data-closeloop]")) { OPEN_LOOP = null; redrawFlowInPlace(); return; }
+
+  // Everything inside the drawer repaints the wheel in place. Re-rendering the
+  // flow to answer a click on the rim would throw away the scroll position and
+  // restart the animation for nothing.
+  const nd = e.target.closest("svg.wheel .nd");
+  if (nd) { pickWheelBox(nd.dataset.box); return; }
+  if (e.target.closest("[data-wheelnext]")) { WHEEL_LOOP++; paintWheel(); fitDrawer(); return; }
+  if (e.target.closest("[data-wheelclear]")) { pickWheelBox(null); return; }
   if (e.target.closest(".loopdrawer")) return;   // reading inside it is not a click on the map
 
   const el = e.target.closest("[data-el]");
@@ -1833,12 +2235,20 @@ $("stage").addEventListener("click", e => {
   }
 });
 
+$("stage").addEventListener("change", e => {
+  if (e.target.id === "wheel-pick") {
+    WHEEL_PICK = e.target.value || null; WHEEL_LOOP = 0; paintWheel(); fitDrawer();
+  }
+});
+
 $("stage").addEventListener("keydown", e => {
   const g = e.target.closest && e.target.closest("g.n[data-loop]");
   if (g && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggleLoop(g.dataset.el); }
 });
 addEventListener("keydown", e => {
-  if (e.key === "Escape" && OPEN_LOOP) { OPEN_LOOP = null; redrawFlowInPlace(); }
+  if (e.key !== "Escape") return;
+  if (WHEEL_PICK) { pickWheelBox(null); return; }
+  if (OPEN_LOOP) { OPEN_LOOP = null; redrawFlowInPlace(); }
 });
 
 $("stage").addEventListener("mouseover", e => {
