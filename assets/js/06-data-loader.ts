@@ -801,13 +801,15 @@ export function loadDataFromCsv(csvText: string): boolean {
   render();
   renderDetailPanel();
 
-  // A map opens fully visible: fit it to the frame (never zooming past 100%,
-  // so a small map keeps its size and centres instead). Undo / redo route
-  // through this same function, and a zoom that jumped under an undo would be
-  // its own small betrayal — so the fit is skipped while restoring, as is the
-  // history clear below.
+  // A map that doesn't fit the frame opens zoomed out far enough to see, down
+  // to a floor (FIT_MIN_ZOOM) past which "all of it at once" would be
+  // unreadable — beyond that it opens cropped at a size you can actually read.
+  // A map that already fits is left at its own size. Undo / redo route through
+  // this same function, and a zoom that jumped under an undo would be its own
+  // small betrayal — so the fit is skipped while restoring, as is the history
+  // clear below.
   if (typeof isUndoCaptureSuspended === "function" && !isUndoCaptureSuspended()) {
-    if (typeof fitMapToFrame === "function") fitMapToFrame();
+    if (typeof fitMapToFrame === "function") fitMapToFrame({ floor: true });
   }
 
   // Only surface a toast when something went wrong. Successful loads are

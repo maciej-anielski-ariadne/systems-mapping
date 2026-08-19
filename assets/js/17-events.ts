@@ -715,12 +715,16 @@ export function applyZoomBy(factor: number, anchorClientX?: number, anchorClient
 }
 
 // ───── Fit the map to the frame ──────────────────────────────────────────
-// A map opened at 100% starts in its top-left corner, and on anything bigger
-// than the frame that means starting cropped with no clue what you're missing.
-// Fitting shows the whole thing. It only ever zooms OUT — a twelve-box map
-// blown up to fill a widescreen would be a different kind of wrong — so a small
-// map stays at 100% and centres itself instead (the centring is CSS).
+// Fitting shows the whole map at once. It only ever zooms OUT — a twelve-box
+// map blown up to fill a widescreen would be a different kind of wrong — so a
+// map that already fits is left alone at its own size.
 export const FIT_PADDING = 32;
+// How far a fit is allowed to shrink the map. Past this, "the whole thing on
+// screen" stops being a picture and becomes confetti: a 300-box map fitted to
+// a laptop would be 8% and unreadable. On load we stop here and let the map be
+// cropped, which at least stays legible. Asking for a fit by hand overrides it
+// — you asked for the whole map, so you get the whole map.
+export const FIT_MIN_ZOOM = 0.4;
 
 export function fitZoomLevel(): number | null {
   const scroll = document.getElementById("viz-scroll");
@@ -732,10 +736,10 @@ export function fitZoomLevel(): number | null {
   return clampZoom(fit);
 }
 
-export function fitMapToFrame(): void {
+export function fitMapToFrame(options: { floor?: boolean } = {}): void {
   const level = fitZoomLevel();
   if (level === null) return;
-  setZoom(level);
+  setZoom(options.floor ? Math.max(level, FIT_MIN_ZOOM) : level);
 }
 
 export const zoomInButton  = document.getElementById("viz-zoom-in");

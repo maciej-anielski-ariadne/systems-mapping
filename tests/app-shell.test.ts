@@ -19,8 +19,11 @@ import { selectNode, deselectAll } from "../assets/js/09-graph-selection";
 import { initCanvasEdit } from "../assets/js/16e-canvas-edit";
 import { saveUiStateToStorage, loadUiStateFromStorage } from "../assets/js/04a-storage";
 import {
+  FIT_MIN_ZOOM,
   applySelectionClass,
   applyUiMode,
+  fitMapToFrame,
+  fitZoomLevel,
   setExportMenuOpen,
   setFiltersOpen,
   setUiMode,
@@ -198,5 +201,64 @@ describe("the drawer", () => {
     expect(fold.querySelector("#edge-type-filters")).not.toBeNull();
     expect(fold.querySelector("#edge-style-filters")).not.toBeNull();
     expect(fold.querySelector("#trace-filters")).not.toBeNull();
+  });
+});
+
+// jsdom lays nothing out, so the frame has to be told how big it is.
+function frameOf(width: number, height: number): void {
+  const scroll = document.getElementById("viz-scroll")!;
+  Object.defineProperty(scroll, "clientWidth",  { value: width,  configurable: true });
+  Object.defineProperty(scroll, "clientHeight", { value: height, configurable: true });
+}
+
+describe("opening zoom", () => {
+  it("leaves a map that already fits at its own size", () => {
+    loadDataFromCsv(sampleCsv);
+    frameOf(4000, 3000);
+    expect(fitZoomLevel()).toBe(1);
+  });
+
+  it("zooms out for a map that doesn't fit", () => {
+    loadDataFromCsv(sampleCsv);
+    frameOf(600, 400);
+    const fit = fitZoomLevel()!;
+    expect(fit).toBeLessThan(1);
+    expect(fit).toBeGreaterThan(0);
+  });
+
+  it("stops shrinking at the floor on load — cropped beats unreadable", () => {
+    loadDataFromCsv(sampleCsv);
+    frameOf(120, 90);                       // absurdly small: the true fit is tiny
+    expect(fitZoomLevel()!).toBeLessThan(FIT_MIN_ZOOM);
+
+    fitMapToFrame({ floor: true });
+    expect(state.zoomLevel).toBe(FIT_MIN_ZOOM);
+  });
+
+  it("ignores the floor when the fit was asked for by hand", () => {
+    loadDataFromCsv(sampleCsv);
+    frameOf(120, 90);
+    fitMapToFrame();                        // the zoom readout: show me all of it
+    expect(state.zoomLevel).toBeLessThan(FIT_MIN_ZOOM);
+  });
+
+  it("does nothing when the frame hasn't been laid out yet", () => {
+    loadDataFromCsv(sampleCsv);
+    frameOf(0, 0);
+    expect(fitZoomLevel()).toBeNull();
+  });
+});
+
+describe("the map scrolls at every zoom", () => {
+  // A previous version centred the SVG with flex + `margin: auto`, which makes
+  // an overflowing item unreachable at its leading edge: zooming in produced a
+  // bigger map you could not scroll to. CSS can't be measured in jsdom, so this
+  // guards the rule itself.
+  it("does not centre the map by auto margins", () => {
+    const css = readFileSync(resolve(here, "../assets/css/05-visualization.css"), "utf8");
+    const scrollRule = css.slice(css.indexOf(".viz-scroll {"), css.indexOf("}", css.indexOf(".viz-scroll {")));
+    expect(scrollRule, ".viz-scroll must not be a flex container — it breaks scrolling when zoomed").not.toMatch(/display:\s*flex/);
+    const svgRule = css.slice(css.indexOf(".viz-svg {"), css.indexOf("}", css.indexOf(".viz-svg {")));
+    expect(svgRule, ".viz-svg must not use auto margins — the map is anchored top-left").not.toMatch(/margin:\s*auto/);
   });
 });

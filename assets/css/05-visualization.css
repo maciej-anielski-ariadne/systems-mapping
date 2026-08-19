@@ -30,14 +30,15 @@
   grid-row: 2;
 }
 
-/* Flex + `margin: auto` on the SVG centres a map smaller than its frame
- * without clipping one that is bigger: an overflowing flex item still
- * scrolls to its own top-left corner, which plain `justify-content: center`
- * would have cut off. */
+/* The map is anchored to the top-left corner and stays there at every zoom.
+ * A previous version centred it with flex + `margin: auto`, which reads
+ * nicely on a small map and quietly breaks a big one: an auto-margined flex
+ * item overflows on BOTH sides, and the leading overflow is unreachable —
+ * scrollWidth stays at the frame width, so zooming in produced a bigger map
+ * you could not scroll to. A fixed origin is worth more than centring. */
 .viz-scroll {
   width: 100%;
   height: 100%;
-  display: flex;
   overflow: auto;
   scrollbar-width: none;     /* Firefox: hide scrollbar */
   -ms-overflow-style: none;  /* old Edge / IE: hide scrollbar */
@@ -51,7 +52,6 @@
 
 .viz-svg {
   display: block;
-  margin: auto;
   background: transparent;
   cursor: grab;
 }
