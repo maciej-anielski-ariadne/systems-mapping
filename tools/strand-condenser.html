@@ -608,7 +608,7 @@ const SLOT = "◇";           // the diamond shown where a lane value sits
 // another. A sequence always fails that test.
 function laneFamiliesFromLabels(nodes, edges) {
   const linked = new Set();
-  for (const e of edges) { linked.add(e.from + "" + e.to); linked.add(e.to + "" + e.from); }
+  for (const e of edges) { linked.add(e.from + "\u0001" + e.to); linked.add(e.to + "\u0001" + e.from); }
 
   const byStem = new Map();
   for (const n of nodes) {
@@ -627,7 +627,7 @@ function laneFamiliesFromLabels(nodes, edges) {
     let adjacent = false;
     for (let i = 0; i < members.length && !adjacent; i++)
       for (let j = i + 1; j < members.length && !adjacent; j++)
-        if (linked.has(members[i].id + "" + members[j].id)) adjacent = true;
+        if (linked.has(members[i].id + "\u0001" + members[j].id)) adjacent = true;
     if (adjacent) continue;                    // a sequence, not a set of lanes
     families.push({ stem, members });
   }
@@ -779,6 +779,12 @@ function detectLanes(mode) {
   else res = laneFamiliesFromField(G.nodes, mode);
   // Anything not in a lane stands for itself, so every box has a role.
   for (const n of G.nodes) if (!res.roleOf.has(n.id)) res.roleOf.set(n.id, "N:" + n.id);
+  // Give every lane value a bit position. A shape then records "which lanes
+  // reached this step" as a single integer rather than a Set per position —
+  // the Sets were the bulk of the memory bill on a big trace, and there can be
+  // one per position per shape. 31 lanes is the ceiling for a small integer;
+  // above that we fall back to Sets, which is fine because a map with 32-plus
+  // parallel lanes is rare and its shapes are correspondingly few.
   // Recompute the lane values from what actually survived. A field-based mode
   // can start with a value like "Shared" that ends up in no lane role at all;
   // leaving it in the count makes every section look lane-specific.
@@ -786,6 +792,10 @@ function detectLanes(mode) {
   // How many boxes each role covers - the condensation this buys.
   const size = new Map();
   for (const [, role] of res.roleOf) size.set(role, (size.get(role) || 0) + 1);
+  res.laneList = [...res.laneValues];
+  res.laneBit = res.laneList.length <= 31
+    ? new Map(res.laneList.map((v, i) => [v, 1 << i]))
+    : null;
   res.roleSize = size;
   res.collapsedBoxes = [...size.values()].filter(c => c > 1).reduce((a, c) => a + c, 0);
   res.roleCount = size.size;
@@ -809,6 +819,23 @@ const roleLabel = role => roleIsLane(role) ? role.slice(2) : label(role.slice(2)
 // ===========================================================================
 const SLICE_STEPS = 400000;   // work done between repaints
 const RESERVOIR = 20000;      // raw routes kept, for the comparison views
+
+// Hard ceiling on distinct shapes held in memory.
+//
+// The claim this design rests on - "memory grows with the number of distinct
+// SHAPES, not routes" - is only true when folding actually folds. On a trace
+// where it does not, shapes track routes one for one, and each one costs an
+// object plus its key string. At twenty million routes that is gigabytes and
+// the tab dies. The cap makes the walk survivable whatever the map looks like:
+// past it, routes are still counted, still sampled, still fed into the fork
+// stats - they just stop minting new shapes, and the overflow is reported.
+//
+// The number comes from measurement, not taste. With the compact shape above,
+// a trace of 18-hop paths costs about 430 bytes per shape, and an uncapped run
+// died between 866k and 1.5M shapes inside a 512MB heap. Half a million keeps
+// the worst case near 250MB — comfortable in a real tab, and vastly more
+// shapes than anyone is going to read.
+const MAX_SHAPES = 500000;
 
 let G = null, LANES = null, RUN = null, LAST = null;
 let strategy = "sections";
@@ -842,7 +869,9 @@ const rrnd = () => (rSeed = (rSeed * 1103515245 + 12345) % 2147483648) / 2147483
 function newAggregate() {
   return {
     total: 0,
-    sequences: new Map(),   // role-sequence -> { roles, count, lanesAt, example, best, pos, neg }
+    sequences: new Map(),   // key -> { key, count, pos, neg, lanes }
+    shapeOverflow: 0,       // routes that arrived after the shape cap was hit
+    shapesCapped: false,
     boxFreq: new Map(),
     forks: new Map(),
     reservoir: [],
@@ -856,23 +885,45 @@ function record(agg, path, strength, sign) {
   if (hops < agg.minHops) agg.minHops = hops;
   if (hops > agg.maxHops) agg.maxHops = hops;
 
-  // Fold into the shape it belongs to.
+  // Fold into the shape it belongs to. The separator is a control character so
+  // it can never appear inside a role name and collide two different shapes.
+  //
+  // Everything here is sized for a trace with a million distinct shapes. A
+  // shape holds: the key (already retained by the Map, so free), three counts,
+  // and one small integer per position saying which lanes reached it. It does
+  // NOT hold a copy of the role list — that is recoverable from the key, and
+  // only the dozen shapes actually on screen ever need it.
   const roles = path.map(id => LANES.roleOf.get(id));
-  const key = roles.join("");
+  const key = roles.join("\u0001");
   let seq = agg.sequences.get(key);
   if (!seq) {
-    seq = { roles, count: 0, lanesAt: roles.map(() => new Set()), example: path.slice(),
-            best: strength, pos: 0, neg: 0 };
-    agg.sequences.set(key, seq);
+    if (agg.sequences.size >= MAX_SHAPES) {
+      // At the cap. The route is still real and still counted; it just does
+      // not get a row of its own.
+      agg.shapeOverflow++;
+      agg.shapesCapped = true;
+    } else {
+      seq = { key, count: 0, pos: 0, neg: 0, lanes: null };
+      if (LANES.laneValues.size) {
+        seq.lanes = LANES.laneBit
+          ? new Array(roles.length).fill(0)
+          : roles.map(r => (roleIsLane(r) ? new Set() : null));
+      }
+      agg.sequences.set(key, seq);
+    }
   }
-  seq.count++;
-  if (sign > 0) seq.pos++; else seq.neg++;
-  if (strength > seq.best) { seq.best = strength; seq.example = path.slice(); }
-  for (let i = 0; i < path.length; i++) {
-    const lane = LANES.laneOf.get(path[i]);
-    if (lane) seq.lanesAt[i].add(lane);
+  if (seq) {
+    seq.count++;
+    if (sign > 0) seq.pos++; else seq.neg++;
+    if (seq.lanes) {
+      for (let i = 0; i < path.length; i++) {
+        const lane = LANES.laneOf.get(path[i]);
+        if (!lane) continue;
+        if (LANES.laneBit) seq.lanes[i] |= LANES.laneBit.get(lane);
+        else if (seq.lanes[i]) seq.lanes[i].add(lane);
+      }
+    }
   }
-
   for (let i = 0; i < path.length; i++) {
     agg.boxFreq.set(path[i], (agg.boxFreq.get(path[i]) || 0) + 1);
     if (i === path.length - 1) continue;
@@ -995,6 +1046,25 @@ function pickDiverse(routes, k) {
   return chosenIdx.map(i => pool[i]);
 }
 
+// How many lanes reached position `idx` of a shape, and which ones. The two
+// encodings (integer mask / Set) are hidden here so no view has to care.
+function laneCountAt(seq, idx) {
+  const v = seq.lanes && seq.lanes[idx];
+  if (v == null) return 0;
+  if (typeof v !== "number") return v.size;
+  let n = 0, x = v;
+  while (x) { x &= x - 1; n++; }
+  return n;
+}
+function laneValuesAt(seq, idx) {
+  const v = seq.lanes && seq.lanes[idx];
+  if (v == null) return [];
+  if (typeof v !== "number") return [...v];
+  return LANES.laneList.filter((_, i) => v & (1 << i));
+}
+// The role list, recovered from the key rather than stored per shape.
+const seqRoles = seq => seq.key.split("\u0001");
+
 // ===========================================================================
 // VIEW: SECTIONS
 // ---------------------------------------------------------------------------
@@ -1011,14 +1081,17 @@ function renderSections(agg, k) {
   const onlyDiff = document.getElementById("only-diff").value === "diff";
   const everything = [...agg.sequences.values()].sort((a, b) => b.count - a.count);
   const narrowSeq = seq => laneTotal > 1 &&
-    seq.lanesAt.some(set => set.size > 0 && set.size < laneTotal);
+    (seq.lanes || []).some((_, i) => {
+      const n = laneCountAt(seq, i);
+      return n > 0 && n < laneTotal;
+    });
   const all = onlyDiff ? everything.filter(narrowSeq) : everything;
   const sections = all.slice(0, k);
 
   // Roles shared by every section are scaffolding; roles unique to one are the
   // reason it is on screen. Same idea as the route list, one level up.
   const roleSectionCount = new Map();
-  for (const s of all) for (const r of new Set(s.roles))
+  for (const s of all) for (const r of new Set(seqRoles(s)))
     roleSectionCount.set(r, (roleSectionCount.get(r) || 0) + 1);
 
   const rows = sections.map((s, i) => {
@@ -1026,25 +1099,26 @@ function renderSections(agg, k) {
     // for Cocaine and Heroin only". Asking instead whether the section's lanes
     // union to everything gets the wrong answer: a shape can touch all six
     // lanes across its length while still having a step just two of them take.
-    const partials = s.lanesAt
-      .map((set, idx) => ({ idx, set }))
-      .filter(x => x.set.size > 0 && x.set.size < laneTotal);
+    const roles = seqRoles(s);
+    const partials = roles
+      .map((_, idx) => ({ idx, n: laneCountAt(s, idx) }))
+      .filter(x => x.n > 0 && x.n < laneTotal);
     const isNarrow = laneTotal > 1 && partials.length > 0;
-    const anyLanes = s.lanesAt.some(set => set.size > 0);
+    const anyLanes = roles.some((_, idx) => laneCountAt(s, idx) > 0);
     const tightest = partials.length
-      ? partials.reduce((a, b) => (a.set.size <= b.set.size ? a : b))
+      ? partials.reduce((a, b) => (a.n <= b.n ? a : b))
       : null;
     const scope = laneTotal === 0 || !anyLanes
       ? ""
       : isNarrow
-        ? `<span class="section-scope scope-some">${esc([...tightest.set].sort().join(", "))} only</span>`
+        ? `<span class="section-scope scope-some">${esc(laneValuesAt(s, tightest.idx).sort().join(", "))} only</span>`
         : `<span class="section-scope scope-all">all ${laneTotal} lanes</span>`;
 
-    const chain = s.roles.map((role, idx) => {
+    const chain = roles.map((role, idx) => {
       const shared = roleSectionCount.get(role) >= Math.max(2, all.length / 2);
       const unique = roleSectionCount.get(role) === 1;
       if (roleIsLane(role)) {
-        const vals = [...s.lanesAt[idx]].sort();
+        const vals = laneValuesAt(s, idx).sort();
         const partial = laneTotal > 1 && vals.length > 0 && vals.length < laneTotal;
         const shown = vals.length === 0 ? ""
           : partial ? vals.join(", ")
@@ -1062,7 +1136,7 @@ function renderSections(agg, k) {
         <span class="route-n">${i + 1}</span>
         <span class="section-count">${num(s.count)} route${s.count === 1 ? "" : "s"}</span>
         ${scope}
-        <span class="section-meta">${s.roles.length - 1} hops &middot; net ${netText}</span>
+        <span class="section-meta">${roles.length - 1} hops &middot; net ${netText}</span>
       </div>
       <div class="chain">${chain}</div>
     </div>`;
@@ -1089,7 +1163,14 @@ function renderSections(agg, k) {
       ["Sections", num(everything.length)],
       ["Condensation", ratio >= 2 ? `${ratio.toFixed(0)}×` : `${ratio.toFixed(1)}×`, ratio >= 5 ? "good" : ratio < 1.2 ? "bad" : ""],
     ].concat(laneTotal > 1 && ratio >= 1.2 ? [["Lane-specific", String(narrowCount), narrowCount ? "bad" : ""]] : [])) +
-    (ratio < 1.2
+    (agg.shapesCapped
+      ? `<div class="note"><b>The shape cap was reached.</b> ${num(agg.sequences.size)} distinct
+         shapes were kept and ${num(agg.shapeOverflow)} further routes were counted but not folded,
+         so the section list below is a floor rather than the whole picture. That only happens when
+         folding is not working — a trace whose lanes fold well produces a handful of shapes, not
+         a hundred thousand.</div>`
+      : "") +
+    (ratio < 1.2 && !agg.shapesCapped
       ? `<div class="note"><b>Folding bought almost nothing here.</b> This map has no repeated
          lane structure between these two boxes, so nearly every route is its own shape and
          Sections degenerates into the raw list. That is a fact about the map, not a failure of
@@ -1369,6 +1450,7 @@ function showProgress(agg, steps, ms, handle) {
     <div class="progress">
       <div class="track"><i></i></div>
       <div class="nums" id="prog-nums"></div>
+      <div class="nums" id="prog-warn" style="color:var(--accent-amber)"></div>
       <div class="row-btns" style="max-width:180px"><button class="btn" id="stop-run">Stop and show what I have</button></div>
     </div>`;
   document.getElementById("stop-run").addEventListener("click", () => handle.stop());
@@ -1376,10 +1458,22 @@ function showProgress(agg, steps, ms, handle) {
 }
 
 function updateProgress(agg, steps, ms) {
+  const warn = document.getElementById("prog-warn");
+  if (warn) {
+    // If shapes are still tracking routes one-for-one after a decent sample,
+    // folding is not going to rescue this trace however long it runs. Say so
+    // while there is still time to stop rather than at the end.
+    warn.textContent = agg.shapesCapped
+      ? "Shape cap reached — routes past it are counted but not folded. Sections will not condense this trace."
+      : (agg.total > 20000 && agg.sequences.size / agg.total > 0.8)
+        ? "Folding is not reducing this trace — nearly every route is its own shape. Consider stopping and using Most different."
+        : "";
+  }
   const el = document.getElementById("prog-nums");
   if (!el) return;
-  el.textContent = `${num(agg.total)} routes found · ${num(agg.sequences.size)} distinct shapes · ` +
-    `${num(steps)} steps · ${(ms / 1000).toFixed(1)}s`;
+  el.textContent = `${num(agg.total)} routes found · ${num(agg.sequences.size)} distinct shapes` +
+    (agg.shapesCapped ? " (cap reached)" : "") +
+    ` · ${num(steps)} steps · ${(ms / 1000).toFixed(1)}s`;
 }
 
 function runTrace(fromId, toId) {
@@ -1396,7 +1490,8 @@ function runTrace(fromId, toId) {
       LAST = { agg, from: fromId, to: toId, ms, stopped };
       document.getElementById("sample-note").innerHTML = agg.total
         ? `${num(agg.total)} routes${stopped ? " before you stopped it" : ", exhaustively"} in ${ms < 1000 ? Math.round(ms) + "ms" : (ms / 1000).toFixed(1) + "s"}.
-           ${num(agg.sequences.size)} distinct shapes. Lengths ${agg.minHops}–${agg.maxHops} hops.
+           ${num(agg.sequences.size)} distinct shapes${agg.shapesCapped ? " (the cap)" : ""}. Lengths ${agg.minHops}–${agg.maxHops} hops.
+           ${agg.shapeOverflow ? num(agg.shapeOverflow) + " routes arrived after the shape cap and are counted but not folded. " : ""}
            Comparison views use a fair random sample of ${num(Math.min(agg.total, RESERVOIR))}.`
         : "No downstream route between these two.";
       render();

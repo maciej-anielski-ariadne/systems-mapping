@@ -140,6 +140,22 @@ labelled as partial. The comparison views draw on a **reservoir sample** of
 "the first N found", which is heavily biased toward whichever branch the walk
 entered first.
 
+**The memory bound is on shapes, and it is enforced.** The claim above only
+holds while folding actually folds; on a trace where nearly every route is its
+own shape, shapes track routes one for one. A shape is therefore kept as cheap
+as possible — its key (already held by the map), three counts, and one small
+integer per position recording which lanes reached it — and the number of them
+is capped at 500,000. Past the cap, routes are still counted, still sampled and
+still fed into the fork statistics; they simply stop minting new rows, and both
+the progress line and the section stats say so.
+
+The cap comes from measurement. At roughly 430 bytes per shape on 18-hop paths,
+an uncapped run died between 866k and 1.5M shapes inside a deliberately tight
+512MB heap. With the cap in place the same map walked **35.6 million routes over
+96 seconds without crashing**. If shapes are still tracking routes one-for-one
+after the first twenty thousand, the progress line says so while there is still
+time to stop, rather than at the end.
+
 ### What it found
 
 Measured on a synthetic map matched to a real one (296 boxes, 839 links,
