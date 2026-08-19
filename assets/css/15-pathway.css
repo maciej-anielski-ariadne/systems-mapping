@@ -1,0 +1,594 @@
+/* =============================================================================
+ * PATHWAY MODE — following one strand from start to finish
+ * -----------------------------------------------------------------------------
+ * Three pieces of UI, all driven by 09b-pathway-ui.ts:
+ *
+ *   1. The sidebar's "Trace a strand" block — two box pickers plus the list of
+ *      alternative routes between them.
+ *   2. The route chip floating over the map — which route you're on, how many
+ *      exist, and the ‹ › to cycle.
+ *   3. The straightened view — the same strand as one left-to-right line, with
+ *      every hop's link spelled out.
+ *
+ * On the map itself the strand reuses the existing dimming grammar: off-strand
+ * boxes and links take the same `.dimmed` treatment a causal trace already
+ * gives them (05-visualization.css), so nothing new has to be learnt. What IS
+ * new is the hop badge — the little numbered circle that ties a box on the map
+ * to the same box on the straightened line.
+ *
+ * Colour discipline (see 01-variables.css): the interactive blue --act marks
+ * the strand itself, because the strand is the thing you're steering. The
+ * green / red / purple on the links are DATA hues (increases / decreases /
+ * enables) and mean exactly what they mean everywhere else on the map.
+ * ========================================================================== */
+
+/* === 1. On the map ======================================================= */
+
+/* Boxes on the strand keep their full colour (the renderer skips the resting
+ * desaturation for them) and carry a soft blue halo — the same visual weight
+ * as a selected box's ring, in the interactive hue rather than white, because
+ * a strand is a selection of a kind. The two ends get a fatter one. */
+.node-group.on-strand .node-rect {
+  filter: drop-shadow(0 0 0 var(--act))
+          drop-shadow(0 0 6px color-mix(in srgb, var(--act) 45%, transparent));
+}
+
+.node-group.strand-end .node-rect {
+  filter: drop-shadow(0 0 0 var(--act))
+          drop-shadow(0 0 4px color-mix(in srgb, var(--act) 70%, transparent))
+          drop-shadow(0 0 12px color-mix(in srgb, var(--act) 40%, transparent));
+}
+
+/* The hop badge: which step along the strand this box is. Same number as the
+ * card in the straightened view, so switching views never costs you your
+ * place. Not interactive — pointer-events off so it can't eat a box click. */
+.strand-hop {
+  pointer-events: none;
+}
+
+.strand-hop circle {
+  fill: var(--bg-deepest);
+  stroke: var(--act);
+  stroke-width: 1.5;
+}
+
+.strand-hop text {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  fill: var(--act);
+}
+
+/* Links on the strand get a travelling dash — the one piece of motion in the
+ * whole map, and it earns its place: it shows the DIRECTION of causation at a
+ * glance on a line whose arrowheads are small. Colour and width are set inline
+ * by the renderer (the effect hue), so this only adds the movement. */
+.edge-path.on-strand {
+  stroke-dasharray: 6 8;
+  animation: strand-flow 1.1s linear infinite;
+}
+
+@keyframes strand-flow {
+  to { stroke-dashoffset: -28; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .edge-path.on-strand {
+    animation: none;
+    stroke-dasharray: none;
+  }
+}
+
+/* === 2. Sidebar: trace a strand ========================================== */
+
+.pathway-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-2);
+}
+
+.pathway-field label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-cap);
+  letter-spacing: var(--tracking-cap);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.pathway-select {
+  font: inherit;
+  font-size: var(--fs-body);
+  background: var(--bg-mid);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-interactive);
+  padding: var(--pad-input);
+  width: 100%;
+}
+
+.pathway-select:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.pathway-buttons {
+  display: flex;
+  gap: var(--gap-md);
+  margin-top: var(--space-1);
+}
+
+.pathway-button {
+  flex: 1;
+  font: inherit;
+  font-size: var(--fs-body);
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-interactive);
+  padding: var(--pad-button);
+  cursor: pointer;
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+
+.pathway-button:hover:not(:disabled) {
+  background: var(--act-tint);
+  color: var(--text-primary);
+}
+
+.pathway-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pathway-button--primary {
+  background: var(--act);
+  border-color: var(--act);
+  color: var(--bg-deepest);
+  font-weight: var(--fw-semibold);
+}
+
+.pathway-button--primary:hover:not(:disabled) {
+  background: var(--act-hi);
+  border-color: var(--act-hi);
+  color: var(--bg-deepest);
+}
+
+/* Explanatory line under the pickers, and the "no route that way" notice. */
+.pathway-hint {
+  color: var(--text-tertiary);
+  font-size: var(--fs-cap);
+  line-height: 1.55;
+  margin: var(--space-2) 0 0;
+}
+
+.pathway-notice {
+  margin-top: var(--space-2);
+  padding: var(--pad-card);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-interactive);
+  background: var(--bg-mid);
+  color: var(--text-secondary);
+  font-size: var(--fs-cap);
+  line-height: 1.55;
+}
+
+.pathway-notice .pathway-button {
+  margin-top: var(--space-2);
+}
+
+/* === Route rows (the alternatives list, and the suggestions list) ======== */
+
+.pathway-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--row-gap);
+}
+
+.pathway-route {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-interactive);
+  padding: var(--space-1_5) var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  cursor: pointer;
+  transition: background var(--dur-fast);
+}
+
+.pathway-route:hover {
+  background: var(--act-tint);
+}
+
+.pathway-route[aria-current="true"] {
+  background: var(--act-on);
+  border-color: color-mix(in srgb, var(--act) 45%, transparent);
+}
+
+.pathway-route:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* The chain itself: both ends at full strength, the boxes it passes through
+ * quieter — so a seven-hop route still reads as "A → … → B" at a glance. */
+.pathway-chain {
+  font-size: var(--fs-body);
+  line-height: 1.35;
+  color: var(--text-primary);
+}
+
+.pathway-chain .via {
+  color: var(--text-tertiary);
+}
+
+.pathway-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-lg);
+  font-family: var(--font-mono);
+  font-size: var(--fs-cap);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Net direction of the whole chain. These are the map's DATA hues, not UI
+ * accents: an odd number of `decreases` links flips the strand's net effect,
+ * and that is a fact about the map. */
+.pathway-net {
+  padding: 1px 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.pathway-net--up {
+  color: var(--edge-increases);
+  background: color-mix(in srgb, var(--accent-green) 16%, transparent);
+}
+
+.pathway-net--down {
+  color: var(--edge-decreases);
+  background: color-mix(in srgb, var(--accent-red) 16%, transparent);
+}
+
+.pathway-strength {
+  flex: 1;
+  height: 3px;
+  min-width: 24px;
+  background: var(--bg-light);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.pathway-strength i {
+  display: block;
+  height: 100%;
+  background: var(--act);
+  border-radius: 2px;
+}
+
+/* === 3. The route chip, floating over the map ============================ */
+
+.pathway-chip {
+  position: absolute;
+  bottom: var(--space-5);
+  /* Centred in the space that is LEFT of the depth / zoom cluster, not in the
+   * container — a plain 50% centre puts a wide chip straight through those
+   * controls on a narrow window. left + right + margin:auto with a
+   * content-width box does that in one rule, no magic offsets. */
+  left: var(--space-5);
+  right: 300px;
+  margin: 0 auto;
+  width: max-content;
+  max-width: 100%;
+  z-index: var(--z-chrome);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  background: color-mix(in srgb, var(--bg-deep) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--shadow-float);
+}
+
+.pathway-chip[hidden] {
+  display: none;
+}
+
+.pathway-chip-counter {
+  font-family: var(--font-mono);
+  font-size: var(--fs-body);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The honest bit: how many routes exist, and that you're seeing the strongest
+ * few. A map that hides what it truncated stops being trustworthy. */
+.pathway-chip-sub {
+  font-family: var(--font-mono);
+  font-size: var(--fs-cap);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.pathway-chip-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border-subtle);
+}
+
+.pathway-chip-nav {
+  display: flex;
+  gap: var(--gap-sm);
+}
+
+.pathway-chip-nav button,
+.pathway-chip-action {
+  font: inherit;
+  font-size: var(--fs-body);
+  white-space: nowrap;
+  background: var(--bg-mid);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-interactive);
+  height: 28px;
+  min-width: 28px;
+  padding: 0 var(--space-2);
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+
+.pathway-chip-nav button:hover:not(:disabled),
+.pathway-chip-action:hover {
+  background: var(--act-tint);
+  color: var(--text-primary);
+}
+
+.pathway-chip-nav button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.pathway-chip-action[aria-pressed="true"] {
+  background: var(--act-on);
+  color: var(--text-primary);
+}
+
+/* === 4. The straightened view ============================================ */
+
+/* Sits over the map inside .viz-container, so switching views is instant and
+ * the map keeps its scroll position underneath. */
+.pathway-ribbon {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-panel-strip);
+  background: var(--bg-deepest);
+  overflow: auto;
+  padding: var(--space-6) var(--space-6) 96px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-5);
+}
+
+.pathway-ribbon[hidden] {
+  display: none;
+}
+
+.pathway-ribbon-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.pathway-ribbon-title {
+  margin: 0;
+  font-size: var(--fs-title);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.pathway-ribbon-sub {
+  font-family: var(--font-mono);
+  font-size: var(--fs-cap);
+  letter-spacing: var(--tracking-cap);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+/* The summary strip. `Net effect` is the payoff of straightening a strand:
+ * multiply the link signs and you get whether raising the first box ends up
+ * raising or lowering the last — the inference people get wrong most often on
+ * a tangled map, reduced to one word. */
+.pathway-readout {
+  display: flex;
+  flex-wrap: wrap;
+  width: max-content;
+  max-width: 100%;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-interactive);
+  background: var(--bg-deep);
+  overflow: hidden;
+}
+
+.pathway-readout > div {
+  padding: var(--space-2) var(--space-4);
+  border-right: 1px solid var(--border-subtle);
+}
+
+.pathway-readout > div:last-child {
+  border-right: 0;
+}
+
+.pathway-readout-key {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--fs-cap);
+  letter-spacing: var(--tracking-cap);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.pathway-readout-value {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.pathway-readout-value.up   { color: var(--edge-increases); }
+.pathway-readout-value.down { color: var(--edge-decreases); }
+
+/* The strand written out as a sentence. This is the whole point of the
+ * straightened view — a chain you can read aloud and check. */
+.pathway-sentence {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--text-secondary);
+  max-width: 62ch;
+}
+
+.pathway-sentence b {
+  color: var(--text-primary);
+  font-weight: var(--fw-semibold);
+}
+
+.pathway-ribbon-scroll {
+  overflow-x: auto;
+  padding-bottom: var(--space-3);
+}
+
+.pathway-ribbon-track {
+  display: flex;
+  align-items: stretch;
+  width: max-content;
+  padding: 2px;
+}
+
+/* One hop = one card. The row's colour stripe is kept from the map so you can
+ * still see which slice of the map each step belongs to — crossing rows is
+ * usually the interesting part of a strand. */
+.pathway-hop {
+  width: 176px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-deep);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-interactive);
+  overflow: hidden;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  padding: 0;
+}
+
+.pathway-hop:hover {
+  border-color: color-mix(in srgb, var(--act) 50%, transparent);
+}
+
+.pathway-hop:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.pathway-hop--end {
+  border-color: color-mix(in srgb, var(--act) 55%, transparent);
+}
+
+.pathway-hop-stripe {
+  height: 3px;
+}
+
+.pathway-hop-body {
+  padding: var(--space-2) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1;
+}
+
+.pathway-hop-where {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.pathway-hop-name {
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.pathway-hop-value {
+  margin-top: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-cap);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The link between two hops: what kind, and how strong. */
+.pathway-link {
+  width: 124px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-1);
+  text-align: center;
+}
+
+.pathway-link-arrow {
+  width: 100%;
+  height: 14px;
+}
+
+.pathway-link-kind {
+  font-size: var(--fs-cap);
+  font-weight: var(--fw-semibold);
+}
+
+.pathway-link.increases .pathway-link-kind { color: var(--edge-increases); }
+.pathway-link.decreases .pathway-link-kind { color: var(--edge-decreases); }
+.pathway-link.enables   .pathway-link-kind { color: var(--edge-enables); }
+
+.pathway-link-elasticity {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The suggestions list lives in the detail panel, where the route rows have
+ * less width than in the sidebar. Same rows, tighter chain text. */
+.detail-strand-list {
+  margin-bottom: var(--section-gap);
+}
+
+.detail-strand-list .pathway-chain {
+  font-size: var(--fs-cap);
+  line-height: 1.4;
+}
+
+/* Zoom and highlight-depth act on the map, and the straightened view is not the
+ * map — leaving them live would offer controls that do nothing. Hidden while
+ * the ribbon is up; the chip's own "On the map" puts them back. */
+.viz-container.pathway-straightened .viz-controls-cluster {
+  display: none;
+}

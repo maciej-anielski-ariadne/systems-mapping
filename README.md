@@ -50,6 +50,7 @@ The header has eight buttons left-to-right: **Create · Edit · Import · CSV ·
 - Click a box → highlights its causes (blue) and effects (amber), dims everything else.
 - Click a row label (sidebar or row header) → collapse / expand the whole row.
 - Click a **Fill tag** / **Corner tag** in the sidebar → that colour comes off every box carrying it (dropped from the fill blend, or its corner chip removed). The box itself only leaves the map once every tag it carries is hidden — i.e. that tag was its only colour. Rows and columns still collapse the whole slice.
+- **Pathway mode** → follow **one strand** from start to finish when the whole map is too much at once. Pick a **From** and **To** box in the left sidebar and hit **Trace**: you get a single ordered chain of cause and effect, with every other box and link dimmed away. Strictly downstream, so the strand always reads as a causal claim — if nothing connects the two that way, it says so and offers to swap the ends. See [Pathway mode](#pathway-mode) for the full picture.
 - **Smart search** → fuzzy match across every box field — name, description, row, column, category, ID, and unit — ranked in that priority order (handles typos like "brder" → "Border" and word-initials like "bff" → "Border Force FTE"). So searching a row/column/category name surfaces every box in it. Top results show as a dropdown below the search box, with the matched text highlighted; matching boxes get an amber glow on the map. Press `/` from anywhere on the page to jump to the search box.
 - Detail panel → category, row, column, starting value + current values, all direct inputs/impacts with per-link strengths, click-through navigation. **Edit Box** toggle turns the panel into an edit form (every field as an input, per-row outgoing-link editor, delete button).
 - **Map direct edit** → click an empty grid cell to add a box, drag from a box's right edge to another box to draw a link, press Delete on a selected box to remove it (with a 6-second undo toast). Rows / columns / categories are edited from the left sidebar (pencil to rename / re-colour, drag handle to reorder, **+ Add** at the bottom of each section).
@@ -60,6 +61,52 @@ The header has eight buttons left-to-right: **Create · Edit · Import · CSV ·
 - **Zoom** → bottom-right `−` / `+` buttons, `Ctrl/Cmd` + scroll-wheel (or trackpad pinch), or `Ctrl/Cmd + =/-/0` to zoom in / out / reset. Pinching anchors on the cursor.
 - **Pan** → click-and-drag any empty area of the map to pan around it. Plain scroll-wheel and trackpad two-finger scroll also pan.
 - **Survives a refresh** → the loaded spreadsheet, hidden filters, simulation mode + slider positions, selected box, zoom level, panel pin state, and any unsaved wizard work are all persisted in `localStorage`. Close the tab, reopen, keep going. (Loading a different spreadsheet via **Import Data** / applying the wizard replaces what's stored.)
+
+## Pathway mode
+
+A map with a few hundred links is honest but unreadable. Clicking a box lights up its neighbourhood, which grows in every direction at once — turn the highlight depth up to 3 and you are looking at the whole tangle again. Pathway mode is the opposite move: **one chain, start to finish, and nothing else**.
+
+### Tracing a strand
+
+Two ways in:
+
+- **From the sidebar.** The **Trace a strand** block at the top holds two box pickers. Choose a cause and an effect, hit **Trace**, and the map isolates the chain between them. **Swap** flips the two ends; **Clear** (or `Esc`) leaves pathway mode.
+- **From a box.** Select any box and the right-hand detail panel lists **Strands through this box** — complete start-to-finish stories that pass through it, strongest first. One click puts one on the map. Use this when you know the box you care about but not both ends of the story.
+
+Routes are found **strictly downstream** — arrows are followed in their own direction only, so what comes back can be read aloud as a causal claim. "No route" is a real answer rather than a failure: if the causality runs the other way, the panel says so and offers to swap the ends and trace again.
+
+### Alternatives, and why only ten
+
+Between two well-connected boxes there can be hundreds of distinct routes, and "route 1 of 340" is the overwhelm you were escaping, just relocated. So routes are **ranked by strength** — the product of the links' elasticities, i.e. how much of a nudge at the start survives the trip — and only the strongest ten are kept.
+
+The chip at the bottom of the map always reports the truth: `Route 2 of 10 · strongest shown · 47 exist`. Cycle with `‹` `›` or `Alt + ←` / `Alt + →`. (A search on a very dense map can hit its budget before enumerating everything; the count then reads `47+`, meaning a floor rather than an exact number.)
+
+Routes never visit the same box twice. Causal maps have feedback loops, and without that rule "every route from A to B" would be infinite — going round a loop twice is not a different story anyway.
+
+### Two views of the same strand
+
+**Isolate in place** (the default) keeps every box where it lives on the map, dims everything off the strand, and draws the strand's links in their effect colours with a travelling dash showing which way cause flows. Each box on the strand carries a numbered **hop badge**.
+
+**Straighten** (the chip's button, or `Alt + R`) reflows the same strand into a single left-to-right line. Each hop is a card carrying its row, column and value; each link between them names its type and elasticity. The same hop numbers appear in both views, so switching never costs you your place — and clicking a card takes you back to that box on the map.
+
+The straightened view also gives you the thing a tangled map can never show: the strand's **net effect**. Multiply the link signs along the chain and you learn whether raising the first box ends up raising or *lowering* the last. Two `decreases` links in a row make a net *increase* — the single most commonly botched inference on a causal map. The readout puts `Net effect` and `Sign flips` side by side, so the claim is checkable rather than something to take on faith, and the strand is written out underneath as a sentence you can read aloud.
+
+### Strands and the rest of the app
+
+- **Exporting.** With a strand traced, **CSV**, **PNG** and **HTML** all export just that chain — the strand's boxes and its links, nothing else. This is how a strand outlives the session: pathway mode itself is deliberately never saved, so a refresh returns you to the whole map.
+- **Filters.** Pathway mode searches the whole map on purpose — refusing to route through a row you had collapsed would read as "these two aren't connected", which is a lie. If a strand runs through a hidden row, column or tag, that filter is reopened (a visible change in the sidebar, with a note in the panel) and put back when you clear the strand.
+- **Simulation.** The two compose: isolate a strand, turn on **Simulate**, and drag the input at its head to watch the value move down one line instead of across a wall of boxes.
+- **Editing.** A strand names boxes and links by id, so an edit can delete one out from under it. After any change the strand is re-resolved against the new map — re-traced if it can be, dropped if it can't. Half a strand is worse than none.
+
+### Keyboard
+
+| Key | Does |
+|-----|------|
+| `Alt + ←` / `Alt + →` | Previous / next route |
+| `Alt + R` | Straighten the strand ↔ put it back on the map |
+| `Esc` | Leave pathway mode (after clearing any selection first) |
+
+Alt is the only free modifier on the canvas: bare arrows already move the cell cursor and bare letters start an inline rename.
 
 ## Spreadsheet format
 
@@ -257,7 +304,8 @@ systems_mapping/
     │   ├── 11-builder.css           Build / Edit wizard overlay
     │   │                            (there is no 12-*.css — the number is retired, not missing)
     │   ├── 13-search.css            Search dropdown + map-match halo
-    │   └── 14-typeable-dropdown.css Typable / filterable <select> replacement
+    │   ├── 14-typeable-dropdown.css Typable / filterable <select> replacement
+    │   └── 15-pathway.css           Pathway mode: strand styling, route chip, straightened view
     │                                (flat look = `border: 0` in 02-base.css;
     │                                 state shown via drop-shadow / box-shadow rings)
     ├── js/
@@ -274,6 +322,8 @@ systems_mapping/
     │   ├── 07a-formula.ts           Safe formula language for per-node rules (parser + evaluator, min/max/clamp/delay)
     │   ├── 08-layout.ts             Node positioning
     │   ├── 09-graph-selection.ts    Ancestor/descendant traversal + selectNode
+    │   ├── 09a-pathways.ts          Pathway mode engine: route finding, strength ranking, suggested strands
+    │   ├── 09b-pathway-ui.ts        Pathway mode UI: sidebar block, route chip, straightened view
     │   ├── 10-filters.ts            Stream / category visibility
     │   ├── 10a-collapsed-edges.ts   Reroutes causal links across hidden stages (dashed "through" arrows)
     │   ├── 11-rendering.ts          Main SVG renderer
@@ -353,6 +403,8 @@ features are split across multiple files:
 | Keyboard navigation on the map (arrows / Tab / Enter) | `assets/js/16i-canvas-keyboard-nav.ts` |
 | Multi-select bar (batch edit / move / delete) | `assets/js/16j-multi-select-bar.ts` |
 | How links reroute across hidden rows / columns | `assets/js/10a-collapsed-edges.ts` |
+| Pathway mode — route finding, strength ranking, suggested strands | `assets/js/09a-pathways.ts` |
+| Pathway mode UI — the sidebar block, route chip, straightened view | `assets/js/09b-pathway-ui.ts`, `assets/css/15-pathway.css` |
 | Search behaviour / fuzzy matching | `assets/js/17a-search.ts`, `assets/css/13-search.css` |
 | Button behaviour | `assets/js/17-events.ts` |
 | Sample data dataset | `assets/data/sample.csv` (starter) · `assets/data/advanced_sample.csv` (calculation rules) |

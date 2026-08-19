@@ -83,6 +83,7 @@
   <link rel="stylesheet" href="assets/css/11-builder.css">
   <link rel="stylesheet" href="assets/css/13-search.css">
   <link rel="stylesheet" href="assets/css/14-typeable-dropdown.css">
+  <link rel="stylesheet" href="assets/css/15-pathway.css">
 </head>
 <body>
 
@@ -130,9 +131,9 @@
     <button class="header-button import-data-trigger" data-tooltip="Open a map spreadsheet — same as dragging one onto the window.">Import</button>
 
     <span class="header-divider" aria-hidden="true"></span>
-    <button class="header-button save-data-trigger"    data-tooltip="Save the map as a spreadsheet for Excel / Sheets. With a box selected, saves only its highlighted boxes and links.">CSV</button>
-    <button class="header-button export-image-trigger" data-tooltip="Copy the map to the clipboard as a PNG. With a box selected, copies only its highlighted boxes and links.">PNG</button>
-    <button class="header-button publish-html-trigger" data-tooltip="Publish a self-contained, view-only web page (pan / zoom / hover). With a box selected, publishes only its highlighted boxes and links.">HTML</button>
+    <button class="header-button save-data-trigger"    data-tooltip="Save the map as a spreadsheet for Excel / Sheets. With a strand traced, saves just that chain; with a box selected, its highlighted boxes and links.">CSV</button>
+    <button class="header-button export-image-trigger" data-tooltip="Copy the map to the clipboard as a PNG. With a strand traced, copies just that chain; with a box selected, its highlighted boxes and links.">PNG</button>
+    <button class="header-button publish-html-trigger" data-tooltip="Publish a self-contained, view-only web page (pan / zoom / hover). With a strand traced, publishes just that chain; with a box selected, its highlighted boxes and links.">HTML</button>
 
     <span class="header-divider" aria-hidden="true"></span>
     <button id="sim-toggle-button" class="header-button" data-tooltip="Turn on what-if mode — a slider on every adjustable input; its effects update live.">Simulate</button>
@@ -162,6 +163,13 @@
     <div class="sidebar-section" id="simulation-panel-section">
       <div id="simulation-panel" style="display: none;"></div>
     </div>
+
+    <!-- Pathway mode — "Trace a strand". JS fills it in 09b-pathway-ui.js:
+         two box pickers, the Trace / Swap / Clear buttons, and (once a strand
+         is up) the list of alternative routes between the same two ends.
+         Sits above the filters because following one strand is a reading
+         action — it's what you reach for when the whole map is too much. -->
+    <div class="sidebar-section" id="pathway-panel"></div>
 
     <!-- Stages — JS fills the list in 13-sidebar.js. Editable: rename,
          add, drag-to-reorder, confirm + cascade delete. Stages don't have
@@ -256,6 +264,14 @@
       </div>
 
     </div>
+
+    <!-- Pathway mode: the straightened view of the current strand, and the
+         route chip that floats over the map. Both are filled by
+         09b-pathway-ui.js and stay hidden until a strand is being followed.
+         The ribbon covers the map rather than replacing it, so switching
+         views leaves the map's scroll position exactly where it was. -->
+    <div class="pathway-ribbon" id="pathway-ribbon" hidden></div>
+    <div class="pathway-chip" id="pathway-chip" hidden></div>
 
     <!-- Optional CSV-import overlay. No longer shown at startup — the
          canvas boots into an empty 3x3 starter grid instead, and you click

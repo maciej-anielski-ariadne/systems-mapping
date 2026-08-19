@@ -10,6 +10,7 @@ import { serializeLiveStateToCsv } from "./05a-csv-serializer";
 import { getMapTextScale } from "./04-utils";
 import { clearCsvFromStorage, saveUiStateToStorage, scheduleUiStateSave } from "./04a-storage";
 import { refreshNeighborHighlight } from "./09-graph-selection";
+import { cyclePathwayRoute, togglePathwayView } from "./09b-pathway-ui";
 import { computeLayout } from "./08-layout";
 import {
   beginZoomGesture,
@@ -68,9 +69,10 @@ document.querySelectorAll(".import-data-trigger").forEach(button => {
   });
 });
 
-// "CSV" — downloads the map as a CSV. With no box selected this is the whole
-// map; with a box selected it's just the highlighted boxes and links (matching
-// the PNG / HTML exports). getExportSelection (19-export.js) decides the subset.
+// "CSV" — downloads the map as a CSV. With a strand traced this is just that
+// chain; with a box selected, its highlighted boxes and links; otherwise the
+// whole map (matching the PNG / HTML exports). getExportSelection
+// (19-export.js) decides the subset.
 document.querySelectorAll(".save-data-trigger").forEach(button => {
   button.addEventListener("click", () => {
     if (!state.dataLoaded) return;
@@ -685,6 +687,32 @@ if (vizScroll) {
     maybeRenderForViewport(true);
   }, { passive: true });
 }
+
+// ───── Pathway-mode shortcuts ───────────────────────────────────────────
+// Alt is the only free modifier on the canvas: bare arrows already move the
+// cell cursor and bare printable keys start an inline rename (16e / 16h), so
+// these would be stolen the moment a box was selected. Alt+Arrow is explicitly
+// skipped by both of those handlers, which is what makes it safe here.
+//   Alt + ← / →   cycle the alternative routes
+//   Alt + R       straighten the strand / put it back on the map
+// (Esc leaves pathway mode — wired into 16e's Escape chain so it pops in the
+// right order relative to selection.)
+document.addEventListener("keydown", event => {
+  if (!event.altKey || event.ctrlKey || event.metaKey) return;
+  if (!state.pathway.routes.length) return;
+  const target = event.target as HTMLElement | null;
+  if (target && target.matches && target.matches("input, textarea, select, [contenteditable]")) return;
+  if (state.builder && state.builder.open) return;
+
+  if (event.key === "ArrowLeft")       { event.preventDefault(); cyclePathwayRoute(-1); }
+  else if (event.key === "ArrowRight") { event.preventDefault(); cyclePathwayRoute(1); }
+  else if (event.key === "r" || event.key === "R" || event.key === "®") {
+    // "®" is what Option+R produces on a Mac keyboard layout — without it the
+    // shortcut silently does nothing there.
+    event.preventDefault();
+    togglePathwayView();
+  }
+});
 
 // Keyboard shortcuts: Ctrl/Cmd + =/- to zoom, Ctrl/Cmd + 0 to reset.
 document.addEventListener("keydown", event => {

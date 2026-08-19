@@ -41,6 +41,8 @@ import { escapeHtml, formatScalar, splitCategoriesByClass, nodeCategoryIds } fro
 import { explainNode, formatNodeDelta, resolveEdgeElasticity } from "./07-simulation-engine";
 import { EFFECT_OPTIONS } from "./02-config";
 import { selectNode, scrollNodeIntoView } from "./09-graph-selection";
+import { suggestStrandsThrough } from "./09a-pathways";
+import { showSuggestedStrand } from "./09b-pathway-ui";
 import { applySimMultiplier, updateDetailPanelDeltaInline } from "./14-simulation-panel";
 import { deleteEdgeById, commitNewEdge, deleteSelection } from "./16e-canvas-edit";
 import { applyCanvasMutation } from "./16f-canvas-mutations";
@@ -154,6 +156,15 @@ export function renderNodeSkeleton(node: GraphNode, editMode: boolean): string {
   //    computed numbers to explain.
   if (!editMode && state.simulationMode) {
     html += renderCalculationBreakdown(node);
+  }
+
+  // ── Strands through this box (view only) ─────────────────────────────
+  //    The one-click way into pathway mode. "Causes" and "Effects" below
+  //    answer "what touches this box"; this answers "what story is this box
+  //    part of" — the whole chain, start to finish, without having to know
+  //    both ends first. See 09a-pathways.ts.
+  if (!editMode) {
+    html += renderStrandSuggestions(node);
   }
 
   // ── Direct inputs — read-only stripes in BOTH modes (incoming edges
@@ -758,6 +769,18 @@ export function wireSharedHandlers(node: GraphNode, contentState: HTMLElement): 
 }
 
 export function wireViewModeHandlers(node: GraphNode, contentState: HTMLElement): void {
+  // Picking a suggested strand enters pathway mode on it. The strands are
+  // recomputed here rather than stashed from the render, so a click always acts
+  // on the current graph even if an edit landed in between.
+  contentState.querySelectorAll("[data-strand-index]").forEach(button => {
+    button.addEventListener("click", event => {
+      event.preventDefault();
+      const index = Number((event.currentTarget as HTMLElement).getAttribute("data-strand-index"));
+      const strands = suggestStrandsThrough(node.id);
+      if (strands[index]) showSuggestedStrand(strands[index]);
+    });
+  });
+
   // Editable "Current" input in sim mode for controllable nodes.
   contentState.querySelectorAll(".detail-value-input").forEach(input => {
     input.addEventListener("input", event => {
@@ -986,6 +1009,46 @@ export function applyEdgeFieldEdit(edgeId: string, field: string, input: HTMLInp
 // =============================================================================
 // SHARED — edge-list rendering used by view mode
 // =============================================================================
+
+// Complete start-to-finish strands running through this box, strongest first.
+// Clicking one hands it to pathway mode (09b-pathway-ui.ts), which isolates it
+// on the map and offers the other routes between the same two ends.
+//
+// Deliberately capped short and never shown for a box that isn't on one: a
+// suggestion list long enough to browse would be another thing to get lost in,
+// which is the problem this feature exists to solve.
+export function renderStrandSuggestions(node: GraphNode): string {
+  const strands = suggestStrandsThrough(node.id);
+  if (!strands.length) return "";
+
+  let html = '<div class="detail-list-title">';
+  html +=     "<span>Strands through this box</span>";
+  html +=     '<span class="count">' + strands.length + "</span>";
+  html +=   "</div>";
+  html += '<div class="pathway-list detail-strand-list">';
+  for (let i = 0; i < strands.length; i++) {
+    const strand = strands[i];
+    const ids = strand.nodeIds;
+    const hops = ids.length - 1;
+    const via = ids.slice(1, -1).map(id => escapeHtml(nodeById[id] ? nodeById[id].label : id)).join(" → ");
+    const netClass = strand.sign > 0 ? "pathway-net--up" : "pathway-net--down";
+    const netText  = strand.sign > 0 ? "↑ net" : "↓ net";
+    const barPct = Math.max(3, Math.min(100, strand.strength * 400));
+
+    html += '<button type="button" class="pathway-route" data-strand-index="' + i + '">';
+    html +=   '<span class="pathway-chain">' + escapeHtml(nodeById[ids[0]] ? nodeById[ids[0]].label : ids[0]);
+    if (via) html += '<span class="via"> → ' + via + "</span>";
+    html +=   " → " + escapeHtml(nodeById[ids[ids.length - 1]] ? nodeById[ids[ids.length - 1]].label : ids[ids.length - 1]) + "</span>";
+    html +=   '<span class="pathway-meta">';
+    html +=     "<span>" + hops + " hop" + (hops === 1 ? "" : "s") + "</span>";
+    html +=     '<span class="pathway-net ' + netClass + '">' + netText + "</span>";
+    html +=     '<span class="pathway-strength"><i style="width:' + barPct.toFixed(1) + '%"></i></span>';
+    html +=   "</span>";
+    html += "</button>";
+  }
+  html += "</div>";
+  return html;
+}
 
 export function renderEdgeList(title: string, items: Array<{ edge: Edge; otherNode: GraphNode }>, direction: string, emptyText: string): string {
   let html = '<div class="detail-list-title">';
