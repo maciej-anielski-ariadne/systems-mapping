@@ -12,7 +12,8 @@ page you open directly in a browser. Nothing here is loaded by `index.html`.
 
 | File | What it's for |
 |------|---------------|
-| [`pathway-atlas.html`](PATHWAY-ATLAS.md) | Everything downstream of **one** box, as a single expandable structure. Enumerates nothing, so there is no cap and no wait. |
+| [`pathway-atlas.html`](PATHWAY-ATLAS.md) | Everything downstream of **one** box, as a single flow picture. Enumerates nothing, so there is no cap and no wait. |
+| `tangle-sketches.html` | A sketchpad, not a tool: five candidate pictures of one knot of feedback, drawn side by side so one of them can be chosen and built into the atlas. Load your own CSV to see your own tangle in each. |
 | [`strand-condenser.html`](strand-condenser.html) | Walk every route between two boxes, fold away the repeated lanes, and show only where the pathways differ. |
 
 ## `strand-condenser.html`
