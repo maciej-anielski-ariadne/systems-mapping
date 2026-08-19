@@ -209,6 +209,9 @@ function showPanel(
   state.userOverrides = options.overrides || {};
   recomputeValues();
   state.simulationMode = options.sim !== false;
+  // The per-box edit form belongs to editing mode, so asking for it means
+  // being in it.
+  state.uiMode = options.edit ? "edit" : "read";
   state.canvasEdit.editMode = !!options.edit;
   state.selectedNodeId = nodeId;
   renderDetailPanel();

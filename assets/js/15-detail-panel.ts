@@ -74,7 +74,9 @@ export function renderDetailPanel(): void {
   emptyState.style.display   = "none";
   contentState.style.display = "block";
 
-  const editMode = !!(state.canvasEdit && state.canvasEdit.editMode);
+  // The per-box edit form is an authoring tool: reading mode never shows it,
+  // however the flag was left.
+  const editMode = state.uiMode === "edit" && !!(state.canvasEdit && state.canvasEdit.editMode);
   contentState.classList.toggle("is-editing", editMode);
   contentState.classList.remove("just-unlocked");
   contentState.innerHTML = renderNodeSkeleton(node, editMode);
@@ -113,6 +115,10 @@ export function renderDetailPanel(): void {
 export function renderNodeSkeleton(node: GraphNode, editMode: boolean): string {
   const directInputs  = incomingEdges[node.id].map((edge: Edge) => ({ edge: edge, otherNode: nodeById[edge.from] }));
   const directImpacts = outgoingEdges[node.id].map((edge: Edge) => ({ edge: edge, otherNode: nodeById[edge.to] }));
+  // Reading mode asks one question of a box — what causes it, what does it
+  // affect — so that answer comes first and everything else sits under it.
+  // Editing keeps the authoring order: identity, then the fields, then links.
+  const reading = state.uiMode !== "edit";
 
   let html = "";
 
@@ -134,11 +140,15 @@ export function renderNodeSkeleton(node: GraphNode, editMode: boolean): string {
   }
 
   // ── Mode toggle: the stable anchor between identity and the data ──────
-  html += '<div class="detail-mode-toggle">';
-  html += editMode
-    ? '<button class="detail-mode-button active" data-action="toggle-edit-mode" aria-pressed="true">Done editing</button>'
-    : '<button class="detail-mode-button" data-action="toggle-edit-mode" aria-pressed="false">Edit box</button>';
-  html += '</div>';
+  //    Editing only — while reading, a button that turns the panel into a
+  //    form is an offer nobody made.
+  if (!reading) {
+    html += '<div class="detail-mode-toggle">';
+    html += editMode
+      ? '<button class="detail-mode-button active" data-action="toggle-edit-mode" aria-pressed="true">Done editing</button>'
+      : '<button class="detail-mode-button" data-action="toggle-edit-mode" aria-pressed="false">Edit box</button>';
+    html += '</div>';
+  }
 
   // ── Identity edit controls (edit only): the chips' source fields ─────
   if (editMode) {
@@ -149,41 +159,40 @@ export function renderNodeSkeleton(node: GraphNode, editMode: boolean): string {
     html += '</div>';
   }
 
-  // ── Quantification: values ↔ inputs, on the same rail ────────────────
-  html += renderQuantFrame(node, editMode);
+  // The pieces below the identity block, named so the two modes can order
+  // them differently without either one growing its own copy.
+  const causes  = renderEdgeList("Causes", directInputs, "from", "No causes — this is a starting input.");
+  const effects = editMode
+    ? renderOutgoingEdgesBlock(node)
+    : renderEdgeList("Effects", directImpacts, "to", "No effects — this is a final result.");
+  const causesHint = (editMode && directInputs.length)
+    ? '<div class="detail-edge-hint">Edit a link from the box it starts at →</div>'
+    : "";
+  // "How this number is calculated" — the audit trail for the figure shown
+  // alongside. View mode only: in edit mode the user is CHANGING the rule (and
+  // text-field edits deliberately skip the panel re-render to keep focus), so a
+  // breakdown there would be showing yesterday's working. Simulation mode only,
+  // because outside it there are no computed numbers to explain.
+  const numbers = renderQuantFrame(node, editMode) +
+    (!editMode && state.simulationMode ? renderCalculationBreakdown(node) : "");
+  // Strands — the whole chain a box belongs to, start to finish. Worth having,
+  // but not worth the height it costs before you've asked: while reading it is
+  // folded away behind its own count.
+  const strands = editMode ? "" : renderStrandSuggestions(node, reading);
 
-  // ── "How this number is calculated" — the audit trail for the figure
-  //    shown just above. View mode only: in edit mode the user is CHANGING
-  //    the rule (and text-field edits deliberately skip the panel re-render
-  //    to keep focus), so a breakdown there would be showing yesterday's
-  //    working. Simulation mode only, because outside it there are no
-  //    computed numbers to explain.
-  if (!editMode && state.simulationMode) {
-    html += renderCalculationBreakdown(node);
+  if (reading) {
+    html += causes;
+    html += effects;
+    html += numbers;
+    html += strands;
+    return html;
   }
 
-  // ── Strands through this box (view only) ─────────────────────────────
-  //    The one-click way into pathway mode. "Causes" and "Effects" below
-  //    answer "what touches this box"; this answers "what story is this box
-  //    part of" — the whole chain, start to finish, without having to know
-  //    both ends first. See 09a-pathways.ts.
-  if (!editMode) {
-    html += renderStrandSuggestions(node);
-  }
-
-  // ── Direct inputs — read-only stripes in BOTH modes (incoming edges
-  //    are edited from the source node; clicking jumps there) ───────────
-  html += renderEdgeList("Causes", directInputs, "from", "No causes — this is a starting input.");
-  if (editMode && directInputs.length) {
-    html += '<div class="detail-edge-hint">Edit a link from the box it starts at →</div>';
-  }
-
-  // ── Direct impacts — read-only stripes (view) ↔ editable editors (edit) ─
-  if (editMode) {
-    html += renderOutgoingEdgesBlock(node);
-  } else {
-    html += renderEdgeList("Effects", directImpacts, "to", "No effects — this is a final result.");
-  }
+  html += numbers;
+  html += strands;
+  html += causes;
+  html += causesHint;
+  html += effects;
 
   // ── Delete node (edit only) ──────────────────────────────────────────
   if (editMode) {
@@ -1021,14 +1030,22 @@ export function applyEdgeFieldEdit(edgeId: string, field: string, input: HTMLInp
 // Deliberately capped short and never shown for a box that isn't on one: a
 // suggestion list long enough to browse would be another thing to get lost in,
 // which is the problem this feature exists to solve.
-export function renderStrandSuggestions(node: GraphNode): string {
+export function renderStrandSuggestions(node: GraphNode, folded = false): string {
   const strands = suggestStrandsThrough(node.id);
   if (!strands.length) return "";
 
-  let html = '<div class="detail-list-title">';
-  html +=     "<span>Strands through this box</span>";
-  html +=     '<span class="count">' + strands.length + "</span>";
-  html +=   "</div>";
+  let html = "";
+  if (folded) {
+    html += '<details class="detail-fold"><summary class="detail-list-title">';
+    html +=   "<span>Strands through this box</span>";
+    html +=   '<span class="count">' + strands.length + "</span>";
+    html += "</summary>";
+  } else {
+    html += '<div class="detail-list-title">';
+    html +=   "<span>Strands through this box</span>";
+    html +=   '<span class="count">' + strands.length + "</span>";
+    html += "</div>";
+  }
   html += '<div class="pathway-list detail-strand-list">';
   for (let i = 0; i < strands.length; i++) {
     const strand = strands[i];
@@ -1051,6 +1068,7 @@ export function renderStrandSuggestions(node: GraphNode): string {
     html += "</button>";
   }
   html += "</div>";
+  if (folded) html += "</details>";
   return html;
 }
 

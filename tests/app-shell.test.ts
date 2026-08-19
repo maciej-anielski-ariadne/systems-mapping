@@ -13,6 +13,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { loadDataFromCsv } from "../assets/js/06-data-loader";
+import { renderDetailPanel } from "../assets/js/15-detail-panel";
 import { NODES, state } from "../assets/js/03-state";
 import { selectNode, deselectAll } from "../assets/js/09-graph-selection";
 import { initCanvasEdit } from "../assets/js/16e-canvas-edit";
@@ -144,5 +145,58 @@ describe("reading never changes the map", () => {
     setUiMode("edit");
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true }));
     expect(NODES.length).toBe(before - 1);
+  });
+});
+
+describe("what a reader gets when they select a box", () => {
+  const panel = (): HTMLElement => document.getElementById("detail-content") as HTMLElement;
+
+  it("answers the question first: causes and effects above the numbers", () => {
+    loadDataFromCsv(sampleCsv);
+    selectNode(NODES[0].id);
+    renderDetailPanel();
+
+    const titles = [...panel().querySelectorAll(".detail-list-title")].map(el => el.textContent || "");
+    expect(titles[0]).toContain("Causes");
+    expect(titles[1]).toContain("Effects");
+
+    const html = panel().innerHTML;
+    const quant = html.indexOf("detail-quant-block");
+    expect(quant).toBeGreaterThan(html.indexOf("Effects"));
+  });
+
+  it("folds the strand list away behind its own count", () => {
+    loadDataFromCsv(sampleCsv);
+    selectNode(NODES[0].id);
+    renderDetailPanel();
+
+    const fold = panel().querySelector("details.detail-fold");
+    expect(fold).not.toBeNull();
+    expect((fold as HTMLDetailsElement).open).toBe(false);
+    expect(fold!.querySelector("summary")!.textContent).toContain("Strands through this box");
+    // Folded, not dropped — the routes are there the moment it opens.
+    expect(fold!.querySelectorAll(".pathway-route").length).toBeGreaterThan(0);
+  });
+
+  it("offers no way to edit the box until you are editing", () => {
+    loadDataFromCsv(sampleCsv);
+    selectNode(NODES[0].id);
+    renderDetailPanel();
+    expect(panel().querySelector("[data-action='toggle-edit-mode']")).toBeNull();
+
+    setUiMode("edit");
+    renderDetailPanel();
+    expect(panel().querySelector("[data-action='toggle-edit-mode']")).not.toBeNull();
+  });
+});
+
+describe("the drawer", () => {
+  it("keeps the link and highlight filters, folded", () => {
+    const fold = document.querySelector("#sidebar details.sidebar-fold") as HTMLDetailsElement;
+    expect(fold).not.toBeNull();
+    expect(fold.open).toBe(false);
+    expect(fold.querySelector("#edge-type-filters")).not.toBeNull();
+    expect(fold.querySelector("#edge-style-filters")).not.toBeNull();
+    expect(fold.querySelector("#trace-filters")).not.toBeNull();
   });
 });

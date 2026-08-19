@@ -229,13 +229,18 @@
 
     <!-- Edge / trace filters — JS fills these (renderEdgeTypeFilters /
          renderEdgeStyleFilters / renderTraceFilters in 13-sidebar.js). Each row
-         toggles like Streams: click to hide that edge effect / line style on the
-         map (or suppress a trace direction); click again to show it. -->
-    <!-- Edge / trace filters — formerly the "Map appearance" accordion, now plain
-         sections styled like Stages / Streams. JS fills these in 13-sidebar.js. -->
-    <div class="sidebar-section"><div id="edge-type-filters"></div></div>
-    <div class="sidebar-section"><div id="edge-style-filters"></div></div>
-    <div class="sidebar-section"><div id="trace-filters"></div></div>
+         toggles like Rows: click to hide that link effect / line style on the
+         map (or suppress a highlight direction); click again to show it.
+
+         Folded away by default. They are real controls, but they answer a
+         question most readers never ask, and open they were three more blocks
+         between the panel's top and its bottom. -->
+    <details class="sidebar-fold">
+      <summary class="sidebar-section-title"><span>Link and highlight options</span></summary>
+      <div class="sidebar-section"><div id="edge-type-filters"></div></div>
+      <div class="sidebar-section"><div id="edge-style-filters"></div></div>
+      <div class="sidebar-section"><div id="trace-filters"></div></div>
+    </details>
   </aside>
 
   <!-- ============== PANEL RESIZE HANDLES ==============
@@ -280,7 +285,7 @@
         <span class="viz-control-title">Zoom</span>
         <div class="viz-control-row">
           <button class="viz-zoom-button" id="viz-zoom-out"  data-tooltip="Zoom out (Ctrl+−)" aria-label="Zoom out">−</button>
-          <button class="viz-zoom-readout" id="viz-zoom-readout" data-tooltip="Reset zoom">100%</button>
+          <button class="viz-zoom-readout" id="viz-zoom-readout" data-tooltip="Fit the whole map in the frame">100%</button>
           <button class="viz-zoom-button" id="viz-zoom-in"   data-tooltip="Zoom in (Ctrl+=)"  aria-label="Zoom in">+</button>
         </div>
       </div>

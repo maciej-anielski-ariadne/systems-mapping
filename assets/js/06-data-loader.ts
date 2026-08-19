@@ -73,7 +73,7 @@ import {
 } from "./03-state";
 import { computeMaxHighlightDepth } from "./09-graph-selection";
 import { resetPathwayCaches, revalidatePathway } from "./09a-pathways";
-import { applyHighlightDepth } from "./17-events";
+import { applyHighlightDepth, fitMapToFrame } from "./17-events";
 import { computeLayout } from "./08-layout";
 import {
   recomputeValues,
@@ -800,6 +800,15 @@ export function loadDataFromCsv(csvText: string): boolean {
   renderSidebar();
   render();
   renderDetailPanel();
+
+  // A map opens fully visible: fit it to the frame (never zooming past 100%,
+  // so a small map keeps its size and centres instead). Undo / redo route
+  // through this same function, and a zoom that jumped under an undo would be
+  // its own small betrayal — so the fit is skipped while restoring, as is the
+  // history clear below.
+  if (typeof isUndoCaptureSuspended === "function" && !isUndoCaptureSuspended()) {
+    if (typeof fitMapToFrame === "function") fitMapToFrame();
+  }
 
   // Only surface a toast when something went wrong. Successful loads are
   // visually obvious (the map renders); the count is also visible in the

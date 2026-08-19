@@ -578,3 +578,46 @@ body.canvas-shift-edit .sidebar-inline-edit:not(.editing):hover {
 .legend-swatch {
   filter: saturate(0.65);
 }
+
+/* === Folded sections ===
+ * A <details> whose summary is a section title. Used for the link / highlight
+ * filters, which are worth keeping and not worth the height they cost open.
+ * The marker is a chevron drawn with CSS so it matches the panel's weight
+ * rather than the browser's. */
+.sidebar-fold { padding: 0 var(--gutter) var(--section-gap); }
+
+.sidebar-fold > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1_5);
+  cursor: pointer;
+  list-style: none;
+  margin-bottom: 0;
+  user-select: none;
+}
+
+.sidebar-fold > summary::-webkit-details-marker { display: none; }
+
+.sidebar-fold > summary::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 4px solid currentColor;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  transition: transform var(--dur-fast) ease;
+}
+
+.sidebar-fold[open] > summary::before { transform: rotate(90deg); }
+
+.sidebar-fold > summary:hover { color: var(--text-secondary); }
+
+/* The sections inside a fold supply their own titles, so they don't need the
+ * outer gutter again. */
+.sidebar-fold .sidebar-section {
+  padding-left: 0;
+  padding-right: 0;
+  margin-bottom: 0;
+}
+
+.sidebar-fold .sidebar-section:first-of-type { padding-top: var(--heading-gap); }

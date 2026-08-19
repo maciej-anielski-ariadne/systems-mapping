@@ -714,12 +714,36 @@ export function applyZoomBy(factor: number, anchorClientX?: number, anchorClient
   zoomToLevel(state.zoomLevel * factor, anchorClientX, anchorClientY);
 }
 
+// ───── Fit the map to the frame ──────────────────────────────────────────
+// A map opened at 100% starts in its top-left corner, and on anything bigger
+// than the frame that means starting cropped with no clue what you're missing.
+// Fitting shows the whole thing. It only ever zooms OUT — a twelve-box map
+// blown up to fill a widescreen would be a different kind of wrong — so a small
+// map stays at 100% and centres itself instead (the centring is CSS).
+export const FIT_PADDING = 32;
+
+export function fitZoomLevel(): number | null {
+  const scroll = document.getElementById("viz-scroll");
+  if (!scroll || !layout) return null;
+  const mapW = layout.totalWidth, mapH = layout.totalHeight;
+  const frameW = scroll.clientWidth, frameH = scroll.clientHeight;
+  if (!mapW || !mapH || !frameW || !frameH) return null;
+  const fit = Math.min((frameW - FIT_PADDING) / mapW, (frameH - FIT_PADDING) / mapH, 1);
+  return clampZoom(fit);
+}
+
+export function fitMapToFrame(): void {
+  const level = fitZoomLevel();
+  if (level === null) return;
+  setZoom(level);
+}
+
 export const zoomInButton  = document.getElementById("viz-zoom-in");
 export const zoomOutButton = document.getElementById("viz-zoom-out");
 export const zoomReadout   = document.getElementById("viz-zoom-readout");
 if (zoomInButton)  zoomInButton.addEventListener("click",  () => setZoom(state.zoomLevel + ZOOM_STEP));
 if (zoomOutButton) zoomOutButton.addEventListener("click", () => setZoom(state.zoomLevel - ZOOM_STEP));
-if (zoomReadout)   zoomReadout.addEventListener("click",   () => setZoom(1.0));
+if (zoomReadout)   zoomReadout.addEventListener("click",   () => fitMapToFrame());
 
 // ───── Highlight-depth control ────────────────────────────────────────────
 // How many connected levels light up when a node is selected (1 = direct
