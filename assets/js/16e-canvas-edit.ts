@@ -147,6 +147,7 @@ export function initCanvasEdit(): void {
     vizSvg.addEventListener("mousedown", (event: MouseEvent) => {
       if (event.button !== 0) return;
       if (!event.shiftKey) return;
+      if (state.uiMode !== "edit") return;
       const target = event.target as HTMLElement;
       if (target.closest &&
           target.closest(".node-group, .row-label-group, .edge-handle, .edge-hit, .edge-path")) return;
@@ -447,6 +448,11 @@ export function bootEmptyStateGrid(): void {
 // Mirror the Shift state into both the canvasEdit flag and a body class so
 // CSS can hide the edit affordances without any per-render bookkeeping.
 export function setShiftHeld(held: boolean): void {
+  // Shift is the editing key: it reveals the ghost cells, the edge handles and
+  // the drag-to-move affordance. Reading mode never arms it — otherwise a
+  // Shift-click would create a box that the (correctly) read-only keyboard then
+  // refused to let you name.
+  if (held && state.uiMode !== "edit") held = false;
   state.canvasEdit.shiftHeld = !!held;
   if (document.body) {
     document.body.classList.toggle("canvas-shift-edit", !!held);
@@ -1127,6 +1133,15 @@ export function swallowNextClick(): void {
     _nodeDragSwallowClickBound = null;
   };
   window.addEventListener("click", _nodeDragSwallowClickBound as EventListener, { capture: true, once: true });
+  // Disarm on the next task if no click ever arrives — see the same note on the
+  // pan-end swallow in 17-events.ts. Left armed, it eats the user's next click
+  // anywhere in the app.
+  const armed = _nodeDragSwallowClickBound;
+  setTimeout(() => {
+    if (_nodeDragSwallowClickBound !== armed) return;
+    window.removeEventListener("click", armed as EventListener, true);
+    _nodeDragSwallowClickBound = null;
+  }, 0);
 }
 
 // ───── Marquee multi-select (shift+drag on empty canvas) ──────────────────

@@ -16,7 +16,8 @@ import { loadDataFromCsv } from "../assets/js/06-data-loader";
 import { renderDetailPanel } from "../assets/js/15-detail-panel";
 import { NODES, state } from "../assets/js/03-state";
 import { selectNode, deselectAll } from "../assets/js/09-graph-selection";
-import { initCanvasEdit } from "../assets/js/16e-canvas-edit";
+import { initCanvasEdit, setShiftHeld } from "../assets/js/16e-canvas-edit";
+import { toggleSimulationMode } from "../assets/js/14-simulation-panel";
 import { saveUiStateToStorage, loadUiStateFromStorage } from "../assets/js/04a-storage";
 import {
   FIT_MIN_ZOOM,
@@ -260,5 +261,58 @@ describe("the map scrolls at every zoom", () => {
     expect(scrollRule, ".viz-scroll must not be a flex container — it breaks scrolling when zoomed").not.toMatch(/display:\s*flex/);
     const svgRule = css.slice(css.indexOf(".viz-svg {"), css.indexOf("}", css.indexOf(".viz-svg {")));
     expect(svgRule, ".viz-svg must not use auto margins — the map is anchored top-left").not.toMatch(/margin:\s*auto/);
+  });
+});
+
+describe("editing controls belong to editing", () => {
+  it("closes the per-box form when you say you are done", () => {
+    loadDataFromCsv(sampleCsv);
+    setUiMode("edit");
+    selectNode(NODES[0].id);
+    state.canvasEdit.editMode = true;
+    renderDetailPanel();
+    expect(document.querySelectorAll("#detail-content input").length).toBeGreaterThan(0);
+
+    setUiMode("read");
+    expect(state.canvasEdit.editMode).toBe(false);
+    expect(document.querySelectorAll("#detail-content input").length).toBe(0);
+  });
+
+  it("never arms Shift while reading — it is the editing key", () => {
+    setUiMode("read");
+    setShiftHeld(true);
+    expect(state.canvasEdit.shiftHeld).toBe(false);
+
+    setUiMode("edit");
+    setShiftHeld(true);
+    expect(state.canvasEdit.shiftHeld).toBe(true);
+    setShiftHeld(false);
+    setUiMode("read");
+  });
+
+  it("keeps the colour swatch while reading — it is the key, not just a picker", () => {
+    const css = readFileSync(resolve(here, "../assets/css/03-app-shell.css"), "utf8");
+    const hidden = css.slice(css.indexOf("body.reading .edit-only,"));
+    const rule = hidden.slice(0, hidden.indexOf("}"));
+    expect(rule, "the colour swatch IS the count badge — hiding it loses the colour key").not.toContain("sidebar-edit-color");
+    expect(css).toMatch(/body\.reading \.sidebar-edit-color\s*\{[^}]*pointer-events:\s*none/);
+  });
+});
+
+describe("simulation brings its own panel out", () => {
+  it("docks the left panel instead of leaving it in a drawer", () => {
+    loadDataFromCsv(sampleCsv);
+    setUiMode("read");
+    setFiltersOpen(true);
+
+    toggleSimulationMode();
+    expect(document.body.classList.contains("sim-mode")).toBe(true);
+    // The docking is CSS keyed off body.sim-mode; what matters here is that no
+    // half-open drawer is left sitting over the map.
+    expect(state.filtersOpen).toBe(false);
+    expect(document.getElementById("simulation-panel")!.style.display).toBe("block");
+
+    toggleSimulationMode();
+    expect(document.body.classList.contains("sim-mode")).toBe(false);
   });
 });

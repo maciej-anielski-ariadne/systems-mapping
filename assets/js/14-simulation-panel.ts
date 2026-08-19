@@ -21,7 +21,7 @@ import { render, scheduleRender, updateSimulationValuesInPlace } from "./11-rend
 import { patchDetailPanelValues, renderDetailPanel } from "./15-detail-panel";
 import { saveUiStateToStorage, scheduleUiStateSave } from "./04a-storage";
 import { renderSidebar } from "./13-sidebar";
-import { applyPanelPinnedClasses } from "./17-events";
+import { applyPanelPinnedClasses, setFiltersOpen } from "./17-events";
 
 export function renderSimulationPanel(): void {
   const simPanel = document.getElementById("simulation-panel");
@@ -371,12 +371,18 @@ export function toggleSimulationMode(): void {
     button.textContent = state.simulationMode ? "Exit sim" : "Simulate";
   }
 
-  // Pin the sidebar on entry so the user can see the sliders without
-  // hovering. Leaves their pin choice alone on exit.
+  // The sliders ARE the left panel, so entering simulation has to bring it
+  // out: pinned open while editing (leaving the pin choice alone on exit),
+  // and docked rather than drawered while reading — you work the sliders
+  // against the map, and a drawer that closes when you click the map would
+  // take them away every time you looked at what moved. The docking is CSS
+  // off body.sim-mode; what's needed here is to make sure no half-open
+  // drawer is left over it.
   if (state.simulationMode && !state.sidebarPinned) {
     state.sidebarPinned = true;
     if (typeof applyPanelPinnedClasses === "function") applyPanelPinnedClasses();
   }
+  if (state.simulationMode && typeof setFiltersOpen === "function") setFiltersOpen(false);
 
   document.body.classList.toggle("sim-mode", state.simulationMode);
   renderSidebar();

@@ -24,6 +24,8 @@ import {
 } from "./11-rendering";
 import { hideTooltip } from "./12-tooltip";
 import { toggleSimulationMode } from "./14-simulation-panel";
+import { renderSidebar } from "./13-sidebar";
+import { renderDetailPanel } from "./15-detail-panel";
 import { downloadCsvBlob, readCsvFile } from "./16-file-io";
 import { closeBuilder, openBuilder } from "./16a-builder-state";
 import { bootEmptyStateGrid } from "./16e-canvas-edit";
@@ -178,8 +180,24 @@ export function applyUiMode(): void {
       reading ? "Add and change boxes, rows, columns and links." : "Finish editing and go back to reading the map.",
     );
   }
+
+  // Leaving editing closes the per-box edit form with it. Without this the
+  // right panel keeps showing a form full of inputs to someone who has just
+  // said they are done editing — and keeps showing it until something else
+  // happens to re-render.
+  if (reading && state.canvasEdit && state.canvasEdit.editMode) {
+    state.canvasEdit.editMode = false;
+  }
+
   applyPanelPinnedClasses();
   applySelectionClass();
+
+  // Both panels render mode-dependent controls, so they are redrawn on the
+  // switch rather than waiting for the next unrelated render.
+  if (state.dataLoaded) {
+    if (typeof renderSidebar === "function") renderSidebar();
+    if (typeof renderDetailPanel === "function") renderDetailPanel();
+  }
 }
 
 export function setUiMode(mode: string): void {
@@ -946,6 +964,13 @@ if (_vizSvgEl && vizScrollEl) {
       // a node does not also select / deselect.
       const swallow = (e: Event): void => { e.stopPropagation(); e.preventDefault(); };
       window.addEventListener("click", swallow, { capture: true, once: true });
+      // …but only THAT click. A pan doesn't always produce one — the pointer
+      // can end up outside the map, or over an element the browser won't fire a
+      // click on — and an armed one-shot swallower then waits, eating whatever
+      // the user clicks next: a header button that inexplicably needs pressing
+      // twice. The gesture's own click is dispatched before any timeout runs,
+      // so disarming on the next task keeps the guard and drops the trap.
+      setTimeout(() => window.removeEventListener("click", swallow, true), 0);
     }
   });
 }

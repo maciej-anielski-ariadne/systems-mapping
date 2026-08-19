@@ -331,14 +331,17 @@ body.panel-resizing {
   transition: grid-template-columns var(--dur-slow) var(--ease);
 }
 
-body.reading .app                        { --sidebar-w: 0; }
+/* Simulation is the exception: its sliders ARE the left panel, and you work
+ * them against the map, so while simulating the panel docks exactly as it does
+ * while editing rather than sliding over the picture. */
+body.reading:not(.sim-mode) .app         { --sidebar-w: 0; }
 body.reading .app:not(.has-selection)    { --detail-w:  0; }
 
 /* === Left panel as a drawer ===
  * Out of the grid entirely and slid off the left edge, so the map is full
  * width; the header's Filters button brings it over the map, and a click
  * anywhere else (or Esc) sends it back. */
-body.reading .sidebar {
+body.reading:not(.sim-mode) .sidebar {
   position: absolute;
   top: 64px;
   left: 0;
@@ -354,7 +357,7 @@ body.reading .sidebar {
   transition: transform var(--dur-slow) var(--ease), visibility var(--dur-slow);
 }
 
-body.reading .app.filters-open .sidebar {
+body.reading:not(.sim-mode) .app.filters-open .sidebar {
   transform: none;
   visibility: visible;
 }
@@ -375,16 +378,25 @@ body.reading .app:not(.has-selection) .detail-panel {
 /* === Authoring controls ===
  * Only the affordances that change the map go — names, counts and colour
  * swatches stay, because they are what the panel is FOR while reading. */
-/* The drawer button belongs to reading mode only — while editing, that panel
- * is docked, and a button that opens what is already open is noise. */
-body.editing #filters-button { display: none; }
+/* The drawer button belongs to reading mode only — while editing (or
+ * simulating) that panel is docked, and a button that opens what is already
+ * open is noise. */
+body.editing #filters-button,
+body.reading.sim-mode #filters-button { display: none; }
 
 body.reading .edit-only,
 body.reading .sidebar-add-btn,
 body.reading .sidebar-row-drag,
-body.reading .sidebar-edit-color,
 body.reading .sidebar-row-delete,
 body.reading .sidebar-cat-reclass { display: none; }
+
+/* The colour swatch on a row IS the <input type="color"> — the count sits on
+ * top of it — so hiding it while reading took the colour key away with the
+ * picker. It stays, and stops being a control instead. */
+body.reading .sidebar-edit-color {
+  pointer-events: none;
+  cursor: default;
+}
 
 /* The primary emphasis belongs to whichever mode you are NOT in: reading
  * offers "Edit"; editing offers the way back out. */

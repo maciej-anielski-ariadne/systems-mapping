@@ -48,11 +48,17 @@ Edit**, plus the theme switch.
 reorder / **+ Add** affordances. **Done** goes back. The mode is remembered
 across a refresh.
 
-Direct manipulation on the map — click an empty cell to add a box, drag from a
-box's right edge to draw a link — is **Shift-gated** in both modes, so the canvas
-reads as a picture until you hold Shift. What reading mode adds is that the
-keyboard can't change the map either: Delete, Enter and type-to-rename do nothing
-until you switch.
+Direct manipulation on the map — Shift-click an empty cell to add a box, Shift-drag
+from a box's right edge to draw a link, Shift-drag a box to move it — lives in
+**editing** only. Shift is the editing key: while reading it arms nothing, so no
+ghost cells, no edge handles, no drag. The keyboard follows the same line —
+Delete, Enter and type-to-rename do nothing until you switch. (A box you create
+is immediately ready to be named: just type, no text field to find.)
+
+While editing, the **Filters** button disappears because that panel is docked, and
+the same happens in **simulation**: the sliders *are* the left panel, and you work
+them against the map, so entering simulation docks the panel rather than leaving
+it as a drawer that would close the moment you clicked the map.
 
 The header buttons:
 - **Filters** opens the left panel as a drawer — rows, columns, tags, and (for now) **Trace a strand**, with the link-type / line-style / highlighting filters folded away under **Link and highlight options**. Esc or a click on the map closes it. Hidden while editing, where the panel is docked.
