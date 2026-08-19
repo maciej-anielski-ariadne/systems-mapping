@@ -5,6 +5,9 @@ interconnected to read directly. Not part of the app — open
 `tools/pathway-atlas.html` in a browser and drop in the CSV the app's CSV button
 saves. Everything runs locally; nothing is uploaded.
 
+There is no demo map and no sample data: the page is empty until you load your
+own file, so nothing on screen is ever something other than your map.
+
 [Download it here.](https://github.com/maciej-anielski-ariadne/systems-mapping/raw/main/tools/pathway-atlas.html)
 Right-click → Save link as, then open the file.
 
@@ -44,12 +47,12 @@ slow enough to need one, no sampling, no budget, and no cap.
 ## The two guarantees
 
 **Complete.** Every pathway in the map is one of the readings on screen. An
-impact cannot be missed, however far it meanders. This holds on both grouping
-settings and is checked in `tests/pathway-atlas.test.ts` by expanding the
-on-screen tree back out and comparing it against brute force.
+impact cannot be missed, however far it meanders. It is checked in
+`tests/pathway-atlas.test.ts` by expanding the on-screen tree back out and
+comparing it against brute force.
 
 **Sound.** Every step on screen is a step the map actually contains. This is the
-one that grouping by name quietly breaks, and it is worth being precise about
+one grouping by name can break at the edges, and it is worth being precise about
 why. Fold `Cannabis Seizure` and `Cocaine Seizure` into one `◇ Seizure` and the
 page will happily offer
 
@@ -74,52 +77,47 @@ are contracted first, no false one can appear.
 
 ---
 
-## Grouping: the one real trade-off
+## Grouping, and the one real trade-off
 
-The **Group boxes** control chooses when to stop refining. Both settings are
-complete; they differ in how much is claimed about the members of a group.
+Three settings used to sit in the rail. They are now fixed, because a page whose
+answer depends on which switches you left on is a page you cannot quote:
 
-| | As far as possible *(default)* | Only where behaviour matches |
+| | fixed at | why |
 | --- | --- | --- |
-| stops when | the grouping is loop-safe | nothing more can be split |
-| every step shown is real | not necessarily | yes |
-| readings vs pathways | readings can exceed pathways | readings ≤ pathways |
-| condensation, 296-box demo | 292 → **129** elements, 83 choice points | 292 → **254**, 208 choice points |
+| how far to group | **as far as possible** | hold a group together up to the point where holding it together would invent feedback the map does not contain — the most condensation available without inventing anything |
+| smallest family | **3 boxes** | two boxes that happen to rhyme are a coincidence; three sharing a prefix and a suffix are a pattern |
+| lane reuse | **2 roles** | a lane value must play its part in more than one role, so a single coincidental pair cannot mint a lane |
 
-On the 296-box demo the looser setting halves the page, at the cost of 208 of 482
-steps being taken by only part of their group. The lane badge on each branch is
-what tells you which — that is not a footnote, it is the answer to "where do the
-pathways differ". The stricter setting gives a page where every step is universal
-and reads more like the raw map.
+The first of these is the trade-off. Grouping as far as possible is always
+**complete** — no pathway is missed — but it is not always **sound**: some
+members of a group go on to differ, so the page can offer more readings than
+there are real pathways, and it says so at the top when it does. On the 296-box
+test map that is 208 of 482 steps taken by only part of their group, and the
+page condenses 292 elements to 129 rather than 254.
 
-Start on the default. If a stretch looks wrong, switch to strict and see whether
-it survives.
+The honest answer to "which members?" is not a switch, it is the element itself:
+click any block and the rail lists every box inside it.
 
----
-
-## Seven ways to read it
+## Flow, which is the whole thing as one picture
 
 The structure and the presentation are separate problems, and the first version
 only solved the first one. A complete nested outline of 129 elements is still a
-wall of words and arrows. The view switcher offers the same atlas — the identical
-numbers, nothing recomputed per view — in seven forms. Measured on the 296-box
-demo, from one box that reaches all 296:
+wall of words and arrows. Six presentations were built and measured against each
+other — proportional blocks, parallel strands, a lane grid, one step at a time,
+and the outline — and **Flow** is the one that stayed:
 
-| View | What it is for | Height on screen |
-| --- | --- | --- |
-| **Flow** | The whole thing as one picture. Columns are how far along you are; block height and ribbon thickness are how much runs through. Nothing to open. | one screen |
-| **Blocks** | No arrows at all. Each split is a row of blocks as wide as its share, with what follows underneath. Click one to give it the frame. | 338px |
-| **Strands** | A spine with branches that leave and rejoin, the way people describe a pathway out loud. Named *and* coloured, so identity is never colour alone. | 1,007px |
-| **Lane grid** | One row per element, one column per lane. A row with gaps is where the lanes stop behaving alike, and the view says nothing else. | one screen |
-| **Step through** | One decision at a time. The least on screen of the six — you walk a pathway rather than read one. | one screen |
-| **Loops** | Every feedback loop as a ring diagram with its polarity and gain. See below. | one screen |
-| **Outline** | The original: everything at once, nested, complete. Kept for comparison. | 1,686px |
+- columns are how far along a pathway you are;
+- the height of a block and the thickness of a ribbon are how much of everything
+  runs through it;
+- there is nothing to open and no reading order — the shape *is* the answer;
+- clicking a block puts its contents in the rail: every box the element stands
+  for, however many.
 
-Two of these needed a limit to be worth having. Drawn to full depth, Strands came
-out 11,482px tall — worse than the outline it exists to replace — and Blocks
-recursed until the blocks were slivers a few pixels wide, destroying the one
-thing that view is for. Both now draw a level or two and then offer a way in,
-which is what the drill-down is for.
+On the 296-box test map it is one screen. The other five are gone; what they
+were each good at is recorded in the git history if any of it is wanted back.
+
+**Loops** keeps its own tab for now, because feedback is not yet drawn into the
+Flow picture — see below.
 
 ## Feedback loops
 
@@ -158,9 +156,10 @@ ring drops it, so `Cat A Treatment Referral` reads as `Treatment Referral`
 instead of being clipped to `Cat A Treatmen…`.
 
 Loops live in two places: a **Loops view** listing every one on the map, sortable
-by gain, length or polarity; and inline in the pathway views, where a tangle
-stays one chip carrying its polarity mix (`3R / 1B · 108 boxes`) and opens into
-the rings when clicked.
+by gain, length or polarity; and inline in Flow, where a tangle is one amber
+block that opens into the rings when clicked. Drawing the two as a single
+picture — feedback where it sits in the flow rather than on its own tab — is the
+work still to do.
 
 **One thing worth knowing about your data.** If two boxes are joined by two links
 that disagree about sign, the polarity of every loop through them depends on
@@ -170,26 +169,19 @@ reported rather than swallowed.
 
 ## Reading the page
 
-- **The spine** runs straight down: segments every pathway through that point
-  follows. A segment is shared by definition — it is on screen once and stands
-  for every reading that passes through it.
-- **A split** shows its alternatives, commonest first, each with an exact count
-  and a percentage, and says where they all meet again.
-- **`◇ Seizure ×8`** is one element standing for eight boxes. Click it to see
-  which.
-- **`loop of 4`** is a feedback loop, contracted. A pathway enters and leaves it
-  but never goes round it — that is what makes the count finite, and it matches
-  how people read a strand.
-- **`Cannabis, Cocaine only`** on a branch means exactly those lanes reach it.
-  This is the divergence.
-- **`carries on into X, opened above`** appears where two alternatives rejoin
-  before the main rejoin point. Rather than printing the shared stretch twice,
-  the page points at it. Nothing is lost; both readings continue identically
-  from there.
-
-**Pathways** is the true number of routes. **Readings** is how many distinct
-stories the page tells. On a well-folding map readings is far smaller; where the
-looser grouping is over-reaching, readings is larger, and the page says so.
+- **A block** is one element: a box, a group of boxes that behave alike, or a
+  contracted feedback tangle (amber). Its height is how much of everything runs
+  through it.
+- **`◇ Seizure ×8`** is one element standing for eight boxes. Click it and the
+  rail names all eight.
+- **A ribbon** is a step, and its thickness is the same measure — so a thin
+  ribbon out of a tall block is a rare way on from a common place.
+- **A contracted tangle** is entered and left but never gone round, which is
+  what makes the count finite and matches how people read a strand. Click it for
+  its loops.
+- **Pathways** is the true number of routes; **readings** is how many distinct
+  stories the page tells. On a well-folding map readings is far smaller; where
+  grouping is over-reaching, readings is larger, and the note at the top says so.
 
 ---
 
@@ -212,25 +204,28 @@ Four tests keep it honest, because label similarity alone invents families:
 
 | test | what it stops |
 | --- | --- |
-| **size** — at least 3 members *(adjustable)* | two boxes that happen to rhyme |
+| **size** — at least 3 members | two boxes that happen to rhyme |
 | **adjacency** — members must not be linked to each other | `Import Stage → Seizure Stage → Testing Stage`, which is a sequence, not a set of alternatives |
 | **reuse** — a lane value must play its part in at least 2 roles | one coincidental pair minting a lane |
 | **role** — members' neighbours must play overlapping parts | `Pick rate` / `Damage rate`, which share a word and nothing else |
 
 Bare numbers are never lane values: `Overtime 3` is an instance counter, not a
-lane. Two controls in the rail move the first and third thresholds so you can see
-what appears and vanishes on your own map.
+lane. Every family the page found is listed in the rail, and each one opens to
+show its members and the lane value each contributes — which is how you check
+that the dimensions it found are the dimensions you think in.
 
 ---
 
 ## What it does not do
 
-- **It does not rank.** Elasticities are read from the CSV but not yet used to
-  weight or order the alternatives; ordering is by how many readings run through
-  each. If sorting by strength would help, that is a small addition.
+- **It does not rank the pathways.** Elasticities decide loop polarity and gain,
+  but not the order of what leads where; that ordering is by how many readings
+  run through each. Sorting by strength would be a small addition.
 - **It runs downstream only.** The start box is a source, not a destination.
-- **The looser grouping over-approximates**, as set out above, and says so on
-  screen when it does.
+- **Feedback is on its own tab.** Loops are analysed and drawn, but not yet
+  placed where they sit in the Flow picture.
+- **Grouping over-approximates**, as set out above, and says so on screen when
+  it does.
 
 ---
 

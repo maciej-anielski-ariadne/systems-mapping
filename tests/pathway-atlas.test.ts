@@ -339,3 +339,36 @@ describe("counting", () => {
     expect(atlas.ms).toBeLessThan(2000);
   });
 });
+
+// -----------------------------------------------------------------------------
+// THE PAGE ITSELF
+// -----------------------------------------------------------------------------
+// The settings that used to sit in the rail are fixed, and the demo maps are
+// gone so that nothing on screen can be mistaken for the user's own data.
+// Both are properties of the page rather than the engine, so they are checked
+// against the file's text.
+// -----------------------------------------------------------------------------
+describe("the page", () => {
+  it("ships no demo map and builds nothing until a CSV is loaded", () => {
+    expect(html).not.toMatch(/function demo\w*\s*\(/);
+    // the last statement in the page is the empty state, not a map
+    expect(html.trimEnd()).toMatch(/showEmpty\(\);\s*<\/script>\s*<\/body>\s*<\/html>$/);
+  });
+
+  it("locks the three settings that used to be switches", () => {
+    const settings = /const SETTINGS = (\{[^\n]*\});/.exec(html);
+    expect(settings).not.toBeNull();
+    expect(eval("(" + settings![1] + ")")).toEqual({
+      grouping: "loose",
+      lanes: { minMembers: 3, minTokenFamilies: 2 },
+    });
+    for (const gone of ["min-members", "min-reuse", "stop-outcomes", "map-pick"])
+      expect(html).not.toContain(gone);
+  });
+
+  it("offers Flow and Loops, and nothing else", () => {
+    const tabs = [...html.matchAll(/role="tab" data-v="(\w+)"/g)].map(m => m[1]);
+    expect(tabs).toEqual(["flow", "loops"]);
+    expect(/const VIEWS = \{ flow: viewFlow, loops: viewLoops \};/.test(html)).toBe(true);
+  });
+});

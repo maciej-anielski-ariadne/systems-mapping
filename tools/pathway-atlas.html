@@ -28,10 +28,11 @@
 
  Nothing is sampled, capped, budgeted or truncated at any point.
 
- SIX WAYS TO READ IT. The structure is one thing; how you look at it is another,
- and a nested list of names and arrows turns out to be the hardest of the six.
- The view switcher offers the same atlas as a flow diagram, proportional blocks,
- parallel strands, a lane grid, one step at a time, and the outline.
+ HOW YOU LOOK AT IT. The structure is one thing; the presentation is another.
+ Six were prototyped — blocks, strands, a lane grid, one step at a time, a
+ nested outline — and Flow won: the whole atlas as one picture, columns for how
+ far along a pathway you are, height and thickness for how much runs through.
+ Loops sits beside it, on its own tab, until the two are drawn as one picture.
 
  See tools/PATHWAY-ATLAS.md for how it works and what it was measured against.
 ================================================================================
@@ -121,8 +122,6 @@ textarea{font-family:var(--font-mono);font-size:11px;min-height:64px;resize:vert
 .btn:hover{background:var(--bg-light)}
 .btn.primary{background:var(--act);border-color:var(--act);color:#fff}
 .row-btns{display:flex;gap:6px;flex-wrap:wrap}
-.check{display:flex;align-items:flex-start;gap:8px;font-size:12px;color:var(--text-secondary);cursor:pointer}
-.check input{margin-top:2px}
 
 .picker-list{margin-top:5px;max-height:172px;overflow:auto;border:1px solid var(--border-subtle);
              border-radius:var(--r-i);background:var(--bg-deepest)}
@@ -135,6 +134,7 @@ textarea{font-family:var(--font-mono);font-size:11px;min-height:64px;resize:vert
   color:var(--text-tertiary);border-top:1px solid var(--border-subtle)}
 .picker-list .grp:first-child{border-top:0}
 
+.railbox:empty{display:none}
 .railbox{border:1px solid var(--border-subtle);border-radius:var(--r-s);background:var(--bg-deepest);padding:10px 11px}
 .railbox h3{margin:0 0 6px;font-size:10.5px;font-weight:600;letter-spacing:.08em;
             text-transform:uppercase;color:var(--text-tertiary)}
@@ -144,6 +144,23 @@ textarea{font-family:var(--font-mono);font-size:11px;min-height:64px;resize:vert
 .fam b{font-weight:600;font-family:var(--font-mono);font-size:11.5px}
 .fam span{color:var(--text-tertiary);white-space:nowrap;font-variant-numeric:tabular-nums}
 details.more>summary{cursor:pointer;font-size:11.5px;color:var(--text-tertiary);margin-top:6px}
+/* A family, or an element, opened up to show every box inside it. */
+details.famd{border-top:1px solid var(--border-subtle)}
+details.famd:first-of-type{border-top:0}
+details.famd>summary{cursor:pointer;list-style:none;display:flex;align-items:baseline;gap:8px;padding:3px 0;font-size:12px}
+details.famd>summary::-webkit-details-marker{display:none}
+details.famd>summary::before{content:"▸";color:var(--text-tertiary);font-size:9px;flex:none}
+details.famd[open]>summary::before{content:"▾"}
+details.famd>summary b{font-weight:600;font-family:var(--font-mono);font-size:11.5px;
+  flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+details.famd>summary span{color:var(--text-tertiary);white-space:nowrap;flex:none;
+  font-variant-numeric:tabular-nums}
+ul.members{margin:1px 0 7px;padding:0 0 0 11px;border-left:1px solid var(--border-subtle);
+  margin-left:5px;max-height:260px;overflow:auto}
+ul.members li{list-style:none;font-size:11.5px;color:var(--text-secondary);padding:1px 0}
+ul.members li em{font-style:normal;color:var(--text-tertiary);font-family:var(--font-mono);font-size:10.5px}
+.empty{max-width:60ch}
+.empty h2{margin:0 0 6px;font-size:18px;letter-spacing:-.01em}
 
 /* Masthead + stats */
 .stats{display:flex;flex-wrap:wrap;gap:7px}
@@ -190,109 +207,10 @@ details.more>summary{cursor:pointer;font-size:11.5px;color:var(--text-tertiary);
 .flow .node.loop{fill:var(--accent-amber)}
 .flow .node.start{fill:var(--act-hi)}
 .flow .link{fill:var(--act);opacity:.16}
-.flow .node:hover,.flow .link.hot{opacity:.95}
+.flow .node:hover{opacity:.95}
 .flow g.n{cursor:pointer}
 
-/* ── 2. BLOCKS ─────────────────────────────────────────────────────────── */
-.crumbs{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin:0 0 12px;font-size:12px}
-.crumbs button{background:none;border:0;color:var(--act-hi);cursor:pointer;font:inherit;padding:2px 4px;
-  border-radius:4px;text-decoration:underline;text-underline-offset:2px}
-.crumbs button:hover{background:var(--act-tint)}
-.crumbs span{color:var(--text-tertiary)}
-.band{display:flex;gap:2px;margin-bottom:2px}
-.blk{flex:0 1 auto;min-width:0;border-radius:4px;padding:6px 8px;overflow:hidden;cursor:pointer;
-     border:1px solid transparent;position:relative}
-.blk:hover{border-color:var(--act)}
-.blk .bl{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;font-weight:500}
-.blk .bc{display:block;font-family:var(--font-mono);font-size:10px;opacity:.75;font-variant-numeric:tabular-nums}
-.blk.d0{background:color-mix(in srgb,var(--act) 40%,var(--bg-deepest))}
-.blk.d1{background:color-mix(in srgb,var(--act) 30%,var(--bg-deepest))}
-.blk.d2{background:color-mix(in srgb,var(--act) 22%,var(--bg-deepest))}
-.blk.d3{background:color-mix(in srgb,var(--act) 15%,var(--bg-deepest))}
-.blk.d4{background:color-mix(in srgb,var(--act) 9%,var(--bg-deepest))}
-.blk.seg{background:var(--bg-mid);cursor:default}
-.blk.seg:hover{border-color:transparent}
-.blk.loopy{background:color-mix(in srgb,var(--accent-amber) 30%,var(--bg-deepest))}
-.stack{margin-bottom:9px}
-
-/* ── 3. STRANDS ────────────────────────────────────────────────────────── */
-.strand{display:grid;grid-template-columns:auto 1fr;gap:0 14px;align-items:stretch}
-.rail-line{position:relative;width:26px}
-.rail-line::before{content:"";position:absolute;left:11px;top:0;bottom:0;width:4px;
-  background:var(--border-strong);border-radius:2px}
-.stop{display:flex;align-items:center;gap:10px;padding:5px 0;position:relative}
-.dot{position:absolute;left:-27px;width:12px;height:12px;border-radius:50%;background:var(--bg-deepest);
-     border:3px solid var(--act);box-sizing:content-box}
-.branchset{margin:6px 0 6px 6px;border-left:2px dashed var(--border-strong);padding-left:14px}
-.branch{margin:7px 0;padding-left:12px;border-left:4px solid var(--bl);border-radius:2px}
-.branch h4{margin:0 0 3px;font-size:12.5px;font-weight:600;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
-.branch h4 em{font-style:normal;font-family:var(--font-mono);font-size:10.5px;color:var(--text-tertiary);
-  font-variant-numeric:tabular-nums}
-.branch .track{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
-.sharebar{height:4px;border-radius:2px;background:var(--bl);margin:3px 0 5px}
-
-/* ── 4. LANE GRID ──────────────────────────────────────────────────────── */
-.gridwrap{overflow:auto;max-height:70vh}
-table.grid{border-collapse:separate;border-spacing:0;font-size:12px}
-table.grid th,table.grid td{padding:3px 7px;text-align:center;white-space:nowrap}
-table.grid thead th{position:sticky;top:0;background:var(--bg-deepest);z-index:2;
-  font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-tertiary);
-  border-bottom:1px solid var(--border-strong);padding-bottom:6px}
-table.grid th.rowh{position:sticky;left:0;background:var(--bg-deepest);z-index:1;text-align:left;
-  font-weight:500;max-width:230px;overflow:hidden;text-overflow:ellipsis;border-right:1px solid var(--border-subtle)}
-table.grid tbody tr:hover th.rowh,table.grid tbody tr:hover td{background:var(--bg-deep)}
-.cell{display:inline-block;width:15px;height:15px;border-radius:4px;background:var(--bg-mid)}
-.cell.on{background:var(--act)}
-.cell.part{background:color-mix(in srgb,var(--act) 45%,var(--bg-mid))}
-td.vol{text-align:right;font-family:var(--font-mono);font-size:10.5px;color:var(--text-tertiary);
-  font-variant-numeric:tabular-nums}
-.volbar{display:inline-block;height:7px;background:var(--act);border-radius:2px;vertical-align:0;opacity:.6}
-
-/* ── 5. STEP ───────────────────────────────────────────────────────────── */
-.stepwrap{max-width:900px}
-.here{border:1px solid var(--act);background:var(--act-tint);border-radius:var(--r-s);padding:14px 16px;margin:0 0 14px}
-.here h3{margin:0;font-size:19px;font-weight:700;letter-spacing:-.01em}
-.here p{margin:5px 0 0;color:var(--text-secondary);font-size:12.5px}
-.nexts{display:grid;gap:8px}
-.next{display:grid;grid-template-columns:1fr auto;gap:4px 14px;align-items:center;
-  border:1px solid var(--border-subtle);border-radius:var(--r-i);background:var(--bg-deep);
-  padding:9px 12px;cursor:pointer;text-align:left;font:inherit;color:inherit;width:100%}
-.next:hover{border-color:var(--act);background:var(--bg-mid)}
-.next b{font-size:13.5px;font-weight:600}
-.next .m{font-family:var(--font-mono);font-size:11px;color:var(--text-tertiary);
-  white-space:nowrap;font-variant-numeric:tabular-nums}
-.next .bar{grid-column:1/-1;height:5px;border-radius:3px;background:var(--bg-lighter);overflow:hidden}
-.next .bar i{display:block;height:100%;background:var(--act);border-radius:3px}
-
-/* ── 6. OUTLINE ────────────────────────────────────────────────────────── */
-.seg{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin:7px 0}
-.joins{font-size:12px;color:var(--text-tertiary);padding:3px 0}
-.joins b{color:var(--text-secondary);font-weight:500}
-.choice{border-left:2px solid var(--border-strong);margin:9px 0 9px 2px;padding-left:11px}
-.choice[data-d="0"]{border-left-color:var(--act)}
-.choice[data-d="1"]{border-left-color:var(--accent-purple)}
-.choice[data-d="2"]{border-left-color:var(--accent-green)}
-.choice[data-d="3"]{border-left-color:var(--accent-amber)}
-.choice-head{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-tertiary);margin:2px 0 6px}
-.choice-head b{color:var(--text-secondary);font-weight:600}
-details.alt{border:1px solid var(--border-subtle);border-radius:var(--r-i);background:var(--bg-deepest);margin:5px 0}
-details.alt[open]{background:var(--bg-deep)}
-details.alt>summary{cursor:pointer;list-style:none;padding:6px 10px;display:flex;align-items:center;
-  gap:9px;flex-wrap:wrap;font-size:12.5px}
-details.alt>summary::-webkit-details-marker{display:none}
-details.alt>summary::before{content:"▸";color:var(--text-tertiary);font-size:10px;flex:none}
-details.alt[open]>summary::before{content:"▾"}
-.alt-body{padding:2px 10px 8px 22px}
-.alt-n{font-family:var(--font-mono);font-size:10.5px;color:var(--text-tertiary);flex:none}
-.cnt{margin-left:auto;font-family:var(--font-mono);font-size:11px;color:var(--text-tertiary);
-     white-space:nowrap;flex:none;font-variant-numeric:tabular-nums}
-.tag{font-size:10.5px;padding:1.5px 6px;border-radius:999px;white-space:nowrap;border:1px solid transparent}
-.tag.some{background:color-mix(in srgb,var(--accent-amber) 18%,transparent);
-          border-color:color-mix(in srgb,var(--accent-amber) 45%,transparent)}
-.tag.all{background:var(--bg-mid);color:var(--text-tertiary)}
-.tag.straight{background:var(--bg-mid);color:var(--text-tertiary);font-style:italic}
-
-/* ── 7. LOOPS ──────────────────────────────────────────────────────────── */
+/* ── 2. LOOPS ──────────────────────────────────────────────────────────── */
 .loopgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(292px,1fr));gap:12px}
 .loopcard{border:1px solid var(--border-subtle);border-left:4px solid var(--c2);
   border-radius:var(--r-s);background:var(--bg-deep);padding:10px 12px 12px}
@@ -332,16 +250,7 @@ svg.ring .rb.r{fill:var(--c1)}
     </div>
 
     <div>
-      <label class="field" for="map-pick">Map</label>
-      <select id="map-pick">
-        <option value="lanes">Demo — multi-word lanes</option>
-        <option value="big">Demo — 296 boxes, 818 links</option>
-        <option value="tangle">Demo — a nasty feedback tangle</option>
-        <option value="own">Your own CSV</option>
-      </select>
-    </div>
-
-    <div id="own-wrap" hidden>
+      <label class="field">Your map</label>
       <div class="row-btns" style="margin-bottom:7px">
         <button class="btn primary" id="pick-file">Choose CSV…</button>
         <input type="file" id="csv-file" accept=".csv,text/csv" hidden>
@@ -351,43 +260,11 @@ svg.ring .rb.r{fill:var(--c1)}
       <p class="hint" id="csv-status" style="margin-top:6px">You can also drag a file anywhere onto this page.</p>
     </div>
 
-    <div>
+    <div id="start-wrap" hidden>
       <label class="field" for="start-q">Start from</label>
       <input type="text" id="start-q" placeholder="Type to filter boxes…" autocomplete="off">
       <div class="picker-list" id="start-list"></div>
     </div>
-
-    <div>
-      <label class="field" for="grouping">Group boxes</label>
-      <select id="grouping">
-        <option value="loose">As far as possible</option>
-        <option value="strict">Only where behaviour matches</option>
-      </select>
-      <p class="hint" style="margin-top:5px" id="grouping-note"></p>
-    </div>
-
-    <div>
-      <label class="field" for="min-members">Smallest family that counts</label>
-      <select id="min-members">
-        <option value="0">Off — no name grouping</option>
-        <option value="2">2 boxes</option>
-        <option value="3" selected>3 boxes</option>
-        <option value="4">4 boxes</option>
-        <option value="6">6 boxes</option>
-      </select>
-    </div>
-
-    <div>
-      <label class="field" for="min-reuse">A lane value must appear in</label>
-      <select id="min-reuse">
-        <option value="1">1 role — anything goes</option>
-        <option value="2" selected>2 roles</option>
-        <option value="3">3 roles — strictest</option>
-      </select>
-    </div>
-
-    <label class="check"><input type="checkbox" id="stop-outcomes">
-      <span>Stop at outcome boxes rather than running on through them</span></label>
 
     <div class="row-btns"><button class="btn" id="theme-btn">Theme</button></div>
 
@@ -400,15 +277,10 @@ svg.ring .rb.r{fill:var(--c1)}
     <div id="warn"></div>
     <nav class="views" id="views" role="tablist" aria-label="How to read the atlas">
       <button role="tab" data-v="flow">Flow</button>
-      <button role="tab" data-v="blocks">Blocks</button>
-      <button role="tab" data-v="strands">Strands</button>
-      <button role="tab" data-v="grid">Lane grid</button>
-      <button role="tab" data-v="step">Step through</button>
       <button role="tab" data-v="loops">Loops</button>
-      <button role="tab" data-v="outline">Outline</button>
     </nav>
     <p class="viewnote" id="viewnote"></p>
-    <div class="stage" id="stage"><p class="busy">Loading…</p></div>
+    <div class="stage" id="stage"></div>
   </main>
 </div>
 <div class="tip" id="tip"></div>
@@ -474,108 +346,6 @@ function parseAriadneCsv(text) {
       return { from: r.from, to: r.to, effect, elasticity: isNaN(raw) ? (defaults[effect] ?? 0.25) : raw };
     });
   return { nodes, edges, name: "your map" };
-}
-
-// ===========================================================================
-// DEMO MAPS
-// ===========================================================================
-const E = (from, to, elasticity = 0.3) =>
-  ({ from, to, effect: elasticity < 0 ? "decreases" : "increases", elasticity });
-const N = (id, label) => ({ id, label, stream: "", category: "", controllable: false, direction: "" });
-
-function demoLanes() {
-  const nodes = [], edges = [];
-  const add = (id, label) => { nodes.push(N(id, label)); return id; };
-  add("policy", "Enforcement Policy"); add("funding", "Operational Funding"); add("outcome", "Harm Reduction");
-  for (const c of ["Cat A", "Cat B", "Cat C", "Cat D"]) {
-    add(c + "|t", c + " Targets"); add(c + "|r", c + " Referrals"); add(c + "|o", c + " Offenders Charged");
-    edges.push(E("policy", c + "|t"), E("funding", c + "|t"), E(c + "|t", c + "|r"),
-               E(c + "|r", c + "|o"), E(c + "|o", "outcome"));
-  }
-  for (const d of ["Cannabis", "Cocaine", "Class A Drug", "Heroin"]) {
-    add(d + "|s", d + " Seizure"); add(d + "|q", d + " Testing");
-    edges.push(E("policy", d + "|s"), E(d + "|s", d + "|q"), E(d + "|q", "outcome"));
-  }
-  add("pick", "Pick rate"); add("damage", "Damage rate");
-  edges.push(E("funding", "pick"), E("pick", "outcome"), E("policy", "damage"), E("damage", "outcome"));
-  add("s1", "Import Stage"); add("s2", "Seizure Stage"); add("s3", "Testing Stage");
-  edges.push(E("policy", "s1"), E("s1", "s2"), E("s2", "s3"), E("s3", "outcome"));
-  return { nodes, edges, name: "multi-word lanes demo" };
-}
-
-function demoBig() {
-  const nodes = [], edges = [];
-  const add = (id, label) => { nodes.push(N(id, label)); return id; };
-  const lanes = ["Cannabis", "Cocaine", "Heroin", "Cat A", "Cat B", "Class A Drug", "Synthetic Opioid", "Prescription"];
-  const roles = ["Import", "Seizure", "Testing", "Charging", "Prosecution", "Sentencing",
-                 "Supply Chain", "Street Supply", "Street Price", "User Demand",
-                 "Treatment Referral", "Treatment Uptake", "Reoffending", "County Lines",
-                 "Community Harm", "Health Burden", "Policing Cost", "Public Confidence",
-                 "Market Adaptation", "Displacement", "Deterrence", "Recorded Crime",
-                 "Youth Involvement", "Debt Bondage"];
-  add("start", "Enforcement Budget"); add("end", "Total Drug Harm");
-  for (const lane of lanes) for (const role of roles) add(lane + "|" + role, lane + " " + role);
-  const shared = [];
-  for (let i = 0; i < 102; i++) shared.push(add("sh" + i, "Shared Factor " + (i + 1)));
-  for (const lane of lanes) {
-    for (let i = 0; i + 1 < roles.length; i++) edges.push(E(lane + "|" + roles[i], lane + "|" + roles[i + 1]));
-    edges.push(E("start", lane + "|" + roles[0]));
-    edges.push(E(lane + "|" + roles[roles.length - 1], "end"));
-    for (let i = 0; i + 2 < roles.length; i += 3) edges.push(E(lane + "|" + roles[i], lane + "|" + roles[i + 2]));
-    for (let i = 0; i + 4 < roles.length; i += 2) edges.push(E(lane + "|" + roles[i], lane + "|" + roles[i + 4]));
-    for (let i = 1; i + 5 < roles.length; i += 4) edges.push(E(lane + "|" + roles[i], lane + "|" + roles[i + 5]));
-  }
-  shared.forEach((s, i) => {
-    const r = i % (roles.length - 6);
-    const a = lanes[i % lanes.length], b = lanes[(i + 1) % lanes.length];
-    edges.push(E(a + "|" + roles[r], s));
-    edges.push(E(lanes[(i + 2) % lanes.length] + "|" + roles[r + 1], s));
-    edges.push(E(s, b + "|" + roles[r + 4]));
-    if (i % 4 === 0) { edges.push(E("start", s)); edges.push(E(s, "end")); }
-    if (i % 5 === 0) edges.push(E(s, lanes[(i + 2) % lanes.length] + "|" + roles[r + 5]));
-    if (i % 2 === 0) edges.push(E(s, lanes[(i + 3) % lanes.length] + "|" + roles[r + 6]));
-  });
-  for (const lane of lanes.slice(0, 4))
-    edges.push(E(lane + "|User Demand", lane + "|Street Price", -0.3));
-  return { nodes, edges, name: "296-box demo" };
-}
-
-// A map wired so its feedback is genuinely hard: cross-lane links that wrap
-// round, producing one tangle of about a hundred boxes holding dozens of loops.
-// This is the case the Loops view exists for — the earlier tool showed it as a
-// single chip labelled with a hundred names.
-function demoTangle() {
-  const nodes = [], edges = [];
-  const add = (id, label) => { nodes.push(N(id, label)); return id; };
-  const lanes = ["Cannabis", "Cocaine", "Heroin", "Cat A", "Cat B", "Class A Drug"];
-  const roles = ["Import", "Seizure", "Testing", "Charging", "Prosecution", "Sentencing",
-                 "Supply Chain", "Street Supply", "Street Price", "User Demand",
-                 "Treatment Referral", "Treatment Uptake", "Reoffending", "County Lines"];
-  const shared = [];
-  for (let i = 0; i < 40; i++) shared.push(add("sh" + i, "Shared Factor " + String.fromCharCode(65 + (i % 26)) + (i > 25 ? "2" : "")));
-  add("start", "Enforcement Budget"); add("end", "Total Drug Harm");
-  for (const lane of lanes) for (const role of roles) add(lane + "|" + role, lane + " " + role);
-  for (const lane of lanes) {
-    for (let i = 0; i + 1 < roles.length; i++) edges.push(E(lane + "|" + roles[i], lane + "|" + roles[i + 1]));
-    edges.push(E("start", lane + "|" + roles[0]));
-    edges.push(E(lane + "|" + roles[roles.length - 1], "end"));
-    for (let i = 0; i + 3 < roles.length; i += 2) edges.push(E(lane + "|" + roles[i], lane + "|" + roles[i + 3]));
-  }
-  shared.forEach((s, i) => {
-    edges.push(E("start", s), E(s, "end"));
-    edges.push(E(lanes[i % lanes.length] + "|" + roles[i % roles.length], s));
-    edges.push(E(s, lanes[(i + 1) % lanes.length] + "|" + roles[(i + 3) % roles.length]));
-    if (i % 3 === 0) edges.push(E(s, shared[(i + 7) % shared.length]));
-  });
-  // Half these come out reinforcing and half balancing, so the view has both
-  // to show rather than a wall of one colour.
-  // Back edges only — the forward links are already in the lane chain, and
-  // adding a second one between the same pair would just be a contradiction.
-  lanes.slice(0, 4).forEach((lane, i) => {
-    edges.push(E(lane + "|User Demand", lane + "|Street Price", i % 2 ? -0.3 : 0.3));
-    edges.push(E(lane + "|County Lines", lane + "|Street Supply", i % 2 ? 0.25 : -0.25));
-  });
-  return { nodes, edges, name: "feedback tangle demo" };
 }
 
 // ATLAS-ENGINE-START (kept verbatim; tests/pathway-atlas.test.ts reads it from here)
@@ -1399,21 +1169,18 @@ function gatherFeedback(nodes) {
 // ATLAS-ENGINE-END
 
 // ===========================================================================
-// SIX WAYS TO READ THE SAME ATLAS
+// READING THE ATLAS
 // ---------------------------------------------------------------------------
-// The structure is settled; how you look at it is a separate question, and a
-// nested list of names and arrows turns out to be the hardest of the six.
-// Every view below is driven by exactly the same atlas — nothing is recomputed
-// or approximated per view, so switching between them cannot change the answer.
+// Six presentations were prototyped — proportional blocks, parallel strands, a
+// lane grid, one step at a time, a nested outline — and Flow won: the whole
+// atlas as one picture, with nothing to open and nothing to read in order.
+// Loops keeps its own tab until the two are drawn as a single picture.
+//
+// Both are driven by exactly the same atlas — nothing is recomputed or
+// approximated per view, so switching between them cannot change the answer.
 // ===========================================================================
 let G = null, ATLAS = null, START = null, QUERY = "", VIEW = "flow";
-let ZOOM = null;        // Blocks: which sequence is filling the frame
-let STRANDROOT = null, STRANDPATH = [];   // Strands: the same, for the spine
-let GRID_ALL = false;   // Lane grid: include elements that belong to no lane
-let LOOP_SORT = "gain";  // Loops: how the cards are ordered
-let ZOOMPATH = [];      // …and how we got there
-let STEP = null;        // Step through: where we are standing
-let STEPPATH = [];
+let LOOP_SORT = "gain";   // Loops: how the cards are ordered
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -1544,350 +1311,7 @@ function viewFlow(A, M) {
 const clip = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 
 // ---------------------------------------------------------------------------
-// 2. BLOCKS — proportion, and nothing else
-// ---------------------------------------------------------------------------
-// No arrows at all. A split becomes a row of blocks whose widths are their
-// share of the readings, and what follows each one sits underneath it. The
-// 88%-of-everything branch is 88% of the width, so the answer to "where does
-// most of this go" is the first thing you see rather than something you count.
-// Click any block to give it the whole frame.
-// ---------------------------------------------------------------------------
-const BLOCK_DEPTH = 1;   // levels drawn before the page asks you to click
-
-function viewBlocks(A, M) {
-  const seq = ZOOM || A.tree;
-  const crumbs = `<nav class="crumbs">
-      <button type="button" data-zoom="root">Everything downstream</button>` +
-    ZOOMPATH.map((c, i) => `<span>›</span><button type="button" data-zoom="${i}">${esc(clip(c, 34))}</button>`).join("") +
-    `</nav>`;
-  return `<div class="legend">
-      <span>Width is share of readings. Depth of colour is how far in you are.</span>
-      <span><i style="background:color-mix(in srgb,var(--accent-amber) 30%,var(--bg-deepest))"></i>feedback loop</span>
-      <span><i style="background:var(--bg-mid)"></i>a stretch every pathway here follows</span>
-    </div>` + crumbs + `<div>${blockSeq(seq, 0, A, M)}</div>`;
-}
-
-function blockSeq(seq, depth, A, M) {
-  let html = "", run = [];
-  const flush = () => {
-    if (!run.length) return;
-    // A run of elements with no choice in it — one strip, named, not one box
-    // per name. This is where most of the old outline's length went.
-    const first = A.nodes.get(run[0]);
-    const label = run.length === 1 ? first.label
-      : first.label + " → " + A.nodes.get(run[run.length - 1]).label;
-    html += `<div class="band"><div class="blk seg" style="width:100%"
-      title="${esc(run.map(labelOf).join(" → "))}">
-      <span class="bl">${esc(label)}</span>
-      <span class="bc">${run.length} ${plural(run.length, "step")} every pathway here takes</span></div></div>`;
-    run = [];
-  };
-  for (const item of seq) {
-    if (item.kind === "box") { run.push(item.id); continue; }
-    if (item.kind === "join") {
-      flush();
-      html += `<div class="band"><div class="blk seg" style="width:100%"><span class="bl">↳ carries on into ${esc(labelOf(item.id))}</span></div></div>`;
-      continue;
-    }
-    flush();
-    const total = item.alts.reduce((a, x) => a + x.shapes, 0n) || 1n;
-    const blocks = item.alts.map(alt => {
-      const share = Number((alt.shapes * 10000n) / total) / 10000;
-      const node = A.nodes.get(alt.first);
-      const loopy = node && node.loop ? " loopy" : "";
-      const name = alt.seq.length === 0 ? "straight on" : node.label;
-      return `<div class="blk d${Math.min(depth, 4)}${loopy}" style="flex-basis:${(share * 100).toFixed(3)}%"
-          data-into="${esc(alt.first)}" title="${esc(name)} — ${pct(share)} of the readings here">
-        <span class="bl">${esc(name)}</span>
-        <span class="bc">${pct(share)}</span></div>`;
-    }).join("");
-      // Two levels, then stop. Recursing the whole tree turns the blocks into
-    // slivers a few pixels wide, which is the very problem this view exists to
-    // fix — so past the second level the page says how much more is in there
-    // and waits to be asked.
-    html += `<div class="stack"><div class="band">${blocks}</div>`;
-    if (depth < BLOCK_DEPTH) {
-      html += `<div class="band" style="align-items:flex-start">` + item.alts.map(alt => {
-        const w = (Number((alt.shapes * 10000n) / total) / 100).toFixed(3);
-        // The block above already names where this branch goes, so the strip
-        // underneath starts after it rather than saying it twice.
-        const inner = alt.seq.length && alt.seq[0].kind === "box" && alt.seq[0].id === alt.first
-          ? alt.seq.slice(1) : alt.seq;
-        return `<div style="flex:0 1 ${w}%;min-width:0">${
-          inner.length ? blockSeq(inner, depth + 1, A, M) : ""}</div>`;
-      }).join("") + `</div>`;
-    } else {
-      const deeper = item.alts.filter(a => a.seq.length).length;
-      if (deeper) html += `<p class="hint" style="margin:2px 0 0">${deeper} of these carry on further —
-        click one to open it up.</p>`;
-    }
-    html += `</div>`;
-  }
-  flush();
-  return html;
-}
-
-// ---------------------------------------------------------------------------
-// 3. STRANDS — a spine with branches leaving and coming back
-// ---------------------------------------------------------------------------
-// The closest thing to how people describe a pathway out loud: it runs along,
-// then it forks, and the forks meet again here. Each branch gets its own
-// colour AND its own name on the line, so nobody has to match a swatch to a
-// legend to tell two of them apart.
-// ---------------------------------------------------------------------------
-const STRAND_COLOURS = ["var(--c1)", "var(--c2)", "var(--c3)", "var(--c4)", "var(--c5)"];
-
-const STRAND_DEPTH = 1;   // levels drawn before a branch becomes a way in
-
-// Past the drawn depth a branch shows its first few stops and offers to become
-// the spine. Drawing the whole tree instead makes a page taller than the
-// outline it is meant to be easier than.
-function strandPeek(alt, A) {
-  const stops = [];
-  for (const item of alt.seq) {
-    if (item.kind !== "box") break;
-    stops.push(item.id);
-    if (stops.length === 4) break;
-  }
-  const more = countItems(alt.seq);
-  return `<div class="track">${stops.map(id => elHtml(id, A)).join('<span class="arrow">→</span>')}
-      ${more.boxes > stops.length ? `<span class="arrow">→</span><span class="hint">${more.boxes - stops.length} more</span>` : ""}</div>
-    <div class="row-btns" style="margin-top:5px">
-      <button class="btn" type="button" data-strand="${esc(alt.first)}">Follow this branch →</button></div>`;
-}
-
-function viewStrands(A, M) {
-  return `<div class="legend"><span>The spine is what every pathway here follows.
-    Branches leave it, run their own way, and rejoin where the label says.</span></div>
-    ${STRANDPATH.length ? `<nav class="crumbs">
-        <button type="button" data-strandroot="root">Everything downstream</button>` +
-        STRANDPATH.map((c, i) => `<span>›</span><button type="button" data-strandroot="${i}">${esc(clip(c.name, 30))}</button>`).join("") +
-      `</nav>` : ""}
-    <div class="strand"><div class="rail-line"></div><div>${strandSeq(STRANDROOT || A.tree, 0, A, M)}</div></div>`;
-}
-
-function strandSeq(seq, depth, A, M) {
-  let html = "";
-  for (const item of seq) {
-    if (item.kind === "box") {
-      const node = A.nodes.get(item.id);
-      html += `<div class="stop"><span class="dot"${node.loop ? ' style="border-color:var(--accent-amber)"' : ""}></span>
-        ${elHtml(item.id, A)}</div>`;
-      continue;
-    }
-    if (item.kind === "join") {
-      html += `<div class="stop"><span class="dot" style="border-color:var(--border-strong)"></span>
-        <span class="joins">carries on into <b>${esc(labelOf(item.id))}</b></span></div>`;
-      continue;
-    }
-    const total = item.alts.reduce((a, x) => a + x.shapes, 0n) || 1n;
-    const shown = item.alts.slice(0, 5), rest = item.alts.slice(5);
-    html += `<div class="branchset">` + shown.map((alt, i) => {
-      const share = Number((alt.shapes * 10000n) / total) / 10000;
-      // Offset by depth, so a branch inside a branch never repeats the
-      // colour of the one it sits in.
-      const colour = STRAND_COLOURS[(i + depth * 2) % STRAND_COLOURS.length];
-      const name = alt.seq.length === 0 ? "straight to the rejoin" : labelOf(alt.first);
-      return `<div class="branch" style="--bl:${colour}">
-        <h4>${esc(name)}<em>${pct(share)} · ${formatCount(alt.shapes)} ${plural(alt.shapes === 1n ? 1 : 2, "reading")}</em></h4>
-        <div class="sharebar" style="width:${Math.max(4, share * 100).toFixed(1)}%"></div>
-        ${alt.seq.length
-          ? (depth < STRAND_DEPTH
-              ? strandSeq(alt.seq, depth + 1, A, M)
-              : strandPeek(alt, A))
-          : `<p class="hint">Nothing in between.</p>`}
-      </div>`;
-    }).join("") +
-    (rest.length ? `<p class="hint">…and ${rest.length} more ${plural(rest.length, "branch", "branches")},
-       ${pct(Number((rest.reduce((a, x) => a + x.shapes, 0n) * 10000n) / total) / 10000)} of the readings between them.</p>` : "") +
-    `<p class="hint">${item.rejoin ? "All of these meet again at <b>" + esc(labelOf(item.rejoin)) + "</b>." : "These never meet again."}</p></div>`;
-  }
-  return html;
-}
-
-// ---------------------------------------------------------------------------
-// 4. LANE GRID — where the lanes stop agreeing
-// ---------------------------------------------------------------------------
-// One row per element, one column per lane, a mark where that lane is in it.
-// No arrows, no nesting, no reading order: a row with gaps in it is a place
-// the lanes behave differently, and that is the only thing this view says.
-// ---------------------------------------------------------------------------
-function viewGrid(A, M) {
-  const lanes = [...A.lanes.laneValues].sort();
-  if (!lanes.length)
-    return `<p class="lede">No lanes were found on this map, so there is nothing to line up.
-      Try a smaller family size in the rail, or use one of the other views.</p>`;
-
-  const laneOfBox = A.lanes.laneOf;
-  const rows = [];
-  for (const id of M.order) {
-    if (id === END) continue;
-    const node = A.nodes.get(id);
-    const mine = new Set();
-    for (const b of node.boxes) { const l = laneOfBox.get(b); if (l) mine.add(l); }
-    rows.push({ id, node, mine, weight: M.weight(id), depth: M.depth.get(id) });
-  }
-  const interesting = rows.filter(r => r.mine.size > 0 && r.mine.size < lanes.length);
-  const maxW = Math.max(...rows.map(r => r.weight), 0.0001);
-  // Rows with no lane at all say nothing here, and on a real map they are most
-  // of the table. Divergences first, then the rest, then those hidden.
-  const laneRows = rows.filter(r => r.mine.size > 0);
-  const blank = rows.length - laneRows.length;
-  const shown = GRID_ALL ? rows : laneRows;
-  shown.sort((a, b) => {
-    const da = a.mine.size > 0 && a.mine.size < lanes.length ? 0 : 1;
-    const db = b.mine.size > 0 && b.mine.size < lanes.length ? 0 : 1;
-    return da - db || b.weight - a.weight;
-  });
-
-  const body = shown.map(r => {
-    const cells = lanes.map(l =>
-      `<td><span class="cell ${r.mine.has(l) ? "on" : ""}" title="${esc(r.node.label)} — ${esc(l)}: ${r.mine.has(l) ? "yes" : "no"}"></span></td>`).join("");
-    const gappy = r.mine.size > 0 && r.mine.size < lanes.length;
-    return `<tr data-el="${esc(r.id)}">
-      <th class="rowh" title="${esc(r.node.label)}">${gappy ? "◆ " : ""}${esc(clip(r.node.label, 34))}</th>
-      ${cells}
-      <td class="vol"><span class="volbar" style="width:${Math.max(2, (r.weight / maxW) * 70).toFixed(1)}px"></span> ${pct(r.weight)}</td>
-    </tr>`;
-  }).join("");
-
-  return `<div class="legend">
-      <span><i class="cell on" style="width:12px;height:12px"></i>this lane is in this element</span>
-      <span>◆ marks a row only some lanes reach — the divergences</span>
-      <span>the last column is how much of everything runs through the element</span>
-    </div>
-    <p class="lede" style="margin-bottom:10px"><b>${interesting.length}</b> of ${laneRows.length}
-      elements that belong to a lane are reached by some lanes and not others — those are at the top,
-      and they are the rows worth arguing about.${
-        blank && !GRID_ALL ? ` ${blank} elements belong to no lane and are hidden.` : ""}</p>
-    <div class="row-btns" style="margin-bottom:12px">
-      <button class="btn" type="button" data-grid="toggle">${
-        GRID_ALL ? "Hide the " + blank + " elements with no lane" : "Show all " + rows.length + " elements"}</button></div>
-    <div class="gridwrap"><table class="grid">
-      <thead><tr><th class="rowh">Element</th>${lanes.map(l => `<th>${esc(clip(l, 12))}</th>`).join("")}<th>Weight</th></tr></thead>
-      <tbody>${body}</tbody></table></div>`;
-}
-
-// ---------------------------------------------------------------------------
-// 5. STEP THROUGH — one decision at a time
-// ---------------------------------------------------------------------------
-// Nothing on screen but where you are and where you can go next. The least
-// information per screen of any of these, which is the point: you walk a
-// pathway rather than read one.
-// ---------------------------------------------------------------------------
-function viewStep(A, M) {
-  const here = STEP && A.nodes.has(STEP) ? STEP : A.start;
-  const node = A.nodes.get(here);
-  // Commonest first, as the heading promises. The successor set is in the
-  // order the structure was built, which is not the order anyone wants to read.
-  const outs = [...A.succ.get(here)].sort((a, b) => {
-    const x = A.paths.get(a) || 0n, y = A.paths.get(b) || 0n;
-    return x > y ? -1 : x < y ? 1 : 0;
-  });
-  const total = outs.reduce((a, b) => a + (A.paths.get(b) || 0n), 0n) || 1n;
-
-  const crumbs = `<nav class="crumbs">
-      <button type="button" data-step="${esc(A.start)}">${esc(labelOf(A.start))}</button>` +
-    STEPPATH.slice(1).map(id => `<span>›</span><button type="button" data-step="${esc(id)}">${esc(clip(labelOf(id), 26))}</button>`).join("") +
-    `</nav>`;
-
-  const cards = outs.map(b => {
-    if (b === END) return `<div class="next" style="cursor:default"><b>This is the end of the line</b>
-      <span class="m">nothing follows</span></div>`;
-    const share = Number(((A.paths.get(b) || 0n) * 10000n) / total) / 10000;
-    const n = A.nodes.get(b);
-    const laneSet = [...(n.lanes || [])].sort();
-    const allLanes = A.lanes.laneValues.size;
-    const narrow = laneSet.length > 0 && laneSet.length < allLanes;
-    return `<button class="next" type="button" data-step="${esc(b)}">
-      <b>${esc(n.label)}${n.boxes.length > 1 ? ` <span class="m">×${n.boxes.length}</span>` : ""}</b>
-      <span class="m">${pct(share)} · ${formatCount(A.paths.get(b) || 0n)} ${plural(2, "reading")} on from here</span>
-      <span class="bar"><i style="width:${(share * 100).toFixed(2)}%"></i></span>
-      ${narrow ? `<span class="m" style="grid-column:1/-1">only ${esc(laneSet.slice(0, 5).join(", "))}</span>` : ""}
-    </button>`;
-  }).join("");
-
-  return `<div class="stepwrap">${crumbs}
-    <div class="here">
-      <h3>${esc(node.label)}</h3>
-      <p>${node.loop ? `A feedback loop of ${node.boxes.length} boxes. ` : node.boxes.length > 1
-          ? `One element standing for ${node.boxes.length} boxes. ` : ""}
-        ${formatCount(A.paths.get(here) || 0n)} ${plural(2, "reading")} run on from here${
-          here === A.start ? "" : `, which is ${pct(M.weight(here))} of everything downstream of ${esc(labelOf(A.start))}`}.</p>
-    </div>
-    <p class="hint" style="margin-bottom:8px">${outs.length} ${plural(outs.length, "way")} on from here${
-      outs.length > 1 ? ", commonest first" : ""}:</p>
-    <div class="nexts">${cards}</div></div>`;
-}
-
-// ---------------------------------------------------------------------------
-// 6. OUTLINE — the original, kept for comparison
-// ---------------------------------------------------------------------------
-function viewOutline(A, M) {
-  return `<div class="legend"><span>Everything at once, nested. Complete, and the
-    hardest of the six to skim — which is why the other five exist.</span></div>
-    <div class="row-btns" style="margin-bottom:10px">
-      <button class="btn" id="expand-all">Open all</button>
-      <button class="btn" id="collapse-all">Close all</button></div>
-    <div>${outlineSeq(A.tree, 0, A)}</div>`;
-}
-
-function elHtml(id, A) {
-  const node = A.nodes.get(id);
-  const cls = ["el"];
-  if (id === A.start) cls.push("start");
-  if (node.loop) cls.push("loop");
-  else if (node.boxes.length > 1) cls.push("folded");
-  const t = node.loop && node.tangles.length ? node.tangles[0] : null;
-  const many = node.loop
-    ? `<span class="x">${t ? `${t.reinforcing}R / ${t.balancing}B` : ""} · ${node.boxes.length} boxes</span>`
-    : node.boxes.length > 1 ? `<span class="x">×${node.boxes.length}</span>` : "";
-  const tip = node.boxes.slice(0, 10).map(b => (G.byId.get(b) || {}).label || b).join(" · ");
-  return `<span class="${cls.join(" ")}" data-el="${esc(id)}" title="${esc(tip)}">${esc(node.label)}${many}</span>`;
-}
-
-function outlineSeq(seq, depth, A) {
-  let html = "", run = [];
-  const flush = () => {
-    if (!run.length) return;
-    html += `<div class="seg">${run.map(id => elHtml(id, A)).join('<span class="arrow">→</span>')}</div>`;
-    run = [];
-  };
-  for (const item of seq) {
-    if (item.kind === "box") { run.push(item.id); continue; }
-    if (item.kind === "join") {
-      flush();
-      html += `<div class="joins">↳ carries on into <b>${esc(labelOf(item.id))}</b>, opened above</div>`;
-      continue;
-    }
-    flush();
-    const total = item.alts.reduce((a, x) => a + x.shapes, 0n) || 1n;
-    const allLanes = A.lanes.laneValues;
-    html += `<div class="choice" data-d="${Math.min(depth, 3)}">
-      <div class="choice-head">splits <b>${item.alts.length} ways</b>${
-        item.rejoin ? ` · they all meet again at <b>${esc(labelOf(item.rejoin))}</b>` : " · they never meet again"}</div>` +
-      item.alts.map((alt, i) => {
-        const stepLanes = A.stepLanes.get(item.at + ">" + alt.first) || new Set();
-        const reach = lanesIn(alt.seq, A.nodes);
-        for (const l of stepLanes) reach.add(l);
-        const narrow = allLanes.size > 1 && reach.size > 0 && reach.size < allLanes.size;
-        const tag = alt.seq.length === 0 ? `<span class="tag straight">straight on</span>`
-          : narrow ? `<span class="tag some">${esc([...reach].sort().slice(0, 4).join(", "))}${reach.size > 4 ? " +" + (reach.size - 4) : ""} only</span>`
-          : reach.size ? `<span class="tag all">every lane</span>` : "";
-        const share = Number((alt.shapes * 10000n) / total) / 10000;
-        return `<details class="alt"${depth === 0 && i === 0 ? " open" : ""}>
-          <summary><span class="alt-n">${i + 1}</span>${alt.seq.length ? "via " + esc(labelOf(alt.first)) : "skips ahead"}${tag}
-            <span class="cnt">${formatCount(alt.shapes)} · ${pct(share)}</span></summary>
-          <div class="alt-body">${alt.seq.length ? outlineSeq(alt.seq, depth + 1, A)
-            : `<p class="hint">Nothing in between.</p>`}</div></details>`;
-      }).join("") + `</div>`;
-  }
-  flush();
-  return html;
-}
-
-// ---------------------------------------------------------------------------
-// 7. LOOPS — the ring diagram
+// 2. LOOPS — the ring diagram
 // ---------------------------------------------------------------------------
 // The canonical causal-loop picture, one card per loop: the boxes set round a
 // circle, arrows following it, a + or − on every link, and R or B in the middle.
@@ -2025,10 +1449,12 @@ function viewLoops(A, M) {
       <span><i style="background:var(--c2)"></i><b>B</b> balancing — a nudge comes back opposed</span>
       <span>gain is the elasticities multiplied round the ring</span>
     </div>
-    <p class="lede" style="margin-bottom:10px"><b>${tangles}</b> ${plural(tangles, "tangle")} of feedback,
-      the largest holding <b>${biggest}</b> boxes. It would take <b>${independent}</b> ${plural(independent, "loop")} to generate
-      every loop in there; below is the shortest loop through each box — <b>${all.length}</b> of
-      ${all.length === 1 ? "it" : "them"} — so no box is left without a story. <b>${r}</b> reinforcing, <b>${all.length - r}</b> balancing.</p>
+    <p class="lede" style="margin-bottom:10px">${all.length === 1
+      ? `One loop, of <b>${biggest}</b> ${plural(biggest, "box", "boxes")}. It is ${r ? "reinforcing" : "balancing"}.`
+      : `<b>${tangles}</b> ${plural(tangles, "tangle")} of feedback, the largest holding <b>${biggest}</b> boxes.
+         It would take <b>${independent}</b> ${plural(independent, "loop")} to generate every loop in there; below is
+         the shortest loop through each box — <b>${all.length}</b> of them — so no box is left without a story.
+         <b>${r}</b> reinforcing, <b>${all.length - r}</b> balancing.`}</p>
     <div class="row-btns" style="margin-bottom:14px">
       ${["gain", "length", "polarity"].map(k =>
         `<button class="btn" type="button" data-loopsort="${k}" ${LOOP_SORT === k ? 'style="background:var(--act);border-color:var(--act);color:#fff"' : ""}>${
@@ -2042,16 +1468,10 @@ function viewLoops(A, M) {
 // SHELL
 // ---------------------------------------------------------------------------
 const VIEW_NOTES = {
-  flow: "The whole atlas as one picture. Columns are how far along you are; height and thickness are how much runs through. Nothing to open — the shape <b>is</b> the answer.",
-  blocks: "No arrows anywhere. Each split is a row of blocks as wide as its share of the readings, with what follows underneath. Click a block to give it the whole frame.",
-  strands: "A spine with branches that leave it and rejoin, the way people describe a pathway out loud. Each branch is named on the line as well as coloured.",
-  grid: "One row per element, one column per lane. A row with gaps is somewhere the lanes stop behaving alike — this view says nothing else, and says it in one screen.",
-  step: "One decision at a time. The least on screen of the six: you walk a pathway rather than read one.",
-  outline: "The original. Everything at once, nested, complete — and the hardest to skim.",
+  flow: "The whole atlas as one picture. Columns are how far along you are; height and thickness are how much runs through. Click any block to see the boxes inside it.",
   loops: "Every feedback loop, one ring each, with its polarity and its gain. A tangle of many loops sharing boxes becomes a grid of small readable rings rather than one opaque blob.",
 };
-const VIEWS = { flow: viewFlow, blocks: viewBlocks, strands: viewStrands, grid: viewGrid,
-                step: viewStep, loops: viewLoops, outline: viewOutline };
+const VIEWS = { flow: viewFlow, loops: viewLoops };
 
 function renderStats() {
   const A = ATLAS;
@@ -2070,21 +1490,35 @@ function renderStats() {
     `<div><span class="k">${esc(k)}</span><span class="v ${tone}">${esc(v)}</span></div>`).join("");
   $("warn").innerHTML = A.shapes > A.pathways
     ? `<div class="note"><b>${formatCount(A.shapes)} readings stand for ${formatCount(A.pathways)} real pathways.</b>
-       On this setting a group is kept together as long as it does not invent feedback, so some members of a
-       group go on to differ — ${A.partialSteps} of ${A.totalSteps} steps are taken by only part of their group.
-       Every real pathway is still in here. Switch to <b>only where behaviour matches</b> in the rail for a
-       page where every step shown is one that every member really takes.</div>`
+       Groups are held together as far as they can go, so some members of a group go on to differ —
+       ${A.partialSteps} of ${A.totalSteps} steps are taken by only part of their group. Every real
+       pathway is still in here; open an element to see exactly which boxes it stands for.</div>`
     : "";
+}
+
+// Nothing is loaded until you load it: there is no demo map to be mistaken for
+// your own data, and nothing is sent anywhere when you do.
+function showEmpty() {
+  $("stats").innerHTML = ""; $("warn").innerHTML = ""; $("viewnote").innerHTML = "";
+  $("lane-box").innerHTML = ""; $("detail-box").hidden = true;
+  $("start-list").innerHTML = ""; $("start-wrap").hidden = true; $("views").hidden = true;
+  $("stage").innerHTML = `<div class="empty">
+    <h2>Load a map to begin</h2>
+    <p class="lede">Use <b>Choose CSV…</b> in the rail — the file the app's CSV button saves — or drag
+      it anywhere onto this page. Everything runs here in the browser; nothing is uploaded.</p>
+    <p class="hint" style="margin-top:10px">Then pick the box you want to look downstream of. Every
+      pathway from it is in the picture, however far it meanders.</p></div>`;
 }
 
 function renderView() {
   const stage = $("stage");
-  if (!ATLAS) { stage.innerHTML = '<p class="busy">Pick a box to start from.</p>'; return; }
+  if (!ATLAS) { showEmpty(); return; }
   if (!ATLAS.elements) {
     stage.innerHTML = `<p class="lede">Nothing leads away from
       <b>${esc((G.byId.get(ATLAS.startId) || {}).label || ATLAS.startId)}</b> following the arrows.</p>`;
     return;
   }
+  $("views").hidden = false;
   $("viewnote").innerHTML = VIEW_NOTES[VIEW];
   for (const b of $("views").children) b.setAttribute("aria-selected", String(b.dataset.v === VIEW));
   const M = measure(ATLAS);
@@ -2092,22 +1526,37 @@ function renderView() {
   stage.scrollTop = 0;
 }
 
+// Every family opens to show its members, and the list of lane values opens
+// too. A grouping you cannot check is a grouping you have to take on trust.
 function railLanes() {
   const box = $("lane-box");
   if (!ATLAS) { box.innerHTML = ""; return; }
   const L = ATLAS.lanes;
   if (!L.families.length) {
-    box.innerHTML = `<h3>Name grouping</h3><p class="hint">No families found. Either this map does not
-      repeat itself along a named dimension, or the rules above are too strict.</p>`;
+    box.innerHTML = `<h3>Name grouping</h3><p class="hint">No families found — this map does not
+      repeat itself along a named dimension that the rules recognise.</p>`;
     return;
   }
   const values = [...L.laneValues].sort();
+  const fams = [...L.families].sort((a, b) => b.members.length - a.members.length);
+  const SHOWN = 10;
+  const famHtml = f => `<details class="famd">
+    <summary><b>${esc(familyLabel(f.key))}</b><span>×${f.members.length}</span></summary>
+    <ul class="members">${[...f.members]
+      .sort((a, b) => (a.token < b.token ? -1 : 1))
+      .map(m => `<li>${esc((G.byId.get(m.id) || {}).label || m.id)} <em>${esc(m.token)}</em></li>`)
+      .join("")}</ul></details>`;
   box.innerHTML = `<h3>Name grouping</h3>
-    <p class="hint" style="margin-bottom:7px"><b>${values.length}</b> ${plural(values.length, "lane")}:
-      ${esc(values.slice(0, 10).join(", "))}${values.length > 10 ? ", …" : ""}</p>` +
-    L.families.slice(0, 12).map(f =>
-      `<div class="fam"><b>${esc(familyLabel(f.key))}</b><span>×${f.members.length}</span></div>`).join("") +
-    (L.families.length > 12 ? `<p class="hint" style="margin-top:6px">…and ${L.families.length - 12} more</p>` : "");
+    <details class="famd" style="border-top:0">
+      <summary><b>${values.length} ${plural(values.length, "lane")}</b><span>open</span></summary>
+      <ul class="members">${values.map(v => `<li>${esc(v)}</li>`).join("")}</ul></details>
+    <p class="hint" style="margin:5px 0 7px">${fams.length} ${plural(fams.length, "family", "families")},
+      standing for ${L.foldedBoxes} ${plural(L.foldedBoxes, "box", "boxes")}. Open one to see what is in it.</p>` +
+    fams.slice(0, SHOWN).map(famHtml).join("") +
+    (fams.length > SHOWN
+      ? `<details class="more"><summary>Show the other ${fams.length - SHOWN}</summary>
+         ${fams.slice(SHOWN).map(famHtml).join("")}</details>`
+      : "");
 }
 
 function showElement(id) {
@@ -2117,14 +1566,21 @@ function showElement(id) {
   box.hidden = false;
   const boxes = node.boxes.map(b => (G.byId.get(b) || {}).label || b).sort();
   const t = node.loop && node.tangles.length ? node.tangles[0] : null;
+  const SHOWN = 12;
+  const li = b => `<li>${esc(b)}</li>`;
   box.innerHTML = `<h3>${esc(node.label)}</h3>
     <p class="hint" style="margin-bottom:6px">${boxes.length} ${plural(boxes.length, "box", "boxes")}${
       node.loop ? " in a feedback tangle" : node.copies > 1 ? `, grouped from ${node.copies} places` : ""}</p>` +
     (t ? `<p class="hint" style="margin-bottom:6px"><b>${t.reinforcing}</b> reinforcing,
        <b>${t.balancing}</b> balancing · ${t.independent} independent ·
        ${t.waysIn.length} ${plural(t.waysIn.length, "way")} in, ${t.waysOut.length} out</p>` : "") +
-    boxes.slice(0, 30).map(b => `<div class="fam"><b>${esc(b)}</b></div>`).join("") +
-    (boxes.length > 30 ? `<p class="hint">…and ${boxes.length - 30} more</p>` : "");
+    `<ul class="members" style="margin-left:0;border-left:0;padding-left:0">${
+      boxes.slice(0, SHOWN).map(li).join("")}</ul>` +
+    (boxes.length > SHOWN
+      ? `<details class="more"><summary>Show all ${boxes.length}</summary>
+         <ul class="members" style="margin-left:0;border-left:0;padding-left:0">${
+           boxes.map(li).join("")}</ul></details>`
+      : "");
 }
 
 function fillPicker() {
@@ -2142,22 +1598,29 @@ function fillPicker() {
     ).join("")).join("") || `<div class="grp">nothing matches “${esc(QUERY)}”</div>`;
 }
 
+// The settings that used to sit in the rail are settled, and settled here so
+// there is one answer per map rather than one per combination of switches:
+//
+//   grouping        as far as possible — held together up to the point where
+//                   holding them together would invent feedback the map does
+//                   not contain, which is the most condensation available
+//                   without inventing anything
+//   minMembers 3    two boxes that happen to rhyme are a coincidence; three
+//                   sharing a prefix and suffix are a pattern
+//   minTokenFamilies 2  a lane value has to play its part in more than one
+//                   role, so a single coincidental pair cannot mint a lane
+const SETTINGS = { grouping: "loose", lanes: { minMembers: 3, minTokenFamilies: 2 } };
+
 function run() {
   if (!G || !START) return;
   $("stage").innerHTML = '<p class="busy">Building…</p>';
   requestAnimationFrame(() => {
     try {
-      ATLAS = buildAtlas(G, START, {
-        grouping: $("grouping").value,
-        stopAtOutcomes: $("stop-outcomes").checked,
-        lanes: { minMembers: Number($("min-members").value), minTokenFamilies: Number($("min-reuse").value) },
-      });
+      ATLAS = buildAtlas(G, START, SETTINGS);
     } catch (err) {
       $("stage").innerHTML = `<p class="lede">That did not work: ${esc(err.message)}</p>`;
       return;
     }
-    ZOOM = null; ZOOMPATH = []; STRANDROOT = null; STRANDPATH = [];
-    STEP = ATLAS.start; STEPPATH = [ATLAS.start];
     railLanes(); renderStats(); renderView();
   });
 }
@@ -2173,6 +1636,7 @@ function loadMap(map) {
   }
   START = best ? best.id : (G.nodes[0] || {}).id;
   QUERY = ""; $("start-q").value = "";
+  $("start-wrap").hidden = false;
   fillPicker();
   $("detail-box").hidden = true;
   run();
@@ -2186,7 +1650,6 @@ function ingestCsv(text, source) {
       status.textContent = "No boxes in that file. It needs to be the CSV the app's CSV button saves — the one with SECTION: nodes in it.";
       return;
     }
-    $("map-pick").value = "own"; $("own-wrap").hidden = false;
     status.textContent = `Loaded ${map.nodes.length} boxes and ${map.edges.length} links` +
       (source ? ` from ${source}` : "") + ".";
     loadMap(map);
@@ -2212,61 +1675,9 @@ $("views").addEventListener("click", e => {
 });
 
 $("stage").addEventListener("click", e => {
-  const zoom = e.target.closest("[data-zoom]");
-  if (zoom) {
-    if (zoom.dataset.zoom === "root") { ZOOM = null; ZOOMPATH = []; }
-    else {
-      const i = Number(zoom.dataset.zoom);
-      ZOOMPATH = ZOOMPATH.slice(0, i + 1);
-      ZOOM = ZOOMPATH[i].seq;
-    }
-    renderView();
-    return;
-  }
-  const into = e.target.closest("[data-into]");
-  if (into && VIEW === "blocks") {
-    const found = findAlt(ZOOM || ATLAS.tree, into.dataset.into);
-    if (found && found.seq.length) {
-      ZOOMPATH = ZOOMPATH.concat([{ toString: () => labelOf(into.dataset.into), seq: found.seq }]);
-      ZOOM = found.seq;
-      renderView();
-    }
-    return;
-  }
-  const strandRoot = e.target.closest("[data-strandroot]");
-  if (strandRoot) {
-    if (strandRoot.dataset.strandroot === "root") { STRANDROOT = null; STRANDPATH = []; }
-    else {
-      const i = Number(strandRoot.dataset.strandroot);
-      STRANDPATH = STRANDPATH.slice(0, i + 1);
-      STRANDROOT = STRANDPATH[i].seq;
-    }
-    renderView();
-    return;
-  }
-  const follow = e.target.closest("[data-strand]");
-  if (follow) {
-    const found = findAlt(STRANDROOT || ATLAS.tree, follow.dataset.strand, true);
-    if (found) {
-      STRANDPATH = STRANDPATH.concat([{ name: labelOf(follow.dataset.strand), seq: found.seq }]);
-      STRANDROOT = found.seq;
-      renderView();
-    }
-    return;
-  }
-  if (e.target.closest("[data-grid]")) { GRID_ALL = !GRID_ALL; renderView(); return; }
   const ls = e.target.closest("[data-loopsort]");
   if (ls) { LOOP_SORT = ls.dataset.loopsort; renderView(); return; }
 
-  const stepBtn = e.target.closest("[data-step]");
-  if (stepBtn) {
-    const id = stepBtn.dataset.step;
-    const at = STEPPATH.indexOf(id);
-    STEPPATH = at >= 0 ? STEPPATH.slice(0, at + 1) : STEPPATH.concat([id]);
-    STEP = id;
-    renderView();
-    return;
-  }
   const el = e.target.closest("[data-el]");
   if (el) {
     showElement(el.dataset.el);
@@ -2276,19 +1687,6 @@ $("stage").addEventListener("click", e => {
     if (node && node.loop && VIEW !== "loops") { VIEW = "loops"; renderView(); }
   }
 });
-
-// Only the choice directly in the frame is searched, so clicking a block always
-// zooms into the branch under the pointer rather than a namesake elsewhere.
-function findAlt(seq, first, deep) {
-  for (const item of seq) {
-    if (item.kind !== "choice") continue;
-    for (const alt of item.alts) {
-      if (alt.first === first) return alt;
-      if (deep) { const inner = findAlt(alt.seq, first, true); if (inner) return inner; }
-    }
-  }
-  return null;
-}
 
 $("stage").addEventListener("mouseover", e => {
   const g = e.target.closest("g.n");
@@ -2307,17 +1705,6 @@ $("stage").addEventListener("mousemove", e => {
 });
 $("stage").addEventListener("mouseleave", () => { $("tip").style.display = "none"; });
 
-$("stage").addEventListener("click", e => {
-  if (e.target.id === "expand-all") document.querySelectorAll("#stage details").forEach(d => { d.open = true; });
-  if (e.target.id === "collapse-all") document.querySelectorAll("#stage details").forEach(d => { d.open = false; });
-});
-
-$("map-pick").addEventListener("change", e => {
-  const own = e.target.value === "own";
-  $("own-wrap").hidden = !own;
-  if (!own) loadMap(e.target.value === "big" ? demoBig()
-    : e.target.value === "tangle" ? demoTangle() : demoLanes());
-});
 $("pick-file").addEventListener("click", () => $("csv-file").click());
 $("csv-file").addEventListener("change", e => readFile(e.target.files[0]));
 $("load-csv").addEventListener("click", () => ingestCsv($("csv-in").value, "the pasted text"));
@@ -2340,23 +1727,13 @@ $("start-list").addEventListener("click", e => {
   fillPicker();
   run();
 });
-for (const id of ["grouping", "min-members", "min-reuse", "stop-outcomes"]) $(id).addEventListener("change", run);
-
 $("theme-btn").addEventListener("click", () => {
   const root = document.documentElement;
   const now = root.getAttribute("data-theme");
   const sysDark = matchMedia("(prefers-color-scheme: dark)").matches;
   root.setAttribute("data-theme", (now ? now === "dark" : sysDark) ? "light" : "dark");
 });
-$("grouping").addEventListener("change", e => {
-  $("grouping-note").textContent = e.target.value === "strict"
-    ? "Every step shown is one that every member of its group really takes. Truer, usually less condensed."
-    : "Groups stay together unless doing so would invent feedback the map does not contain. Most condensed.";
-});
-$("grouping").dispatchEvent(new Event("change"));
-
-$("map-pick").value = "big";
-loadMap(demoBig());
+showEmpty();
 </script>
 </body>
 </html>
