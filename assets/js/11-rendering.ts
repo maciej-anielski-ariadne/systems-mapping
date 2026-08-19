@@ -20,7 +20,7 @@ import { computeEdgeAnchorOffsets, deltaColorFor, edgeBezierPath, effectMarkerNa
 import { COL_GAP, COL_HEADER_HEIGHT, LABEL_INSET, NODE_GAP_Y, NODE_HEIGHT, NODE_WIDTH, ROW_HEADER_WIDTH, ROW_PADDING, SVG_PADDING_TOP } from "./02-config";
 import { computeLayout, layoutGeometryRevision, slotTopY } from "./08-layout";
 import { computeRenderEdges, type RenderEdge } from "./10a-collapsed-edges";
-import { isEdgeVisible, isNodeVisible, toggleStage, toggleStream } from "./10-filters";
+import { isCategoryVisible, isEdgeVisible, isNodeVisible, toggleStage, toggleStream } from "./10-filters";
 import { formatNodeDelta, formatNodeValue, getOutcomeBorderColor } from "./07-simulation-engine";
 import { hideTooltip, moveTooltip, showTooltip } from "./12-tooltip";
 import { attachCanvasEditHandlers } from "./16e-canvas-edit";
@@ -117,10 +117,13 @@ export let _nodeGradSeq = 0;
 // emitted inside the SVG; fill is a colour or url(#gradId). gradId must be
 // unique per node. Colours come straight from CATEGORIES (literal hex), so this
 // is identical between the live map and the self-contained export.
+// Fill-tag categories hidden in the sidebar are left out of the blend — a node
+// whose every fill tag is hidden falls back to the gray fill (it only leaves
+// the map when its corner tags are all hidden too — see isNodeVisible).
 export function nodePrimaryFill(node: GraphNode, gradId: string): { defs: string; fill: string; textColor: string } {
-  const ids = (node.primaryCategories && node.primaryCategories.length)
+  const ids = ((node.primaryCategories && node.primaryCategories.length)
     ? node.primaryCategories
-    : (node.category ? [node.category] : []);
+    : (node.category ? [node.category] : [])).filter(isCategoryVisible);
   // Only PRIMARY-class categories fill the body. (node.category can be a
   // secondary anchor when a node has no primary — such nodes get the gray
   // fallback fill, never a secondary colour painted as both body and chip.)
@@ -137,9 +140,11 @@ export function nodePrimaryFill(node: GraphNode, gradId: string): { defs: string
 // Secondary category chips: small squares in the node's bottom-right, growing
 // leftward, capped at SECONDARY_CHIP_MAX with a "+N" pill. Returns { svg,
 // leftEdge } — leftEdge is the x of the left-most chip/pill so the value-delta
-// can be right-aligned just to its left and never overlap.
+// can be right-aligned just to its left and never overlap. Corner tags hidden
+// in the sidebar get no chip.
 export function nodeSecondaryChips(node: GraphNode, pos: NodePosition): { svg: string; leftEdge: number } {
-  const sec = (node.secondaryCategories || []).map(id => CATEGORIES[id]).filter((c): c is Category => Boolean(c));
+  const sec = (node.secondaryCategories || []).filter(isCategoryVisible)
+    .map(id => CATEGORIES[id]).filter((c): c is Category => Boolean(c));
   const rightEdge = pos.x + pos.width;
   if (sec.length === 0) return { svg: "", leftEdge: rightEdge };
   const bs = 12, gap = 3, inset = 8;

@@ -167,7 +167,12 @@ export function renderCategoriesList(): void {
     const reclassTitle = isSecondary
       ? "Make this a Fill tag category (fills the box; several blend into a gradient)"
       : "Make this a Corner tag category (a corner tag)";
-    const tip = (isHidden ? "Click to show " : "Click to hide ") + cat.label + " — " + count + " box" + (count === 1 ? "" : "es") + " on the map. Shift-click the name to rename.";
+    // Category filters hide the COLOUR, not the box (see isNodeVisible in
+    // 10-filters.js) — say so, or the count reads as "boxes this removes".
+    const boxes = count + " box" + (count === 1 ? "" : "es");
+    const tip = isHidden
+      ? "Click to show " + cat.label + " again on the " + boxes + " carrying it. Shift-click the name to rename."
+      : "Click to take the " + cat.label + " colour off the " + boxes + " carrying it — a box only leaves the map when it has no other tag left. Shift-click the name to rename.";
     let h = '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="category" data-id="' + escapeHtml(catId) + '" data-index="' + indexOf[catId] + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
     h +=   '<div class="filter-label sidebar-inline-edit" data-field="label" data-tooltip="Shift-click to rename">' + escapeHtml(cat.label) + '</div>';
     h +=   '<button class="sidebar-cat-reclass" data-action="reclass" data-tooltip="' + escapeHtml(reclassTitle) + '">' + reclassLabel + '</button>';

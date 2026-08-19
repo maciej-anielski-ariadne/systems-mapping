@@ -74,17 +74,22 @@ describe("end-to-end: load the shipped sample.csv and render", () => {
     const svg = document.getElementById("viz-svg")!;
     const before = svg.querySelectorAll(".node-group").length;
 
-    // Pick a category that actually has nodes, then count how many nodes carry it.
+    // Pick a category that actually has nodes, then count how many boxes it
+    // takes OFF the map: hiding a tag only strips its colour, so a box goes
+    // only when that tag was its last visible one (see isNodeVisible).
     const someNode = NODES.find((n) => n.category)!;
     const catId = someNode.category!;
-    const inCat = NODES.filter((n) => (n.categoryIds || [n.category]).includes(catId)).length;
-    expect(inCat).toBeGreaterThan(0);
+    const dropped = NODES.filter((n) => {
+      const ids = n.categoryIds && n.categoryIds.length ? n.categoryIds : n.category ? [n.category] : [];
+      return ids.length > 0 && ids.every((id) => id === catId);
+    }).length;
+    expect(dropped).toBeGreaterThan(0);
 
     // toggleCategory hides the category and re-renders. Category hiding does NOT
     // call setLayout, so this is exactly the path the cache keys on its hidden
     // sets to catch — a stale cache would keep drawing the hidden nodes.
     toggleCategory(catId);
-    expect(svg.querySelectorAll(".node-group").length).toBe(before - inCat);
+    expect(svg.querySelectorAll(".node-group").length).toBe(before - dropped);
 
     // Toggling it back restores them (cache invalidates the other direction too).
     toggleCategory(catId);

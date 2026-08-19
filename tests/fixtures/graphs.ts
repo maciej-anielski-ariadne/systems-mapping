@@ -145,6 +145,40 @@ n,Node,,ops,s1,prim|sec,,,,,
 from,to,effect,elasticity,style,description
 `;
 
+// Category-filter cases: two fill tags (p1, p2) and two corner tags (s1, s2)
+// spread over four boxes, so hiding one tag can be checked against a box that
+// still has another tag of the same class, one of the other class, and one with
+// nothing left.
+//   both      — fills p1+p2, corners s1+s2
+//   twofills  — fills p1+p2, no corner
+//   mix       — fill p1, corner s1
+//   cornersonly — corners s1+s2, no fill
+export const CAT_FILTER_CSV = `# SECTION: streams
+id,label,short,color
+ops,Operations,OPS,#60a5fa
+
+# SECTION: stages
+id,label
+st1,One
+
+# SECTION: categories
+id,label,color,text_color,class
+p1,Fill One,#60a5fa,#111111,primary
+p2,Fill Two,#34d399,#111111,primary
+s1,Corner One,#f59e0b,#111111,secondary
+s2,Corner Two,#ef4444,#111111,secondary
+
+# SECTION: nodes
+id,label,description,stream,stage,category,baseline,unit,controllable,direction,slider_max
+both,Both,,ops,st1,p1|p2|s1|s2,,,,,
+twofills,Two Fills,,ops,st1,p1|p2,,,,,
+mix,Mix,,ops,st1,p1|s1,,,,,
+cornersonly,Corners Only,,ops,st1,s1|s2,,,,,
+
+# SECTION: edges
+from,to,effect,elasticity,style,description
+`;
+
 // Params + the optional per-box calculation columns (combine / formula /
 // min / max). Nothing here changes how the map computes in this wave — the
 // fixture exists to prove the data model and the CSV round-trip carry it:
