@@ -73,7 +73,6 @@ import {
 } from "./07-simulation-engine";
 import { measureNode, packColumns, packRows, rowHeightFor, stackHeight } from "./08-layout";
 import { isEdgeVisible, isNodeVisible } from "./10-filters";
-import { currentRoute } from "./09a-pathways";
 import { computeRenderEdges } from "./10a-collapsed-edges";
 import { nodePrimaryFill, nodeSecondaryChips } from "./11-rendering";
 import { showLoadFeedback } from "./16-file-io";
@@ -182,26 +181,6 @@ function realExportEdge(e: Edge): ExportEdge {
 // the chosen nodes rather than only the ones highlighted by the current depth —
 // so the published viewer can re-trace connections itself as the user clicks.
 export function getExportSelection(allEdges = false): { nodeIds: Set<string>; edges: ExportEdge[]; selectionActive: boolean } {
-  // A strand beats every other scoping rule. Pathway mode says "this chain is
-  // the thing I care about", and exporting it is how that chain outlives the
-  // session — it is the only form of persistence the feature has, since the
-  // pathway itself is deliberately never saved (see 09a-pathways.ts).
-  //
-  // `allEdges` is ignored here on purpose. Everywhere else it means "include
-  // every link among the exported boxes", which for a strand would draw the
-  // shortcuts the user just spent a trace narrowing away — the export would no
-  // longer be the strand. What comes out is exactly the chain: its boxes, its
-  // links, in order.
-  const route = currentRoute();
-  if (route) {
-    const ids = new Set<string>(route.nodeIds);
-    const onRoute = new Set<string>(route.edgeIds);
-    const edges = EDGES
-      .filter(e => onRoute.has(e.id!))
-      .map(realExportEdge);
-    return { nodeIds: ids, edges, selectionActive: true };
-  }
-
   const singleSelected = state.selectedNodeId &&
     (!state.selectedNodeIds || state.selectedNodeIds.size <= 1);
 

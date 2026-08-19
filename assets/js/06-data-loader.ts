@@ -72,7 +72,6 @@ import {
   setLayout,
 } from "./03-state";
 import { computeMaxHighlightDepth } from "./09-graph-selection";
-import { resetPathwayCaches, revalidatePathway } from "./09a-pathways";
 import { applyHighlightDepth, fitMapToFrame } from "./17-events";
 import { closeAtlas } from "./21-atlas-view";
 import { computeLayout } from "./08-layout";
@@ -260,12 +259,6 @@ export function rebuildIndexes(): void {
   // Keep the on-screen depth readout / button states in sync with the new map.
   if (typeof applyHighlightDepth === "function") applyHighlightDepth();
 
-  // Pathway mode caches reachability per box; the graph just changed, so drop
-  // it, then re-resolve any strand the user is following against the new
-  // NODES / EDGES. A strand holds ids, and an edit can delete either out from
-  // under it — half a strand is worse than none. See 09a-pathways.ts.
-  resetPathwayCaches();
-  revalidatePathway();
 }
 
 // Find the edges that close feedback loops and the nodes that lie on them.

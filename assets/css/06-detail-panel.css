@@ -930,29 +930,3 @@
   color: var(--text-secondary);
   cursor: pointer;
 }
-
-/* === Folded block ===
- * "Strands through this box" while reading: kept, counted, and out of the way
- * until asked for. The summary IS the list title, so it inherits that type. */
-.detail-fold > summary {
-  cursor: pointer;
-  list-style: none;
-  user-select: none;
-}
-
-.detail-fold > summary::-webkit-details-marker { display: none; }
-
-.detail-fold > summary > span:first-child::before {
-  content: "";
-  display: inline-block;
-  width: 0;
-  height: 0;
-  margin-right: var(--space-1_5);
-  border-left: 4px solid currentColor;
-  border-top: 3.5px solid transparent;
-  border-bottom: 3.5px solid transparent;
-  transition: transform var(--dur-fast) ease;
-  vertical-align: middle;
-}
-
-.detail-fold[open] > summary > span:first-child::before { transform: rotate(90deg); }

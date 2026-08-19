@@ -84,7 +84,6 @@ import {
   toggleNodeInSelection,
 } from "./09-graph-selection";
 import { isNodeVisible } from "./10-filters";
-import { exitPathway } from "./09b-pathway-ui";
 import { render, scheduleRender, scheduleOverlayRender, scheduleSelectionStyling } from "./11-rendering";
 import { renderSidebar } from "./13-sidebar";
 import { renderDetailPanel } from "./15-detail-panel";
@@ -256,14 +255,6 @@ export function initCanvasEdit(): void {
       if (state.selectedNodeId || state.selectedEdgeId ||
           (state.selectedNodeIds && state.selectedNodeIds.size)) {
         deselectAll();
-        event.preventDefault();
-        return;
-      }
-      // Last in the chain: leave pathway mode. It sits after deselect on
-      // purpose — a selection is the innermost thing Esc can pop, the strand
-      // is the mode around it, so two presses back all the way out.
-      if (state.pathway.routes.length) {
-        exitPathway();
         event.preventDefault();
         return;
       }

@@ -61,7 +61,7 @@ them against the map, so entering simulation docks the panel rather than leaving
 it as a drawer that would close the moment you clicked the map.
 
 The header buttons:
-- **Filters** opens the left panel as a drawer — rows, columns, tags, and (for now) **Trace a strand**, with the link-type / line-style / highlighting filters folded away under **Link and highlight options**. Esc or a click on the map closes it. Hidden while editing, where the panel is docked.
+- **Filters** opens the left panel as a drawer — rows, columns and tags, with the link-type / line-style / highlighting filters folded away under **Link and highlight options**. Esc or a click on the map closes it. Hidden while editing, where the panel is docked.
 - **New map** (editing only) clears the map and starts a fresh empty grid, asking for confirmation if a map is loaded.
 - **Bulk edit** (editing only) opens the seven-step wizard (dimmed until a map exists).
 - **Import** loads a spreadsheet from disk — same as dragging one onto the window.
@@ -77,9 +77,9 @@ The header buttons:
 - Click a box → highlights its causes (blue) and effects (amber), dims everything else.
 - Click a row label (sidebar or row header) → collapse / expand the whole row.
 - Click a **Fill tag** / **Corner tag** in the sidebar → that colour comes off every box carrying it (dropped from the fill blend, or its corner chip removed). The two classes are filtered separately: a box leaves the map when it loses *all* of its fill tags, or *all* of its corner tags — so a box with a single fill tag disappears when that tag is hidden even though its corner tags are still shown. A box carrying no tag of a class is never judged on it. Rows and columns still collapse the whole slice.
-- **Pathway mode** → follow **one strand** from start to finish when the whole map is too much at once. Pick a **From** and **To** box in the left sidebar and hit **Trace**: you get a single ordered chain of cause and effect, with every other box and link dimmed away. Strictly downstream, so the strand always reads as a causal claim — if nothing connects the two that way, it says so and offers to swap the ends. See [Pathway mode](#pathway-mode) for the full picture.
+- **The atlas** → take one box and see **everything downstream of it** as one picture: every element a circle whose area is the share of readings running through it, every knot of feedback drawn as the wheel it contains. It never enumerates a route. See [The atlas](#the-atlas--everything-downstream-of-one-box).
 - **Smart search** → fuzzy match across every box field — name, description, row, column, category, ID, and unit — ranked in that priority order (handles typos like "brder" → "Border" and word-initials like "bff" → "Border Force FTE"). So searching a row/column/category name surfaces every box in it. Top results show as a dropdown below the search box, with the matched text highlighted; matching boxes get an amber glow on the map. Press `/` from anywhere on the page to jump to the search box.
-- Detail panel → while reading, it opens on a selection and leads with the answer: **Causes**, then **Effects** (with per-link strengths and click-through navigation), then the numbers, then the strands this box belongs to, folded away behind their count. While editing it keeps the authoring order and gains the **Edit box** toggle, which turns the panel into an edit form (every field as an input, per-row outgoing-link editor, delete button).
+- Detail panel → while reading, it opens on a selection and leads with the answer: **Causes**, then **Effects** (with per-link strengths and click-through navigation), then the numbers, and — while reading — the way into the atlas. While editing it keeps the authoring order and gains the **Edit box** toggle, which turns the panel into an edit form (every field as an input, per-row outgoing-link editor, delete button).
 - **Map direct edit** → click an empty grid cell to add a box, drag from a box's right edge to another box to draw a link, press Delete on a selected box to remove it (with a 6-second undo toast). Rows / columns / categories are edited from the left sidebar (pencil to rename / re-colour, drag handle to reorder, **+ Add** at the bottom of each section).
 - **Build / Edit wizard** → optional seven-step in-app form (rows → columns → categories → boxes → links → constants → review) with dropdowns for every cross-reference, live validation, and round-trip with the current map. Click **Edit Data** in the header. Useful for bulk edits where the map is too fiddly.
 - **Simulation mode** → sliders **and** typeable number inputs on every adjustable box, grouped by row. The values they affect recompute live (Cobb-Douglas propagation, plus any [per-box calculation rules](#per-box-calculation-rules) a box opts into). The selected box's `Current` value is also editable from the detail panel, and the panel shows a **"How this number is calculated"** breakdown for it.
@@ -89,57 +89,41 @@ The header buttons:
 - **Pan** → click-and-drag any empty area of the map to pan around it. Plain scroll-wheel and trackpad two-finger scroll also pan.
 - **Survives a refresh** → the loaded spreadsheet, hidden filters, simulation mode + slider positions, selected box, zoom level, panel pin state, and any unsaved wizard work are all persisted in `localStorage`. Close the tab, reopen, keep going. (Loading a different spreadsheet via **Import Data** / applying the wizard replaces what's stored.)
 
-## Pathway mode
+## The atlas — everything downstream of one box
 
-A map with a few hundred links is honest but unreadable. Clicking a box lights up its neighbourhood, which grows in every direction at once — turn the highlight depth up to 3 and you are looking at the whole tangle again. Pathway mode is the opposite move: **one chain, start to finish, and nothing else**.
+A map with a few hundred links is honest but unreadable. Clicking a box lights up its neighbourhood, which grows in every direction at once — turn the highlight depth up to 3 and you are looking at the whole tangle again. The atlas is the other move: **take one box and show everything downstream of it, condensed until it fits on a screen**.
 
-### Tracing a strand
+Select a box and click **Everything downstream →** in the right-hand panel. It opens over the map, in the map's own frame; **← Back to the map** or `Esc` returns.
 
-Two ways in:
+### What you are looking at
 
-- **From the sidebar.** The **Trace a strand** block at the top holds two box pickers. Choose a cause and an effect, hit **Trace**, and the map isolates the chain between them. **Swap** flips the two ends; **Clear** (or `Esc`) leaves pathway mode.
-- **From a box.** Select any box and the right-hand detail panel lists **Strands through this box** — complete start-to-finish stories that pass through it, strongest first. One click puts one on the map. Use this when you know the box you care about but not both ends of the story.
+- **Every element is a circle**, and its **area** is the share of *readings* passing through it. A reading is one distinct pathway from the start box; "14% of everything" means fourteen readings in every hundred run through that circle.
+- **Left to right is how far along a pathway you are.** It is the only thing on screen saying which way round the story goes.
+- **A knot of feedback is drawn as the wheel it contains** — its boxes round the rim in an order that makes almost every link run clockwise, and the few that run back drawn as chords across the middle. Those chords *are* the feedback: cut them and what is left is a plain sequence.
+- **Nothing is named until you point at it.** A hundred names at once is fog.
 
-Routes are found **strictly downstream** — arrows are followed in their own direction only, so what comes back can be read aloud as a causal claim. "No route" is a real answer rather than a failure: if the causality runs the other way, the panel says so and offers to swap the ends and trace again.
+Click a circle and the right-hand panel names the boxes behind it — one circle can stand for twenty — with each box a button back to itself on the map. Click an amber **↻** and the frame closes in on that tangle and plays its loops through, one after another, each staying faded while the next draws, so what builds up is how they lie on top of each other. Click a box on the rim to follow its own loop round instead.
 
-### Alternatives, and why only ten
+### It never enumerates a route
 
-Between two well-connected boxes there can be hundreds of distinct routes, and "route 1 of 340" is the overwhelm you were escaping, just relocated. So routes are **ranked by strength** — the product of the links' elasticities, i.e. how much of a nudge at the start survives the trip — and only the strongest ten are kept.
+The complete set of pathways from a box is already written down in the map: it is the subgraph that box can reach. Enumerating it turns a linear amount of information into an exponential amount of paper, so the atlas never does. It rewrites that subgraph into a smaller one standing for the same pathways — feedback loops contract to a single element, boxes whose names differ only by a lane value (`Cat A Targets` / `Cat B Targets`) group into one role, and any group whose members disagree about where they lead is split again. The totals come from arithmetic over the structure (exact, in big integers) rather than from counting things on the way past.
 
-On a large map a single pair of boxes can have hundreds of thousands of routes between them, and the strongest ten can all be small variations on one chain. Two standalone pages in [`tools/`](tools/) exist for reading that on your own map:
+Two guarantees follow from the construction rather than from hope:
 
-[`tools/pathway-atlas.html`](tools/PATHWAY-ATLAS.md) takes one box and shows **everything downstream of it** as one picture — every element a circle whose area is the share of readings running through it, left to right for how far along a pathway you are, and every knot of feedback drawn as the wheel it contains, which you click to zoom into and watch its loops play. It never enumerates a route. The complete set of pathways is already the subgraph the box can reach, so the page condenses that subgraph instead: feedback loops contract to one element, boxes whose names differ by a lane value (`Cat A Targets` / `Cat B Targets`) group into one role, and the totals come from arithmetic rather than counting. A 296-box map builds in about 15ms with no sampling, budget or cap.
+- **complete** — every pathway in the map is one of the readings on screen, so an impact cannot be missed however far it meanders.
+- **sound** — every reading on screen is a pathway that really exists.
 
-[`tools/strand-condenser.html`](tools/README.md) is the earlier tool, and works the other way: give it two boxes and it walks every route between them, folding together the ones that differ only in which parallel lane they ran through. Useful when you know both ends and want the routes themselves.
+A 296-box map builds in about 15 ms, with no sampling, budget or cap.
 
-The chip at the bottom of the map always reports the truth: `Route 2 of 10 · strongest shown · 47 exist`. Cycle with `‹` `›` or `Alt + ←` / `Alt + →`. (A search on a very dense map can hit its budget before enumerating everything; the count then reads `47+`, meaning a floor rather than an exact number.)
+### Zoom, pan, and the rest of the app
 
-Routes never visit the same box twice. Causal maps have feedback loops, and without that rule "every route from A to B" would be infinite — going round a loop twice is not a different story anyway.
+- **It opens across the width** of what is drawn, and **fits again** whenever you click the percentage in the corner. Drag pans at any zoom; `Ctrl/Cmd` + wheel (or a trackpad pinch) zooms about the cursor; a plain wheel pans — the same division of labour as the map. Double-click closes the frame in on any element.
+- **`Esc` lets go one layer at a time**: the box inside a tangle, then the tangle, then the selection, then the atlas itself.
+- **It reads the whole map, filters and all.** Hiding a row changes what you are looking at, not what is true, and a count that quietly dropped half the map would be worse than no count.
+- **Simulation reaches it.** With the sliders out, colour says which way each place has moved — the map's own good / bad where the boxes agree which way is better, plain up / down where they don't. Size still means share: two measures fighting over one circle would say neither.
+- **A new map closes it.** An atlas is a picture of everything downstream of one box in *this* map; a different map makes it a picture of something that is no longer there.
 
-### Two views of the same strand
-
-**Isolate in place** (the default) keeps every box where it lives on the map, dims everything off the strand, and draws the strand's links in their effect colours with a travelling dash showing which way cause flows. Each box on the strand carries a numbered **hop badge**.
-
-**Straighten** (the chip's button, or `Alt + R`) reflows the same strand into a single left-to-right line. Each hop is a card carrying its row, column and value; each link between them names its type and elasticity. The same hop numbers appear in both views, so switching never costs you your place — and clicking a card takes you back to that box on the map.
-
-The straightened view also gives you the thing a tangled map can never show: the strand's **net effect**. Multiply the link signs along the chain and you learn whether raising the first box ends up raising or *lowering* the last. Two `decreases` links in a row make a net *increase* — the single most commonly botched inference on a causal map. The readout puts `Net effect` and `Sign flips` side by side, so the claim is checkable rather than something to take on faith, and the strand is written out underneath as a sentence you can read aloud.
-
-### Strands and the rest of the app
-
-- **Exporting.** With a strand traced, **CSV**, **PNG** and **HTML** all export just that chain — the strand's boxes and its links, nothing else. This is how a strand outlives the session: pathway mode itself is deliberately never saved, so a refresh returns you to the whole map.
-- **Filters.** Pathway mode searches the whole map on purpose — refusing to route through a row you had collapsed would read as "these two aren't connected", which is a lie. If a strand runs through a hidden row, column or tag, that filter is reopened (a visible change in the sidebar, with a note in the panel) and put back when you clear the strand.
-- **Simulation.** The two compose: isolate a strand, turn on **Simulate**, and drag the input at its head to watch the value move down one line instead of across a wall of boxes.
-- **Editing.** A strand names boxes and links by id, so an edit can delete one out from under it. After any change the strand is re-resolved against the new map — re-traced if it can be, dropped if it can't. Half a strand is worse than none.
-
-### Keyboard
-
-| Key | Does |
-|-----|------|
-| `Alt + ←` / `Alt + →` | Previous / next route |
-| `Alt + R` | Straighten the strand ↔ put it back on the map |
-| `Esc` | Leave pathway mode (after clearing any selection first) |
-
-Alt is the only free modifier on the canvas: bare arrows already move the cell cursor and bare letters start an inline rename.
+[`tools/pathway-atlas.html`](tools/PATHWAY-ATLAS.md) is the same engine as a standalone page — drop a CSV on it, no app needed. [`tools/strand-condenser.html`](tools/README.md) works the other way: give it two boxes and it walks every route between them, folding together the ones that differ only in which parallel lane they ran through.
 
 ## Spreadsheet format
 
@@ -338,7 +322,6 @@ systems_mapping/
     │   │                            (there is no 12-*.css — the number is retired, not missing)
     │   ├── 13-search.css            Search dropdown + map-match halo
     │   ├── 14-typeable-dropdown.css Typable / filterable <select> replacement
-    │   ├── 15-pathway.css           Pathway mode: strand styling, route chip, straightened view
     │   └── 16-atlas.css             Pathway atlas: the picture, the wheel inside a tangle, the panel
     │                                (flat look = `border: 0` in 02-base.css;
     │                                 state shown via drop-shadow / box-shadow rings)
@@ -356,8 +339,6 @@ systems_mapping/
     │   ├── 07a-formula.ts           Safe formula language for per-node rules (parser + evaluator, min/max/clamp/delay)
     │   ├── 08-layout.ts             Node positioning
     │   ├── 09-graph-selection.ts    Ancestor/descendant traversal + selectNode
-    │   ├── 09a-pathways.ts          Pathway mode engine: route finding, strength ranking, suggested strands
-    │   ├── 09b-pathway-ui.ts        Pathway mode UI: sidebar block, route chip, straightened view
     │   ├── 10-filters.ts            Stream / category visibility
     │   ├── 10a-collapsed-edges.ts   Reroutes causal links across hidden stages (dashed "through" arrows)
     │   ├── 11-rendering.ts          Main SVG renderer
@@ -439,8 +420,8 @@ features are split across multiple files:
 | Keyboard navigation on the map (arrows / Tab / Enter) | `assets/js/16i-canvas-keyboard-nav.ts` |
 | Multi-select bar (batch edit / move / delete) | `assets/js/16j-multi-select-bar.ts` |
 | How links reroute across hidden rows / columns | `assets/js/10a-collapsed-edges.ts` |
-| Pathway mode — route finding, strength ranking, suggested strands | `assets/js/09a-pathways.ts` |
-| Pathway mode UI — the sidebar block, route chip, straightened view | `assets/js/09b-pathway-ui.ts`, `assets/css/15-pathway.css` |
+| The atlas — scoping, loop contraction, grouping, exact counts | `assets/js/20-atlas-engine.ts` |
+| The atlas UI — the picture, the wheel, the loop tour, the panel | `assets/js/21-atlas-view.ts`, `assets/css/16-atlas.css` |
 | Search behaviour / fuzzy matching | `assets/js/17a-search.ts`, `assets/css/13-search.css` |
 | Button behaviour | `assets/js/17-events.ts` |
 | Sample data dataset | `assets/data/sample.csv` (starter) · `assets/data/advanced_sample.csv` (calculation rules) |

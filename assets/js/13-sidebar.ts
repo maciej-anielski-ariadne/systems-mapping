@@ -41,7 +41,6 @@ import {
   reorderStages,
   reorderStreams,
 } from "./16f-canvas-mutations";
-import { renderPathwayUi } from "./09b-pathway-ui";
 import {
   toggleCategory,
   toggleEffect,
@@ -61,8 +60,6 @@ export function renderSidebar(): void {
   // The simulation panel is its own concern — see 14-simulation-panel.js.
   renderSimulationPanel();
 
-  // "Trace a strand" sits at the top of the sidebar — see 09b-pathway-ui.ts.
-  renderPathwayUi();
 
   renderStagesList();
   renderStreamsList();

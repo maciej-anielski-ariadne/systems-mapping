@@ -83,7 +83,6 @@
   <link rel="stylesheet" href="assets/css/11-builder.css">
   <link rel="stylesheet" href="assets/css/13-search.css">
   <link rel="stylesheet" href="assets/css/14-typeable-dropdown.css">
-  <link rel="stylesheet" href="assets/css/15-pathway.css">
   <link rel="stylesheet" href="assets/css/16-atlas.css">
 </head>
 <body>
@@ -186,13 +185,6 @@
     <div class="sidebar-section" id="simulation-panel-section">
       <div id="simulation-panel" style="display: none;"></div>
     </div>
-
-    <!-- Pathway mode — "Trace a strand". JS fills it in 09b-pathway-ui.js:
-         two box pickers, the Trace / Swap / Clear buttons, and (once a strand
-         is up) the list of alternative routes between the same two ends.
-         Sits above the filters because following one strand is a reading
-         action — it's what you reach for when the whole map is too much. -->
-    <div class="sidebar-section" id="pathway-panel"></div>
 
     <!-- Stages — JS fills the list in 13-sidebar.js. Editable: rename,
          add, drag-to-reorder, confirm + cascade delete. Stages don't have
@@ -297,14 +289,6 @@
          map as one picture you zoom into. Filled by 21-atlas-view.ts when a
          box's "Everything downstream" is opened; empty and hidden otherwise. -->
     <div id="atlas-stage" class="atlas-stage" hidden></div>
-
-    <!-- Pathway mode: the straightened view of the current strand, and the
-         route chip that floats over the map. Both are filled by
-         09b-pathway-ui.js and stay hidden until a strand is being followed.
-         The ribbon covers the map rather than replacing it, so switching
-         views leaves the map's scroll position exactly where it was. -->
-    <div class="pathway-ribbon" id="pathway-ribbon" hidden></div>
-    <div class="pathway-chip" id="pathway-chip" hidden></div>
 
     <!-- Optional CSV-import overlay. No longer shown at startup — the
          canvas boots into an empty 3x3 starter grid instead, and you click

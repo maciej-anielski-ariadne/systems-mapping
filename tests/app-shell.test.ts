@@ -169,19 +169,6 @@ describe("what a reader gets when they select a box", () => {
     expect(quant).toBeGreaterThan(html.indexOf("Effects"));
   });
 
-  it("folds the strand list away behind its own count", () => {
-    loadDataFromCsv(sampleCsv);
-    selectNode(NODES[0].id);
-    renderDetailPanel();
-
-    const fold = panel().querySelector("details.detail-fold");
-    expect(fold).not.toBeNull();
-    expect((fold as HTMLDetailsElement).open).toBe(false);
-    expect(fold!.querySelector("summary")!.textContent).toContain("Strands through this box");
-    // Folded, not dropped — the routes are there the moment it opens.
-    expect(fold!.querySelectorAll(".pathway-route").length).toBeGreaterThan(0);
-  });
-
   it("offers no way to edit the box until you are editing", () => {
     loadDataFromCsv(sampleCsv);
     selectNode(NODES[0].id);

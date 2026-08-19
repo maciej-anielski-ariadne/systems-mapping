@@ -92,31 +92,10 @@ export const state: AppState = {
   searchFocusIndex: 0,
 
   // The pathway atlas — everything downstream of one box, drawn over the map.
-  // null when closed. Transient for the same reason a strand is: it is a way of
-  // reading the map rather than part of it.
+  // null when closed. Transient: it is a way of reading the map rather than
+  // part of it, so a refresh comes back to the whole map.
   atlas: null,
 
-  // Pathway mode — the single strand currently being followed, if any. An
-  // empty `routes` array means the mode is off; every other module tests that.
-  // Deliberately NOT persisted: a strand is a way of reading the map, not a
-  // property of it, and coming back to a refreshed page half-isolated is worse
-  // than coming back to the whole picture. Exporting is how a strand outlives
-  // the session (19-export.ts). See 09a-pathways.ts.
-  pathway: {
-    fromId: null,
-    toId: null,
-    routes: [],
-    routeIndex: 0,
-    totalRoutes: 0,
-    truncated: false,
-    view: "map",
-  },
-
-  // Canvas direct-edit state. All transient — none of this is persisted.
-  // See 16e-canvas-edit.ts. The single source of truth for the map is still
-  // NODES/EDGES/STREAMS/STAGES/CATEGORIES; this namespace just tracks what
-  // the user is currently doing on-canvas (which empty cell is hovered, which
-  // edge is being dragged, etc.).
   canvasEdit: {
     editMode: false, // when false, detail panel is view-only — edit fields are hidden
     // behind the "Edit Node" toggle button. Persists across selections.
