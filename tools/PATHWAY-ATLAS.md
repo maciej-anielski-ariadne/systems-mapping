@@ -97,6 +97,29 @@ it survives.
 
 ---
 
+## Six ways to read it
+
+The structure and the presentation are separate problems, and the first version
+only solved the first one. A complete nested outline of 129 elements is still a
+wall of words and arrows. The view switcher offers the same atlas — the identical
+numbers, nothing recomputed per view — in six forms. Measured on the 296-box
+demo, from one box that reaches all 296:
+
+| View | What it is for | Height on screen |
+| --- | --- | --- |
+| **Flow** | The whole thing as one picture. Columns are how far along you are; block height and ribbon thickness are how much runs through. Nothing to open. | one screen |
+| **Blocks** | No arrows at all. Each split is a row of blocks as wide as its share, with what follows underneath. Click one to give it the frame. | 338px |
+| **Strands** | A spine with branches that leave and rejoin, the way people describe a pathway out loud. Named *and* coloured, so identity is never colour alone. | 1,007px |
+| **Lane grid** | One row per element, one column per lane. A row with gaps is where the lanes stop behaving alike, and the view says nothing else. | one screen |
+| **Step through** | One decision at a time. The least on screen of the six — you walk a pathway rather than read one. | one screen |
+| **Outline** | The original: everything at once, nested, complete. Kept for comparison. | 1,686px |
+
+Two of these needed a limit to be worth having. Drawn to full depth, Strands came
+out 11,482px tall — worse than the outline it exists to replace — and Blocks
+recursed until the blocks were slivers a few pixels wide, destroying the one
+thing that view is for. Both now draw a level or two and then offer a way in,
+which is what the drill-down is for.
+
 ## Reading the page
 
 - **The spine** runs straight down: segments every pathway through that point
