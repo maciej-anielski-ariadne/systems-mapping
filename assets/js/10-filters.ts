@@ -8,8 +8,9 @@
 //
 // A node in a hidden stream or stage is not drawn (isNodeVisible). Hidden
 // CATEGORIES work differently: they strip that fill / corner colour from every
-// node carrying it, and only remove the node when it has no visible category
-// left. Edges touching a hidden node are re-routed as synthetic
+// node carrying it, and only remove the node when a whole class of its tags is
+// hidden (all its fill tags, or all its corner tags — the two are judged
+// separately). Edges touching a hidden node are re-routed as synthetic
 // "through" edges by computeRenderEdges (10a-collapsed-edges.js) rather than
 // simply dropped, so causal effects stay legible across collapsed slices.
 // =============================================================================
@@ -22,7 +23,7 @@ import { render } from "./11-rendering";
 import { renderSidebar } from "./13-sidebar";
 import { saveUiStateToStorage } from "./04a-storage";
 import { refreshTraceForSelection } from "./09-graph-selection";
-import { nodeCategoryIds } from "./04-utils";
+import { nodeCategoryIds, splitCategoriesByClass } from "./04-utils";
 
 // Hide / show a layout-affecting "dimension" — streams collapse their row,
 // stages collapse their column. Flips the id's membership in `hiddenSet`, clears
@@ -100,22 +101,26 @@ export function toggleTrace(dir: string): void            { toggleHiddenFilter(s
 // Hiding a category strips its COLOUR rather than the boxes carrying it: the
 // renderer drops it from the fill gradient (nodePrimaryFill) and from the
 // corner chips (nodeSecondaryChips) in 11-rendering.js, and the box itself
-// only leaves the map when it has no visible category left (isNodeVisible).
+// only leaves the map when a whole class of its tags goes dark (isNodeVisible).
 export function isCategoryVisible(categoryId: string): boolean {
   return !state.hiddenCategories.has(categoryId);
 }
 
-// A node is visible only if its stream and its stage are visible and it still
-// has at least one visible category.
+// A node is visible only if its stream and its stage are visible and neither
+// class of tag it carries has been filtered away entirely.
 export function isNodeVisible(node: GraphNode): boolean {
   if (state.hiddenStreams.has(node.stream)) return false;
   if (state.hiddenStages.has(node.stage)) return false;
-  // Hiding a fill / corner category only removes that colour from the node —
-  // it drops off the map when EVERY category it carries (primary AND
-  // secondary) is hidden, i.e. the filtered one was its only colour. Nodes
-  // that carry no category at all are unaffected by these filters.
-  const cats = nodeCategoryIds(node);
-  if (cats.length > 0 && cats.every(c => state.hiddenCategories.has(c))) return false;
+  // Category filters are split by CLASS — fill tags and corner tags are judged
+  // separately. Hiding a tag takes its colour off every box carrying it, and a
+  // box leaves the map when a class it participates in loses ALL of its
+  // colours: a one-fill box whose fill tag is hidden goes even if its corner
+  // tags are still shown, and vice versa. A box carrying no tag of a class is
+  // simply not judged on that class (and one with no tags at all is
+  // unaffected by these filters).
+  const { primary, secondary } = splitCategoriesByClass(nodeCategoryIds(node));
+  if (primary.length   > 0 && primary.every(c   => state.hiddenCategories.has(c))) return false;
+  if (secondary.length > 0 && secondary.every(c => state.hiddenCategories.has(c))) return false;
   return true;
 }
 

@@ -170,9 +170,10 @@ export function renderCategoriesList(): void {
     // Category filters hide the COLOUR, not the box (see isNodeVisible in
     // 10-filters.js) — say so, or the count reads as "boxes this removes".
     const boxes = count + " box" + (count === 1 ? "" : "es");
+    const kind = isSecondary ? "corner tag" : "fill tag";
     const tip = isHidden
       ? "Click to show " + cat.label + " again on the " + boxes + " carrying it. Shift-click the name to rename."
-      : "Click to take the " + cat.label + " colour off the " + boxes + " carrying it — a box only leaves the map when it has no other tag left. Shift-click the name to rename.";
+      : "Click to take the " + cat.label + " colour off the " + boxes + " carrying it — a box leaves the map only if it has no other " + kind + " left. Shift-click the name to rename.";
     let h = '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="category" data-id="' + escapeHtml(catId) + '" data-index="' + indexOf[catId] + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
     h +=   '<div class="filter-label sidebar-inline-edit" data-field="label" data-tooltip="Shift-click to rename">' + escapeHtml(cat.label) + '</div>';
     h +=   '<button class="sidebar-cat-reclass" data-action="reclass" data-tooltip="' + escapeHtml(reclassTitle) + '">' + reclassLabel + '</button>';

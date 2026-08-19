@@ -5,7 +5,7 @@ import { dirname, resolve } from "node:path";
 import { loadDataFromCsv } from "../assets/js/06-data-loader";
 import { toggleCategory } from "../assets/js/10-filters";
 import { renderOverlay } from "../assets/js/11-rendering";
-import { NODES, EDGES, PARAMS, nodeById, state } from "../assets/js/03-state";
+import { NODES, EDGES, PARAMS, CATEGORIES, nodeById, state } from "../assets/js/03-state";
 import { loadBuilderFromStorage, flushPendingSaves } from "../assets/js/04a-storage";
 import { serializeBuilderToCsv } from "../assets/js/05a-csv-serializer";
 import {
@@ -76,12 +76,16 @@ describe("end-to-end: load the shipped sample.csv and render", () => {
 
     // Pick a category that actually has nodes, then count how many boxes it
     // takes OFF the map: hiding a tag only strips its colour, so a box goes
-    // only when that tag was its last visible one (see isNodeVisible).
+    // only when that tag was the last one of ITS CLASS on that box (fill tags
+    // and corner tags are judged separately — see isNodeVisible).
     const someNode = NODES.find((n) => n.category)!;
     const catId = someNode.category!;
     const dropped = NODES.filter((n) => {
       const ids = n.categoryIds && n.categoryIds.length ? n.categoryIds : n.category ? [n.category] : [];
-      return ids.length > 0 && ids.every((id) => id === catId);
+      const sameClass = ids.filter(
+        (id) => (CATEGORIES[id]?.class || "primary") === (CATEGORIES[catId]?.class || "primary"),
+      );
+      return sameClass.length > 0 && sameClass.every((id) => id === catId);
     }).length;
     expect(dropped).toBeGreaterThan(0);
 
