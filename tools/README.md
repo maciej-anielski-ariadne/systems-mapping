@@ -126,6 +126,54 @@ The stat strip is the point of the tool.
 - **Repeated boxes** — boxes appearing in half the rows or more. These are
   dimmed in the chains, so what is left highlighted is the difference.
 
+## When folding is not enough: two more levers
+
+Folding lanes away divides the shape count by a bounded factor. If routes are
+long, the number of distinct *role sequences* is still combinatorial, and a big
+trace can hit the 500,000-shape cap even with the lanes working perfectly.
+Two controls in the left rail attack that directly.
+
+**Route length.** Most of the millions of routes on a big map are long
+meandering detours nobody would call a causal story. The budget is expressed
+relative to the shortest route between your two boxes — *shortest + 3* — and it
+prunes during the walk rather than after it: a branch is abandoned the moment
+"hops so far + hops still required to reach the target" exceeds the budget, so
+shorter budgets are also dramatically faster.
+
+On a 60-box map with skip links (so short and long routes coexist):
+
+| Length budget | Routes | Sections | Time |
+|---|---|---|---|
+| shortest + 1 | 20,250 | 576 | instant |
+| shortest + 3 | 1,429,625 | 7,616 | 3s |
+| no limit | 49,789,000 | 31,168 | 110s |
+
+**This only helps when route lengths actually vary.** On a strictly layered map
+where every route is the same length, the budget can only include everything or
+nothing.
+
+**Group routes by.** Even folded, a shape is the *whole ordered sequence* of
+roles. Two coarser groupings throw information away on purpose:
+
+- *Which roles they visit (any order)* — two routes touching the same boxes in
+  a different sequence become one row. These are sets, not chains, and are
+  drawn without arrows.
+- *Only what makes them different* — every role appearing on half or more of
+  the routes is struck out as scaffolding, and routes are grouped by what
+  remains. This needs a counting pass before the real walk, so it costs roughly
+  double the time. The `⋯` in a row stands for the omitted common steps.
+
+### Feedback loops
+
+Handled, and the same way the app handles them: routes are **simple paths**, so
+no box is ever visited twice. A cycle can be entered but never gone round, which
+is what makes the walk terminate on a map full of loops — and it matches how
+people read a strand, since going round a loop twice is not a different story.
+
+Walking *round* a loop is still a legitimate strand: on a ring `A→B→C→A`, a
+trace from C to B correctly returns `C → A → B`. A trace from a box back to
+itself is refused, as it is in the app.
+
 ### Every route, not a sample
 
 The walk is exhaustive — there is no sampling and no step budget. It is

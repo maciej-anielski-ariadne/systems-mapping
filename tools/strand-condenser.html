@@ -354,11 +354,25 @@ body.dropping::after{content:"Drop the map CSV to load it";position:fixed;inset:
         </div>
         <select id="to-sel" hidden></select>
       </div>
+      <div class="field">
+        <label for="hop-limit">Route length</label>
+        <select id="hop-limit">
+          <option value="0">Shortest only</option>
+          <option value="1">Shortest + 1 detour</option>
+          <option value="2">Shortest + 2</option>
+          <option value="3" selected>Shortest + 3</option>
+          <option value="5">Shortest + 5</option>
+          <option value="8">Shortest + 8</option>
+          <option value="">No limit (everything)</option>
+        </select>
+      </div>
       <div class="row-btns">
         <button class="btn btn--primary" id="run">Condense</button>
         <button class="btn" id="worst">Worst case</button>
       </div>
-      <p class="hint">Every route is walked — no sampling. Big traces take a while; there is a Stop button while it runs.</p>
+      <p class="hint">Every route within the length budget is walked — no sampling.
+      Most of the millions of routes on a big map are long meandering detours; the budget
+      drops them before they are walked, which is what keeps a trace readable and fast.</p>
     </div>
 
     <div class="sect">
@@ -382,6 +396,14 @@ body.dropping::after{content:"Drop the map CSV to load it";position:fixed;inset:
         </button>
       </div>
       <div class="field" style="margin-top:12px">
+        <label for="grouping">Group routes by</label>
+        <select id="grouping">
+          <option value="exact">Their exact shape</option>
+          <option value="order">Which roles they visit (any order)</option>
+          <option value="distinct">Only what makes them different</option>
+        </select>
+      </div>
+      <div class="field">
         <label for="only-diff">Sections to show</label>
         <select id="only-diff">
           <option value="all">Every shape</option>
@@ -839,6 +861,8 @@ const MAX_SHAPES = 500000;
 
 let G = null, LANES = null, RUN = null, LAST = null;
 let strategy = "sections";
+let GROUPING = "exact";          // exact | order | distinct
+let SCAFFOLD = new Set();        // roles on nearly every route (for "distinct")
 
 function buildGraph(map) {
   const out = {}, inc = {}, byId = {};
@@ -876,6 +900,10 @@ function newAggregate() {
     forks: new Map(),
     reservoir: [],
     minHops: Infinity, maxHops: 0,
+    shortest: 0, hopLimit: 0,
+    grouping: GROUPING,
+    prepass: false,
+    rolePresence: new Map(),
   };
 }
 
@@ -888,13 +916,41 @@ function record(agg, path, strength, sign) {
   // Fold into the shape it belongs to. The separator is a control character so
   // it can never appear inside a role name and collide two different shapes.
   //
+  // Folding lanes away is not always enough. A shape is still the WHOLE ordered
+  // sequence of roles, so on a map with long routes the number of distinct
+  // sequences stays combinatorial however well the lanes fold. Two coarser
+  // groupings are therefore on offer, both of which throw away information on
+  // purpose:
+  //   order   - which roles the route visits, ignoring the order it visits them
+  //   distinct- only the roles that are NOT on nearly every route, so the
+  //             scaffolding disappears and what remains is what makes this
+  //             route different from its neighbours
+  //
   // Everything here is sized for a trace with a million distinct shapes. A
   // shape holds: the key (already retained by the Map, so free), three counts,
   // and one small integer per position saying which lanes reached it. It does
   // NOT hold a copy of the role list — that is recoverable from the key, and
   // only the dozen shapes actually on screen ever need it.
   const roles = path.map(id => LANES.roleOf.get(id));
-  const key = roles.join("\u0001");
+
+  // In the pre-pass we only need to know how often each role turns up, so that
+  // "distinct" grouping can tell scaffolding from signal. No shapes are built.
+  if (agg.prepass) {
+    for (const r of new Set(roles)) agg.rolePresence.set(r, (agg.rolePresence.get(r) || 0) + 1);
+    return;
+  }
+
+  // keyRoles is what the key is made of, and lane values are recorded against
+  // ITS positions — which are not the path's once a coarser grouping drops or
+  // reorders roles.
+  let keyRoles;
+  if (GROUPING === "order") keyRoles = [...new Set(roles)].sort();
+  else if (GROUPING === "distinct") {
+    const rare = roles.filter(r => !SCAFFOLD.has(r));
+    keyRoles = rare.length ? rare : roles.slice();
+  } else keyRoles = roles;
+  const exact = GROUPING === "exact";
+  const key = keyRoles.join("\u0001");
   let seq = agg.sequences.get(key);
   if (!seq) {
     if (agg.sequences.size >= MAX_SHAPES) {
@@ -906,8 +962,8 @@ function record(agg, path, strength, sign) {
       seq = { key, count: 0, pos: 0, neg: 0, lanes: null };
       if (LANES.laneValues.size) {
         seq.lanes = LANES.laneBit
-          ? new Array(roles.length).fill(0)
-          : roles.map(r => (roleIsLane(r) ? new Set() : null));
+          ? new Array(keyRoles.length).fill(0)
+          : keyRoles.map(r => (roleIsLane(r) ? new Set() : null));
       }
       agg.sequences.set(key, seq);
     }
@@ -919,8 +975,14 @@ function record(agg, path, strength, sign) {
       for (let i = 0; i < path.length; i++) {
         const lane = LANES.laneOf.get(path[i]);
         if (!lane) continue;
-        if (LANES.laneBit) seq.lanes[i] |= LANES.laneBit.get(lane);
-        else if (seq.lanes[i]) seq.lanes[i].add(lane);
+        // Which slot of the key this step belongs to. Under exact grouping the
+        // path and the key line up one for one; under a coarser one the role
+        // has to be looked up (keyRoles is a dozen entries, so indexOf beats
+        // allocating a Map per route at twenty million routes).
+        const idx = exact ? i : keyRoles.indexOf(roles[i]);
+        if (idx < 0) continue;
+        if (LANES.laneBit) seq.lanes[idx] |= LANES.laneBit.get(lane);
+        else if (seq.lanes[idx]) seq.lanes[idx].add(lane);
       }
     }
   }
@@ -941,11 +1003,36 @@ function record(agg, path, strength, sign) {
 }
 
 // Start a run. Returns a handle with a stop() - the caller drives the UI.
-function enumerateAll(from, to, { onProgress, onDone }) {
+// Hops still needed to reach the target from each box, by reverse breadth-first
+// search. This is what makes a length limit cheap: a branch can be abandoned
+// the moment "hops so far + hops still required" exceeds the budget, instead of
+// walking it to the end and discarding the result.
+function distancesTo(target) {
+  const dist = new Map([[target, 0]]);
+  const queue = [target];
+  let head = 0;
+  while (head < queue.length) {
+    const id = queue[head++];
+    const d = dist.get(id) + 1;
+    for (const e of G.inc[id]) if (!dist.has(e.from)) { dist.set(e.from, d); queue.push(e.from); }
+  }
+  return dist;
+}
+
+function enumerateAll(from, to, { onProgress, onDone, extraHops, prepass }) {
   const agg = newAggregate();
+  agg.prepass = !!prepass;
   if (!from || !to || from === to) { onDone(agg, 0, false); return { stop() {} }; }
   const useful = reach(to, G.inc, "from");
   if (!useful.has(from)) { onDone(agg, 0, false); return { stop() {} }; }
+
+  const dist = distancesTo(to);
+  agg.shortest = dist.get(from) || 0;
+  // A budget expressed relative to the shortest route: "the direct story, plus
+  // up to N steps of detour". An absolute number would mean something different
+  // on every pair of boxes. 0 means no limit.
+  const maxHops = (extraHops == null) ? 0 : agg.shortest + extraHops;
+  agg.hopLimit = maxHops;
 
   const path = [from];
   const onPath = new Set([from]);
@@ -971,6 +1058,9 @@ function enumerateAll(from, to, { onProgress, onDone }) {
       const e = outs[top.ei++];
       const next = e.to;
       if (onPath.has(next) || !useful.has(next)) continue;
+      // Too long to still land inside the budget — drop the whole branch here
+      // rather than exploring it and throwing the result away.
+      if (maxHops && path.length + (dist.get(next) || 0) > maxHops) continue;
       const s = strengths[strengths.length - 1] * Math.abs(e.elasticity);
       const sg = signs[signs.length - 1] * (e.elasticity < 0 ? -1 : 1);
       if (next === to) {
@@ -1078,6 +1168,10 @@ const seqRoles = seq => seq.key.split("\u0001");
 // ===========================================================================
 function renderSections(agg, k) {
   const laneTotal = LANES.laneValues.size;
+  // Under a coarser grouping a "shape" is no longer an ordered chain, so it
+  // must not be drawn as one. Arrows would assert a sequence that the grouping
+  // has deliberately discarded.
+  const mode = agg.grouping || "exact";
   const onlyDiff = document.getElementById("only-diff").value === "diff";
   const everything = [...agg.sequences.values()].sort((a, b) => b.count - a.count);
   const narrowSeq = seq => laneTotal > 1 &&
@@ -1128,7 +1222,9 @@ function renderSections(agg, k) {
       }
       const cls = unique ? "only" : (shared ? "shared" : "");
       return `<span class="hop ${cls}">${esc(roleLabel(role))}</span>`;
-    }).join('<span class="arrow">&rarr;</span>');
+    }).join(mode === "exact" ? '<span class="arrow">&rarr;</span>'
+          : mode === "distinct" ? '<span class="arrow">&ctdot;</span>'
+          : '<span class="arrow">&middot;</span>');
 
     const netText = s.neg === 0 ? "all &uarr;" : s.pos === 0 ? "all &darr;" : `${s.pos} &uarr; / ${s.neg} &darr;`;
     return `<div class="section-card${isNarrow ? " narrow" : ""}">
@@ -1136,7 +1232,7 @@ function renderSections(agg, k) {
         <span class="route-n">${i + 1}</span>
         <span class="section-count">${num(s.count)} route${s.count === 1 ? "" : "s"}</span>
         ${scope}
-        <span class="section-meta">${roles.length - 1} hops &middot; net ${netText}</span>
+        <span class="section-meta">${mode === "exact" ? (roles.length - 1) + " hops" : roles.length + " roles"} &middot; net ${netText}</span>
       </div>
       <div class="chain">${chain}</div>
     </div>`;
@@ -1153,22 +1249,38 @@ function renderSections(agg, k) {
        </div>`
     : `<div class="lane-summary"><span class="lane-pill">No parallel lanes detected — every box stands for itself.</span></div>`;
 
+  const modeLede = mode === "exact"
+    ? `Routes that differ only in which lane they ran through are one row.
+       Dimmed boxes appear in most sections (scaffolding); highlighted ones appear here alone.`
+    : mode === "order"
+      ? `Grouped by <b>which roles a route visits, ignoring the order</b>. Two routes
+         touching the same boxes in a different sequence are one row, so these are sets,
+         not chains — the dots between them are not arrows.`
+      : `Grouped by <b>what makes each route different</b>: every role appearing on half or
+         more of the routes has been struck out as scaffolding, leaving only the steps that
+         actually distinguish one route from another. The <b>&ctdot;</b> stands for the
+         omitted common steps.`;
+
   return `<h2 class="section">Sections</h2>
-    <p class="lede">Every route walked, then folded by shape. Routes that differ only in
-    which lane they ran through are one row. Dimmed boxes appear in most sections
-    (scaffolding); highlighted ones appear in this section alone.</p>` +
+    <p class="lede">Every route within the length budget, folded by shape. ${modeLede}</p>` +
     laneStrip +
     statsHtml([
       ["Routes", num(agg.total)],
       ["Sections", num(everything.length)],
       ["Condensation", ratio >= 2 ? `${ratio.toFixed(0)}×` : `${ratio.toFixed(1)}×`, ratio >= 5 ? "good" : ratio < 1.2 ? "bad" : ""],
-    ].concat(laneTotal > 1 && ratio >= 1.2 ? [["Lane-specific", String(narrowCount), narrowCount ? "bad" : ""]] : [])) +
+    ].concat(laneTotal > 1 && ratio >= 1.2 ? [["Lane-specific", String(narrowCount), narrowCount ? "bad" : ""]] : [])
+     .concat(agg.hopLimit ? [["Length", "\u2264 " + agg.hopLimit + " hops"]] : [["Length", "no limit"]])
+     .concat(agg.scaffoldCount ? [["Scaffolding dropped", String(agg.scaffoldCount)]] : [])) +
     (agg.shapesCapped
       ? `<div class="note"><b>The shape cap was reached.</b> ${num(agg.sequences.size)} distinct
          shapes were kept and ${num(agg.shapeOverflow)} further routes were counted but not folded,
-         so the section list below is a floor rather than the whole picture. That only happens when
-         folding is not working — a trace whose lanes fold well produces a handful of shapes, not
-         a hundred thousand.</div>`
+         so the section list below is a floor rather than the whole picture.
+         <br><br>Two levers help, both in the left rail. <b>Route length</b> is the blunt one:
+         most routes on a big map are long meandering detours, and dropping them usually collapses
+         the shape count by orders of magnitude. <b>Group routes by</b> is the sharp one: folding
+         lanes away is not enough when a shape is still a whole ordered sequence, so
+         “only what makes them different” strikes out every step that is on nearly every route
+         and groups by what is left.</div>`
       : "") +
     (ratio < 1.2 && !agg.shapesCapped
       ? `<div class="note"><b>Folding bought almost nothing here.</b> This map has no repeated
@@ -1476,20 +1588,68 @@ function updateProgress(agg, steps, ms) {
     ` · ${num(steps)} steps · ${(ms / 1000).toFixed(1)}s`;
 }
 
+function hopBudget() {
+  const raw = document.getElementById("hop-limit").value;
+  return raw === "" ? null : Number(raw);
+}
+
 function runTrace(fromId, toId) {
   if (RUN) { RUN.stop(); RUN = null; }
   refreshLanes();
+  GROUPING = document.getElementById("grouping").value;
+  const extra = hopBudget();
+
+  // "Only what makes them different" needs to know what the scaffolding IS
+  // before it can drop it, and that means one cheap counting walk before the
+  // real one. It costs a second pass; it is the only way to tell a role that
+  // is on every route from one that distinguishes a handful.
+  if (GROUPING === "distinct") {
+    document.getElementById("main").innerHTML = '<p class="busy">First pass: finding the scaffolding…</p>';
+    enumerateAll(fromId, toId, {
+      prepass: true, extraHops: extra,
+      onProgress: (agg, steps, ms) => {
+        const el = document.getElementById("main");
+        if (el) el.innerHTML = `<p class="busy">First pass: ${num(agg.total)} routes, ${(ms / 1000).toFixed(1)}s…</p>`;
+      },
+      onDone: agg => {
+        SCAFFOLD = new Set();
+        // Half the routes is the line for "common enough to be noise". 90% was
+        // the first guess and it was far too strict — on a real trace only the
+        // two endpoints cleared it, so nothing was dropped and the grouping
+        // did nothing at all.
+        for (const [role, seen] of agg.rolePresence)
+          if (agg.total && seen / agg.total >= 0.5) SCAFFOLD.add(role);
+        realTrace(fromId, toId, extra, SCAFFOLD.size, agg.total);
+      },
+    });
+    return;
+  }
+  SCAFFOLD = new Set();
+  realTrace(fromId, toId, extra, 0, 0);
+}
+
+function realTrace(fromId, toId, extra, scaffoldCount, prepassTotal) {
+  // The message goes up BEFORE the walk starts. A trace that finishes
+  // synchronously — no route between the two boxes, or the same box at both
+  // ends — used to call onDone while this line was still ahead of it, so the
+  // page painted "walking…" over a finished result and sat there forever.
+  document.getElementById("main").innerHTML = '<p class="busy">Walking every route…</p>';
+  let finished = false;
   let progressShown = false;
   const handle = enumerateAll(fromId, toId, {
+    extraHops: extra,
     onProgress: (agg, steps, ms) => {
       if (!progressShown) { progressShown = true; showProgress(agg, steps, ms, handle); }
       else updateProgress(agg, steps, ms);
     },
     onDone: (agg, ms, stopped) => {
+      finished = true;
       RUN = null;
+      agg.scaffoldCount = scaffoldCount;
       LAST = { agg, from: fromId, to: toId, ms, stopped };
       document.getElementById("sample-note").innerHTML = agg.total
-        ? `${num(agg.total)} routes${stopped ? " before you stopped it" : ", exhaustively"} in ${ms < 1000 ? Math.round(ms) + "ms" : (ms / 1000).toFixed(1) + "s"}.
+        ? `${num(agg.total)} routes${stopped ? " before you stopped it" : ""} in ${ms < 1000 ? Math.round(ms) + "ms" : (ms / 1000).toFixed(1) + "s"}.
+           Shortest is ${agg.shortest} hops; ${agg.hopLimit ? "walked up to " + agg.hopLimit : "no length limit"}.
            ${num(agg.sequences.size)} distinct shapes${agg.shapesCapped ? " (the cap)" : ""}. Lengths ${agg.minHops}–${agg.maxHops} hops.
            ${agg.shapeOverflow ? num(agg.shapeOverflow) + " routes arrived after the shape cap and are counted but not folded. " : ""}
            Comparison views use a fair random sample of ${num(Math.min(agg.total, RESERVOIR))}.`
@@ -1497,8 +1657,9 @@ function runTrace(fromId, toId) {
       render();
     },
   });
-  RUN = handle;
-  document.getElementById("main").innerHTML = '<p class="busy">Walking every route…</p>';
+  // Only claim a run is in flight if it actually still is; otherwise render()
+  // would see a stale handle and refuse to draw the result.
+  if (!finished) RUN = handle;
 }
 
 function findWorstPair() {
@@ -1617,6 +1778,11 @@ document.querySelectorAll("#strategies .strategy").forEach(btn => {
   });
 });
 document.getElementById("only-diff").addEventListener("change", render);
+for (const id of ["hop-limit", "grouping"]) {
+  document.getElementById(id).addEventListener("change", () => {
+    if (LAST) runTrace(LAST.from, LAST.to);
+  });
+}
 document.getElementById("k").addEventListener("input", e => {
   document.getElementById("k-val").textContent = e.target.value;
   render();
