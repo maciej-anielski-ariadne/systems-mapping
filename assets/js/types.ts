@@ -350,6 +350,45 @@ export interface History {
 }
 
 // ───── Top-level application state (the `state` singleton) ───────────────────
+// ───── Pathway mode ────────────────────────────────────────────────────────
+// A "strand" is one ordered chain of boxes from a cause to an effect. Note the
+// shape: every other traversal result in this app is a Set (ancestorSet,
+// descendantSet, highlightedEdgeIds) because neighbourhood highlighting has no
+// order. A route DOES — that ordering is the whole point, so it is a list.
+export interface PathwayRoute {
+  /** Boxes in causal order, start first. Always at least two long. */
+  nodeIds: string[];
+  /** The links between them: edgeIds[i] joins nodeIds[i] → nodeIds[i + 1]. */
+  edgeIds: string[];
+  /** Product of |elasticity| along the chain — how much cause actually
+   *  survives the trip. Bigger is stronger; always > 0. */
+  strength: number;
+  /** Product of the elasticity SIGNS. +1 = raising the start raises the end;
+   *  -1 = it lowers it. Two `decreases` links make a net increase, which is
+   *  the single most commonly botched inference on a causal map. */
+  sign: 1 | -1;
+}
+
+export interface PathwayState {
+  /** Which box the strand starts / ends at. Null when pathway mode is off. */
+  fromId: string | null;
+  toId: string | null;
+  /** The strongest few routes, strongest first. Empty = pathway mode is off. */
+  routes: PathwayRoute[];
+  /** Which of `routes` is on screen. Always a valid index when routes is
+   *  non-empty. */
+  routeIndex: number;
+  /** How many routes actually exist between the two ends — including the ones
+   *  `routes` dropped. Reported to the user verbatim: a map that hides what it
+   *  truncated stops being trustworthy. */
+  totalRoutes: number;
+  /** True when the search hit its budget before enumerating everything, so
+   *  totalRoutes is a floor rather than an exact count (shown as "47+"). */
+  truncated: boolean;
+  /** "map" = isolate the strand in place; "ribbon" = straighten it into a line. */
+  view: "map" | "ribbon";
+}
+
 export interface AppState {
   selectedNodeId: string | null;
   selectedNodeIds: Set<string>;
@@ -382,6 +421,9 @@ export interface AppState {
   searchQuery: string;
   searchMatches: SearchMatch[];
   searchFocusIndex: number;
+  /** Pathway mode — one strand traced from start to finish. Transient:
+   *  never persisted, so a refresh drops you back on the whole map. */
+  pathway: PathwayState;
   canvasEdit: CanvasEditState;
   history: History;
   lastCsvSnapshot: string | null;

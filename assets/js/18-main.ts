@@ -29,6 +29,8 @@ import "./06-data-loader";
 import "./07-simulation-engine";
 import "./08-layout";
 import "./09-graph-selection";
+import "./09a-pathways";
+import "./09b-pathway-ui";
 import "./10-filters";
 import "./10a-collapsed-edges";
 import "./11-rendering";

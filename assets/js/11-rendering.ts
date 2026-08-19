@@ -16,6 +16,7 @@
 import type { Category, GraphNode, NodePosition } from "./types";
 import { CATEGORIES, EDGES, NODES, STAGES, STREAMS, layout, nodeById, setLayout, stageById, state, streamById } from "./03-state";
 import { deselectAll, selectNode } from "./09-graph-selection";
+import { hopNumber, pathwayActive, pathwayEdgeSet, pathwayNodeSet } from "./09a-pathways";
 import { computeEdgeAnchorOffsets, deltaColorFor, edgeBezierPath, effectMarkerName, escapeHtml, getMapTextScale, isBackwardEdge, wrapLabel, type AnchorOffset } from "./04-utils";
 import { COL_GAP, COL_HEADER_HEIGHT, LABEL_INSET, NODE_GAP_Y, NODE_HEIGHT, NODE_WIDTH, ROW_HEADER_WIDTH, ROW_PADDING, SVG_PADDING_TOP } from "./02-config";
 import { computeLayout, layoutGeometryRevision, slotTopY } from "./08-layout";
@@ -740,11 +741,17 @@ interface StyleContext {
   dragNodeId: string | null;
   showOutcomeBorders: boolean;
   singleSelection: boolean;      // exactly one node selected → highlight / dim edges
+  // Pathway mode (09a-pathways.ts). When a strand is up it OWNS the map's
+  // emphasis: its boxes and links are the only lit ones and everything else
+  // dims, whatever else is selected. Null when no strand is being followed.
+  pathwayNodeIds: Set<string> | null;
+  pathwayEdgeIds: Set<string> | null;
 }
 
 function styleContext(): StyleContext {
   const ce = state.canvasEdit;
   const drag = (ce && ce.draggingNode) || null;
+  const onPathway = pathwayActive();
   return {
     searchMatchIds: (state.searchMatches && state.searchMatches.length > 0)
       ? new Set(state.searchMatches.map(m => m.node.id))
@@ -753,8 +760,10 @@ function styleContext(): StyleContext {
     undoFlashEdgeIds: ce && ce.flashedEdgeIds,
     flashedEdgeId: ce && ce.flashedEdgeId,
     dragNodeId: drag ? drag.nodeId : null,
-    showOutcomeBorders: !state.selectedNodeId && !state.selectedNodeIds.size,
+    showOutcomeBorders: !state.selectedNodeId && !state.selectedNodeIds.size && !onPathway,
     singleSelection: !!state.selectedNodeId && state.selectedNodeIds.size <= 1,
+    pathwayNodeIds: onPathway ? pathwayNodeSet() : null,
+    pathwayEdgeIds: onPathway ? pathwayEdgeSet() : null,
   };
 }
 
@@ -762,6 +771,25 @@ function styleContext(): StyleContext {
 // + 13-search.css (search halo).
 function nodeGroupClasses(nodeId: string, ctx: StyleContext): string {
   let classes = "node-group";
+  // Pathway mode first: a strand is a deliberate "show me only this", so it
+  // outranks the ancestor / descendant trace. Boxes on the strand read as
+  // on-strand (its two ends louder still); everything else dims to the same
+  // 0.18 the trace already uses, so the surrounding map stays as a faint
+  // spatial anchor rather than vanishing.
+  if (ctx.pathwayNodeIds) {
+    if (ctx.pathwayNodeIds.has(nodeId)) {
+      classes += " on-strand";
+      const hop = hopNumber(nodeId);
+      if (hop === 1 || hop === ctx.pathwayNodeIds.size) classes += " strand-end";
+    } else {
+      classes += " dimmed";
+    }
+    if (state.selectedNodeIds.has(nodeId)) classes += " selected";
+    if (state.hoveredNodeId === nodeId) classes += " hovered";
+    if (ctx.searchMatchIds && ctx.searchMatchIds.has(nodeId)) classes += " search-match";
+    if (ctx.dragNodeId === nodeId) classes += " dragging-source";
+    return classes;
+  }
   if (state.selectedNodeIds.has(nodeId)) {
     classes += " selected";
   } else if (ctx.singleSelection) {
@@ -784,6 +812,11 @@ function nodeGroupClasses(nodeId: string, ctx: StyleContext): string {
 // and because moving it into CSS would make these borders visible for the first
 // time — a pixel change, which is exactly what we must not do.
 function nodeRectStroke(nodeId: string, ctx: StyleContext): { stroke: string; width: string } {
+  if (ctx.pathwayNodeIds && ctx.pathwayNodeIds.has(nodeId)) {
+    const hop = hopNumber(nodeId);
+    const isEnd = hop === 1 || hop === ctx.pathwayNodeIds.size;
+    return { stroke: "var(--edge-ancestor)", width: isEnd ? "2.5" : "2" };
+  }
   if (state.selectedNodeIds.has(nodeId))  return { stroke: "#ffffff", width: "2.5" };
   if (state.ancestorSet.has(nodeId))      return { stroke: "var(--edge-ancestor)", width: "2" };
   if (state.descendantSet.has(nodeId))    return { stroke: "var(--edge-descendant)", width: "2" };
@@ -802,7 +835,8 @@ function nodeRectStroke(nodeId: string, ctx: StyleContext): { stroke: string; wi
 // `filter: saturate(0.32)` on its rect / stripe? Those nodes must keep their
 // literal colours (H5 only pre-desaturates the plain resting ones).
 function hasNonRestingFilter(nodeId: string, ctx: StyleContext): boolean {
-  return state.selectedNodeIds.has(nodeId) ||
+  return !!(ctx.pathwayNodeIds && ctx.pathwayNodeIds.has(nodeId)) ||
+         state.selectedNodeIds.has(nodeId) ||
          state.ancestorSet.has(nodeId) ||
          state.descendantSet.has(nodeId) ||
          state.hoveredNodeId === nodeId ||
@@ -836,7 +870,11 @@ function edgeStyleFor(re: RenderEdge, ctx: StyleContext): EdgeStyle {
     // is the sole selection.
     let strokeWidth = 1, strokeOpacity = 0.6, dimmed = false;
     let stroke = "var(--edge-default)", marker = "default";
-    if (ctx.singleSelection) {
+    if (ctx.pathwayEdgeIds) {
+      // A strand is made of REAL links; a synthetic "through" arrow is a
+      // summary of a chain we're not following, so it never joins the strand.
+      dimmed = true;
+    } else if (ctx.singleSelection) {
       if (state.selectedNodeId === re.from || state.selectedNodeId === re.to) {
         strokeWidth = 1.5; strokeOpacity = 0.95;   // still thinner than a real highlighted edge (2)
         stroke = effectStroke(re.effect);
@@ -860,10 +898,19 @@ function edgeStyleFor(re: RenderEdge, ctx: StyleContext): EdgeStyle {
   let dimmed = false;
   const isEdgeFlashed = edge.id === ctx.flashedEdgeId;
 
-  // Only a single-node selection highlights/dims edges — a multi-selection
-  // suppresses neighbour highlighting (highlightedEdgeIds is empty), so leave
-  // every edge at its default styling rather than dimming them all.
-  if (ctx.singleSelection) {
+  // A strand owns the map's emphasis while it's up: its own links are drawn in
+  // their effect colour, heavier than a trace highlight (the strand is a single
+  // line, so it can afford the weight), and every other link drops away.
+  if (ctx.pathwayEdgeIds) {
+    if (ctx.pathwayEdgeIds.has(edge.id!)) {
+      stroke = effectStroke(edge.effect);
+      strokeWidth = 2.6;
+      strokeOpacity = 1;
+      marker = edge.effect;
+    } else {
+      dimmed = true;
+    }
+  } else if (ctx.singleSelection) {
     if (state.highlightedEdgeIds.has(edge.id!)) {
       stroke = effectStroke(edge.effect);
       strokeWidth = 2;
@@ -895,9 +942,11 @@ function edgeStyleFor(re: RenderEdge, ctx: StyleContext): EdgeStyle {
 
   const effectClass = edge.effect ? " effect-" + edge.effect : "";
   const isEdgeUndoFlashed = !!(ctx.undoFlashEdgeIds && ctx.undoFlashEdgeIds.has(edge.id!));
+  const onStrand = !!(ctx.pathwayEdgeIds && ctx.pathwayEdgeIds.has(edge.id!));
   return {
     classes: "edge-path" + effectClass + (dimmed ? " dimmed" : "") + (isEdgeFlashed ? " flashed" : "") +
-             (isEdgeUndoFlashed ? " undo-flash" : "") + (isEdgeSelected ? " selected" : ""),
+             (isEdgeUndoFlashed ? " undo-flash" : "") + (isEdgeSelected ? " selected" : "") +
+             (onStrand ? " on-strand" : ""),
     casingClasses: "edge-casing" + (dimmed ? " dimmed" : ""),
     stroke, strokeWidth, strokeOpacity, marker,
   };
@@ -1302,6 +1351,22 @@ export function render(): void {
 
     // ── Secondary category chips (bottom-right) ──
     content += chips.svg;
+
+    // ── Hop number (pathway mode only) ──
+    // The badge in the top-right corner says where this box sits along the
+    // strand. It is what ties the isolated map to the straightened view — the
+    // same box carries the same number in both, so switching between them
+    // never costs you your place. Drawn last of the box's own content so it
+    // sits over the fill.
+    if (ctx.pathwayNodeIds && ctx.pathwayNodeIds.has(node.id)) {
+      const hop = hopNumber(node.id);
+      const badgeX = pos.x + pos.width - 2;
+      const badgeY = pos.y + 2;
+      content += '<g class="strand-hop">';
+      content +=   '<circle cx="' + badgeX + '" cy="' + badgeY + '" r="9"></circle>';
+      content +=   '<text x="' + badgeX + '" y="' + badgeY + '" text-anchor="middle" dominant-baseline="central">' + hop + '</text>';
+      content += '</g>';
+    }
 
     // Edge-drag handle on the right edge of every node. Visible only on hover
     // via CSS. Mousedown starts an edge-drag (see 16e-canvas-edit.js).

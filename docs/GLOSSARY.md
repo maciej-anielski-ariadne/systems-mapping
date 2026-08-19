@@ -99,6 +99,19 @@ light up a selected box's neighbours level-by-level (the "highlight depth" contr
 arrows as far as it goes, then back up and try the next branch. The app uses it to trace
 causal paths and to find loops.
 
+**Path / route.** A chain of boxes joined end-to-end by arrows: A → B → C. In pathway mode
+(the "Trace a strand" panel) a route is what you get from picking two boxes — the ordered
+list of steps that leads from the cause to the effect.
+
+**Simple path.** A path that never visits the same box twice. This matters because causal
+maps have loops: without the "no revisits" rule, "every route from A to B" would be an
+infinite list (round the loop once, twice, three times…). It is also how people actually
+read a chain — going round a loop twice isn't a different story. Pathway mode only ever
+shows simple paths.
+
+**Strand.** This app's plain-language word for one simple path being followed from start to
+finish, with the rest of the map dimmed out of the way. Also called a *pathway*.
+
 **Cycle / feedback loop.** A chain of arrows that eventually leads back to where it started
 (A affects B affects C affects A). Loops are allowed, but they make the simulation harder —
 see *Gauss-Seidel* and *gain*.

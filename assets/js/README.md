@@ -17,6 +17,9 @@ how the pieces fit):
 - **Canvas direct edit** (the main editing path) — `16e-canvas-edit.ts` (gestures),
   `16f-canvas-mutations.ts` (add/delete/reorder), `16g-canvas-undo.ts` (undo),
   `16h-canvas-inline-rename.ts`, `16i-canvas-keyboard-nav.ts`, `16j-multi-select-bar.ts`.
+- **Pathway mode** (follow one strand start to finish) — `09a-pathways.ts` (the graph
+  work: route finding, strength ranking, suggested strands) and `09b-pathway-ui.ts`
+  (the sidebar block, route chip and straightened view).
 
 `types.ts` holds the shared data-model types every module imports.
 

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { loadDataFromCsv } from "../assets/js/06-data-loader";
 import {
   buildExportModel,
+  getExportSelection,
   renderExportSvg,
   buildPublishHtml,
   exportPalette,
@@ -16,6 +17,7 @@ import {
 import { state, setLayout } from "../assets/js/03-state";
 import { computeLayout } from "../assets/js/08-layout";
 import { refreshNeighborHighlight } from "../assets/js/09-graph-selection";
+import { clearPathway, currentRoute, findRoutes, showRoute, startPathway } from "../assets/js/09a-pathways";
 import { LINEAR_CSV, REROUTE_CSV } from "./fixtures/graphs";
 import { mountAppDom } from "./helpers/dom";
 
@@ -395,5 +397,104 @@ describe("export honours collapsed stages (A → B → C, hide the middle)", () 
     const edges = JSON.parse(m![1].replace(/\\u003c/g, "<"));
     expect(edges).toHaveLength(1);
     expect(edges[0]).toMatchObject({ from: "a", to: "c", effect: "increases" });
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Exporting is the only way a strand outlives the session — pathway mode is
+// never persisted — so the scoping has to be exact: the chain's boxes and its
+// own links, and nothing that merely sits between them.
+// ───────────────────────────────────────────────────────────────────────────
+describe("a traced strand scopes the export to itself", () => {
+  // A → B → C plus a shortcut A → C, so "the boxes on the strand" and "every
+  // link among those boxes" are different answers.
+  const SHORTCUT_CSV = `# SECTION: streams
+id,label,short,color
+ops,Operations,OPS,#60a5fa
+
+# SECTION: stages
+id,label
+s1,Inputs
+s2,Middle
+s3,Outputs
+
+# SECTION: categories
+id,label,color,text_color,class
+cat,General,#a3a3a3,#111111,primary
+
+# SECTION: nodes
+id,label,description,stream,stage,category,baseline,unit,controllable,direction,slider_max
+a,Input A,,ops,s1,cat,100,units,true,,400
+b,Middle B,,ops,s2,cat,50,units,,,
+c,Output C,,ops,s3,cat,20,units,,higher_better,
+d,Spare D,,ops,s2,cat,10,units,,,
+
+# SECTION: edges
+from,to,effect,elasticity,style,description
+a,b,increases,0.5,,The long way
+b,c,increases,0.5,,The long way
+a,c,increases,0.9,,The shortcut
+a,d,increases,0.5,,Off the strand
+`;
+
+  beforeEach(() => {
+    mountAppDom();
+    loadDataFromCsv(SHORTCUT_CSV);
+    setLayout(computeLayout());
+  });
+  afterEach(() => clearPathway());
+
+  it("exports exactly the strand's boxes and links", () => {
+    // The long way round — a → b → c — rather than the a → c shortcut, so the
+    // strand's boxes and its links are genuinely different sets.
+    const longWay = findRoutes("a", "c").routes.find(r => r.nodeIds.length === 3)!;
+    showRoute(longWay);
+    expect(currentRoute()!.nodeIds).toEqual(["a", "b", "c"]);
+
+    const sel = getExportSelection();
+    expect(sel.selectionActive).toBe(true);
+    expect([...sel.nodeIds].sort()).toEqual(["a", "b", "c"]);
+    expect(sel.edges.map(e => e.from + "→" + e.to).sort()).toEqual(["a→b", "b→c"]);
+  });
+
+  it("keeps the shortcut out even when asked for every edge", () => {
+    // allEdges is what the CSV export passes. Everywhere else it means "every
+    // link among these boxes", which for a strand would draw back the shortcut
+    // the trace just narrowed away — so the strand branch ignores it.
+    showRoute(findRoutes("a", "c").routes.find(r => r.nodeIds.length === 3)!);
+
+    const sel = getExportSelection(true);
+    expect(sel.edges.map(e => e.from + "→" + e.to).sort()).toEqual(["a→b", "b→c"]);
+  });
+
+  it("beats a node selection when both are live", () => {
+    showRoute(findRoutes("a", "c").routes.find(r => r.nodeIds.length === 3)!);
+    // Select a box that is NOT on the strand; the strand still wins.
+    state.selectedNodeId = "d";
+    state.selectedNodeIds = new Set(["d"]);
+    refreshNeighborHighlight();
+
+    const sel = getExportSelection();
+    expect([...sel.nodeIds].sort()).toEqual(["a", "b", "c"]);
+
+    state.selectedNodeId = null;
+    state.selectedNodeIds = new Set();
+    refreshNeighborHighlight();
+  });
+
+  it("builds a model whose layout covers just the strand", () => {
+    startPathway("a", "c");
+    const model = buildExportModel();
+    expect(model).not.toBeNull();
+    expect([...model!.nodeIds].sort()).toEqual(["a", "c"]);   // strongest route is the shortcut
+    expect(Object.keys(model!.layout.positions).sort()).toEqual(["a", "c"]);
+  });
+
+  it("falls back to the normal rules once the strand is cleared", () => {
+    startPathway("a", "c");
+    clearPathway();
+    const sel = getExportSelection();
+    expect(sel.selectionActive).toBe(false);
+    expect(sel.nodeIds.size).toBe(4);
   });
 });

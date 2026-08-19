@@ -1,0 +1,1975 @@
+<!DOCTYPE html>
+<!--
+================================================================================
+ Pathway Atlas — a standalone analysis tool for Ariadne Maps.
+
+ NOT part of the app. Open this file directly in a browser and drop in the CSV
+ the app's CSV button saves. Everything runs locally in the page; nothing is
+ uploaded anywhere.
+
+ THE PROBLEM. Pick a box on a big map and ask what it leads to, and the honest
+ answer can be millions of routes. Listing them is hopeless, and walking them
+ all — what the earlier strand-condenser does — runs out of memory at around
+ twenty million.
+
+ THE IDEA. Do not walk them. The complete set of pathways from a box is already
+ written down in the map: it is the subgraph of everything that box can reach.
+ Enumerating it converts a linear amount of information into an exponential
+ amount of paper. So this tool never enumerates. It rewrites that subgraph into
+ a smaller one standing for the same pathways, and gets the counts by arithmetic
+ over the structure.
+
+   scope      keep only what the start box can reach
+   loops      contract each feedback loop to a single element
+   name       propose a grouping from the box names
+   refine     split any group whose members do not behave alike
+   decompose  cut the result into single-entry / single-exit regions
+   count      exact totals, by dynamic programming, in arbitrary precision
+
+ Nothing is sampled, capped, budgeted or truncated at any point.
+
+ SIX WAYS TO READ IT. The structure is one thing; how you look at it is another,
+ and a nested list of names and arrows turns out to be the hardest of the six.
+ The view switcher offers the same atlas as a flow diagram, proportional blocks,
+ parallel strands, a lane grid, one step at a time, and the outline.
+
+ See tools/PATHWAY-ATLAS.md for how it works and what it was measured against.
+================================================================================
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pathway Atlas</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect width='24' height='24' rx='6' fill='%2314161d'/><path d='M5 19V9h5V5h9' fill='none' stroke='%23bfaede' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/><path d='M10 9h6' fill='none' stroke='%238fb6d9' stroke-width='1.8' stroke-linecap='round'/><circle cx='5' cy='19' r='2' fill='%23bfaede'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+
+<style>
+/* Tokens lifted from the app's 01-variables.css so this reads as part of
+   Ariadne. Light (Linen) is the base; Twilight (dark) overrides it.
+   The chart hues are separate and deliberate: Ariadne's accents are muted on
+   purpose, which is right on a map and wrong for telling five lines apart, so
+   the strand colours below are the same hues pushed to a chroma that survives
+   colour-blind simulation, ordered so no red/green/amber pair sits adjacent. */
+:root {
+  --bg-deepest:#fbfaf7; --bg-deep:#f3f1ea; --bg-mid:#eae7de; --bg-light:#e0dcd1; --bg-lighter:#d2cdc0;
+  --border-subtle:#e7e2d7; --border-strong:#c2bcac;
+  --text-primary:#3b3a40; --text-secondary:#6b6a73; --text-tertiary:#8c8a93;
+  --accent-blue:#5b82b8; --accent-blue-hi:#486ea3; --accent-amber:#b48a52;
+  --accent-green:#5f9e7e; --accent-red:#bd7780; --accent-purple:#8a76b3;
+  --shadow-color:90,85,75; --shadow-strength:.16;
+  --c1:#cc7a00; --c2:#1f6fb2; --c3:#2e8b57; --c4:#9b4dca; --c5:#c62d42;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg-deepest:#14161d; --bg-deep:#1c1f28; --bg-mid:#262a35; --bg-light:#313643; --bg-lighter:#3d4251;
+    --border-subtle:#2c313d; --border-strong:#444a5e;
+    --text-primary:#e6e4ea; --text-secondary:#aeb0c0; --text-tertiary:#83879a;
+    --accent-blue:#8fb6d9; --accent-blue-hi:#aecce8; --accent-amber:#e6c79c;
+    --accent-green:#9ed1b4; --accent-red:#e3a3a8; --accent-purple:#bfaede;
+    --shadow-color:0,0,0; --shadow-strength:.5;
+    --c1:#bd8322; --c2:#4f90d4; --c3:#2f9d6c; --c4:#a674d6; --c5:#d95a70;
+  }
+}
+:root[data-theme="dark"] {
+  --bg-deepest:#14161d; --bg-deep:#1c1f28; --bg-mid:#262a35; --bg-light:#313643; --bg-lighter:#3d4251;
+  --border-subtle:#2c313d; --border-strong:#444a5e;
+  --text-primary:#e6e4ea; --text-secondary:#aeb0c0; --text-tertiary:#83879a;
+  --accent-blue:#8fb6d9; --accent-blue-hi:#aecce8; --accent-amber:#e6c79c;
+  --accent-green:#9ed1b4; --accent-red:#e3a3a8; --accent-purple:#bfaede;
+  --shadow-color:0,0,0; --shadow-strength:.5;
+  --c1:#bd8322; --c2:#4f90d4; --c3:#2f9d6c; --c4:#a674d6; --c5:#d95a70;
+}
+:root {
+  --act:var(--accent-blue); --act-hi:var(--accent-blue-hi);
+  --act-tint:color-mix(in srgb, var(--accent-blue) 14%, transparent);
+  --focus-ring:0 0 0 2px color-mix(in srgb, var(--accent-blue) 55%, transparent);
+  --shadow-float:0 10px 30px rgba(var(--shadow-color), var(--shadow-strength));
+  --r-i:6px; --r-s:12px;
+  --font-ui:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --font-mono:'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,monospace;
+  color-scheme: light dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg-deepest);color:var(--text-primary);
+     font:400 13px/1.55 var(--font-ui);-webkit-font-smoothing:antialiased}
+body.dropping::after{content:"Drop your CSV";position:fixed;inset:12px;z-index:99;
+  border:2px dashed var(--act);border-radius:var(--r-s);background:var(--act-tint);
+  display:grid;place-items:center;font-size:20px;font-weight:600;color:var(--act-hi);pointer-events:none}
+:focus-visible{outline:none;box-shadow:var(--focus-ring)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+.shell{display:grid;grid-template-columns:300px minmax(0,1fr);min-height:100vh}
+.rail{background:var(--bg-deep);border-right:1px solid var(--border-subtle);
+      padding:18px 15px 40px;display:flex;flex-direction:column;gap:15px;
+      position:sticky;top:0;height:100vh;overflow:auto}
+.main{padding:22px 26px 90px;min-width:0;display:flex;flex-direction:column;gap:16px}
+
+h1{margin:0;font-size:17px;font-weight:700;letter-spacing:-.01em}
+.sub{margin:2px 0 0;color:var(--text-tertiary);font-size:11.5px}
+.lede{margin:0;color:var(--text-secondary);max-width:74ch}
+.hint{margin:0;color:var(--text-tertiary);font-size:11.5px}
+label.field{display:block;font-size:10.5px;font-weight:600;letter-spacing:.07em;
+            text-transform:uppercase;color:var(--text-tertiary);margin-bottom:5px}
+select,input[type=text],textarea{width:100%;background:var(--bg-deepest);color:var(--text-primary);
+  border:1px solid var(--border-strong);border-radius:var(--r-i);padding:7px 9px;font:inherit;font-size:12.5px}
+textarea{font-family:var(--font-mono);font-size:11px;min-height:64px;resize:vertical}
+.btn{background:var(--bg-mid);color:var(--text-primary);border:1px solid var(--border-strong);
+     border-radius:var(--r-i);padding:6px 10px;font:inherit;font-size:12px;font-weight:500;cursor:pointer}
+.btn:hover{background:var(--bg-light)}
+.btn.primary{background:var(--act);border-color:var(--act);color:#fff}
+.row-btns{display:flex;gap:6px;flex-wrap:wrap}
+.check{display:flex;align-items:flex-start;gap:8px;font-size:12px;color:var(--text-secondary);cursor:pointer}
+.check input{margin-top:2px}
+
+.picker-list{margin-top:5px;max-height:172px;overflow:auto;border:1px solid var(--border-subtle);
+             border-radius:var(--r-i);background:var(--bg-deepest)}
+.picker-list button{display:block;width:100%;text-align:left;background:none;border:0;padding:5px 9px;
+  font:inherit;font-size:12px;color:var(--text-primary);cursor:pointer;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.picker-list button:hover{background:var(--bg-mid)}
+.picker-list button[aria-selected="true"]{background:var(--act-tint);color:var(--act-hi);font-weight:600}
+.picker-list .grp{padding:5px 9px 2px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--text-tertiary);border-top:1px solid var(--border-subtle)}
+.picker-list .grp:first-child{border-top:0}
+
+.railbox{border:1px solid var(--border-subtle);border-radius:var(--r-s);background:var(--bg-deepest);padding:10px 11px}
+.railbox h3{margin:0 0 6px;font-size:10.5px;font-weight:600;letter-spacing:.08em;
+            text-transform:uppercase;color:var(--text-tertiary)}
+.fam{display:flex;justify-content:space-between;gap:8px;padding:2.5px 0;font-size:12px;
+     border-top:1px solid var(--border-subtle)}
+.fam:first-of-type{border-top:0}
+.fam b{font-weight:600;font-family:var(--font-mono);font-size:11.5px}
+.fam span{color:var(--text-tertiary);white-space:nowrap;font-variant-numeric:tabular-nums}
+details.more>summary{cursor:pointer;font-size:11.5px;color:var(--text-tertiary);margin-top:6px}
+
+/* Masthead + stats */
+.stats{display:flex;flex-wrap:wrap;gap:7px}
+.stats>div{background:var(--bg-deep);border:1px solid var(--border-subtle);border-radius:var(--r-i);padding:6px 10px;min-width:96px}
+.stats .k{display:block;font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--text-tertiary)}
+.stats .v{display:block;font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:1px;
+          font-family:var(--font-mono)}
+.stats .v.good{color:var(--accent-green)}
+.note{border-left:3px solid var(--accent-amber);background:var(--bg-deep);padding:9px 12px;
+      border-radius:0 var(--r-i) var(--r-i) 0;color:var(--text-secondary);max-width:82ch;font-size:12.5px}
+
+/* View switcher */
+.views{display:flex;gap:0;border:1px solid var(--border-strong);border-radius:var(--r-i);
+       overflow:hidden;width:fit-content;max-width:100%;flex-wrap:wrap}
+.views button{background:var(--bg-deepest);border:0;border-right:1px solid var(--border-subtle);
+  padding:7px 14px;font:inherit;font-size:12.5px;font-weight:500;color:var(--text-secondary);cursor:pointer}
+.views button:last-child{border-right:0}
+.views button:hover{background:var(--bg-mid);color:var(--text-primary)}
+.views button[aria-selected="true"]{background:var(--act);color:#fff}
+.viewnote{color:var(--text-secondary);font-size:12.5px;max-width:80ch}
+.viewnote b{color:var(--text-primary)}
+
+.stage{border:1px solid var(--border-subtle);border-radius:var(--r-s);background:var(--bg-deepest);
+       padding:16px;min-height:340px;overflow:auto}
+.busy{color:var(--text-tertiary);padding:26px 0;margin:0}
+.legend{display:flex;flex-wrap:wrap;gap:12px;margin:0 0 12px;font-size:11.5px;color:var(--text-secondary)}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-2px;margin-right:5px}
+
+/* ── shared element chip ───────────────────────────────────────────────── */
+.el{display:inline-flex;align-items:center;gap:6px;background:var(--bg-deep);
+    border:1px solid var(--border-subtle);border-radius:var(--r-i);padding:3.5px 9px;font-size:12.5px}
+.el.start{background:var(--act-tint);border-color:var(--act);color:var(--act-hi);font-weight:600}
+.el.loop{background:color-mix(in srgb,var(--accent-amber) 16%,transparent);border-color:var(--accent-amber)}
+.el.folded{border-color:var(--accent-purple)}
+.el .x{font-family:var(--font-mono);font-size:10.5px;color:var(--accent-purple);font-weight:600}
+.el.loop .x{color:var(--accent-amber)}
+.arrow{color:var(--text-tertiary)}
+
+/* ── 1. FLOW ───────────────────────────────────────────────────────────── */
+.flowwrap{overflow-x:auto;overflow-y:hidden}
+.flow text{font-family:var(--font-ui);font-size:10.5px;fill:var(--text-secondary)}
+.flow text.big{fill:var(--text-primary);font-weight:600}
+.flow .node{fill:var(--act);opacity:.85}
+.flow .node.loop{fill:var(--accent-amber)}
+.flow .node.start{fill:var(--act-hi)}
+.flow .link{fill:var(--act);opacity:.16}
+.flow .node:hover,.flow .link.hot{opacity:.95}
+.flow g.n{cursor:pointer}
+
+/* ── 2. BLOCKS ─────────────────────────────────────────────────────────── */
+.crumbs{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin:0 0 12px;font-size:12px}
+.crumbs button{background:none;border:0;color:var(--act-hi);cursor:pointer;font:inherit;padding:2px 4px;
+  border-radius:4px;text-decoration:underline;text-underline-offset:2px}
+.crumbs button:hover{background:var(--act-tint)}
+.crumbs span{color:var(--text-tertiary)}
+.band{display:flex;gap:2px;margin-bottom:2px}
+.blk{flex:0 1 auto;min-width:0;border-radius:4px;padding:6px 8px;overflow:hidden;cursor:pointer;
+     border:1px solid transparent;position:relative}
+.blk:hover{border-color:var(--act)}
+.blk .bl{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;font-weight:500}
+.blk .bc{display:block;font-family:var(--font-mono);font-size:10px;opacity:.75;font-variant-numeric:tabular-nums}
+.blk.d0{background:color-mix(in srgb,var(--act) 40%,var(--bg-deepest))}
+.blk.d1{background:color-mix(in srgb,var(--act) 30%,var(--bg-deepest))}
+.blk.d2{background:color-mix(in srgb,var(--act) 22%,var(--bg-deepest))}
+.blk.d3{background:color-mix(in srgb,var(--act) 15%,var(--bg-deepest))}
+.blk.d4{background:color-mix(in srgb,var(--act) 9%,var(--bg-deepest))}
+.blk.seg{background:var(--bg-mid);cursor:default}
+.blk.seg:hover{border-color:transparent}
+.blk.loopy{background:color-mix(in srgb,var(--accent-amber) 30%,var(--bg-deepest))}
+.stack{margin-bottom:9px}
+
+/* ── 3. STRANDS ────────────────────────────────────────────────────────── */
+.strand{display:grid;grid-template-columns:auto 1fr;gap:0 14px;align-items:stretch}
+.rail-line{position:relative;width:26px}
+.rail-line::before{content:"";position:absolute;left:11px;top:0;bottom:0;width:4px;
+  background:var(--border-strong);border-radius:2px}
+.stop{display:flex;align-items:center;gap:10px;padding:5px 0;position:relative}
+.dot{position:absolute;left:-27px;width:12px;height:12px;border-radius:50%;background:var(--bg-deepest);
+     border:3px solid var(--act);box-sizing:content-box}
+.branchset{margin:6px 0 6px 6px;border-left:2px dashed var(--border-strong);padding-left:14px}
+.branch{margin:7px 0;padding-left:12px;border-left:4px solid var(--bl);border-radius:2px}
+.branch h4{margin:0 0 3px;font-size:12.5px;font-weight:600;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.branch h4 em{font-style:normal;font-family:var(--font-mono);font-size:10.5px;color:var(--text-tertiary);
+  font-variant-numeric:tabular-nums}
+.branch .track{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.sharebar{height:4px;border-radius:2px;background:var(--bl);margin:3px 0 5px}
+
+/* ── 4. LANE GRID ──────────────────────────────────────────────────────── */
+.gridwrap{overflow:auto;max-height:70vh}
+table.grid{border-collapse:separate;border-spacing:0;font-size:12px}
+table.grid th,table.grid td{padding:3px 7px;text-align:center;white-space:nowrap}
+table.grid thead th{position:sticky;top:0;background:var(--bg-deepest);z-index:2;
+  font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-tertiary);
+  border-bottom:1px solid var(--border-strong);padding-bottom:6px}
+table.grid th.rowh{position:sticky;left:0;background:var(--bg-deepest);z-index:1;text-align:left;
+  font-weight:500;max-width:230px;overflow:hidden;text-overflow:ellipsis;border-right:1px solid var(--border-subtle)}
+table.grid tbody tr:hover th.rowh,table.grid tbody tr:hover td{background:var(--bg-deep)}
+.cell{display:inline-block;width:15px;height:15px;border-radius:4px;background:var(--bg-mid)}
+.cell.on{background:var(--act)}
+.cell.part{background:color-mix(in srgb,var(--act) 45%,var(--bg-mid))}
+td.vol{text-align:right;font-family:var(--font-mono);font-size:10.5px;color:var(--text-tertiary);
+  font-variant-numeric:tabular-nums}
+.volbar{display:inline-block;height:7px;background:var(--act);border-radius:2px;vertical-align:0;opacity:.6}
+
+/* ── 5. STEP ───────────────────────────────────────────────────────────── */
+.stepwrap{max-width:900px}
+.here{border:1px solid var(--act);background:var(--act-tint);border-radius:var(--r-s);padding:14px 16px;margin:0 0 14px}
+.here h3{margin:0;font-size:19px;font-weight:700;letter-spacing:-.01em}
+.here p{margin:5px 0 0;color:var(--text-secondary);font-size:12.5px}
+.nexts{display:grid;gap:8px}
+.next{display:grid;grid-template-columns:1fr auto;gap:4px 14px;align-items:center;
+  border:1px solid var(--border-subtle);border-radius:var(--r-i);background:var(--bg-deep);
+  padding:9px 12px;cursor:pointer;text-align:left;font:inherit;color:inherit;width:100%}
+.next:hover{border-color:var(--act);background:var(--bg-mid)}
+.next b{font-size:13.5px;font-weight:600}
+.next .m{font-family:var(--font-mono);font-size:11px;color:var(--text-tertiary);
+  white-space:nowrap;font-variant-numeric:tabular-nums}
+.next .bar{grid-column:1/-1;height:5px;border-radius:3px;background:var(--bg-lighter);overflow:hidden}
+.next .bar i{display:block;height:100%;background:var(--act);border-radius:3px}
+
+/* ── 6. OUTLINE ────────────────────────────────────────────────────────── */
+.seg{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin:7px 0}
+.joins{font-size:12px;color:var(--text-tertiary);padding:3px 0}
+.joins b{color:var(--text-secondary);font-weight:500}
+.choice{border-left:2px solid var(--border-strong);margin:9px 0 9px 2px;padding-left:11px}
+.choice[data-d="0"]{border-left-color:var(--act)}
+.choice[data-d="1"]{border-left-color:var(--accent-purple)}
+.choice[data-d="2"]{border-left-color:var(--accent-green)}
+.choice[data-d="3"]{border-left-color:var(--accent-amber)}
+.choice-head{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-tertiary);margin:2px 0 6px}
+.choice-head b{color:var(--text-secondary);font-weight:600}
+details.alt{border:1px solid var(--border-subtle);border-radius:var(--r-i);background:var(--bg-deepest);margin:5px 0}
+details.alt[open]{background:var(--bg-deep)}
+details.alt>summary{cursor:pointer;list-style:none;padding:6px 10px;display:flex;align-items:center;
+  gap:9px;flex-wrap:wrap;font-size:12.5px}
+details.alt>summary::-webkit-details-marker{display:none}
+details.alt>summary::before{content:"▸";color:var(--text-tertiary);font-size:10px;flex:none}
+details.alt[open]>summary::before{content:"▾"}
+.alt-body{padding:2px 10px 8px 22px}
+.alt-n{font-family:var(--font-mono);font-size:10.5px;color:var(--text-tertiary);flex:none}
+.cnt{margin-left:auto;font-family:var(--font-mono);font-size:11px;color:var(--text-tertiary);
+     white-space:nowrap;flex:none;font-variant-numeric:tabular-nums}
+.tag{font-size:10.5px;padding:1.5px 6px;border-radius:999px;white-space:nowrap;border:1px solid transparent}
+.tag.some{background:color-mix(in srgb,var(--accent-amber) 18%,transparent);
+          border-color:color-mix(in srgb,var(--accent-amber) 45%,transparent)}
+.tag.all{background:var(--bg-mid);color:var(--text-tertiary)}
+.tag.straight{background:var(--bg-mid);color:var(--text-tertiary);font-style:italic}
+
+.tip{position:fixed;z-index:50;pointer-events:none;background:var(--bg-deepest);color:var(--text-primary);
+  border:1px solid var(--border-strong);border-radius:var(--r-i);padding:6px 9px;font-size:12px;
+  box-shadow:var(--shadow-float);max-width:280px;display:none}
+.tip b{display:block;font-size:12.5px}
+.tip span{color:var(--text-tertiary);font-family:var(--font-mono);font-size:10.5px}
+
+@media (max-width:900px){.shell{grid-template-columns:1fr}.rail{position:static;height:auto}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="rail">
+    <div>
+      <h1>Pathway Atlas</h1>
+      <p class="sub" id="map-summary">no map loaded</p>
+    </div>
+
+    <div>
+      <label class="field" for="map-pick">Map</label>
+      <select id="map-pick">
+        <option value="lanes">Demo — multi-word lanes</option>
+        <option value="big">Demo — 296 boxes, 818 links</option>
+        <option value="own">Your own CSV</option>
+      </select>
+    </div>
+
+    <div id="own-wrap" hidden>
+      <div class="row-btns" style="margin-bottom:7px">
+        <button class="btn primary" id="pick-file">Choose CSV…</button>
+        <input type="file" id="csv-file" accept=".csv,text/csv" hidden>
+      </div>
+      <textarea id="csv-in" placeholder="…or paste the CSV here"></textarea>
+      <div class="row-btns" style="margin-top:6px"><button class="btn" id="load-csv">Load pasted text</button></div>
+      <p class="hint" id="csv-status" style="margin-top:6px">You can also drag a file anywhere onto this page.</p>
+    </div>
+
+    <div>
+      <label class="field" for="start-q">Start from</label>
+      <input type="text" id="start-q" placeholder="Type to filter boxes…" autocomplete="off">
+      <div class="picker-list" id="start-list"></div>
+    </div>
+
+    <div>
+      <label class="field" for="grouping">Group boxes</label>
+      <select id="grouping">
+        <option value="loose">As far as possible</option>
+        <option value="strict">Only where behaviour matches</option>
+      </select>
+      <p class="hint" style="margin-top:5px" id="grouping-note"></p>
+    </div>
+
+    <div>
+      <label class="field" for="min-members">Smallest family that counts</label>
+      <select id="min-members">
+        <option value="0">Off — no name grouping</option>
+        <option value="2">2 boxes</option>
+        <option value="3" selected>3 boxes</option>
+        <option value="4">4 boxes</option>
+        <option value="6">6 boxes</option>
+      </select>
+    </div>
+
+    <div>
+      <label class="field" for="min-reuse">A lane value must appear in</label>
+      <select id="min-reuse">
+        <option value="1">1 role — anything goes</option>
+        <option value="2" selected>2 roles</option>
+        <option value="3">3 roles — strictest</option>
+      </select>
+    </div>
+
+    <label class="check"><input type="checkbox" id="stop-outcomes">
+      <span>Stop at outcome boxes rather than running on through them</span></label>
+
+    <div class="row-btns"><button class="btn" id="theme-btn">Theme</button></div>
+
+    <div class="railbox" id="lane-box"></div>
+    <div class="railbox" id="detail-box" hidden></div>
+  </aside>
+
+  <main class="main">
+    <div class="stats" id="stats"></div>
+    <div id="warn"></div>
+    <nav class="views" id="views" role="tablist" aria-label="How to read the atlas">
+      <button role="tab" data-v="flow">Flow</button>
+      <button role="tab" data-v="blocks">Blocks</button>
+      <button role="tab" data-v="strands">Strands</button>
+      <button role="tab" data-v="grid">Lane grid</button>
+      <button role="tab" data-v="step">Step through</button>
+      <button role="tab" data-v="outline">Outline</button>
+    </nav>
+    <p class="viewnote" id="viewnote"></p>
+    <div class="stage" id="stage"><p class="busy">Loading…</p></div>
+  </main>
+</div>
+<div class="tip" id="tip"></div>
+
+<script>
+"use strict";
+// ===========================================================================
+// READING THE APP'S CSV
+// ===========================================================================
+function splitCsvLine(line) {
+  const out = [];
+  let cur = "", quoted = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (quoted) {
+      if (c === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+      else if (c === '"') quoted = false;
+      else cur += c;
+    } else if (c === '"') quoted = true;
+    else if (c === ",") { out.push(cur); cur = ""; }
+    else cur += c;
+  }
+  out.push(cur);
+  return out;
+}
+
+function parseAriadneCsv(text) {
+  const sections = {};
+  let current = null, headers = null;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const m = line.match(/^#\s*SECTION:\s*(\w+)/i);
+    if (m) { current = m[1].toLowerCase(); sections[current] = []; headers = null; continue; }
+    if (line.startsWith("#") || !current) continue;
+    const cells = splitCsvLine(line);
+    if (!headers) { headers = cells.map(c => c.trim().toLowerCase()); continue; }
+    const obj = {};
+    headers.forEach((h, i) => { obj[h] = (cells[i] ?? "").trim(); });
+    sections[current].push(obj);
+  }
+  const streamLabel = {}, catLabel = {};
+  for (const s of sections.streams || []) streamLabel[s.id] = s.label || s.id;
+  for (const c of sections.categories || []) catLabel[c.id] = c.label || c.id;
+  const nodes = (sections.nodes || []).map(r => ({
+    id: r.id, label: r.label || r.id,
+    stream: streamLabel[r.stream] || r.stream || "",
+    category: catLabel[(r.category || "").split(/[;|]/)[0]] || r.category || "",
+    controllable: r.controllable === "true", direction: r.direction || "",
+  }));
+  const known = new Set(nodes.map(n => n.id));
+  const defaults = { enables: 0.30, increases: 0.25, decreases: -0.25 };
+  for (const d of sections.defaults || []) {
+    if (d.key === "elasticity_enables") defaults.enables = parseFloat(d.value);
+    if (d.key === "elasticity_increases") defaults.increases = parseFloat(d.value);
+    if (d.key === "elasticity_decreases") defaults.decreases = parseFloat(d.value);
+  }
+  const edges = (sections.edges || [])
+    .filter(r => known.has(r.from) && known.has(r.to))
+    .map(r => {
+      const raw = parseFloat(r.elasticity);
+      const effect = r.effect || "increases";
+      return { from: r.from, to: r.to, effect, elasticity: isNaN(raw) ? (defaults[effect] ?? 0.25) : raw };
+    });
+  return { nodes, edges, name: "your map" };
+}
+
+// ===========================================================================
+// DEMO MAPS
+// ===========================================================================
+const E = (from, to, elasticity = 0.3) =>
+  ({ from, to, effect: elasticity < 0 ? "decreases" : "increases", elasticity });
+const N = (id, label) => ({ id, label, stream: "", category: "", controllable: false, direction: "" });
+
+function demoLanes() {
+  const nodes = [], edges = [];
+  const add = (id, label) => { nodes.push(N(id, label)); return id; };
+  add("policy", "Enforcement Policy"); add("funding", "Operational Funding"); add("outcome", "Harm Reduction");
+  for (const c of ["Cat A", "Cat B", "Cat C", "Cat D"]) {
+    add(c + "|t", c + " Targets"); add(c + "|r", c + " Referrals"); add(c + "|o", c + " Offenders Charged");
+    edges.push(E("policy", c + "|t"), E("funding", c + "|t"), E(c + "|t", c + "|r"),
+               E(c + "|r", c + "|o"), E(c + "|o", "outcome"));
+  }
+  for (const d of ["Cannabis", "Cocaine", "Class A Drug", "Heroin"]) {
+    add(d + "|s", d + " Seizure"); add(d + "|q", d + " Testing");
+    edges.push(E("policy", d + "|s"), E(d + "|s", d + "|q"), E(d + "|q", "outcome"));
+  }
+  add("pick", "Pick rate"); add("damage", "Damage rate");
+  edges.push(E("funding", "pick"), E("pick", "outcome"), E("policy", "damage"), E("damage", "outcome"));
+  add("s1", "Import Stage"); add("s2", "Seizure Stage"); add("s3", "Testing Stage");
+  edges.push(E("policy", "s1"), E("s1", "s2"), E("s2", "s3"), E("s3", "outcome"));
+  return { nodes, edges, name: "multi-word lanes demo" };
+}
+
+function demoBig() {
+  const nodes = [], edges = [];
+  const add = (id, label) => { nodes.push(N(id, label)); return id; };
+  const lanes = ["Cannabis", "Cocaine", "Heroin", "Cat A", "Cat B", "Class A Drug", "Synthetic Opioid", "Prescription"];
+  const roles = ["Import", "Seizure", "Testing", "Charging", "Prosecution", "Sentencing",
+                 "Supply Chain", "Street Supply", "Street Price", "User Demand",
+                 "Treatment Referral", "Treatment Uptake", "Reoffending", "County Lines",
+                 "Community Harm", "Health Burden", "Policing Cost", "Public Confidence",
+                 "Market Adaptation", "Displacement", "Deterrence", "Recorded Crime",
+                 "Youth Involvement", "Debt Bondage"];
+  add("start", "Enforcement Budget"); add("end", "Total Drug Harm");
+  for (const lane of lanes) for (const role of roles) add(lane + "|" + role, lane + " " + role);
+  const shared = [];
+  for (let i = 0; i < 102; i++) shared.push(add("sh" + i, "Shared Factor " + (i + 1)));
+  for (const lane of lanes) {
+    for (let i = 0; i + 1 < roles.length; i++) edges.push(E(lane + "|" + roles[i], lane + "|" + roles[i + 1]));
+    edges.push(E("start", lane + "|" + roles[0]));
+    edges.push(E(lane + "|" + roles[roles.length - 1], "end"));
+    for (let i = 0; i + 2 < roles.length; i += 3) edges.push(E(lane + "|" + roles[i], lane + "|" + roles[i + 2]));
+    for (let i = 0; i + 4 < roles.length; i += 2) edges.push(E(lane + "|" + roles[i], lane + "|" + roles[i + 4]));
+    for (let i = 1; i + 5 < roles.length; i += 4) edges.push(E(lane + "|" + roles[i], lane + "|" + roles[i + 5]));
+  }
+  shared.forEach((s, i) => {
+    const r = i % (roles.length - 6);
+    const a = lanes[i % lanes.length], b = lanes[(i + 1) % lanes.length];
+    edges.push(E(a + "|" + roles[r], s));
+    edges.push(E(lanes[(i + 2) % lanes.length] + "|" + roles[r + 1], s));
+    edges.push(E(s, b + "|" + roles[r + 4]));
+    if (i % 4 === 0) { edges.push(E("start", s)); edges.push(E(s, "end")); }
+    if (i % 5 === 0) edges.push(E(s, lanes[(i + 2) % lanes.length] + "|" + roles[r + 5]));
+    if (i % 2 === 0) edges.push(E(s, lanes[(i + 3) % lanes.length] + "|" + roles[r + 6]));
+  });
+  for (const lane of lanes.slice(0, 4))
+    edges.push(E(lane + "|User Demand", lane + "|Street Price", -0.3));
+  return { nodes, edges, name: "296-box demo" };
+}
+
+// ATLAS-ENGINE-START (kept verbatim; tests/pathway-atlas.test.ts reads it from here)
+// ===========================================================================
+// PATHWAY ATLAS ENGINE
+// ---------------------------------------------------------------------------
+// The move this is built on: never enumerate pathways.
+//
+// The complete set of pathways from a box is already written down in the graph
+// itself — it is the subgraph of everything that box can reach. Enumerating it
+// turns a linear amount of information into an exponential amount of paper. So
+// we never do. Each step below rewrites that subgraph into a smaller one that
+// stands for the same pathways, and the counts come from arithmetic over the
+// structure rather than from tallying things as we walk past them.
+//
+//   scope      keep only what the start box can reach
+//   loops      contract each feedback loop to a single element
+//   name       propose a grouping from the box names
+//   refine     split any group whose members do not behave alike
+//   decompose  cut the result into single-entry / single-exit regions
+//   count      exact totals by dynamic programming (BigInt)
+//
+// Nothing is sampled, capped, budgeted or truncated at any point, so "every
+// pathway is represented" is a property of the construction rather than a hope.
+//
+// TWO GUARANTEES, and the refine step is what buys the second one:
+//
+//   complete  every pathway in the map is one of the readings on screen, so an
+//             impact cannot be missed however far it meanders
+//   sound     every reading on screen is a pathway that really exists
+//
+// Grouping by name alone gives the first and quietly breaks the second. Fold
+// "Cannabis Seizure" and "Cocaine Seizure" into one "◇ Seizure" and the page
+// starts offering "Cannabis Import → ◇ Seizure → Cocaine Testing" — a sentence
+// no route in the map actually says. So a proposed group is kept only while
+// its members agree on which groups they lead to; where they disagree it is
+// split, and that split is worth reading, because it is the map saying this is
+// where the lanes stop behaving alike.
+// ===========================================================================
+
+const SLOT = "◇";        // stands in for whatever varies between lanes
+const END = "\u0000END";      // virtual finish, so every pathway has one
+const SEP = "\u0001";                // never appears in a label
+
+// ---------------------------------------------------------------------------
+// 0. GRAPH
+// ---------------------------------------------------------------------------
+function buildGraph(map) {
+  const byId = new Map(), out = new Map(), inc = new Map();
+  for (const n of map.nodes) { byId.set(n.id, n); out.set(n.id, []); inc.set(n.id, []); }
+  const edges = [];
+  for (const e of map.edges) {
+    if (!byId.has(e.from) || !byId.has(e.to)) continue;
+    edges.push(e);
+    out.get(e.from).push(e);
+    inc.get(e.to).push(e);
+  }
+  return { nodes: map.nodes, edges, byId, out, inc, name: map.name || "map" };
+}
+
+function reachableFrom(G, startId, stopAt) {
+  const seen = new Set([startId]), stack = [startId];
+  while (stack.length) {
+    const id = stack.pop();
+    if (stopAt && id !== startId && stopAt.has(id)) continue;
+    for (const e of G.out.get(id) || []) if (!seen.has(e.to)) { seen.add(e.to); stack.push(e.to); }
+  }
+  return seen;
+}
+
+// ---------------------------------------------------------------------------
+// 1. NAME GROUPING
+// ---------------------------------------------------------------------------
+// A LANE is one value of a dimension the map repeats itself along — Cannabis,
+// Cocaine, Cat A, Cat B. A ROLE is what a box does once its lane is stripped
+// off: "Cat ◇ Targets".
+//
+// The family key is a PREFIX and a SUFFIX rather than one word position, so
+// the varying part can run to several words and can differ in length between
+// members: "Class A Drug Seizure" and "Cannabis Seizure" share the key
+// (prefix "", suffix "Seizure").
+//
+// Four tests, because label similarity on its own invents families:
+//   size       a family needs enough members to be a pattern, not a coincidence
+//   adjacency  lane members are ALTERNATIVES, so none is linked to another —
+//              a sequence (Import → Seizure → Testing) fails this
+//   reuse      a lane value must play its part in more than one role, so a
+//              single coincidental pair cannot mint a lane
+//   role       members must sit in the same part of the map: what flows into
+//              and out of them has to play overlapping parts
+//
+// Everything here is only a PROPOSAL. Step 3 checks it against behaviour.
+// ---------------------------------------------------------------------------
+const LANE_DEFAULTS = {
+  minMembers: 3,          // how many boxes make a family
+  minTokenFamilies: 2,    // a lane value must appear in this many roles
+  maxSpan: 3,             // how many words the varying part may run to
+  neighbourOverlap: 0.25, // how alike members' surroundings must be
+};
+
+const words = s => String(s).split(/\s+/).filter(Boolean);
+
+function candidateFamilies(nodes, maxSpan) {
+  const byKey = new Map();
+  for (const n of nodes) {
+    const w = words(n.label || n.id);
+    for (let i = 0; i < w.length; i++) {
+      for (let j = i + 1; j <= Math.min(w.length, i + maxSpan); j++) {
+        const pre = w.slice(0, i), suf = w.slice(j);
+        if (pre.length + suf.length === 0) continue;   // need something to anchor on
+        const key = pre.join(" ") + SEP + suf.join(" ");
+        let m = byKey.get(key);
+        if (!m) byKey.set(key, m = new Map());
+        if (!m.has(n.id)) m.set(n.id, w.slice(i, j).join(" "));
+      }
+    }
+  }
+  return byKey;
+}
+
+function detectLanes(nodes, edges, opts = {}) {
+  const o = { ...LANE_DEFAULTS, ...opts };
+  if (!o.minMembers) return {
+    roleOf: new Map(nodes.map(n => [n.id, "N:" + n.id])), laneOf: new Map(),
+    families: [], laneValues: new Set(), rejected: [], foldedBoxes: 0, roleCount: nodes.length,
+  };
+
+  const linked = new Set();
+  for (const e of edges) { linked.add(e.from + SEP + e.to); linked.add(e.to + SEP + e.from); }
+
+  const rejected = [], pool = [];
+  for (const [key, m] of candidateFamilies(nodes, o.maxSpan)) {
+    if (m.size < o.minMembers) continue;
+    const members = [...m].map(([id, token]) => ({ id, token }));
+    if (new Set(members.map(x => x.token)).size !== members.length) continue;
+
+    let adjacent = false;
+    for (let i = 0; i < members.length && !adjacent; i++)
+      for (let j = i + 1; j < members.length && !adjacent; j++)
+        if (linked.has(members[i].id + SEP + members[j].id)) adjacent = true;
+    if (adjacent) { rejected.push({ key, why: "members are linked to each other, so this is a sequence not a set of alternatives" }); continue; }
+
+    const [pre, suf] = key.split(SEP);
+    pool.push({ key, pre, suf, members, anchor: words(pre).length + words(suf).length });
+  }
+
+  // Lane values and families define each other, so settle them together.
+  let kept = pool;
+  for (let round = 0; round < 6; round++) {
+    const tokenFamilies = new Map();
+    for (const f of kept)
+      for (const t of new Set(f.members.map(m => m.token)))
+        tokenFamilies.set(t, (tokenFamilies.get(t) || 0) + 1);
+    const values = new Set([...tokenFamilies]
+      .filter(([t, c]) => c >= o.minTokenFamilies && !/^[0-9]+$/.test(t) && t.length > 1)
+      .map(([t]) => t));
+    const next = pool
+      .map(f => ({ ...f, members: f.members.filter(m => values.has(m.token)) }))
+      .filter(f => f.members.length >= o.minMembers);
+    const settled = next.length === kept.length &&
+      next.every((f, i) => f.key === kept[i].key && f.members.length === kept[i].members.length);
+    kept = next;
+    if (settled) break;
+  }
+
+  // Bigger family wins a contested box; more anchor words breaks the tie.
+  const assign = list => {
+    const roleOf = new Map(), laneOf = new Map(), claimed = new Set();
+    for (const f of [...list].sort((a, b) =>
+      b.members.length - a.members.length || b.anchor - a.anchor || (a.key < b.key ? -1 : 1)))
+      for (const m of f.members) {
+        if (claimed.has(m.id)) continue;
+        claimed.add(m.id);
+        roleOf.set(m.id, "L:" + f.key);
+        laneOf.set(m.id, m.token);
+      }
+    return { roleOf, laneOf };
+  };
+
+  // "Pick rate" and "Damage rate" share a word and nothing else; real lane
+  // siblings sit in the same place in the map, so what flows into and out of
+  // them plays the same parts.
+  const tentative = assign(kept);
+  const around = new Map();
+  for (const e of edges) {
+    if (!around.has(e.from)) around.set(e.from, new Set());
+    if (!around.has(e.to)) around.set(e.to, new Set());
+    around.get(e.from).add(tentative.roleOf.get(e.to) || "N:" + e.to);
+    around.get(e.to).add(tentative.roleOf.get(e.from) || "N:" + e.from);
+  }
+  const survivors = [];
+  for (const f of kept) {
+    const mine = f.members.filter(m => tentative.roleOf.get(m.id) === "L:" + f.key);
+    if (mine.length < o.minMembers) continue;
+    const sets = mine.map(m => around.get(m.id) || new Set());
+    let pairs = 0, total = 0;
+    for (let i = 0; i < sets.length; i++)
+      for (let j = i + 1; j < sets.length; j++) {
+        let inter = 0;
+        for (const r of sets[i]) if (sets[j].has(r)) inter++;
+        const union = sets[i].size + sets[j].size - inter;
+        total += union ? inter / union : 0;
+        pairs++;
+      }
+    const overlap = pairs ? total / pairs : 1;
+    if (overlap < o.neighbourOverlap) {
+      rejected.push({ key: f.key, why: `members sit in different parts of the map (${(overlap * 100).toFixed(0)}% shared surroundings)` });
+      continue;
+    }
+    survivors.push({ ...f, members: mine, overlap });
+  }
+
+  const { roleOf, laneOf } = assign(survivors);
+  for (const n of nodes) if (!roleOf.has(n.id)) roleOf.set(n.id, "N:" + n.id);
+
+  const size = new Map();
+  for (const role of roleOf.values()) size.set(role, (size.get(role) || 0) + 1);
+
+  return {
+    roleOf, laneOf, rejected,
+    families: survivors
+      .map(f => ({ ...f, members: f.members.filter(m => roleOf.get(m.id) === "L:" + f.key) }))
+      .filter(f => f.members.length >= o.minMembers)
+      .sort((a, b) => b.members.length - a.members.length),
+    laneValues: new Set(laneOf.values()),
+    foldedBoxes: [...size.values()].filter(c => c > 1).reduce((a, c) => a + c, 0),
+    roleCount: size.size,
+  };
+}
+
+const familyLabel = key => {
+  const [pre, suf] = key.split(SEP);
+  return (pre ? pre + " " : "") + SLOT + (suf ? " " + suf : "");
+};
+
+function roleLabel(role, byId) {
+  if (!role.startsWith("L:")) {
+    const n = byId.get(role.slice(2));
+    return n ? (n.label || n.id) : role.slice(2);
+  }
+  return familyLabel(role.slice(2));
+}
+
+// ---------------------------------------------------------------------------
+// 2. FEEDBACK LOOPS
+// ---------------------------------------------------------------------------
+// Every mutually-reachable group of boxes becomes one element. A pathway can
+// enter a loop and leave it, but never go round it — which is how people read
+// a strand, and what leaves the rest of the pipeline working on something
+// guaranteed to be acyclic.
+// ---------------------------------------------------------------------------
+function stronglyConnected(ids, succ) {
+  const index = new Map(), low = new Map(), onStack = new Set(), stack = [], comps = [];
+  let counter = 0;
+  for (const root of ids) {
+    if (index.has(root)) continue;
+    const work = [{ v: root, kids: null, i: 0 }];
+    while (work.length) {
+      const f = work[work.length - 1];
+      if (f.kids === null) {
+        index.set(f.v, counter); low.set(f.v, counter); counter++;
+        stack.push(f.v); onStack.add(f.v);
+        f.kids = [...(succ.get(f.v) || [])];
+      }
+      if (f.i < f.kids.length) {
+        const w = f.kids[f.i++];
+        if (!index.has(w)) work.push({ v: w, kids: null, i: 0 });
+        else if (onStack.has(w)) low.set(f.v, Math.min(low.get(f.v), index.get(w)));
+        continue;
+      }
+      if (low.get(f.v) === index.get(f.v)) {
+        const comp = [];
+        for (;;) { const w = stack.pop(); onStack.delete(w); comp.push(w); if (w === f.v) break; }
+        comps.push(comp);
+      }
+      work.pop();
+      if (work.length) {
+        const p = work[work.length - 1].v;
+        low.set(p, Math.min(low.get(p), low.get(f.v)));
+      }
+    }
+  }
+  return comps;
+}
+
+function collapseLoops(scope, edges) {
+  const succ = new Map();
+  for (const id of scope) succ.set(id, new Set());
+  for (const e of edges) if (scope.has(e.from) && scope.has(e.to)) succ.get(e.from).add(e.to);
+
+  const groupOf = new Map(), groups = new Map();
+  let n = 0;
+  for (const comp of stronglyConnected([...scope], succ)) {
+    const loop = comp.length > 1 || succ.get(comp[0]).has(comp[0]);
+    const id = "g" + (n++);
+    for (const b of comp) groupOf.set(b, id);
+    groups.set(id, { id, loop, boxes: comp });
+  }
+  const gsucc = new Map(), gpred = new Map();
+  for (const id of groups.keys()) { gsucc.set(id, new Set()); gpred.set(id, new Set()); }
+  for (const [a, outs] of succ)
+    for (const b of outs) {
+      const x = groupOf.get(a), y = groupOf.get(b);
+      if (x === y) continue;
+      gsucc.get(x).add(y); gpred.get(y).add(x);
+    }
+  return { groups, groupOf, succ: gsucc, pred: gpred };
+}
+
+// ---------------------------------------------------------------------------
+// 3. REFINE THE GROUPING UNTIL IT IS TRUE
+// ---------------------------------------------------------------------------
+// Start from what the names propose, then repeatedly split any group whose
+// members disagree about which groups they lead to. What settles out is the
+// coarsest grouping in which members really are interchangeable going forward.
+//
+// Two things follow, and both matter:
+//   * every stretch on the page is walkable in the real map, because each
+//     member of a group has a successor in every one of that group's
+//     successors;
+//   * the result cannot hold a loop the map does not, because a loop among
+//     groups would force an endless forward chain through an acyclic graph.
+//     Grouping by name alone offers no such assurance — it will happily turn
+//     "Cannabis Seizure → Shared Factor → Cocaine Import" into feedback that
+//     nobody drew.
+// ---------------------------------------------------------------------------
+// Both settings run the same refinement; they differ only in when to stop.
+//
+//   as far as possible  stop the moment the grouping is loop-safe. This is the
+//                       most condensed honest answer: no invented feedback, but
+//                       a group may hold members that go on to differ, and the
+//                       lane badges on each branch are what tell you so.
+//   where behaviour matches  run to the fixpoint. Every step on the page is
+//                       then one that every member of its group really takes.
+//                       Strictly truer, and on a map whose lanes are wired
+//                       even slightly differently it condenses far less.
+//
+// Neither can miss a pathway. The difference is only how much is claimed about
+// the members of a group, which is why the tool reports both numbers.
+function quotientHasCycle(ids, succ, cls) {
+  const csucc = new Map();
+  for (const id of ids) {
+    const c = cls.get(id);
+    if (!csucc.has(c)) csucc.set(c, new Set());
+  }
+  for (const id of ids) {
+    const c = cls.get(id);
+    for (const s of succ.get(id)) {
+      const d = cls.get(s);
+      if (d === c) return true;
+      csucc.get(c).add(d);
+    }
+  }
+  return stronglyConnected([...csucc.keys()], csucc).some(comp => comp.length > 1);
+}
+
+function refineForward(ids, succ, initial, strict) {
+  let cls = new Map(ids.map(id => [id, String(initial.get(id))]));
+  let count = new Set(cls.values()).size;
+  for (let round = 0; round <= ids.length + 1; round++) {
+    if (!strict && !quotientHasCycle(ids, succ, cls)) return { cls, rounds: round, settled: false };
+    const sig = new Map(), rename = new Map();
+    for (const id of ids) {
+      const outs = [...new Set([...succ.get(id)].map(x => cls.get(x)))].sort().join(",");
+      sig.set(id, cls.get(id) + SEP + outs);
+    }
+    for (const id of ids) if (!rename.has(sig.get(id))) rename.set(sig.get(id), "c" + rename.size);
+    if (rename.size === count) return { cls, rounds: round, settled: true };
+    cls = new Map(ids.map(id => [id, rename.get(sig.get(id))]));
+    count = rename.size;
+  }
+  return { cls, rounds: ids.length, settled: true };
+}
+
+// ---------------------------------------------------------------------------
+// 4. POST-DOMINATORS → single-entry / single-exit regions
+// ---------------------------------------------------------------------------
+// Where the pathways split, the question worth answering is where they come
+// back together. That element is the immediate POST-DOMINATOR of the split:
+// the first one every route from the split must reach. Everything between the
+// two is a self-contained choice — exactly the unit worth putting on screen
+// behind one open/close triangle.
+// ---------------------------------------------------------------------------
+function reversePostorder(root, succOf) {
+  const seen = new Set([root]), post = [], stack = [{ n: root, kids: null, i: 0 }];
+  while (stack.length) {
+    const f = stack[stack.length - 1];
+    if (f.kids === null) f.kids = succOf(f.n);
+    if (f.i < f.kids.length) {
+      const s = f.kids[f.i++];
+      if (!seen.has(s)) { seen.add(s); stack.push({ n: s, kids: null, i: 0 }); }
+      continue;
+    }
+    post.push(f.n); stack.pop();
+  }
+  return post.reverse();
+}
+
+function immediateDominators(root, succOf, predOf) {
+  const rpo = reversePostorder(root, succOf);
+  const num = new Map(rpo.map((n, i) => [n, i]));
+  const idom = new Map([[root, root]]);
+  const intersect = (a, b) => {
+    while (a !== b) {
+      while (num.get(a) > num.get(b)) a = idom.get(a);
+      while (num.get(b) > num.get(a)) b = idom.get(b);
+    }
+    return a;
+  };
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const n of rpo) {
+      if (n === root) continue;
+      let cand = null;
+      for (const p of predOf(n)) {
+        if (!num.has(p) || !idom.has(p)) continue;
+        cand = cand === null ? p : intersect(p, cand);
+      }
+      if (cand !== null && idom.get(n) !== cand) { idom.set(n, cand); changed = true; }
+    }
+  }
+  return idom;
+}
+
+// Exact totals: paths(n) is how many pathways run from n to the finish, summed
+// over successors in reverse topological order. BigInt, because on a real map
+// this number is genuinely astronomical.
+function countPaths(start, succOf) {
+  const topo = reversePostorder(start, succOf);
+  const paths = new Map([[END, 1n]]);
+  for (let i = topo.length - 1; i >= 0; i--) {
+    const n = topo[i];
+    if (n === END) continue;
+    let total = 0n;
+    for (const s of succOf(n)) total += paths.get(s) || 0n;
+    paths.set(n, total);
+  }
+  return paths;
+}
+
+function addFinish(succ, pred) {
+  succ.set(END, new Set());
+  if (pred) pred.set(END, new Set());
+  const finishes = [];
+  for (const [id, outs] of succ) {
+    if (id === END || outs.size) continue;
+    finishes.push(id);
+    outs.add(END);
+    if (pred) pred.get(END).add(id);
+  }
+  return finishes;
+}
+
+// ---------------------------------------------------------------------------
+// 5. THE ATLAS
+// ---------------------------------------------------------------------------
+function buildAtlas(G, startId, opts = {}) {
+  const t0 = Date.now();
+  const stopAt = opts.stopAtOutcomes
+    ? new Set(G.nodes.filter(n => n.direction).map(n => n.id))
+    : null;
+
+  const scope = reachableFrom(G, startId, stopAt);
+  const scopedNodes = G.nodes.filter(n => scope.has(n.id));
+  const scopedEdges = G.edges.filter(e =>
+    scope.has(e.from) && scope.has(e.to) &&
+    !(stopAt && stopAt.has(e.from) && e.from !== startId));
+
+  const lanes = detectLanes(scopedNodes, scopedEdges, opts.lanes || {});
+  const L = collapseLoops(scope, scopedEdges);
+  const startGroup = L.groupOf.get(startId);
+
+  // What the names propose. Identical loops in different lanes get the same
+  // proposal, so four copies of one feedback loop become one element.
+  const initial = new Map();
+  for (const [gid, g] of L.groups) {
+    if (gid === startGroup) { initial.set(gid, "START"); continue; }
+    const roles = [...new Set(g.boxes.map(b => lanes.roleOf.get(b)))].sort();
+    initial.set(gid, g.loop ? "LOOP:" + roles.join("+") : roles[0]);
+  }
+
+  const gids = [...L.groups.keys()];
+  const refined = refineForward(gids, L.succ, initial, opts.grouping === "strict");
+  const classOf = refined.cls;
+
+  // The quotient: one element per settled class.
+  const nodes = new Map(), succ = new Map(), pred = new Map();
+  for (const gid of gids) {
+    const cid = classOf.get(gid);
+    let node = nodes.get(cid);
+    if (!node) {
+      nodes.set(cid, node = { id: cid, loop: false, boxes: [], lanes: new Set(), copies: 0, roles: new Set() });
+      succ.set(cid, new Set()); pred.set(cid, new Set());
+    }
+    const g = L.groups.get(gid);
+    node.copies++;
+    node.loop = node.loop || g.loop;
+    for (const b of g.boxes) {
+      node.boxes.push(b);
+      node.roles.add(lanes.roleOf.get(b));
+      const lane = lanes.laneOf.get(b);
+      if (lane) node.lanes.add(lane);
+    }
+  }
+  // Which lanes actually take each step, and which do not. On the looser
+  // setting this is the whole story of where the strands differ, so it is
+  // recorded rather than inferred.
+  const stepLanes = new Map(), stepTakenBy = new Map();
+  for (const [a, outs] of L.succ)
+    for (const b of outs) {
+      const x = classOf.get(a), y = classOf.get(b);
+      if (x === y) continue;
+      succ.get(x).add(y); pred.get(y).add(x);
+      const key = x + ">" + y;
+      if (!stepLanes.has(key)) { stepLanes.set(key, new Set()); stepTakenBy.set(key, new Set()); }
+      stepTakenBy.get(key).add(a);
+      for (const box of L.groups.get(a).boxes) {
+        const lane = lanes.laneOf.get(box);
+        if (lane) stepLanes.get(key).add(lane);
+      }
+    }
+
+  // How many steps on the page are taken by only some members of their group.
+  // Zero on the strict setting by construction; on the looser one this is the
+  // honest measure of what the condensation is glossing over.
+  let partialSteps = 0;
+  const membersOf = new Map();
+  for (const gid of gids) {
+    const c = classOf.get(gid);
+    membersOf.set(c, (membersOf.get(c) || 0) + 1);
+  }
+  for (const [key, takers] of stepTakenBy)
+    if (takers.size < membersOf.get(key.split(">")[0])) partialSteps++;
+  for (const node of nodes.values()) {
+    const roles = [...node.roles];
+    node.label = node.loop
+      ? "loop: " + roles.map(r => roleLabel(r, G.byId)).join(" ↔ ")
+      : roles.length === 1 && node.boxes.length > 1
+        ? roleLabel(roles[0], G.byId)
+        : (G.byId.get(node.boxes[0]) || {}).label || node.boxes[0];
+  }
+
+  const start = classOf.get(startGroup);
+  nodes.set(END, { id: END, label: "end", loop: false, boxes: [], lanes: new Set(), copies: 0, roles: new Set(), end: true });
+  const finishes = addFinish(succ, pred);
+  const succOf = n => [...succ.get(n)];
+  const predOf = n => [...pred.get(n)];
+  const ipdom = immediateDominators(END, predOf, succOf);
+  const paths = countPaths(start, succOf);
+
+  // The same structure with no grouping at all, so the condensation is
+  // measured rather than asserted and the true pathway total is to hand.
+  const rawSucc = new Map();
+  for (const gid of gids) rawSucc.set(gid, new Set(L.succ.get(gid)));
+  addFinish(rawSucc, null);
+  const rawPaths = countPaths(startGroup, n => [...rawSucc.get(n)]);
+
+  const ctx = { nodes, ipdom, paths, succ: succOf, END,
+                limit: nodes.size + 8, emitted: new Set(), tails: new Map() };
+  const tree = buildSequence(start, END, ctx);
+
+  // Where a proposed family had to be split because its members stopped
+  // behaving alike. Not a failure — this is the divergence, named.
+  const splits = new Map();
+  for (const [gid, cid] of classOf) {
+    const proposal = initial.get(gid);
+    if (!proposal.startsWith("L:")) continue;
+    if (!splits.has(proposal)) splits.set(proposal, new Set());
+    splits.get(proposal).add(cid);
+  }
+
+  return {
+    startId, start, tree, nodes, succ, pred, ipdom, paths, lanes, scope, finishes,
+    tails: ctx.tails, stepLanes, stepTakenBy,
+    grouping: opts.grouping === "strict" ? "strict" : "loose",
+    everyStepShared: partialSteps === 0,
+    partialSteps, totalSteps: stepTakenBy.size,
+    loops: [...nodes.values()].filter(n => n.loop),
+    shapes: paths.get(start) || 0n,
+    pathways: rawPaths.get(startGroup) || 0n,
+    boxesInScope: scope.size,
+    elements: nodes.size - 1,
+    elementsUngrouped: gids.length,
+    splitFamilies: [...splits]
+      .filter(([, s]) => s.size > 1)
+      .map(([role, s]) => ({ key: role.slice(2), into: s.size }))
+      .sort((a, b) => b.into - a.into),
+    refineRounds: refined.rounds,
+    ms: Date.now() - t0,
+  };
+}
+
+// Walk the spine from `entry` to `stop`, opening a nested choice wherever the
+// pathways split. Progress is guaranteed: a split's rejoin is always strictly
+// later in the order than the split itself.
+//
+// Two alternatives out of one split can pass through the same element without
+// ALL of them doing so — n→a→m→x, n→a→q→x, n→b→m→x. Writing m out under both
+// would duplicate the stretch, and on a dense map that duplication compounds
+// until the page is larger than the graph it came from. So an element is
+// expanded once and later meetings point at it. Nothing is lost: the two
+// readings continue identically from there.
+function buildSequence(entry, stop, ctx) {
+  const items = [];
+  let n = entry, guard = 0;
+  while (n !== stop && n !== ctx.END) {
+    if (guard++ > ctx.limit) throw new Error("region walk failed to terminate at " + n);
+    if (ctx.emitted.has(n)) { items.push({ kind: "join", id: n }); break; }
+    ctx.emitted.add(n);
+    items.push({ kind: "box", id: n });
+    const outs = ctx.succ(n);
+    if (outs.length === 0) break;
+    if (outs.length === 1) { n = outs[0]; continue; }
+    const rejoin = ctx.ipdom.get(n);
+    const whole = ctx.paths.get(rejoin) || 1n;
+    const alts = outs.map(s => ({
+      first: s,
+      shapes: (ctx.paths.get(s) || 0n) / whole,
+      seq: s === rejoin ? [] : buildSequence(s, rejoin, ctx),
+    })).sort((a, b) => (a.shapes > b.shapes ? -1 : a.shapes < b.shapes ? 1 : 0));
+    items.push({ kind: "choice", at: n, rejoin: rejoin === ctx.END ? null : rejoin, alts });
+    n = rejoin;
+  }
+  // What follows each element, so a "joins here" reads as the stretch it
+  // points at rather than as a dead end.
+  for (let i = 0; i < items.length; i++)
+    if (items[i].kind === "box") ctx.tails.set(items[i].id, items.slice(i));
+  return items;
+}
+
+// ---------------------------------------------------------------------------
+// 6. READING AIDS
+// ---------------------------------------------------------------------------
+// Which lanes reach a stretch. One only some lanes can reach is a real
+// divergence — the pocket where those lanes behave unlike the rest.
+function lanesIn(seq, nodes, into = new Set()) {
+  for (const item of seq) {
+    if (item.kind === "choice") for (const a of item.alts) lanesIn(a.seq, nodes, into);
+    else for (const l of nodes.get(item.id).lanes || []) into.add(l);
+  }
+  return into;
+}
+
+function boxesIn(seq, nodes, into = new Set()) {
+  for (const item of seq) {
+    if (item.kind === "choice") for (const a of item.alts) boxesIn(a.seq, nodes, into);
+    else for (const b of nodes.get(item.id).boxes || []) into.add(b);
+  }
+  return into;
+}
+
+function countItems(seq, acc = { boxes: 0, choices: 0, joins: 0, depth: 0 }, depth = 0) {
+  acc.depth = Math.max(acc.depth, depth);
+  for (const item of seq) {
+    if (item.kind === "box") acc.boxes++;
+    else if (item.kind === "join") acc.joins++;
+    else { acc.choices++; for (const a of item.alts) countItems(a.seq, acc, depth + 1); }
+  }
+  return acc;
+}
+
+function formatCount(n) {
+  if (typeof n !== "bigint") n = BigInt(n);
+  if (n < 1000000000000000n) return Number(n).toLocaleString("en-GB");
+  const s = n.toString();
+  return s[0] + "." + s.slice(1, 3) + " × 10^" + (s.length - 1);
+}
+// ATLAS-ENGINE-END
+
+// ===========================================================================
+// SIX WAYS TO READ THE SAME ATLAS
+// ---------------------------------------------------------------------------
+// The structure is settled; how you look at it is a separate question, and a
+// nested list of names and arrows turns out to be the hardest of the six.
+// Every view below is driven by exactly the same atlas — nothing is recomputed
+// or approximated per view, so switching between them cannot change the answer.
+// ===========================================================================
+let G = null, ATLAS = null, START = null, QUERY = "", VIEW = "flow";
+let ZOOM = null;        // Blocks: which sequence is filling the frame
+let STRANDROOT = null, STRANDPATH = [];   // Strands: the same, for the spine
+let GRID_ALL = false;   // Lane grid: include elements that belong to no lane
+let ZOOMPATH = [];      // …and how we got there
+let STEP = null;        // Step through: where we are standing
+let STEPPATH = [];
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const plural = (n, one, many) => (n === 1 ? one : many || one + "s");
+const labelOf = id => (ATLAS.nodes.get(id) || {}).label || id;
+
+// ---------------------------------------------------------------------------
+// MEASUREMENTS THE VIEWS SHARE
+// ---------------------------------------------------------------------------
+// paths(n) is how many readings run from n to the finish. Going the other way
+// gives how many run from the start into n, and multiplying the two gives the
+// weight of n: how much of everything passes through it. That single number is
+// what makes a flow diagram, a proportional block and a bar all say the same
+// thing rather than three different things.
+function measure(A) {
+  const succOf = n => [...A.succ.get(n)];
+  const order = reversePostorder(A.start, succOf);
+  const into = new Map([[A.start, 1n]]);
+  const depth = new Map([[A.start, 0]]);
+  for (const n of order) {
+    const i = into.get(n) || 0n, d = depth.get(n) || 0;
+    for (const s of succOf(n)) {
+      into.set(s, (into.get(s) || 0n) + i);
+      if ((depth.get(s) || 0) < d + 1) depth.set(s, d + 1);
+    }
+  }
+  const total = A.paths.get(A.start) || 1n;
+  const share = v => (total > 0n ? Number((v * 1000000n) / total) / 1000000 : 0);
+  return {
+    order, into, depth, total,
+    weight: n => share((into.get(n) || 0n) * (A.paths.get(n) || 0n)),
+    linkWeight: (a, b) => share((into.get(a) || 0n) * (A.paths.get(b) || 0n)),
+  };
+}
+
+const pct = f => (f >= 0.1 ? (f * 100).toFixed(0) : f >= 0.001 ? (f * 100).toFixed(1) : "<0.1") + "%";
+
+// ---------------------------------------------------------------------------
+// 1. FLOW — the whole thing as one picture
+// ---------------------------------------------------------------------------
+// Columns are how far along a pathway you are; the height of a block and the
+// thickness of a ribbon are how much runs through it. Nothing to open, nothing
+// to read in order: the shape of the answer is the picture.
+// ---------------------------------------------------------------------------
+function viewFlow(A, M) {
+  const COL_W = 190, PAD = 26, H = Math.max(520, Math.min(1100, A.elements * 7));
+  const cols = [];
+  for (const [id] of A.nodes) {
+    if (id === END) continue;
+    const d = M.depth.get(id);
+    if (d === undefined) continue;
+    (cols[d] || (cols[d] = [])).push(id);
+  }
+  const used = cols.filter(Boolean);
+  if (!used.length) return `<p class="busy">Nothing to draw.</p>`;
+
+  // Order each column near the average height of what feeds it, twice over, so
+  // the ribbons cross as little as they are going to without real effort.
+  const y = new Map(), h = new Map();
+  const place = () => {
+    for (const col of used) {
+      const totalW = col.reduce((a, id) => a + Math.max(M.weight(id), 0.0004), 0);
+      const gap = Math.min(9, (H - 2 * PAD) / (col.length * 2 + 1));
+      const avail = H - 2 * PAD - gap * (col.length - 1);
+      let cur = PAD;
+      for (const id of col) {
+        const hh = Math.max(5, (Math.max(M.weight(id), 0.0004) / totalW) * avail);
+        y.set(id, cur); h.set(id, hh);
+        cur += hh + gap;
+      }
+    }
+  };
+  place();
+  for (let pass = 0; pass < 2; pass++) {
+    for (let c = 1; c < used.length; c++) {
+      used[c].sort((a, b) => bary(a) - bary(b));
+    }
+    place();
+  }
+  function bary(id) {
+    const ps = [...A.pred.get(id)].filter(p => y.has(p));
+    if (!ps.length) return y.get(id) || 0;
+    return ps.reduce((s, p) => s + (y.get(p) + h.get(p) / 2), 0) / ps.length;
+  }
+
+  const W = PAD + used.length * COL_W;
+  const parts = [];
+  // Ribbons first, so the blocks sit on top of them.
+  for (const [a, outs] of A.succ) {
+    if (a === END || !y.has(a)) continue;
+    let offA = 0;
+    for (const b of outs) {
+      if (b === END || !y.has(b)) continue;
+      const w = M.linkWeight(a, b);
+      const t = Math.max(1.2, w * (H - 2 * PAD) * 0.9);
+      const x1 = PAD + M.depth.get(a) * COL_W + 13;
+      const x2 = PAD + M.depth.get(b) * COL_W;
+      const y1 = y.get(a) + Math.min(offA + t / 2, h.get(a));
+      const y2 = y.get(b) + h.get(b) / 2;
+      const mx = (x1 + x2) / 2;
+      offA += t;
+      parts.push(`<path class="link" d="M${x1} ${y1 - t / 2}C${mx} ${y1 - t / 2} ${mx} ${y2 - t / 2} ${x2} ${y2 - t / 2}` +
+        `L${x2} ${y2 + t / 2}C${mx} ${y2 + t / 2} ${mx} ${y1 + t / 2} ${x1} ${y1 + t / 2}Z"></path>`);
+    }
+  }
+  for (const col of used) for (const id of col) {
+    const node = A.nodes.get(id);
+    const x = PAD + M.depth.get(id) * COL_W;
+    const hh = h.get(id), yy = y.get(id), w = M.weight(id);
+    const cls = "node" + (id === A.start ? " start" : node.loop ? " loop" : "");
+    const showLabel = hh >= 11;
+    parts.push(`<g class="n" data-el="${esc(id)}" data-w="${pct(w)}">` +
+      `<rect class="${cls}" x="${x}" y="${yy}" width="13" height="${hh}" rx="3"></rect>` +
+      (showLabel
+        ? `<text class="${hh > 20 ? "big" : ""}" x="${x + 19}" y="${yy + hh / 2 + 3.5}">` +
+          esc(clip(node.label, 22)) + (node.boxes.length > 1 ? " ×" + node.boxes.length : "") + `</text>`
+        : "") + `</g>`);
+  }
+  return `<div class="legend">
+      <span><i style="background:var(--act)"></i>an element — height is how much of everything runs through it</span>
+      <span><i style="background:var(--accent-amber)"></i>a feedback loop, contracted</span>
+      <span>ribbon thickness is the same measure, for a step</span>
+    </div>
+    <div class="flowwrap"><svg class="flow" width="${W}" height="${H}" role="img"
+      aria-label="Flow diagram of every pathway downstream of ${esc(labelOf(A.start))}">${parts.join("")}</svg></div>`;
+}
+
+const clip = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+
+// ---------------------------------------------------------------------------
+// 2. BLOCKS — proportion, and nothing else
+// ---------------------------------------------------------------------------
+// No arrows at all. A split becomes a row of blocks whose widths are their
+// share of the readings, and what follows each one sits underneath it. The
+// 88%-of-everything branch is 88% of the width, so the answer to "where does
+// most of this go" is the first thing you see rather than something you count.
+// Click any block to give it the whole frame.
+// ---------------------------------------------------------------------------
+const BLOCK_DEPTH = 1;   // levels drawn before the page asks you to click
+
+function viewBlocks(A, M) {
+  const seq = ZOOM || A.tree;
+  const crumbs = `<nav class="crumbs">
+      <button type="button" data-zoom="root">Everything downstream</button>` +
+    ZOOMPATH.map((c, i) => `<span>›</span><button type="button" data-zoom="${i}">${esc(clip(c, 34))}</button>`).join("") +
+    `</nav>`;
+  return `<div class="legend">
+      <span>Width is share of readings. Depth of colour is how far in you are.</span>
+      <span><i style="background:color-mix(in srgb,var(--accent-amber) 30%,var(--bg-deepest))"></i>feedback loop</span>
+      <span><i style="background:var(--bg-mid)"></i>a stretch every pathway here follows</span>
+    </div>` + crumbs + `<div>${blockSeq(seq, 0, A, M)}</div>`;
+}
+
+function blockSeq(seq, depth, A, M) {
+  let html = "", run = [];
+  const flush = () => {
+    if (!run.length) return;
+    // A run of elements with no choice in it — one strip, named, not one box
+    // per name. This is where most of the old outline's length went.
+    const first = A.nodes.get(run[0]);
+    const label = run.length === 1 ? first.label
+      : first.label + " → " + A.nodes.get(run[run.length - 1]).label;
+    html += `<div class="band"><div class="blk seg" style="width:100%"
+      title="${esc(run.map(labelOf).join(" → "))}">
+      <span class="bl">${esc(label)}</span>
+      <span class="bc">${run.length} ${plural(run.length, "step")} every pathway here takes</span></div></div>`;
+    run = [];
+  };
+  for (const item of seq) {
+    if (item.kind === "box") { run.push(item.id); continue; }
+    if (item.kind === "join") {
+      flush();
+      html += `<div class="band"><div class="blk seg" style="width:100%"><span class="bl">↳ carries on into ${esc(labelOf(item.id))}</span></div></div>`;
+      continue;
+    }
+    flush();
+    const total = item.alts.reduce((a, x) => a + x.shapes, 0n) || 1n;
+    const blocks = item.alts.map(alt => {
+      const share = Number((alt.shapes * 10000n) / total) / 10000;
+      const node = A.nodes.get(alt.first);
+      const loopy = node && node.loop ? " loopy" : "";
+      const name = alt.seq.length === 0 ? "straight on" : node.label;
+      return `<div class="blk d${Math.min(depth, 4)}${loopy}" style="flex-basis:${(share * 100).toFixed(3)}%"
+          data-into="${esc(alt.first)}" title="${esc(name)} — ${pct(share)} of the readings here">
+        <span class="bl">${esc(name)}</span>
+        <span class="bc">${pct(share)}</span></div>`;
+    }).join("");
+      // Two levels, then stop. Recursing the whole tree turns the blocks into
+    // slivers a few pixels wide, which is the very problem this view exists to
+    // fix — so past the second level the page says how much more is in there
+    // and waits to be asked.
+    html += `<div class="stack"><div class="band">${blocks}</div>`;
+    if (depth < BLOCK_DEPTH) {
+      html += `<div class="band" style="align-items:flex-start">` + item.alts.map(alt => {
+        const w = (Number((alt.shapes * 10000n) / total) / 100).toFixed(3);
+        // The block above already names where this branch goes, so the strip
+        // underneath starts after it rather than saying it twice.
+        const inner = alt.seq.length && alt.seq[0].kind === "box" && alt.seq[0].id === alt.first
+          ? alt.seq.slice(1) : alt.seq;
+        return `<div style="flex:0 1 ${w}%;min-width:0">${
+          inner.length ? blockSeq(inner, depth + 1, A, M) : ""}</div>`;
+      }).join("") + `</div>`;
+    } else {
+      const deeper = item.alts.filter(a => a.seq.length).length;
+      if (deeper) html += `<p class="hint" style="margin:2px 0 0">${deeper} of these carry on further —
+        click one to open it up.</p>`;
+    }
+    html += `</div>`;
+  }
+  flush();
+  return html;
+}
+
+// ---------------------------------------------------------------------------
+// 3. STRANDS — a spine with branches leaving and coming back
+// ---------------------------------------------------------------------------
+// The closest thing to how people describe a pathway out loud: it runs along,
+// then it forks, and the forks meet again here. Each branch gets its own
+// colour AND its own name on the line, so nobody has to match a swatch to a
+// legend to tell two of them apart.
+// ---------------------------------------------------------------------------
+const STRAND_COLOURS = ["var(--c1)", "var(--c2)", "var(--c3)", "var(--c4)", "var(--c5)"];
+
+const STRAND_DEPTH = 1;   // levels drawn before a branch becomes a way in
+
+// Past the drawn depth a branch shows its first few stops and offers to become
+// the spine. Drawing the whole tree instead makes a page taller than the
+// outline it is meant to be easier than.
+function strandPeek(alt, A) {
+  const stops = [];
+  for (const item of alt.seq) {
+    if (item.kind !== "box") break;
+    stops.push(item.id);
+    if (stops.length === 4) break;
+  }
+  const more = countItems(alt.seq);
+  return `<div class="track">${stops.map(id => elHtml(id, A)).join('<span class="arrow">→</span>')}
+      ${more.boxes > stops.length ? `<span class="arrow">→</span><span class="hint">${more.boxes - stops.length} more</span>` : ""}</div>
+    <div class="row-btns" style="margin-top:5px">
+      <button class="btn" type="button" data-strand="${esc(alt.first)}">Follow this branch →</button></div>`;
+}
+
+function viewStrands(A, M) {
+  return `<div class="legend"><span>The spine is what every pathway here follows.
+    Branches leave it, run their own way, and rejoin where the label says.</span></div>
+    ${STRANDPATH.length ? `<nav class="crumbs">
+        <button type="button" data-strandroot="root">Everything downstream</button>` +
+        STRANDPATH.map((c, i) => `<span>›</span><button type="button" data-strandroot="${i}">${esc(clip(c.name, 30))}</button>`).join("") +
+      `</nav>` : ""}
+    <div class="strand"><div class="rail-line"></div><div>${strandSeq(STRANDROOT || A.tree, 0, A, M)}</div></div>`;
+}
+
+function strandSeq(seq, depth, A, M) {
+  let html = "";
+  for (const item of seq) {
+    if (item.kind === "box") {
+      const node = A.nodes.get(item.id);
+      html += `<div class="stop"><span class="dot"${node.loop ? ' style="border-color:var(--accent-amber)"' : ""}></span>
+        ${elHtml(item.id, A)}</div>`;
+      continue;
+    }
+    if (item.kind === "join") {
+      html += `<div class="stop"><span class="dot" style="border-color:var(--border-strong)"></span>
+        <span class="joins">carries on into <b>${esc(labelOf(item.id))}</b></span></div>`;
+      continue;
+    }
+    const total = item.alts.reduce((a, x) => a + x.shapes, 0n) || 1n;
+    const shown = item.alts.slice(0, 5), rest = item.alts.slice(5);
+    html += `<div class="branchset">` + shown.map((alt, i) => {
+      const share = Number((alt.shapes * 10000n) / total) / 10000;
+      // Offset by depth, so a branch inside a branch never repeats the
+      // colour of the one it sits in.
+      const colour = STRAND_COLOURS[(i + depth * 2) % STRAND_COLOURS.length];
+      const name = alt.seq.length === 0 ? "straight to the rejoin" : labelOf(alt.first);
+      return `<div class="branch" style="--bl:${colour}">
+        <h4>${esc(name)}<em>${pct(share)} · ${formatCount(alt.shapes)} ${plural(alt.shapes === 1n ? 1 : 2, "reading")}</em></h4>
+        <div class="sharebar" style="width:${Math.max(4, share * 100).toFixed(1)}%"></div>
+        ${alt.seq.length
+          ? (depth < STRAND_DEPTH
+              ? strandSeq(alt.seq, depth + 1, A, M)
+              : strandPeek(alt, A))
+          : `<p class="hint">Nothing in between.</p>`}
+      </div>`;
+    }).join("") +
+    (rest.length ? `<p class="hint">…and ${rest.length} more ${plural(rest.length, "branch", "branches")},
+       ${pct(Number((rest.reduce((a, x) => a + x.shapes, 0n) * 10000n) / total) / 10000)} of the readings between them.</p>` : "") +
+    `<p class="hint">${item.rejoin ? "All of these meet again at <b>" + esc(labelOf(item.rejoin)) + "</b>." : "These never meet again."}</p></div>`;
+  }
+  return html;
+}
+
+// ---------------------------------------------------------------------------
+// 4. LANE GRID — where the lanes stop agreeing
+// ---------------------------------------------------------------------------
+// One row per element, one column per lane, a mark where that lane is in it.
+// No arrows, no nesting, no reading order: a row with gaps in it is a place
+// the lanes behave differently, and that is the only thing this view says.
+// ---------------------------------------------------------------------------
+function viewGrid(A, M) {
+  const lanes = [...A.lanes.laneValues].sort();
+  if (!lanes.length)
+    return `<p class="lede">No lanes were found on this map, so there is nothing to line up.
+      Try a smaller family size in the rail, or use one of the other views.</p>`;
+
+  const laneOfBox = A.lanes.laneOf;
+  const rows = [];
+  for (const id of M.order) {
+    if (id === END) continue;
+    const node = A.nodes.get(id);
+    const mine = new Set();
+    for (const b of node.boxes) { const l = laneOfBox.get(b); if (l) mine.add(l); }
+    rows.push({ id, node, mine, weight: M.weight(id), depth: M.depth.get(id) });
+  }
+  const interesting = rows.filter(r => r.mine.size > 0 && r.mine.size < lanes.length);
+  const maxW = Math.max(...rows.map(r => r.weight), 0.0001);
+  // Rows with no lane at all say nothing here, and on a real map they are most
+  // of the table. Divergences first, then the rest, then those hidden.
+  const laneRows = rows.filter(r => r.mine.size > 0);
+  const blank = rows.length - laneRows.length;
+  const shown = GRID_ALL ? rows : laneRows;
+  shown.sort((a, b) => {
+    const da = a.mine.size > 0 && a.mine.size < lanes.length ? 0 : 1;
+    const db = b.mine.size > 0 && b.mine.size < lanes.length ? 0 : 1;
+    return da - db || b.weight - a.weight;
+  });
+
+  const body = shown.map(r => {
+    const cells = lanes.map(l =>
+      `<td><span class="cell ${r.mine.has(l) ? "on" : ""}" title="${esc(r.node.label)} — ${esc(l)}: ${r.mine.has(l) ? "yes" : "no"}"></span></td>`).join("");
+    const gappy = r.mine.size > 0 && r.mine.size < lanes.length;
+    return `<tr data-el="${esc(r.id)}">
+      <th class="rowh" title="${esc(r.node.label)}">${gappy ? "◆ " : ""}${esc(clip(r.node.label, 34))}</th>
+      ${cells}
+      <td class="vol"><span class="volbar" style="width:${Math.max(2, (r.weight / maxW) * 70).toFixed(1)}px"></span> ${pct(r.weight)}</td>
+    </tr>`;
+  }).join("");
+
+  return `<div class="legend">
+      <span><i class="cell on" style="width:12px;height:12px"></i>this lane is in this element</span>
+      <span>◆ marks a row only some lanes reach — the divergences</span>
+      <span>the last column is how much of everything runs through the element</span>
+    </div>
+    <p class="lede" style="margin-bottom:10px"><b>${interesting.length}</b> of ${laneRows.length}
+      elements that belong to a lane are reached by some lanes and not others — those are at the top,
+      and they are the rows worth arguing about.${
+        blank && !GRID_ALL ? ` ${blank} elements belong to no lane and are hidden.` : ""}</p>
+    <div class="row-btns" style="margin-bottom:12px">
+      <button class="btn" type="button" data-grid="toggle">${
+        GRID_ALL ? "Hide the " + blank + " elements with no lane" : "Show all " + rows.length + " elements"}</button></div>
+    <div class="gridwrap"><table class="grid">
+      <thead><tr><th class="rowh">Element</th>${lanes.map(l => `<th>${esc(clip(l, 12))}</th>`).join("")}<th>Weight</th></tr></thead>
+      <tbody>${body}</tbody></table></div>`;
+}
+
+// ---------------------------------------------------------------------------
+// 5. STEP THROUGH — one decision at a time
+// ---------------------------------------------------------------------------
+// Nothing on screen but where you are and where you can go next. The least
+// information per screen of any of these, which is the point: you walk a
+// pathway rather than read one.
+// ---------------------------------------------------------------------------
+function viewStep(A, M) {
+  const here = STEP && A.nodes.has(STEP) ? STEP : A.start;
+  const node = A.nodes.get(here);
+  // Commonest first, as the heading promises. The successor set is in the
+  // order the structure was built, which is not the order anyone wants to read.
+  const outs = [...A.succ.get(here)].sort((a, b) => {
+    const x = A.paths.get(a) || 0n, y = A.paths.get(b) || 0n;
+    return x > y ? -1 : x < y ? 1 : 0;
+  });
+  const total = outs.reduce((a, b) => a + (A.paths.get(b) || 0n), 0n) || 1n;
+
+  const crumbs = `<nav class="crumbs">
+      <button type="button" data-step="${esc(A.start)}">${esc(labelOf(A.start))}</button>` +
+    STEPPATH.slice(1).map(id => `<span>›</span><button type="button" data-step="${esc(id)}">${esc(clip(labelOf(id), 26))}</button>`).join("") +
+    `</nav>`;
+
+  const cards = outs.map(b => {
+    if (b === END) return `<div class="next" style="cursor:default"><b>This is the end of the line</b>
+      <span class="m">nothing follows</span></div>`;
+    const share = Number(((A.paths.get(b) || 0n) * 10000n) / total) / 10000;
+    const n = A.nodes.get(b);
+    const laneSet = [...(n.lanes || [])].sort();
+    const allLanes = A.lanes.laneValues.size;
+    const narrow = laneSet.length > 0 && laneSet.length < allLanes;
+    return `<button class="next" type="button" data-step="${esc(b)}">
+      <b>${esc(n.label)}${n.boxes.length > 1 ? ` <span class="m">×${n.boxes.length}</span>` : ""}</b>
+      <span class="m">${pct(share)} · ${formatCount(A.paths.get(b) || 0n)} ${plural(2, "reading")} on from here</span>
+      <span class="bar"><i style="width:${(share * 100).toFixed(2)}%"></i></span>
+      ${narrow ? `<span class="m" style="grid-column:1/-1">only ${esc(laneSet.slice(0, 5).join(", "))}</span>` : ""}
+    </button>`;
+  }).join("");
+
+  return `<div class="stepwrap">${crumbs}
+    <div class="here">
+      <h3>${esc(node.label)}</h3>
+      <p>${node.loop ? `A feedback loop of ${node.boxes.length} boxes. ` : node.boxes.length > 1
+          ? `One element standing for ${node.boxes.length} boxes. ` : ""}
+        ${formatCount(A.paths.get(here) || 0n)} ${plural(2, "reading")} run on from here${
+          here === A.start ? "" : `, which is ${pct(M.weight(here))} of everything downstream of ${esc(labelOf(A.start))}`}.</p>
+    </div>
+    <p class="hint" style="margin-bottom:8px">${outs.length} ${plural(outs.length, "way")} on from here${
+      outs.length > 1 ? ", commonest first" : ""}:</p>
+    <div class="nexts">${cards}</div></div>`;
+}
+
+// ---------------------------------------------------------------------------
+// 6. OUTLINE — the original, kept for comparison
+// ---------------------------------------------------------------------------
+function viewOutline(A, M) {
+  return `<div class="legend"><span>Everything at once, nested. Complete, and the
+    hardest of the six to skim — which is why the other five exist.</span></div>
+    <div class="row-btns" style="margin-bottom:10px">
+      <button class="btn" id="expand-all">Open all</button>
+      <button class="btn" id="collapse-all">Close all</button></div>
+    <div>${outlineSeq(A.tree, 0, A)}</div>`;
+}
+
+function elHtml(id, A) {
+  const node = A.nodes.get(id);
+  const cls = ["el"];
+  if (id === A.start) cls.push("start");
+  if (node.loop) cls.push("loop");
+  else if (node.boxes.length > 1) cls.push("folded");
+  const many = node.loop ? `<span class="x">loop of ${node.boxes.length}</span>`
+    : node.boxes.length > 1 ? `<span class="x">×${node.boxes.length}</span>` : "";
+  const tip = node.boxes.slice(0, 10).map(b => (G.byId.get(b) || {}).label || b).join(" · ");
+  return `<span class="${cls.join(" ")}" data-el="${esc(id)}" title="${esc(tip)}">${esc(node.label)}${many}</span>`;
+}
+
+function outlineSeq(seq, depth, A) {
+  let html = "", run = [];
+  const flush = () => {
+    if (!run.length) return;
+    html += `<div class="seg">${run.map(id => elHtml(id, A)).join('<span class="arrow">→</span>')}</div>`;
+    run = [];
+  };
+  for (const item of seq) {
+    if (item.kind === "box") { run.push(item.id); continue; }
+    if (item.kind === "join") {
+      flush();
+      html += `<div class="joins">↳ carries on into <b>${esc(labelOf(item.id))}</b>, opened above</div>`;
+      continue;
+    }
+    flush();
+    const total = item.alts.reduce((a, x) => a + x.shapes, 0n) || 1n;
+    const allLanes = A.lanes.laneValues;
+    html += `<div class="choice" data-d="${Math.min(depth, 3)}">
+      <div class="choice-head">splits <b>${item.alts.length} ways</b>${
+        item.rejoin ? ` · they all meet again at <b>${esc(labelOf(item.rejoin))}</b>` : " · they never meet again"}</div>` +
+      item.alts.map((alt, i) => {
+        const stepLanes = A.stepLanes.get(item.at + ">" + alt.first) || new Set();
+        const reach = lanesIn(alt.seq, A.nodes);
+        for (const l of stepLanes) reach.add(l);
+        const narrow = allLanes.size > 1 && reach.size > 0 && reach.size < allLanes.size;
+        const tag = alt.seq.length === 0 ? `<span class="tag straight">straight on</span>`
+          : narrow ? `<span class="tag some">${esc([...reach].sort().slice(0, 4).join(", "))}${reach.size > 4 ? " +" + (reach.size - 4) : ""} only</span>`
+          : reach.size ? `<span class="tag all">every lane</span>` : "";
+        const share = Number((alt.shapes * 10000n) / total) / 10000;
+        return `<details class="alt"${depth === 0 && i === 0 ? " open" : ""}>
+          <summary><span class="alt-n">${i + 1}</span>${alt.seq.length ? "via " + esc(labelOf(alt.first)) : "skips ahead"}${tag}
+            <span class="cnt">${formatCount(alt.shapes)} · ${pct(share)}</span></summary>
+          <div class="alt-body">${alt.seq.length ? outlineSeq(alt.seq, depth + 1, A)
+            : `<p class="hint">Nothing in between.</p>`}</div></details>`;
+      }).join("") + `</div>`;
+  }
+  flush();
+  return html;
+}
+
+// ---------------------------------------------------------------------------
+// SHELL
+// ---------------------------------------------------------------------------
+const VIEW_NOTES = {
+  flow: "The whole atlas as one picture. Columns are how far along you are; height and thickness are how much runs through. Nothing to open — the shape <b>is</b> the answer.",
+  blocks: "No arrows anywhere. Each split is a row of blocks as wide as its share of the readings, with what follows underneath. Click a block to give it the whole frame.",
+  strands: "A spine with branches that leave it and rejoin, the way people describe a pathway out loud. Each branch is named on the line as well as coloured.",
+  grid: "One row per element, one column per lane. A row with gaps is somewhere the lanes stop behaving alike — this view says nothing else, and says it in one screen.",
+  step: "One decision at a time. The least on screen of the six: you walk a pathway rather than read one.",
+  outline: "The original. Everything at once, nested, complete — and the hardest to skim.",
+};
+const VIEWS = { flow: viewFlow, blocks: viewBlocks, strands: viewStrands, grid: viewGrid, step: viewStep, outline: viewOutline };
+
+function renderStats() {
+  const A = ATLAS;
+  if (!A) { $("stats").innerHTML = ""; $("warn").innerHTML = ""; return; }
+  const cells = [
+    ["Boxes reached", A.boxesInScope.toLocaleString("en-GB"), ""],
+    ["Pathways", formatCount(A.pathways), ""],
+    ["Readings", formatCount(A.shapes), A.shapes < A.pathways ? "good" : ""],
+    ["Elements", String(A.elements), A.elements < A.elementsUngrouped ? "good" : ""],
+    ["Feedback loops", String(A.loops.length), ""],
+    ["Built in", A.ms < 1000 ? A.ms + "ms" : (A.ms / 1000).toFixed(1) + "s", "good"],
+  ];
+  $("stats").innerHTML = cells.map(([k, v, tone]) =>
+    `<div><span class="k">${esc(k)}</span><span class="v ${tone}">${esc(v)}</span></div>`).join("");
+  $("warn").innerHTML = A.shapes > A.pathways
+    ? `<div class="note"><b>${formatCount(A.shapes)} readings stand for ${formatCount(A.pathways)} real pathways.</b>
+       On this setting a group is kept together as long as it does not invent feedback, so some members of a
+       group go on to differ — ${A.partialSteps} of ${A.totalSteps} steps are taken by only part of their group.
+       Every real pathway is still in here. Switch to <b>only where behaviour matches</b> in the rail for a
+       page where every step shown is one that every member really takes.</div>`
+    : "";
+}
+
+function renderView() {
+  const stage = $("stage");
+  if (!ATLAS) { stage.innerHTML = '<p class="busy">Pick a box to start from.</p>'; return; }
+  if (!ATLAS.elements) {
+    stage.innerHTML = `<p class="lede">Nothing leads away from
+      <b>${esc((G.byId.get(ATLAS.startId) || {}).label || ATLAS.startId)}</b> following the arrows.</p>`;
+    return;
+  }
+  $("viewnote").innerHTML = VIEW_NOTES[VIEW];
+  for (const b of $("views").children) b.setAttribute("aria-selected", String(b.dataset.v === VIEW));
+  const M = measure(ATLAS);
+  stage.innerHTML = VIEWS[VIEW](ATLAS, M);
+  stage.scrollTop = 0;
+}
+
+function railLanes() {
+  const box = $("lane-box");
+  if (!ATLAS) { box.innerHTML = ""; return; }
+  const L = ATLAS.lanes;
+  if (!L.families.length) {
+    box.innerHTML = `<h3>Name grouping</h3><p class="hint">No families found. Either this map does not
+      repeat itself along a named dimension, or the rules above are too strict.</p>`;
+    return;
+  }
+  const values = [...L.laneValues].sort();
+  box.innerHTML = `<h3>Name grouping</h3>
+    <p class="hint" style="margin-bottom:7px"><b>${values.length}</b> ${plural(values.length, "lane")}:
+      ${esc(values.slice(0, 10).join(", "))}${values.length > 10 ? ", …" : ""}</p>` +
+    L.families.slice(0, 12).map(f =>
+      `<div class="fam"><b>${esc(familyLabel(f.key))}</b><span>×${f.members.length}</span></div>`).join("") +
+    (L.families.length > 12 ? `<p class="hint" style="margin-top:6px">…and ${L.families.length - 12} more</p>` : "");
+}
+
+function showElement(id) {
+  const node = ATLAS && ATLAS.nodes.get(id);
+  const box = $("detail-box");
+  if (!node) { box.hidden = true; return; }
+  box.hidden = false;
+  const boxes = node.boxes.map(b => (G.byId.get(b) || {}).label || b).sort();
+  box.innerHTML = `<h3>${esc(node.label)}</h3>
+    <p class="hint" style="margin-bottom:6px">${boxes.length} ${plural(boxes.length, "box", "boxes")}${
+      node.loop ? " in a feedback loop" : node.copies > 1 ? `, grouped from ${node.copies} places` : ""}</p>` +
+    boxes.slice(0, 30).map(b => `<div class="fam"><b>${esc(b)}</b></div>`).join("") +
+    (boxes.length > 30 ? `<p class="hint">…and ${boxes.length - 30} more</p>` : "");
+}
+
+function fillPicker() {
+  const q = QUERY.trim().toLowerCase();
+  const matches = G.nodes.filter(n => !q || (n.label || n.id).toLowerCase().includes(q));
+  const groups = new Map();
+  for (const n of matches.slice(0, 400)) {
+    const g = n.stream || "Boxes";
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(n);
+  }
+  $("start-list").innerHTML = [...groups].map(([g, list]) =>
+    `<div class="grp">${esc(g)}</div>` + list.map(n =>
+      `<button type="button" data-id="${esc(n.id)}" aria-selected="${n.id === START}">${esc(n.label || n.id)}</button>`
+    ).join("")).join("") || `<div class="grp">nothing matches “${esc(QUERY)}”</div>`;
+}
+
+function run() {
+  if (!G || !START) return;
+  $("stage").innerHTML = '<p class="busy">Building…</p>';
+  requestAnimationFrame(() => {
+    try {
+      ATLAS = buildAtlas(G, START, {
+        grouping: $("grouping").value,
+        stopAtOutcomes: $("stop-outcomes").checked,
+        lanes: { minMembers: Number($("min-members").value), minTokenFamilies: Number($("min-reuse").value) },
+      });
+    } catch (err) {
+      $("stage").innerHTML = `<p class="lede">That did not work: ${esc(err.message)}</p>`;
+      return;
+    }
+    ZOOM = null; ZOOMPATH = []; STRANDROOT = null; STRANDPATH = [];
+    STEP = ATLAS.start; STEPPATH = [ATLAS.start];
+    railLanes(); renderStats(); renderView();
+  });
+}
+
+function loadMap(map) {
+  G = buildGraph(map);
+  ATLAS = null;
+  $("map-summary").textContent = `${map.nodes.length} boxes · ${map.edges.length} links · ${map.name}`;
+  let best = null;
+  for (const n of G.nodes) {
+    const size = reachableFrom(G, n.id).size;
+    if (!best || size > best.size) best = { id: n.id, size };
+  }
+  START = best ? best.id : (G.nodes[0] || {}).id;
+  QUERY = ""; $("start-q").value = "";
+  fillPicker();
+  $("detail-box").hidden = true;
+  run();
+}
+
+function ingestCsv(text, source) {
+  const status = $("csv-status");
+  try {
+    const map = parseAriadneCsv(text);
+    if (!map.nodes.length) {
+      status.textContent = "No boxes in that file. It needs to be the CSV the app's CSV button saves — the one with SECTION: nodes in it.";
+      return;
+    }
+    $("map-pick").value = "own"; $("own-wrap").hidden = false;
+    status.textContent = `Loaded ${map.nodes.length} boxes and ${map.edges.length} links` +
+      (source ? ` from ${source}` : "") + ".";
+    loadMap(map);
+  } catch (err) {
+    status.textContent = "Could not read that file: " + err.message;
+  }
+}
+
+function readFile(file) {
+  if (!file) return;
+  const r = new FileReader();
+  r.onload = () => ingestCsv(String(r.result), file.name);
+  r.onerror = () => { $("csv-status").textContent = "Could not read that file."; };
+  r.readAsText(file);
+}
+
+// ── wiring ────────────────────────────────────────────────────────────────
+$("views").addEventListener("click", e => {
+  const b = e.target.closest("button[data-v]");
+  if (!b) return;
+  VIEW = b.dataset.v;
+  renderView();
+});
+
+$("stage").addEventListener("click", e => {
+  const zoom = e.target.closest("[data-zoom]");
+  if (zoom) {
+    if (zoom.dataset.zoom === "root") { ZOOM = null; ZOOMPATH = []; }
+    else {
+      const i = Number(zoom.dataset.zoom);
+      ZOOMPATH = ZOOMPATH.slice(0, i + 1);
+      ZOOM = ZOOMPATH[i].seq;
+    }
+    renderView();
+    return;
+  }
+  const into = e.target.closest("[data-into]");
+  if (into && VIEW === "blocks") {
+    const found = findAlt(ZOOM || ATLAS.tree, into.dataset.into);
+    if (found && found.seq.length) {
+      ZOOMPATH = ZOOMPATH.concat([{ toString: () => labelOf(into.dataset.into), seq: found.seq }]);
+      ZOOM = found.seq;
+      renderView();
+    }
+    return;
+  }
+  const strandRoot = e.target.closest("[data-strandroot]");
+  if (strandRoot) {
+    if (strandRoot.dataset.strandroot === "root") { STRANDROOT = null; STRANDPATH = []; }
+    else {
+      const i = Number(strandRoot.dataset.strandroot);
+      STRANDPATH = STRANDPATH.slice(0, i + 1);
+      STRANDROOT = STRANDPATH[i].seq;
+    }
+    renderView();
+    return;
+  }
+  const follow = e.target.closest("[data-strand]");
+  if (follow) {
+    const found = findAlt(STRANDROOT || ATLAS.tree, follow.dataset.strand, true);
+    if (found) {
+      STRANDPATH = STRANDPATH.concat([{ name: labelOf(follow.dataset.strand), seq: found.seq }]);
+      STRANDROOT = found.seq;
+      renderView();
+    }
+    return;
+  }
+  if (e.target.closest("[data-grid]")) { GRID_ALL = !GRID_ALL; renderView(); return; }
+
+  const stepBtn = e.target.closest("[data-step]");
+  if (stepBtn) {
+    const id = stepBtn.dataset.step;
+    const at = STEPPATH.indexOf(id);
+    STEPPATH = at >= 0 ? STEPPATH.slice(0, at + 1) : STEPPATH.concat([id]);
+    STEP = id;
+    renderView();
+    return;
+  }
+  const el = e.target.closest("[data-el]");
+  if (el) showElement(el.dataset.el);
+});
+
+// Only the choice directly in the frame is searched, so clicking a block always
+// zooms into the branch under the pointer rather than a namesake elsewhere.
+function findAlt(seq, first, deep) {
+  for (const item of seq) {
+    if (item.kind !== "choice") continue;
+    for (const alt of item.alts) {
+      if (alt.first === first) return alt;
+      if (deep) { const inner = findAlt(alt.seq, first, true); if (inner) return inner; }
+    }
+  }
+  return null;
+}
+
+$("stage").addEventListener("mouseover", e => {
+  const g = e.target.closest("g.n");
+  const tip = $("tip");
+  if (!g) { tip.style.display = "none"; return; }
+  const node = ATLAS.nodes.get(g.dataset.el);
+  tip.innerHTML = `<b>${esc(node.label)}</b><span>${g.dataset.w} of everything · ${
+    node.boxes.length} ${plural(node.boxes.length, "box", "boxes")}</span>`;
+  tip.style.display = "block";
+});
+$("stage").addEventListener("mousemove", e => {
+  const tip = $("tip");
+  if (tip.style.display !== "block") return;
+  tip.style.left = Math.min(innerWidth - 300, e.clientX + 14) + "px";
+  tip.style.top = Math.max(8, e.clientY - 46) + "px";
+});
+$("stage").addEventListener("mouseleave", () => { $("tip").style.display = "none"; });
+
+$("stage").addEventListener("click", e => {
+  if (e.target.id === "expand-all") document.querySelectorAll("#stage details").forEach(d => { d.open = true; });
+  if (e.target.id === "collapse-all") document.querySelectorAll("#stage details").forEach(d => { d.open = false; });
+});
+
+$("map-pick").addEventListener("change", e => {
+  const own = e.target.value === "own";
+  $("own-wrap").hidden = !own;
+  if (!own) loadMap(e.target.value === "big" ? demoBig() : demoLanes());
+});
+$("pick-file").addEventListener("click", () => $("csv-file").click());
+$("csv-file").addEventListener("change", e => readFile(e.target.files[0]));
+$("load-csv").addEventListener("click", () => ingestCsv($("csv-in").value, "the pasted text"));
+
+let dragDepth = 0;
+addEventListener("dragover", e => e.preventDefault());
+addEventListener("dragenter", e => { e.preventDefault(); if (++dragDepth === 1) document.body.classList.add("dropping"); });
+addEventListener("dragleave", () => { if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove("dropping"); } });
+addEventListener("drop", e => {
+  e.preventDefault(); dragDepth = 0; document.body.classList.remove("dropping");
+  const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (f) readFile(f);
+});
+
+$("start-q").addEventListener("input", e => { QUERY = e.target.value; fillPicker(); });
+$("start-list").addEventListener("click", e => {
+  const btn = e.target.closest("button[data-id]");
+  if (!btn) return;
+  START = btn.dataset.id;
+  fillPicker();
+  run();
+});
+for (const id of ["grouping", "min-members", "min-reuse", "stop-outcomes"]) $(id).addEventListener("change", run);
+
+$("theme-btn").addEventListener("click", () => {
+  const root = document.documentElement;
+  const now = root.getAttribute("data-theme");
+  const sysDark = matchMedia("(prefers-color-scheme: dark)").matches;
+  root.setAttribute("data-theme", (now ? now === "dark" : sysDark) ? "light" : "dark");
+});
+$("grouping").addEventListener("change", e => {
+  $("grouping-note").textContent = e.target.value === "strict"
+    ? "Every step shown is one that every member of its group really takes. Truer, usually less condensed."
+    : "Groups stay together unless doing so would invent feedback the map does not contain. Most condensed.";
+});
+$("grouping").dispatchEvent(new Event("change"));
+
+$("map-pick").value = "big";
+loadMap(demoBig());
+</script>
+</body>
+</html>
