@@ -184,3 +184,37 @@ describe("opening a tangle in the flow picture", () => {
     expect(drawer()).toBeNull();
   });
 });
+
+// -----------------------------------------------------------------------------
+// THE CIRCLES PROTOTYPE
+// -----------------------------------------------------------------------------
+// A second drawing of the same atlas: area instead of height, so a tangle can be
+// drawn as the wheel it opens into. What matters is that it is the SAME atlas —
+// the same elements, the same tangle, the same panel — and that switching to it
+// changes nothing but the picture.
+// -----------------------------------------------------------------------------
+describe("the circles view", () => {
+  const show = (v: string) =>
+    document.querySelector(`#views [data-v="${v}"]`)!
+      .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+  it("draws one circle per element, sized by area, and keeps the tangle a tangle", () => {
+    show("circles");
+    const atlas = page.state().atlas;
+    expect(document.querySelectorAll("svg.circ .bub")).toHaveLength(atlas.elements);
+    expect(document.querySelectorAll("svg.circ .bub.loop")).toHaveLength(atlas.loops.length);
+    // area, not radius: the biggest circle's r is the square root of its share
+    const rs = [...document.querySelectorAll("svg.circ .bub")]
+      .map(c => Number(c.getAttribute("r")));
+    expect(Math.max(...rs)).toBeGreaterThan(Math.min(...rs));
+  });
+
+  it("opens the same wheel from the same click", () => {
+    const loop = document.querySelector("svg.circ g.n[data-loop]")!;
+    loop.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(document.querySelector(".loopdrawer svg.wheel")).not.toBeNull();
+    expect(page.state().view).toBe("circles");
+    dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    show("flow");
+  });
+});

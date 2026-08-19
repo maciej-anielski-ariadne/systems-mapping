@@ -366,9 +366,10 @@ describe("the page", () => {
       expect(html).not.toContain(gone);
   });
 
-  it("offers Flow and Loops, and nothing else", () => {
+  it("offers Flow, the Circles prototype, and Loops — nothing else", () => {
     const tabs = [...html.matchAll(/role="tab" data-v="(\w+)"/g)].map(m => m[1]);
-    expect(tabs).toEqual(["flow", "loops"]);
-    expect(/const VIEWS = \{ flow: viewFlow, loops: viewLoops \};/.test(html)).toBe(true);
+    expect(tabs).toEqual(["flow", "circles", "loops"]);
+    expect(/const VIEWS = \{ flow: viewFlow, circles: viewCircles, loops: viewLoops \};/.test(html))
+      .toBe(true);
   });
 });

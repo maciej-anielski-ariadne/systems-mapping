@@ -161,6 +161,21 @@ the shape of the picture underneath itself.
 when the question is "what feedback is in here" rather than "what is going on at
 this point".
 
+### Circles — a prototype of the same picture
+
+A second drawing of the identical atlas, on its own tab. Every element is a
+circle whose **area** is how much runs through it, rather than a bar whose
+height is. A bar is easier to compare than a disc, so the encoding is a step
+down; the reason to want it is the shape. **A tangle of feedback is a circle**,
+so here it is drawn as a small wheel sitting in the flow — the same rim, the
+same chords — and opening it is a zoom rather than a change of subject.
+
+Left to right still means how far along a pathway you are: it is the only thing
+on the page that says which way round the story goes.
+
+Flow remains the one that has been lived with. Circles is there to be compared
+against it on a real map, and to be dropped if it does not win.
+
 ## Feedback loops
 
 Contracting a tangle to one element keeps the counting honest, but on its own it

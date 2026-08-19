@@ -240,6 +240,26 @@ ul.members li em{font-style:normal;color:var(--text-tertiary);font-family:var(--
   cursor:pointer;padding:2px 5px;border-radius:4px;flex:none}
 .closex:hover{background:var(--bg-mid);color:var(--text-primary)}
 
+/* ── 1b. CIRCLES ───────────────────────────────────────────────────────── */
+.circ text{font-family:var(--font-ui);font-size:10.5px;fill:var(--text-secondary);
+  paint-order:stroke fill;stroke:var(--bg-deepest);stroke-width:3px;stroke-linejoin:round}
+.circ text.big{fill:var(--text-primary);font-weight:600}
+.circ .bub{fill:var(--act);opacity:.8}
+.circ .bub.start{fill:var(--act-hi)}
+.circ .bub.loop{fill:color-mix(in srgb,var(--accent-amber) 60%,transparent);
+  stroke:var(--accent-amber);stroke-width:1.4}
+.circ .flowline{fill:none;stroke:var(--act);opacity:.2;stroke-linecap:round}
+.circ g.n{cursor:pointer}
+.circ g.n:hover .bub{opacity:1}
+.circ .mini{fill:none;stroke:var(--accent-amber);opacity:.75;stroke-width:1}
+.circ .minid{fill:var(--accent-amber);opacity:.5}
+.circ.opened .flowline{opacity:.05}
+.circ.opened .flowline.hot{stroke:var(--accent-amber);opacity:.6}
+.circ.opened .bub:not(.open){opacity:.22}
+.circ.opened text{opacity:.4}
+.circ.opened g.open text{opacity:1}
+.circ .bub.open{stroke:var(--text-primary);stroke-width:2;opacity:1}
+
 /* ── the wheel ─────────────────────────────────────────────────────────── */
 svg.wheel{display:block;margin:2px auto 0;touch-action:manipulation}
 svg.wheel .ch{fill:none;transition:opacity .18s ease}
@@ -335,6 +355,7 @@ svg.ring .rb.r{fill:var(--c1)}
     <div id="warn"></div>
     <nav class="views" id="views" role="tablist" aria-label="How to read the atlas">
       <button role="tab" data-v="flow">Flow</button>
+      <button role="tab" data-v="circles">Circles</button>
       <button role="tab" data-v="loops">Loops</button>
     </nav>
     <p class="viewnote" id="viewnote"></p>
@@ -1566,6 +1587,166 @@ function loopDrawer(id, A, style) {
 }
 
 // ---------------------------------------------------------------------------
+// 1b. CIRCLES — the same atlas, drawn as area rather than height
+// ---------------------------------------------------------------------------
+// Flow says how much runs through an element with the height of a bar. This
+// says it with the area of a circle. The reason to prefer it is not the
+// encoding — a bar is easier to compare than a disc — but the shape: a tangle
+// of feedback IS a circle, so here it can be drawn as a small wheel sitting in
+// the flow, and opening it is a zoom rather than a change of subject.
+//
+// Left-to-right is still how far along a pathway you are. That much is worth
+// keeping: it is the only thing on the page that says which way round the
+// story goes.
+// ---------------------------------------------------------------------------
+const MINI_RIM = 26;      // rim dots on a tangle drawn small
+const MINI_CH = 12;       // and chords across it
+
+function viewCircles(A, M) {
+  const COL_W = 162, PAD = 34, H = Math.max(520, Math.min(1150, A.elements * 7));
+  const open = OPEN_LOOP && A.nodes.has(OPEN_LOOP) && A.nodes.get(OPEN_LOOP).loop ? OPEN_LOOP : null;
+  const cols = [];
+  for (const [id] of A.nodes) {
+    if (id === END) continue;
+    const d = M.depth.get(id);
+    if (d === undefined) continue;
+    (cols[d] || (cols[d] = [])).push(id);
+  }
+  const used = cols.filter(Boolean);
+  if (!used.length) return `<p class="busy">Nothing to draw.</p>`;
+
+  // Area is the measure, so the radius is its square root. One scale for the
+  // whole picture, set by whichever column is fullest — otherwise two circles
+  // of the same size in different columns would mean different things.
+  const sq = id => Math.sqrt(Math.max(M.weight(id), 0.000015));
+  let k = Infinity;
+  for (const col of used) {
+    const sum = col.reduce((a, id) => a + sq(id), 0);
+    k = Math.min(k, (H - 2 * PAD - 6 * (col.length - 1)) / (2 * sum));
+  }
+  k = Math.min(k, 52 / Math.max(...used.flat().map(sq)));
+  const rOf = id => Math.max(2.6, k * sq(id));
+
+  const y = new Map();
+  const place = () => {
+    for (const col of used) {
+      const need = col.reduce((a, id) => a + 2 * rOf(id), 0);
+      const room = H - 2 * PAD - need;
+      const gap = Math.max(3, Math.min(26, room / Math.max(1, col.length - 1)));
+      let cur = PAD + Math.max(0, (room - gap * (col.length - 1)) / 2);
+      for (const id of col) { y.set(id, cur + rOf(id)); cur += 2 * rOf(id) + gap; }
+    }
+  };
+  place();
+  const bary = id => {
+    const ps = [...A.pred.get(id)].filter(q => y.has(q));
+    return ps.length ? ps.reduce((a, q) => a + y.get(q), 0) / ps.length : y.get(id) || 0;
+  };
+  for (let pass = 0; pass < 2; pass++) {
+    for (let c = 1; c < used.length; c++) used[c].sort((a, b) => bary(a) - bary(b));
+    place();
+  }
+  const x = id => PAD + M.depth.get(id) * COL_W + 26;
+
+  const parts = [];
+  for (const [a, outs] of A.succ) {
+    if (a === END || !y.has(a)) continue;
+    for (const b of outs) {
+      if (b === END || !y.has(b)) continue;
+      const x1 = x(a) + rOf(a), x2 = x(b) - rOf(b), y1 = y.get(a), y2 = y.get(b);
+      // A line as wide as the circles it joins stops reading as a line. Thick
+      // enough to compare, never thick enough to become the picture.
+      const t = Math.max(0.6, Math.min(26, 0.9 * Math.min(rOf(a), rOf(b)),
+        M.linkWeight(a, b) * H * 0.55));
+      const mx = (x1 + x2) / 2;
+      parts.push(`<path class="flowline${open && (a === open || b === open) ? " hot" : ""}"
+        stroke-width="${t.toFixed(2)}" d="M${x1.toFixed(1)} ${y1.toFixed(1)}C${mx.toFixed(1)} ${
+        y1.toFixed(1)} ${mx.toFixed(1)} ${y2.toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}"></path>`);
+    }
+  }
+  for (const col of used) for (const id of col) {
+    const node = A.nodes.get(id), r = rOf(id), cx = x(id), cy = y.get(id);
+    const cls = "bub" + (id === A.start ? " start" : node.loop ? " loop" : "") + (id === open ? " open" : "");
+    const act = node.loop
+      ? ` tabindex="0" role="button" aria-expanded="${id === open}"` +
+        ` aria-label="Feedback: ${node.boxes.length} boxes. Open its wheel."`
+      : "";
+    parts.push(`<g class="n${id === open ? " open" : ""}" data-el="${esc(id)}"${
+        node.loop ? ' data-loop="1"' : ""} data-w="${pct(M.weight(id))}"${act}>` +
+      `<circle class="${cls}" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}"></circle>` +
+      (node.loop ? miniWheel(node, cx, cy, r) : "") +
+      // A big circle's name goes underneath it. Beside it, the name of a large
+      // element runs straight through whatever sits in the next column.
+      (r >= 7 || id === A.start
+        ? (r >= 18
+            ? `<text class="big" x="${cx.toFixed(1)}" y="${(cy + r + 15).toFixed(1)}" text-anchor="middle">${
+                node.loop ? "↻ " : ""}${esc(clip(node.label, 26))}${
+                node.boxes.length > 1 && !node.loop ? " ×" + node.boxes.length : ""}</text>`
+            : `<text x="${(cx + r + 6).toFixed(1)}" y="${(cy + 3.5).toFixed(1)}">${
+                node.loop ? "↻ " : ""}${esc(clip(node.label, 20))}${
+                node.boxes.length > 1 && !node.loop ? " ×" + node.boxes.length : ""}</text>`)
+        : "") + `</g>`);
+  }
+
+  const W = PAD + used.length * COL_W + 130;
+  let drawer = "", wrapStyle = "";
+  if (open) {
+    const spot = anchorDrawer(x(open) + rOf(open), y.get(open), W, H, parts);
+    drawer = loopDrawer(open, A, spot.style);
+    wrapStyle = ` style="min-height:${spot.need}px"`;
+  }
+  return `<div class="legend">
+      <span><i style="background:var(--act);border-radius:50%"></i>an element — its <b>area</b> is how much of everything runs through it</span>
+      <span><i style="background:color-mix(in srgb,var(--accent-amber) 60%,transparent);border-radius:50%"></i>↻ a tangle, drawn as the wheel it opens into</span>
+      <span>line thickness is the same measure, for a step</span>
+    </div>
+    <div class="flowwrap"${wrapStyle}><svg class="circ${open ? " opened" : ""}" width="${W}" height="${H}"
+      role="img" aria-label="Every pathway downstream of ${esc(labelOf(A.start))}, drawn as circles">${
+      parts.join("")}</svg>${drawer}</div>`;
+}
+
+// A tangle is a circle already, so draw it as the wheel it opens into: the
+// same rim, the same chords across the middle, sampled down to what fits.
+function miniWheel(node, cx, cy, r) {
+  if (r < 13 || !node.tangles.length) return "";
+  const w = wheelFor(node.id, node.tangles[0]);
+  const n = w.order.length;
+  const rim = Math.min(MINI_RIM, n);
+  const R = r * 0.74;
+  const at = i => {
+    const a = (-Math.PI / 2) + (i * 2 * Math.PI) / n;
+    return [cx + R * Math.cos(a), cy + R * Math.sin(a)];
+  };
+  const out = [];
+  for (let i = 0; i < rim; i++) {
+    const [px, py] = at(Math.round((i * n) / rim));
+    out.push(`<circle class="minid" cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="1.3"></circle>`);
+  }
+  for (const l of [...w.loops].sort((a, b) => b.gain - a.gain).slice(0, MINI_CH)) {
+    const [x1, y1] = at(w.pos.get(l.back.from)), [x2, y2] = at(w.pos.get(l.back.to));
+    out.push(`<path class="mini" d="${chordPath(x1, y1, x2, y2, cx, cy, 0.22)}"></path>`);
+  }
+  return out.join("");
+}
+
+// Both pictures put the panel beside the thing it belongs to, connected by a
+// leader line, so the placement is worked out once.
+function anchorDrawer(sx, sy, W, H, parts) {
+  const dh = 860, gap = 46;
+  const toRight = sx + gap + DRAWER_W <= W - 4;
+  const px = toRight ? sx + gap : Math.max(6, sx - gap - DRAWER_W);
+  const py = Math.max(10, Math.min(Math.max(10, H - dh - 10), sy - dh / 2));
+  const ex = toRight ? px : px + DRAWER_W;
+  const ey = Math.max(py + 22, Math.min(py + dh - 22, sy));
+  const mx = (sx + ex) / 2;
+  parts.push(`<path class="lead" d="M${sx.toFixed(1)} ${sy.toFixed(1)}C${mx.toFixed(1)} ${
+    sy.toFixed(1)} ${mx.toFixed(1)} ${ey.toFixed(1)} ${ex.toFixed(1)} ${ey.toFixed(1)}"></path>`);
+  parts.push(`<circle class="leadend" cx="${sx.toFixed(1)}" cy="${sy.toFixed(1)}" r="3.5"></circle>`);
+  return { style: `left:${px}px;top:${py}px;width:${DRAWER_W}px;max-height:${dh}px`,
+           need: py + dh + 14 };
+}
+
+// ---------------------------------------------------------------------------
 // THE WHEEL — a tangle as one picture, and one loop at a time inside it
 // ---------------------------------------------------------------------------
 // Boxes sit on the rim in an order that makes almost every link run clockwise;
@@ -1590,9 +1771,9 @@ function wheelFor(id, t) {
   return WHEELS.get(id);
 }
 
-const chordPath = (x1, y1, x2, y2, C, pull) =>
-  `M${x1.toFixed(1)} ${y1.toFixed(1)}Q${(C + (x1 + x2 - 2 * C) * pull).toFixed(1)} ${
-    (C + (y1 + y2 - 2 * C) * pull).toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`;
+const chordPath = (x1, y1, x2, y2, cx, cy, pull) =>
+  `M${x1.toFixed(1)} ${y1.toFixed(1)}Q${(cx + (x1 + x2 - 2 * cx) * pull).toFixed(1)} ${
+    (cy + (y1 + y2 - 2 * cy) * pull).toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`;
 
 function wheelSvg(w) {
   const order = w.order, n = order.length;
@@ -1626,12 +1807,12 @@ function wheelSvg(w) {
   const parts = [];
   for (const e of w.forward) {
     const [x1, y1] = pt.get(e.from), [x2, y2] = pt.get(e.to);
-    parts.push(`<path class="ch fw" data-k="${esc(key(e))}" d="${chordPath(x1, y1, x2, y2, C, 0.3)}"></path>`);
+    parts.push(`<path class="ch fw" data-k="${esc(key(e))}" d="${chordPath(x1, y1, x2, y2, C, C, 0.3)}"></path>`);
   }
   for (const e of w.back) {
     const l = polar.get(key(e));
     const [x1, y1] = pt.get(e.from), [x2, y2] = pt.get(e.to);
-    parts.push(`<path class="ch" data-k="${esc(key(e))}" d="${chordPath(x1, y1, x2, y2, C, 0.22)}"
+    parts.push(`<path class="ch" data-k="${esc(key(e))}" d="${chordPath(x1, y1, x2, y2, C, C, 0.22)}"
       stroke="${l && l.reinforcing ? "var(--c1)" : "var(--c2)"}" opacity="0.7"
       stroke-width="${l ? (1 + (l.gain / maxGain) * 2.2).toFixed(2) : 1}"></path>`);
   }
@@ -1738,7 +1919,7 @@ function paintWheel() {
   trace.innerHTML = (loop ? loop.links : []).map(e => {
     const [x1, y1] = pt.get(e.from), [x2, y2] = pt.get(e.to);
     const backwards = w.pos.get(e.to) <= w.pos.get(e.from);
-    return `<path d="${chordPath(x1, y1, x2, y2, C, backwards ? 0.22 : 0.3)}"
+    return `<path d="${chordPath(x1, y1, x2, y2, C, C, backwards ? 0.22 : 0.3)}"
       stroke="${loop.reinforcing ? "var(--c1)" : "var(--c2)"}" stroke-width="2.6"></path>`;
   }).join("");
   if (cap) {
@@ -1967,9 +2148,10 @@ function viewLoops(A, M) {
 // ---------------------------------------------------------------------------
 const VIEW_NOTES = {
   flow: "The whole atlas as one picture. Columns are how far along you are; height and thickness are how much runs through. Click a block to see the boxes inside it; click an amber <b>↻</b> to open its tangle as a wheel, then click a box on the rim to watch it come round to itself.",
+  circles: "The same atlas drawn as area rather than height, so a tangle can be the wheel it opens into. Left to right is still how far along you are. A prototype — Flow is the one that has been lived with.",
   loops: "Every feedback loop, one ring each, with its polarity and its gain. A tangle of many loops sharing boxes becomes a grid of small readable rings rather than one opaque blob.",
 };
-const VIEWS = { flow: viewFlow, loops: viewLoops };
+const VIEWS = { flow: viewFlow, circles: viewCircles, loops: viewLoops };
 
 function renderStats() {
   const A = ATLAS;
@@ -2023,7 +2205,7 @@ function renderView() {
   const M = measure(ATLAS);
   stage.innerHTML = VIEWS[VIEW](ATLAS, M);
   stage.scrollTop = 0;
-  if (VIEW === "flow" && OPEN_LOOP) { paintWheel(); fitDrawer(); }
+  if (OPEN_LOOP && VIEWS[VIEW] !== viewLoops) { paintWheel(); fitDrawer(); }
 }
 
 // Every family opens to show its members, and the list of lane values opens
@@ -2183,7 +2365,7 @@ function fitDrawer() {
   if (!wrap || !d) return;
   const svg = wrap.querySelector("svg.flow");
   const need = d.offsetTop + d.offsetHeight + 14;
-  wrap.style.minHeight = Math.max(svg ? svg.height.baseVal.value : 0, need) + "px";
+  wrap.style.minHeight = Math.max(svg ? Number(svg.getAttribute("height")) || 0 : 0, need) + "px";
 }
 
 function redrawFlowInPlace() {
@@ -2231,7 +2413,7 @@ $("stage").addEventListener("click", e => {
     // A tangle is the one element whose whole point is hidden inside it. In the
     // picture it opens where it stands; in the Loops tab it is already open.
     const node = ATLAS.nodes.get(el.dataset.el);
-    if (node && node.loop && VIEW === "flow") toggleLoop(el.dataset.el);
+    if (node && node.loop && (VIEW === "flow" || VIEW === "circles")) toggleLoop(el.dataset.el);
   }
 });
 
@@ -2255,6 +2437,7 @@ $("stage").addEventListener("mouseover", e => {
   const g = e.target.closest("g.n");
   const tip = $("tip");
   if (!g || e.target.closest(".loopdrawer")) { tip.style.display = "none"; return; }
+  if (!ATLAS.nodes.has(g.dataset.el)) { tip.style.display = "none"; return; }
   const node = ATLAS.nodes.get(g.dataset.el);
   tip.innerHTML = `<b>${esc(node.label)}</b><span>${g.dataset.w} of everything · ${
     node.boxes.length} ${plural(node.boxes.length, "box", "boxes")}</span>`;
