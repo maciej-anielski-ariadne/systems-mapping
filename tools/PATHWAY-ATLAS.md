@@ -116,8 +116,30 @@ and the outline — and **Flow** is the one that stayed:
 On the 296-box test map it is one screen. The other five are gone; what they
 were each good at is recorded in the git history if any of it is wanted back.
 
-**Loops** keeps its own tab for now, because feedback is not yet drawn into the
-Flow picture — see below.
+### Feedback opens where it stands
+
+A tangle is one amber block marked **↻**. Clicking it unfurls its loops beside
+it rather than sending you to another tab:
+
+- the drawer is **anchored to its block** by a leader line, and placed in the
+  picture's own coordinates, so it scrolls with the map instead of floating over
+  the middle of the screen;
+- the ribbons into and out of the tangle **come forward in amber** and
+  everything else fades back, so what you are looking at is the feedback *and*
+  where in the flow it sits;
+- the drawer names what reaches the tangle and what it leads to — from the
+  picture, not from the raw map — alongside its loops;
+- nothing moves. The picture is not re-laid out, and the scroll position is
+  kept, so closing the drawer puts you back exactly where you were.
+
+Escape closes it, as does clicking the block again. The block is a real button:
+tab to it and press Enter. `tests/pathway-atlas-page.test.ts` runs the page in a
+DOM and holds that contract — opens in place, closes three ways, does not change
+the shape of the picture underneath itself.
+
+**Loops** keeps its own tab as an index: every loop on the map at once, sortable,
+when the question is "what feedback is in here" rather than "what is going on at
+this point".
 
 ## Feedback loops
 
@@ -155,11 +177,9 @@ Where every box in a loop sits in one lane, the card names the lane once and the
 ring drops it, so `Cat A Treatment Referral` reads as `Treatment Referral`
 instead of being clipped to `Cat A Treatmen…`.
 
-Loops live in two places: a **Loops view** listing every one on the map, sortable
-by gain, length or polarity; and inline in Flow, where a tangle is one amber
-block that opens into the rings when clicked. Drawing the two as a single
-picture — feedback where it sits in the flow rather than on its own tab — is the
-work still to do.
+Loops live in two places, sorted by the same rule in both so the order does not
+change under you: **in the Flow picture**, where a tangle opens where it stands
+(above), and in the **Loops tab**, which lists every loop on the map at once.
 
 **One thing worth knowing about your data.** If two boxes are joined by two links
 that disagree about sign, the polarity of every loop through them depends on
@@ -222,8 +242,6 @@ that the dimensions it found are the dimensions you think in.
   but not the order of what leads where; that ordering is by how many readings
   run through each. Sorting by strength would be a small addition.
 - **It runs downstream only.** The start box is a source, not a destination.
-- **Feedback is on its own tab.** Loops are analysed and drawn, but not yet
-  placed where they sit in the Flow picture.
 - **Grouping over-approximates**, as set out above, and says so on screen when
   it does.
 

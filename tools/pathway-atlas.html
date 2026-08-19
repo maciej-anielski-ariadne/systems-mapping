@@ -200,7 +200,7 @@ ul.members li em{font-style:normal;color:var(--text-tertiary);font-family:var(--
 .arrow{color:var(--text-tertiary)}
 
 /* ── 1. FLOW ───────────────────────────────────────────────────────────── */
-.flowwrap{overflow-x:auto;overflow-y:hidden}
+.flowwrap{overflow-x:auto;overflow-y:hidden;position:relative}
 .flow text{font-family:var(--font-ui);font-size:10.5px;fill:var(--text-secondary)}
 .flow text.big{fill:var(--text-primary);font-weight:600}
 .flow .node{fill:var(--act);opacity:.85}
@@ -209,6 +209,36 @@ ul.members li em{font-style:normal;color:var(--text-tertiary);font-family:var(--
 .flow .link{fill:var(--act);opacity:.16}
 .flow .node:hover{opacity:.95}
 .flow g.n{cursor:pointer}
+.flow g.n:focus-visible{outline:none}
+.flow g.n:focus-visible rect{stroke:var(--act-hi);stroke-width:2.5}
+.flow .turn{fill:var(--bg-deepest);font-weight:700;font-size:11px;pointer-events:none}
+
+/* One tangle opened where it stands. The rest of the picture stays put and
+   fades back; the ribbons into and out of the tangle come forward, so what is
+   on screen is the feedback AND where in the flow it sits. */
+.flow.opened .link{opacity:.05}
+.flow.opened .link.hot{fill:var(--accent-amber);opacity:.55}
+.flow.opened .node:not(.open){opacity:.3}
+.flow.opened text{opacity:.45}
+.flow.opened g.open text{opacity:1}
+.flow .node.open{stroke:var(--text-primary);stroke-width:2;opacity:1}
+.flow .lead{stroke:var(--accent-amber);stroke-width:2;fill:none;opacity:.8}
+.flow .leadend{fill:var(--accent-amber)}
+
+.loopdrawer{position:absolute;z-index:5;background:var(--bg-deepest);
+  border:1px solid var(--accent-amber);border-radius:var(--r-s);
+  box-shadow:var(--shadow-float);padding:11px 12px 12px;overflow:auto}
+.loopdrawer>header{display:flex;align-items:baseline;gap:8px;margin-bottom:3px}
+.loopdrawer>header b{font-size:13.5px;flex:1 1 auto}
+.loopdrawer .m{font-family:var(--font-mono);font-size:10.5px;color:var(--text-tertiary);
+  font-variant-numeric:tabular-nums;margin:0}
+.loopdrawer .ctx{margin:5px 0 0;font-size:12px;color:var(--text-secondary)}
+.loopdrawer .ctx b{font-weight:600;color:var(--text-primary)}
+.loopdrawer .drawerloops{display:grid;gap:9px;margin-top:9px}
+.loopdrawer .loopcard{background:var(--bg-deep)}
+.closex{background:none;border:0;color:var(--text-tertiary);font:inherit;font-size:12px;
+  cursor:pointer;padding:2px 5px;border-radius:4px;flex:none}
+.closex:hover{background:var(--bg-mid);color:var(--text-primary)}
 
 /* ── 2. LOOPS ──────────────────────────────────────────────────────────── */
 .loopgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(292px,1fr));gap:12px}
@@ -1181,6 +1211,7 @@ function gatherFeedback(nodes) {
 // ===========================================================================
 let G = null, ATLAS = null, START = null, QUERY = "", VIEW = "flow";
 let LOOP_SORT = "gain";   // Loops: how the cards are ordered
+let OPEN_LOOP = null;     // Flow: which tangle is unfurled where it stands
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -1222,9 +1253,16 @@ const pct = f => (f >= 0.1 ? (f * 100).toFixed(0) : f >= 0.001 ? (f * 100).toFix
 // 1. FLOW — the whole thing as one picture
 // ---------------------------------------------------------------------------
 // Columns are how far along a pathway you are; the height of a block and the
-// thickness of a ribbon are how much runs through it. Nothing to open, nothing
-// to read in order: the shape of the answer is the picture.
+// thickness of a ribbon are how much runs through it. Nothing to read in order:
+// the shape of the answer is the picture.
+//
+// Feedback opens where it stands. A tangle is one amber block, and clicking it
+// unfurls its loops beside it rather than sending you to another tab: the
+// picture stays exactly where it was, the ribbons into and out of the tangle
+// come forward in amber, and everything else fades back. Feedback read on its
+// own is a diagram; feedback read next to what feeds it is an explanation.
 // ---------------------------------------------------------------------------
+const DRAWER_W = 348;
 function viewFlow(A, M) {
   const COL_W = 190, PAD = 26, H = Math.max(520, Math.min(1100, A.elements * 7));
   const cols = [];
@@ -1268,6 +1306,7 @@ function viewFlow(A, M) {
 
   const W = PAD + used.length * COL_W;
   const parts = [];
+  const open = OPEN_LOOP && A.nodes.has(OPEN_LOOP) && A.nodes.get(OPEN_LOOP).loop ? OPEN_LOOP : null;
   // Ribbons first, so the blocks sit on top of them.
   for (const [a, outs] of A.succ) {
     if (a === END || !y.has(a)) continue;
@@ -1282,7 +1321,7 @@ function viewFlow(A, M) {
       const y2 = y.get(b) + h.get(b) / 2;
       const mx = (x1 + x2) / 2;
       offA += t;
-      parts.push(`<path class="link" d="M${x1} ${y1 - t / 2}C${mx} ${y1 - t / 2} ${mx} ${y2 - t / 2} ${x2} ${y2 - t / 2}` +
+      parts.push(`<path class="link${open && (a === open || b === open) ? " hot" : ""}" d="M${x1} ${y1 - t / 2}C${mx} ${y1 - t / 2} ${mx} ${y2 - t / 2} ${x2} ${y2 - t / 2}` +
         `L${x2} ${y2 + t / 2}C${mx} ${y2 + t / 2} ${mx} ${y1 + t / 2} ${x1} ${y1 + t / 2}Z"></path>`);
     }
   }
@@ -1290,22 +1329,90 @@ function viewFlow(A, M) {
     const node = A.nodes.get(id);
     const x = PAD + M.depth.get(id) * COL_W;
     const hh = h.get(id), yy = y.get(id), w = M.weight(id);
-    const cls = "node" + (id === A.start ? " start" : node.loop ? " loop" : "");
+    const cls = "node" + (id === A.start ? " start" : node.loop ? " loop" : "") +
+      (id === open ? " open" : "");
     const showLabel = hh >= 11;
-    parts.push(`<g class="n" data-el="${esc(id)}" data-w="${pct(w)}">` +
+    // A tangle is a button, and says so, because the one thing you can do to
+    // this picture is open one.
+    const act = node.loop
+      ? ` tabindex="0" role="button" aria-expanded="${id === open}"` +
+        ` aria-label="Feedback: ${node.boxes.length} boxes. Open its loops."`
+      : "";
+    parts.push(`<g class="n${id === open ? " open" : ""}" data-el="${esc(id)}"${
+        node.loop ? ' data-loop="1"' : ""} data-w="${pct(w)}"${act}>` +
       `<rect class="${cls}" x="${x}" y="${yy}" width="13" height="${hh}" rx="3"></rect>` +
-      (showLabel
+      (node.loop && hh < 16
+        ? `<rect fill="transparent" x="${x - 4}" y="${yy + hh / 2 - 9}" width="21" height="18"></rect>` : "") +
+      (node.loop && hh >= 17 ? `<text class="turn" x="${x + 6.5}" y="${yy + hh / 2 + 4}" text-anchor="middle">↻</text>` : "") +
+      (showLabel && id !== open
         ? `<text class="${hh > 20 ? "big" : ""}" x="${x + 19}" y="${yy + hh / 2 + 3.5}">` +
-          esc(clip(node.label, 22)) + (node.boxes.length > 1 ? " ×" + node.boxes.length : "") + `</text>`
+          (node.loop ? "↻ " : "") + esc(clip(node.label, 22)) +
+          (node.boxes.length > 1 && !node.loop ? " ×" + node.boxes.length : "") + `</text>`
         : "") + `</g>`);
   }
+
+  // The drawer is placed in the picture's own coordinates — the SVG is drawn at
+  // 1 unit per pixel and shares the wrapper's scroll — so it stays pinned to
+  // its block rather than floating over the middle of the screen.
+  let drawer = "";
+  if (open) {
+    const bx = PAD + M.depth.get(open) * COL_W, by = y.get(open), bh = h.get(open);
+    const toRight = bx + 56 + DRAWER_W <= W - 4;
+    const px = toRight ? bx + 56 : Math.max(6, bx - 44 - DRAWER_W);
+    const dh = Math.min(H - 24, 560);
+    const py = Math.max(10, Math.min(H - dh - 10, by + bh / 2 - dh / 2));
+    const sx = toRight ? bx + 13 : bx, sy = by + bh / 2;
+    const ex = toRight ? px : px + DRAWER_W;
+    const ey = Math.max(py + 22, Math.min(py + dh - 22, sy));
+    const mx = (sx + ex) / 2;
+    parts.push(`<path class="lead" d="M${sx} ${sy}C${mx} ${sy} ${mx} ${ey} ${ex} ${ey}"></path>`);
+    parts.push(`<circle class="leadend" cx="${sx}" cy="${sy}" r="3.5"></circle>`);
+    drawer = loopDrawer(open, A, `left:${px}px;top:${py}px;width:${DRAWER_W}px;max-height:${dh}px`);
+  }
+
   return `<div class="legend">
       <span><i style="background:var(--act)"></i>an element — height is how much of everything runs through it</span>
-      <span><i style="background:var(--accent-amber)"></i>a feedback loop, contracted</span>
+      <span><i style="background:var(--accent-amber)"></i>↻ feedback — click it to open its loops here</span>
       <span>ribbon thickness is the same measure, for a step</span>
     </div>
-    <div class="flowwrap"><svg class="flow" width="${W}" height="${H}" role="img"
-      aria-label="Flow diagram of every pathway downstream of ${esc(labelOf(A.start))}">${parts.join("")}</svg></div>`;
+    <div class="flowwrap"><svg class="flow${open ? " opened" : ""}" width="${W}" height="${H}" role="img"
+      aria-label="Flow diagram of every pathway downstream of ${esc(labelOf(A.start))}">${parts.join("")}</svg>${drawer}</div>`;
+}
+
+// What a tangle is, where it sits, and every loop in it — beside the block it
+// belongs to. The ways in and out are named from the picture itself, so the
+// answer to "what feeds this" is in the same panel as "what goes round".
+function loopDrawer(id, A, style) {
+  const node = A.nodes.get(id);
+  const t = node.tangles[0];
+  // One element can stand for the same tangle in several lanes. The loops are
+  // one copy's worth — saying "2 boxes" of an element covering four copies of
+  // them would be wrong, and summing them into "8 boxes" would be wronger.
+  const copies = node.tangles.length;
+  const sum = k => node.tangles.reduce((a, x) => a + (Array.isArray(x[k]) ? x[k].length : x[k]), 0);
+  const loops = sortLoops((A.feedback || []).filter(l => l.element === id));
+  const r = loops.filter(l => l.reinforcing).length;
+  const names = set => {
+    const list = [...set].filter(x => x !== END).map(labelOf);
+    if (!list.length) return "";
+    return list.slice(0, 3).map(n => `<b>${esc(clip(n, 26))}</b>`).join(", ") +
+      (list.length > 3 ? ` and ${list.length - 3} more` : "");
+  };
+  const from = names(A.pred.get(id) || new Set()), to = names(A.succ.get(id) || new Set());
+  return `<aside class="loopdrawer" style="${style}">
+    <header><b>↻ Feedback here</b>
+      <button class="closex" type="button" data-closeloop>Close</button></header>
+    <p class="m">${t.boxes.length} ${plural(t.boxes.length, "box", "boxes")}${
+      copies > 1 ? ` in each of ${copies} places` : ""} · ${loops.length}
+      ${plural(loops.length, "loop")} · ${r}R / ${loops.length - r}B${
+      t.independent > loops.length ? ` · ${t.independent} independent` : ""}</p>
+    <p class="ctx">${from ? `Reached from ${from}.` : "Nothing upstream of it in this scope."}
+      ${to ? `Leaves to ${to}.` : "Nothing leaves it."}</p>
+    <p class="m" style="margin-top:4px">${sum("waysIn")} ${plural(sum("waysIn"), "link")} in,
+      ${sum("waysOut")} out${sum("contradictory") ? ` · ${sum("contradictory")} contradictory` : ""}</p>
+    <div class="row-btns" style="margin-top:9px">${loopSortButtons()}</div>
+    <div class="drawerloops">${loops.map(l => loopCard(l, A)).join("")}</div>
+  </aside>`;
 }
 
 const clip = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
@@ -1428,6 +1535,23 @@ function loopCard(loop, A) {
   </article>`;
 }
 
+// The Loops tab and the Flow drawer sort by the same rule, so the order does
+// not change under you when you move between them.
+function sortLoops(list) {
+  if (LOOP_SORT === "length")
+    return [...list].sort((a, b) => a.cycle.length - b.cycle.length || b.gain - a.gain);
+  if (LOOP_SORT === "polarity")
+    return [...list].sort((a, b) => Number(b.reinforcing) - Number(a.reinforcing) || b.gain - a.gain);
+  return [...list].sort((a, b) => b.gain - a.gain || a.cycle.length - b.cycle.length);
+}
+
+function loopSortButtons() {
+  return ["gain", "length", "polarity"].map(k =>
+    `<button class="btn" type="button" data-loopsort="${k}"${LOOP_SORT === k
+      ? ' style="background:var(--act);border-color:var(--act);color:#fff"' : ""}>${
+      k === "gain" ? "Strongest first" : k === "length" ? "Shortest first" : "Group by polarity"}</button>`).join("");
+}
+
 function viewLoops(A, M) {
   const all = A.feedback || [];
   if (!all.length)
@@ -1438,11 +1562,7 @@ function viewLoops(A, M) {
   const tangles = A.loops.length;
   const biggest = Math.max(...A.loops.map(n => n.tangles[0] ? n.tangles[0].boxes.length : 0));
   const independent = A.loops.reduce((a, n) => a + (n.tangles[0] ? n.tangles[0].independent : 0), 0);
-  const sorted = LOOP_SORT === "length"
-    ? [...all].sort((a, b) => a.cycle.length - b.cycle.length || b.gain - a.gain)
-    : LOOP_SORT === "polarity"
-      ? [...all].sort((a, b) => Number(b.reinforcing) - Number(a.reinforcing) || b.gain - a.gain)
-      : all;
+  const sorted = sortLoops(all);
 
   return `<div class="legend">
       <span><i style="background:var(--c1)"></i><b>R</b> reinforcing — a nudge comes back amplified</span>
@@ -1455,11 +1575,7 @@ function viewLoops(A, M) {
          It would take <b>${independent}</b> ${plural(independent, "loop")} to generate every loop in there; below is
          the shortest loop through each box — <b>${all.length}</b> of them — so no box is left without a story.
          <b>${r}</b> reinforcing, <b>${all.length - r}</b> balancing.`}</p>
-    <div class="row-btns" style="margin-bottom:14px">
-      ${["gain", "length", "polarity"].map(k =>
-        `<button class="btn" type="button" data-loopsort="${k}" ${LOOP_SORT === k ? 'style="background:var(--act);border-color:var(--act);color:#fff"' : ""}>${
-          k === "gain" ? "Strongest first" : k === "length" ? "Shortest first" : "Group by polarity"}</button>`).join("")}
-    </div>
+    <div class="row-btns" style="margin-bottom:14px">${loopSortButtons()}</div>
     <div class="loopgrid">${sorted.slice(0, 60).map(l => loopCard(l, A)).join("")}</div>
     ${sorted.length > 60 ? `<p class="hint" style="margin-top:12px">Showing the first 60 of ${sorted.length}.</p>` : ""}`;
 }
@@ -1468,7 +1584,7 @@ function viewLoops(A, M) {
 // SHELL
 // ---------------------------------------------------------------------------
 const VIEW_NOTES = {
-  flow: "The whole atlas as one picture. Columns are how far along you are; height and thickness are how much runs through. Click any block to see the boxes inside it.",
+  flow: "The whole atlas as one picture. Columns are how far along you are; height and thickness are how much runs through. Click a block to see the boxes inside it; click an amber <b>↻</b> to open its feedback loops where they stand.",
   loops: "Every feedback loop, one ring each, with its polarity and its gain. A tangle of many loops sharing boxes becomes a grid of small readable rings rather than one opaque blob.",
 };
 const VIEWS = { flow: viewFlow, loops: viewLoops };
@@ -1621,6 +1737,7 @@ function run() {
       $("stage").innerHTML = `<p class="lede">That did not work: ${esc(err.message)}</p>`;
       return;
     }
+    OPEN_LOOP = null;
     railLanes(); renderStats(); renderView();
   });
 }
@@ -1674,24 +1791,60 @@ $("views").addEventListener("click", e => {
   renderView();
 });
 
+// Re-rendering the picture must not move it. The one thing worse than having
+// to switch tabs to read a loop is coming back to find the map somewhere else.
+function redrawFlowInPlace() {
+  const wrap = $("stage").querySelector(".flowwrap");
+  const keep = wrap ? wrap.scrollLeft : 0;
+  renderView();
+  const now = $("stage").querySelector(".flowwrap");
+  if (!now) return;
+  now.scrollLeft = keep;
+  const d = now.querySelector(".loopdrawer");
+  if (!d) return;
+  // …and if the drawer opened off the edge, bring just enough of it into view.
+  const left = d.offsetLeft, right = left + d.offsetWidth;
+  if (right > keep + now.clientWidth - 8) now.scrollLeft = right - now.clientWidth + 20;
+  else if (left < keep + 8) now.scrollLeft = Math.max(0, left - 20);
+}
+
+function toggleLoop(id) {
+  OPEN_LOOP = OPEN_LOOP === id ? null : id;
+  redrawFlowInPlace();
+}
+
 $("stage").addEventListener("click", e => {
   const ls = e.target.closest("[data-loopsort]");
-  if (ls) { LOOP_SORT = ls.dataset.loopsort; renderView(); return; }
+  if (ls) {
+    LOOP_SORT = ls.dataset.loopsort;
+    if (VIEW === "flow") redrawFlowInPlace(); else renderView();
+    return;
+  }
+  if (e.target.closest("[data-closeloop]")) { OPEN_LOOP = null; redrawFlowInPlace(); return; }
+  if (e.target.closest(".loopdrawer")) return;   // reading inside it is not a click on the map
 
   const el = e.target.closest("[data-el]");
   if (el) {
     showElement(el.dataset.el);
-    // A loop chip is the one element whose whole point is hidden inside it, so
-    // clicking one opens the rings rather than just listing its members.
+    // A tangle is the one element whose whole point is hidden inside it. In the
+    // picture it opens where it stands; in the Loops tab it is already open.
     const node = ATLAS.nodes.get(el.dataset.el);
-    if (node && node.loop && VIEW !== "loops") { VIEW = "loops"; renderView(); }
+    if (node && node.loop && VIEW === "flow") toggleLoop(el.dataset.el);
   }
+});
+
+$("stage").addEventListener("keydown", e => {
+  const g = e.target.closest && e.target.closest("g.n[data-loop]");
+  if (g && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggleLoop(g.dataset.el); }
+});
+addEventListener("keydown", e => {
+  if (e.key === "Escape" && OPEN_LOOP) { OPEN_LOOP = null; redrawFlowInPlace(); }
 });
 
 $("stage").addEventListener("mouseover", e => {
   const g = e.target.closest("g.n");
   const tip = $("tip");
-  if (!g) { tip.style.display = "none"; return; }
+  if (!g || e.target.closest(".loopdrawer")) { tip.style.display = "none"; return; }
   const node = ATLAS.nodes.get(g.dataset.el);
   tip.innerHTML = `<b>${esc(node.label)}</b><span>${g.dataset.w} of everything · ${
     node.boxes.length} ${plural(node.boxes.length, "box", "boxes")}</span>`;
