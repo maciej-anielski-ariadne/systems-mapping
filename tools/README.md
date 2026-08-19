@@ -1,11 +1,18 @@
 # `tools/` — standalone analysis tools
 
+> **There is a newer tool.** [`pathway-atlas.html`](PATHWAY-ATLAS.md) answers a
+> different question — *everything downstream of one box* rather than *every
+> route between two* — and answers it without enumerating anything, so it does
+> not have the memory ceiling this page hits at around twenty million routes.
+> Start there unless you specifically want the routes themselves.
+
 Single-file HTML tools that are **not part of the app**. They aren't built,
 bundled, or shipped in `dist/systems-map.html`; each one is a self-contained
 page you open directly in a browser. Nothing here is loaded by `index.html`.
 
 | File | What it's for |
 |------|---------------|
+| [`pathway-atlas.html`](PATHWAY-ATLAS.md) | Everything downstream of **one** box, as a single expandable structure. Enumerates nothing, so there is no cap and no wait. |
 | [`strand-condenser.html`](strand-condenser.html) | Walk every route between two boxes, fold away the repeated lanes, and show only where the pathways differ. |
 
 ## `strand-condenser.html`
