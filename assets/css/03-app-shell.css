@@ -312,3 +312,143 @@ body.panel-resizing {
   cursor: col-resize !important;
   user-select: none;
 }
+
+/* =============================================================================
+ * READING VS EDITING
+ * -----------------------------------------------------------------------------
+ * The app opens in reading mode. A reader wants the map, so the map gets the
+ * screen: no docked left panel (it slides over on request), no right panel
+ * until something is selected, and a header carrying only the reading actions.
+ *
+ * Switching to editing docks both panels and reveals the authoring controls —
+ * New map, Bulk edit, the sidebar's "+ Add" buttons, the rename / recolour /
+ * reorder affordances on every row. Nothing is deleted by reading mode; it is
+ * all one class on <body> away.
+ * ========================================================================== */
+
+/* Panels sliding open shouldn't jump the map. */
+.app {
+  transition: grid-template-columns var(--dur-slow) var(--ease);
+}
+
+body.reading .app                        { --sidebar-w: 0; }
+body.reading .app:not(.has-selection)    { --detail-w:  0; }
+
+/* === Left panel as a drawer ===
+ * Out of the grid entirely and slid off the left edge, so the map is full
+ * width; the header's Filters button brings it over the map, and a click
+ * anywhere else (or Esc) sends it back. */
+body.reading .sidebar {
+  position: absolute;
+  top: 64px;
+  left: 0;
+  bottom: 0;
+  width: var(--sidebar-w-full);
+  z-index: var(--z-panel-strip);
+  background: var(--bg-deep);
+  box-shadow: var(--shadow-panel);
+  overflow-y: auto;
+  padding: var(--gutter) 0 var(--space-5) 0;
+  transform: translateX(-102%);
+  visibility: hidden;
+  transition: transform var(--dur-slow) var(--ease), visibility var(--dur-slow);
+}
+
+body.reading .app.filters-open .sidebar {
+  transform: none;
+  visibility: visible;
+}
+
+/* The drawer's handle is the header button, so the in-panel collapse chevron
+ * and the drag-to-resize strip would both be answering a question nobody
+ * asked. Same for the right panel, which opens and closes with the selection. */
+body.reading .panel-header,
+body.reading .panel-resize-handle { display: none; }
+
+/* === Right panel opens on a selection === */
+body.reading .app:not(.has-selection) .detail-panel {
+  visibility: hidden;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* === Authoring controls ===
+ * Only the affordances that change the map go — names, counts and colour
+ * swatches stay, because they are what the panel is FOR while reading. */
+/* The drawer button belongs to reading mode only — while editing, that panel
+ * is docked, and a button that opens what is already open is noise. */
+body.editing #filters-button { display: none; }
+
+body.reading .edit-only,
+body.reading .sidebar-add-btn,
+body.reading .sidebar-row-drag,
+body.reading .sidebar-edit-color,
+body.reading .sidebar-row-delete,
+body.reading .sidebar-cat-reclass { display: none; }
+
+/* The primary emphasis belongs to whichever mode you are NOT in: reading
+ * offers "Edit"; editing offers the way back out. */
+body.editing #mode-toggle-button {
+  background: var(--bg-mid);
+  color: var(--text-secondary);
+  font-weight: inherit;
+}
+body.editing #mode-toggle-button:hover { background: var(--act-tint); color: var(--text-primary); }
+
+/* === Icon-only theme button === */
+.header-button--icon {
+  padding: var(--space-1_5) var(--space-2);
+  font-size: 14px;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+/* === Header menus (Export) ===
+ * One control, three answers. The panel is anchored under its button and
+ * closes on the next click anywhere. */
+.menu-wrap { position: relative; flex-shrink: 0; }
+
+.menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 260px;
+  padding: var(--space-1);
+  background: var(--bg-deep);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--shadow-panel);
+  z-index: var(--z-header);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.menu[hidden] { display: none; }
+
+.menu-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  text-align: left;
+  padding: var(--space-2);
+  border-radius: var(--radius-interactive);
+  background: transparent;
+  cursor: pointer;
+}
+
+.menu-item:hover { background: var(--act-tint); }
+
+.menu-item b {
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.menu-item span {
+  font-size: var(--fs-cap);
+  color: var(--text-tertiary);
+  line-height: 1.35;
+}

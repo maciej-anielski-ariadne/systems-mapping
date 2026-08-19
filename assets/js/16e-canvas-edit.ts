@@ -314,6 +314,11 @@ export function initCanvasEdit(): void {
       return;
     }
 
+    // Reading mode never creates, renames or deletes. Every branch from here
+    // down changes the map, and while reading, the map is a picture — the
+    // shortcuts come back the moment you switch to editing.
+    if (state.uiMode !== "edit") return;
+
     const hasCanvasPosition =
       (state.selectedNodeId && nodeById[state.selectedNodeId]) ||
       (state.canvasEdit && state.canvasEdit.cursorCell);

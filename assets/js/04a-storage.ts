@@ -15,7 +15,7 @@
 // =============================================================================
 
 import { state, nodeById, setLayout } from "./03-state";
-import { applyPanelPinnedClasses, applyPanelWidths, applyZoom, applyHighlightDepth } from "./17-events";
+import { applyPanelWidths, applyUiMode, applyZoom, applyHighlightDepth } from "./17-events";
 import { computeLayout } from "./08-layout";
 import { toggleSimulationMode } from "./14-simulation-panel";
 import { recomputeValues } from "./07-simulation-engine";
@@ -125,6 +125,7 @@ export function saveUiStateToStorage(): void {
       simulationMode:       !!state.simulationMode,
       userOverrides:        state.userOverrides || {},
       selectedNodeId:       state.selectedNodeId || null,
+      uiMode:               state.uiMode === "edit" ? "edit" : "read",
       sidebarPinned:        !!state.sidebarPinned,
       detailPanelPinned:    !!state.detailPanelPinned,
       sidebarWidth:         typeof state.sidebarWidth      === "number" ? state.sidebarWidth      : 280,
@@ -166,6 +167,10 @@ export function applyRestoredUiState(ui: any): void {
   // Panel pin states + zoom level are independent of the loaded CSV, so
   // apply them even if no data is loaded yet. Defaults to pinned; we also
   // accept the previous `*Collapsed` keys from older sessions and invert.
+  // Reading vs editing comes back first — the pin classes below are applied
+  // through it.
+  if (ui.uiMode === "edit" || ui.uiMode === "read") state.uiMode = ui.uiMode;
+
   if (typeof ui.sidebarPinned === "boolean") {
     state.sidebarPinned = ui.sidebarPinned;
   } else if (typeof ui.sidebarCollapsed === "boolean") {
@@ -176,7 +181,7 @@ export function applyRestoredUiState(ui: any): void {
   } else if (typeof ui.detailPanelCollapsed === "boolean") {
     state.detailPanelPinned = !ui.detailPanelCollapsed;
   }
-  if (typeof applyPanelPinnedClasses === "function") applyPanelPinnedClasses();
+  if (typeof applyUiMode === "function") applyUiMode();
 
   if (typeof ui.sidebarWidth     === "number" && !isNaN(ui.sidebarWidth))     state.sidebarWidth     = ui.sidebarWidth;
   if (typeof ui.detailPanelWidth === "number" && !isNaN(ui.detailPanelWidth)) state.detailPanelWidth = ui.detailPanelWidth;

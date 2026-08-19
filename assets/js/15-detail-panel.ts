@@ -44,12 +44,16 @@ import { selectNode, scrollNodeIntoView } from "./09-graph-selection";
 import { suggestStrandsThrough } from "./09a-pathways";
 import { showSuggestedStrand } from "./09b-pathway-ui";
 import { applySimMultiplier, updateDetailPanelDeltaInline } from "./14-simulation-panel";
+import { applySelectionClass } from "./17-events";
 import { deleteEdgeById, commitNewEdge, deleteSelection } from "./16e-canvas-edit";
 import { applyCanvasMutation } from "./16f-canvas-mutations";
 
 export function renderDetailPanel(): void {
   const emptyState   = document.getElementById("detail-empty")!;
   const contentState = document.getElementById("detail-content")!;
+
+  // In reading mode the panel is closed until there's something in it.
+  if (typeof applySelectionClass === "function") applySelectionClass();
 
   // Nothing selected → show the empty-state placeholder.
   if (!state.selectedNodeId) {

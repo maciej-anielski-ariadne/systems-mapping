@@ -30,20 +30,40 @@ file to open.
 
 1. **To use the app:** run `npm install` once, then `npm run build`, and open the generated `dist/systems-map.html` in any modern browser. It is a single self-contained file — fully offline, fonts and code bundled in. (**To develop:** `npm run dev` starts a live-reloading server — see [Development & build](#development--build).)
 2. The app boots into an **empty 3×3 starter grid** — three rows, three columns, no boxes yet. From here you have three paths:
-   - **Build directly on the map** (recommended for non-technical users). Click any empty cell to add a box, then rename it in the right panel. Drag from the right edge of a box to another box to draw a link. Edit rows / columns / categories from the left sidebar (pencil icon to rename / delete, drag handle to reorder, **+ Add** buttons at the bottom of each section).
+   - **Build directly on the map** (recommended for non-technical users). Click any empty cell to add a box, then rename it in the right panel. Drag from the right edge of a box to another box to draw a link. Switch to **Edit** first — the left panel docks and grows its rename / reorder / **+ Add** affordances.
    - **Import an existing spreadsheet** — click **Import** in the header, or drag-drop a `.csv` onto the window.
-   - **Bulk edit via the wizard** — click **Edit** in the header to open a seven-step form (rows → columns → categories → boxes → links → constants → review). Useful for big edits where the map is too fiddly. Hit **Apply to map** to re-render, or **Download CSV** to save a snapshot.
-3. Iterate freely. Every map edit auto-saves to your browser, so a page refresh restores everything. Click **Save** in the header to download the current map as a spreadsheet.
+   - **Bulk edit via the wizard** — switch to editing and click **Bulk edit** to open a seven-step form (rows → columns → categories → boxes → links → constants → review). Useful for big edits where the map is too fiddly. Hit **Apply to map** to re-render, or **Download CSV** to save a snapshot.
+3. Iterate freely. Every map edit auto-saves to your browser, so a page refresh restores everything. Use **Export → Spreadsheet** to download the current map.
 
-The header has eight buttons left-to-right: **Create · Edit · Import · CSV · PNG · HTML · Simulate · Theme** (the CSV / PNG / HTML "get data out" trio sits behind a divider, with Simulate / Theme behind another).
-- **Create** clears the map and starts a fresh empty grid, asking for confirmation if a map is loaded.
-- **Edit** opens the bulk-edit wizard (dimmed until a map exists).
+### Reading, and editing
+
+The app opens in **reading mode**: the map has the screen to itself. There is no
+docked left panel (**Filters** slides it over the map when you want it), the
+right-hand detail panel stays closed until you select a box, and the header
+carries only what a reader reaches for — **Filters · Import · Export · Simulate ·
+Edit**, plus the theme switch.
+
+**Edit** switches modes. Both side panels dock, the authoring buttons appear
+(**New map**, **Bulk edit**), and the sidebar grows its rename / recolour /
+reorder / **+ Add** affordances. **Done** goes back. The mode is remembered
+across a refresh.
+
+Direct manipulation on the map — click an empty cell to add a box, drag from a
+box's right edge to draw a link — is **Shift-gated** in both modes, so the canvas
+reads as a picture until you hold Shift. What reading mode adds is that the
+keyboard can't change the map either: Delete, Enter and type-to-rename do nothing
+until you switch.
+
+The header buttons:
+- **Filters** opens the left panel as a drawer — rows, columns, tags, link styles, and (for now) **Trace a strand**. Esc or a click on the map closes it. Hidden while editing, where the panel is docked.
+- **New map** (editing only) clears the map and starts a fresh empty grid, asking for confirmation if a map is loaded.
+- **Bulk edit** (editing only) opens the seven-step wizard (dimmed until a map exists).
 - **Import** loads a spreadsheet from disk — same as dragging one onto the window.
-- **CSV** downloads the current map as a spreadsheet (re-importable). With a box selected, saves only its highlighted boxes and links.
-- **PNG** copies the map to your clipboard as a high-resolution PNG (rendered vector-sharp at up to 3× pixel density, backed off automatically to stay inside what browsers can allocate — one side at most 16384px, at most 64 megapixels total) and shows a "copied" toast — paste it straight into a doc, slide, or chat. It captures what's on screen, so zoom / pan to frame the part you want (only boxes overlapping the visible area are included, along with the links whose two ends are both on screen; if the whole map already fits, you get all of it). If a box is selected, only its highlighted boxes and links (out to the current **highlight depth**) are copied — rendered in the map's normal, un-highlighted style (the highlight only selects what to include). Either way the export is reflowed: empty columns and rows are dropped and the surviving rows reordered so connected boxes sit closer together. A map so large that even 1× exceeds those canvas limits still exports, but the toast tells you the percentage it came out at and suggests selecting a box to get that part at full quality; if the browser refuses the image outright, the toast says so rather than failing silently. (Clipboard image copy needs a secure context — works over http/localhost or https.)
-- **HTML** downloads `systems-map.html` — a self-contained, view-only page of the same framed map (same viewport / selection framing as **PNG**) with pan / zoom / hover-for-details (no editing, importing, or simulating).
+- **Export** opens a menu of the three ways out. **Spreadsheet** downloads the current map as a `.csv` (re-importable). With a box selected, saves only its highlighted boxes and links.
+- **Image** copies the map to your clipboard as a high-resolution PNG (rendered vector-sharp at up to 3× pixel density, backed off automatically to stay inside what browsers can allocate — one side at most 16384px, at most 64 megapixels total) and shows a "copied" toast — paste it straight into a doc, slide, or chat. It captures what's on screen, so zoom / pan to frame the part you want (only boxes overlapping the visible area are included, along with the links whose two ends are both on screen; if the whole map already fits, you get all of it). If a box is selected, only its highlighted boxes and links (out to the current **highlight depth**) are copied — rendered in the map's normal, un-highlighted style (the highlight only selects what to include). Either way the export is reflowed: empty columns and rows are dropped and the surviving rows reordered so connected boxes sit closer together. A map so large that even 1× exceeds those canvas limits still exports, but the toast tells you the percentage it came out at and suggests selecting a box to get that part at full quality; if the browser refuses the image outright, the toast says so rather than failing silently. (Clipboard image copy needs a secure context — works over http/localhost or https.)
+- **Web page** downloads `systems-map.html` — a self-contained, view-only page of the same framed map (same viewport / selection framing as **Image**) with pan / zoom / hover-for-details (no editing, importing, or simulating).
 - **Simulate** toggles simulation mode (sliders on adjustable inputs).
-- **Theme** switches between the light (Linen) and dark (Twilight) theme; your choice is remembered.
+- **Theme** (the ☀ / ☾ icon) switches between the light (Linen) and dark (Twilight) theme; your choice is remembered.
 
 ## What you get
 

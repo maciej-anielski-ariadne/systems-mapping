@@ -69,6 +69,14 @@ export const state: AppState = {
   solverStatus: { converged: true, iterations: 0, feedbackLoopCount: 0 },
   dataLoaded: false, // false until a CSV has been loaded
   loadErrors: [], // validation errors from the most recent load
+  // Reading vs editing. The app opens in "read": no docked left panel, the
+  // right panel closed until something is selected, and only the reading
+  // actions in the header. "edit" docks the panels and reveals the authoring
+  // controls. Persisted, so the mode you left in is the mode you come back to.
+  uiMode: "read",
+  // True while the left panel is open as a drawer (reading mode only — in edit
+  // mode it is docked and this is ignored).
+  filtersOpen: false,
   sidebarPinned: true, // when false, left sidebar shows as a narrow strip and expands on hover
   detailPanelPinned: true, // when false, right detail panel shows as a narrow strip and expands on hover
   sidebarWidth: 280, // pinned left sidebar width in px (drag the divider to change; double-click resets)

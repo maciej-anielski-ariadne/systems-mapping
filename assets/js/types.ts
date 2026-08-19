@@ -412,6 +412,11 @@ export interface AppState {
   solverStatus: SolverStatus;
   dataLoaded: boolean;
   loadErrors: string[];
+  /** "read" (default) = the map with the chrome out of the way; "edit" = the
+   *  docked panels and the authoring controls. Persisted with the UI state. */
+  uiMode: "read" | "edit";
+  /** Reading mode only: the left panel is open as an overlay drawer. */
+  filtersOpen: boolean;
   sidebarPinned: boolean;
   detailPanelPinned: boolean;
   sidebarWidth: number;

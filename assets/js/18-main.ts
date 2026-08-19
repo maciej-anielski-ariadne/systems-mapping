@@ -65,6 +65,7 @@ import {
 import { loadDataFromCsv } from "./06-data-loader";
 import { renderBuilder } from "./16b-builder-render";
 import { initCanvasEdit, bootEmptyStateGrid } from "./16e-canvas-edit";
+import { applyUiMode } from "./17-events";
 
 console.log("Ariadne Maps — canvas-edit ready");
 console.log(
@@ -78,6 +79,10 @@ console.log(
 // One-shot wiring for the canvas direct-edit module: mousemove for ghost
 // cell tracking, document keydown for Delete / Esc, undo toast element.
 initCanvasEdit();
+
+// Reading mode until told otherwise — applyRestoredUiState re-applies this
+// with the saved choice a moment later.
+applyUiMode();
 
 // ───── Restore previous session ──────────────────────────────────────────
 // loadDataFromCsv handles its own validation + full re-render. If the saved

@@ -22,6 +22,7 @@ import {
   scheduleLayoutRender,
   setMapTextScaleVar,
 } from "./11-rendering";
+import { hideTooltip } from "./12-tooltip";
 import { toggleSimulationMode } from "./14-simulation-panel";
 import { downloadCsvBlob, readCsvFile } from "./16-file-io";
 import { closeBuilder, openBuilder } from "./16a-builder-state";
@@ -151,6 +152,136 @@ document.addEventListener("keydown", event => {
   }
 });
 
+// ───── Reading vs editing ────────────────────────────────────────────────
+// The app opens in reading mode: no docked left panel, the right panel closed
+// until a box is selected, and a header holding only the reading actions. The
+// authoring controls — New map, Bulk edit, the sidebar's "+ Add" buttons, the
+// keyboard shortcuts that create and delete boxes — appear when you switch to
+// editing. Direct canvas editing is already Shift-gated (16e-canvas-edit.ts),
+// so reading mode mostly takes chrome away rather than powers.
+//
+// Everything here is one class on <body> plus one on .app; CSS owns the rest.
+export function applyUiMode(): void {
+  const reading = state.uiMode !== "edit";
+  document.body.classList.toggle("reading", reading);
+  document.body.classList.toggle("editing", !reading);
+
+  const app = document.querySelector(".app");
+  if (app && reading) app.classList.remove("filters-open");
+  if (reading) state.filtersOpen = false;
+
+  const button = document.getElementById("mode-toggle-button");
+  if (button) {
+    button.textContent = reading ? "Edit" : "Done";
+    button.setAttribute(
+      "data-tooltip",
+      reading ? "Add and change boxes, rows, columns and links." : "Finish editing and go back to reading the map.",
+    );
+  }
+  applyPanelPinnedClasses();
+  applySelectionClass();
+}
+
+export function setUiMode(mode: string): void {
+  state.uiMode = mode === "edit" ? "edit" : "read";
+  applyUiMode();
+  saveUiStateToStorage();
+}
+
+const modeToggleButton = document.getElementById("mode-toggle-button");
+if (modeToggleButton) {
+  modeToggleButton.addEventListener("click", () => {
+    setUiMode(state.uiMode === "edit" ? "read" : "edit");
+  });
+}
+
+// ───── The right panel opens on a selection ──────────────────────────────
+// In reading mode an empty detail panel is 340px of nothing, so the panel is
+// closed until there is something to say. Called from renderDetailPanel.
+export function applySelectionClass(): void {
+  const app = document.querySelector(".app");
+  if (!app) return;
+  app.classList.toggle("has-selection", !!state.selectedNodeId);
+}
+
+// ───── Filters drawer ────────────────────────────────────────────────────
+// In reading mode the left panel is not part of the layout — it slides over the
+// map when asked for, and goes away again on Esc, on a click outside it, or on
+// a second press of the button. In edit mode it is docked and the button is
+// hidden, because that panel is where rows / columns / tags are edited.
+export function setFiltersOpen(open: boolean): void {
+  const app = document.querySelector(".app");
+  if (!app) return;
+  state.filtersOpen = !!open && state.uiMode !== "edit";
+  app.classList.toggle("filters-open", state.filtersOpen);
+  const button = document.getElementById("filters-button");
+  if (button) {
+    button.classList.toggle("active", state.filtersOpen);
+    button.setAttribute("aria-expanded", state.filtersOpen ? "true" : "false");
+  }
+}
+
+const filtersButton = document.getElementById("filters-button");
+if (filtersButton) {
+  filtersButton.addEventListener("click", event => {
+    event.stopPropagation();
+    setFiltersOpen(!state.filtersOpen);
+  });
+}
+
+// Click anywhere outside the drawer closes it — including on the map, so
+// getting back to the picture never needs aim.
+document.addEventListener("mousedown", event => {
+  if (!state.filtersOpen) return;
+  const target = event.target as HTMLElement | null;
+  if (!target || !target.closest) return;
+  if (target.closest("#sidebar") || target.closest("#filters-button")) return;
+  setFiltersOpen(false);
+});
+
+// ───── Export menu ───────────────────────────────────────────────────────
+// The three exports differ only in the file they hand back, so they sit behind
+// one control. Each item keeps its original trigger class, so the handlers
+// above bind to them unchanged.
+export function setExportMenuOpen(open: boolean): void {
+  const menu = document.getElementById("export-menu");
+  const button = document.getElementById("export-button");
+  if (!menu || !button) return;
+  const show = !!open && state.dataLoaded;
+  // The button's own hover tooltip would sit on top of the menu it just
+  // opened, so it gets out of the way.
+  if (show && typeof hideTooltip === "function") hideTooltip();
+  menu.hidden = !show;
+  button.classList.toggle("active", show);
+  button.setAttribute("aria-expanded", show ? "true" : "false");
+}
+
+const exportButton = document.getElementById("export-button");
+if (exportButton) {
+  exportButton.addEventListener("click", event => {
+    event.stopPropagation();
+    const menu = document.getElementById("export-menu");
+    setExportMenuOpen(!menu || menu.hidden);
+  });
+}
+
+// Any click elsewhere — including on one of the items, which has done its job
+// by then — closes the menu.
+document.addEventListener("click", event => {
+  const menu = document.getElementById("export-menu");
+  if (!menu || menu.hidden) return;
+  const target = event.target as HTMLElement | null;
+  if (target && target.closest && target.closest("#export-button")) return;
+  setExportMenuOpen(false);
+});
+
+document.addEventListener("keydown", event => {
+  if (event.key !== "Escape") return;
+  const menu = document.getElementById("export-menu");
+  if (menu && !menu.hidden) { setExportMenuOpen(false); return; }
+  if (state.filtersOpen) setFiltersOpen(false);
+});
+
 // ───── Sidebar / detail-panel pin toggles ───────────────────────────────
 // Pinned (default) = panel stays expanded. Unpinned = panel collapses to a
 // narrow strip, expands on hover via CSS. Flipping the class on .app is all
@@ -159,8 +290,11 @@ document.addEventListener("keydown", event => {
 export function applyPanelPinnedClasses(): void {
   const app = document.querySelector(".app");
   if (!app) return;
-  app.classList.toggle("sidebar-unpinned", !state.sidebarPinned);
-  app.classList.toggle("detail-unpinned",  !state.detailPanelPinned);
+  // Reading mode lays the panels out itself (drawer on the left, open-on-
+  // selection on the right), so the pin classes only apply while editing.
+  const editing = state.uiMode === "edit";
+  app.classList.toggle("sidebar-unpinned", editing && !state.sidebarPinned);
+  app.classList.toggle("detail-unpinned",  editing && !state.detailPanelPinned);
 
   const updatePin = (button: HTMLElement | null, pinned: boolean, kind: string): void => {
     if (!button) return;

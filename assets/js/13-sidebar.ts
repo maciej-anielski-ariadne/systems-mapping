@@ -394,6 +394,9 @@ export function dragHandleButton(title: string): string {
 // guard: blur and keydown can both try to end the edit, and without it we'd run
 // the save-and-rebuild twice — `finished` makes sure `finish()` only runs once.
 export function beginInlineEdit(el: HTMLElement | null, row: HTMLElement | null, kind: string, id: string, field: string): void {
+  // Reading mode never renames. (Editing mode still asks for Shift, so the
+  // panel stays click-to-filter in both.)
+  if (state.uiMode !== "edit") return;
   if (!el || el.getAttribute("contenteditable") === "true") return;
   const original = el.textContent;
   el.setAttribute("contenteditable", "true");

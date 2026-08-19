@@ -121,23 +121,45 @@
       <div id="search-results" class="search-results" hidden></div>
     </div>
 
-    <!-- Header action buttons, ranked: one primary (Create), two secondary
-         (Edit / Import), then — past a divider — the three "get data out"
-         actions (CSV / PNG / HTML), then the Simulate / Theme toggles past
-         another divider. The trigger classes / ids are unchanged, so the
-         handlers in 17-events.js still bind. -->
-    <button class="header-button header-button--primary create-map-trigger" data-tooltip="Clear the map and start from an empty 3×3 grid.">Create</button>
-    <button class="header-button edit-data-trigger"   data-tooltip="Edit the whole map in a form — handy for many edits at once.">Edit</button>
+    <!-- Header actions. The app opens in READING mode, where the header holds
+         only what a reader reaches for: Filters (opens the left drawer),
+         Import, Export (a menu over the three ways out), Simulate, and the
+         switch into editing. Authoring actions — New map, Bulk edit — are
+         .edit-only and appear when you switch. Trigger classes / ids are
+         unchanged so the handlers in 17-events.ts still bind. -->
+    <button id="filters-button" class="header-button" aria-expanded="false"
+            data-tooltip="Rows, columns, tags and link styles — what the map is showing.">Filters</button>
+
+    <span class="header-divider" aria-hidden="true"></span>
     <button class="header-button import-data-trigger" data-tooltip="Open a map spreadsheet — same as dragging one onto the window.">Import</button>
 
-    <span class="header-divider" aria-hidden="true"></span>
-    <button class="header-button save-data-trigger"    data-tooltip="Save the map as a spreadsheet for Excel / Sheets. With a strand traced, saves just that chain; with a box selected, its highlighted boxes and links.">CSV</button>
-    <button class="header-button export-image-trigger" data-tooltip="Copy the map to the clipboard as a PNG. With a strand traced, copies just that chain; with a box selected, its highlighted boxes and links.">PNG</button>
-    <button class="header-button publish-html-trigger" data-tooltip="Publish a self-contained, view-only web page (pan / zoom / hover). With a strand traced, publishes just that chain; with a box selected, its highlighted boxes and links.">HTML</button>
+    <!-- Export menu. The three exports differ only in the file they hand you,
+         so they read as one action with three answers rather than three
+         buttons competing for the same glance. -->
+    <div class="menu-wrap">
+      <button id="export-button" class="header-button" aria-haspopup="true" aria-expanded="false"
+              data-tooltip="Take the map with you — spreadsheet, image, or a web page.">Export</button>
+      <div id="export-menu" class="menu" role="menu" hidden>
+        <button class="menu-item save-data-trigger" role="menuitem">
+          <b>Spreadsheet</b><span>A .csv you can edit in Excel or Sheets and load back in.</span>
+        </button>
+        <button class="menu-item export-image-trigger" role="menuitem">
+          <b>Image</b><span>Copies a high-resolution PNG to the clipboard.</span>
+        </button>
+        <button class="menu-item publish-html-trigger" role="menuitem">
+          <b>Web page</b><span>A self-contained, view-only page — pan, zoom, hover.</span>
+        </button>
+      </div>
+    </div>
+
+    <button id="sim-toggle-button" class="header-button" data-tooltip="Turn on what-if mode — a slider on every adjustable input; its effects update live.">Simulate</button>
 
     <span class="header-divider" aria-hidden="true"></span>
-    <button id="sim-toggle-button" class="header-button" data-tooltip="Turn on what-if mode — a slider on every adjustable input; its effects update live.">Simulate</button>
-    <button id="theme-toggle-button" class="header-button" data-tooltip="Switch between the light and dark theme. Your choice is remembered." aria-label="Switch theme">Theme</button>
+    <button class="header-button edit-only create-map-trigger" data-tooltip="Clear the map and start from an empty 3×3 grid.">New map</button>
+    <button class="header-button edit-only edit-data-trigger" data-tooltip="Edit the whole map in a form — handy for many edits at once.">Bulk edit</button>
+    <button id="mode-toggle-button" class="header-button header-button--primary"
+            data-tooltip="Switch between reading the map and changing it.">Edit</button>
+    <button id="theme-toggle-button" class="header-button header-button--icon" data-tooltip="Switch between the light and dark theme. Your choice is remembered." aria-label="Switch theme">☀</button>
   </header>
 
   <!-- Hidden file picker. Clicking any .import-data-trigger button triggers it. -->
@@ -314,14 +336,12 @@
     </div>
 
     <!-- Shown when no node is selected -->
+    <!-- Shown when no box is selected. In reading mode the panel is closed
+         until there IS a selection, so this is the edit-mode resting state —
+         one line, not a manual. -->
     <div class="detail-empty" id="detail-empty">
-      <h3>Cause and effect.</h3>
-      <p>Click any box to see its causes and effects — step by step, across the whole map.</p>
-      <p>Click again to deselect. Use the rows in the left panel to hide branches.</p>
-      <div class="hint">
-        <b>DATA</b> — All structure and numbers are loaded from a spreadsheet. Use <b>Create</b> / <b>Edit</b> in the header for the form-based helper, or edit the spreadsheet by hand in Excel / Sheets and drag it back in.<br><br>
-        <b>LINKS</b> — Each link is marked as <i>enables</i>, <i>increases</i>, or <i>decreases</i>, with a strength that drives the simulation.
-      </div>
+      <h3>Nothing selected.</h3>
+      <p>Click any box to see what causes it and what it affects.</p>
     </div>
     <!-- Filled by JS in 15-detail-panel.js when a node is selected -->
     <div id="detail-content" style="display: none;"></div>
@@ -354,7 +374,10 @@
     if (!btn) return;
     function relabel() {
       var isLight = document.documentElement.getAttribute('data-theme') === 'light';
-      btn.textContent = isLight ? '☾ Dark' : '☀ Light';
+      // Icon only — the button shows the theme you'd switch TO, and the word
+      // was costing header room that the map wanted.
+      btn.textContent = isLight ? '☾' : '☀';
+      btn.setAttribute('aria-label', isLight ? 'Switch to the dark theme' : 'Switch to the light theme');
     }
     relabel();
     btn.addEventListener('click', function () {
