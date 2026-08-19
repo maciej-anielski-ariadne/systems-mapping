@@ -253,6 +253,27 @@ p.lede{color:var(--text-secondary);max-width:66ch;margin:0 0 18px;line-height:1.
   color:var(--text-secondary);border:1px solid var(--border-subtle)}
 .lane-pill b{color:var(--text-primary);font-weight:600}
 
+
+/* ── Filter-as-you-type box pickers ───────────────────────────────────── */
+.combo{position:relative}
+.combo-input{width:100%;background:var(--bg-mid);color:var(--text-primary);
+  border:1px solid var(--border-subtle);border-radius:var(--r-i);padding:6px 8px;font-size:var(--fs-body)}
+.combo-input::placeholder{color:var(--text-tertiary)}
+.combo-pop{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:60;max-height:280px;overflow-y:auto;
+  background:var(--bg-deep);border:1px solid var(--border-strong);border-radius:var(--r-i);
+  box-shadow:var(--shadow-float);padding:4px}
+.combo-pop[hidden]{display:none}
+.combo-opt{padding:5px 8px;border-radius:4px;cursor:pointer;font-size:var(--fs-body);
+  display:flex;align-items:baseline;gap:8px}
+.combo-opt:hover{background:var(--act-tint)}
+.combo-opt.active{background:var(--act-on)}
+.combo-opt .grp{margin-left:auto;font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);
+  white-space:nowrap}
+.combo-opt mark{background:transparent;color:var(--act);font-weight:600}
+.combo-none{padding:6px 8px;color:var(--text-tertiary);font-size:var(--fs-cap)}
+.combo-more{padding:5px 8px;color:var(--text-tertiary);font-size:var(--fs-cap);border-top:1px solid var(--border-subtle);
+  margin-top:4px}
+
 body.dropping::after{content:"Drop the map CSV to load it";position:fixed;inset:12px;z-index:99;
   border:2px dashed var(--act);border-radius:var(--r-s);background:color-mix(in srgb,var(--bg-deepest) 88%,transparent);
   display:flex;align-items:center;justify-content:center;font-size:var(--fs-title);font-weight:600;
@@ -315,8 +336,24 @@ body.dropping::after{content:"Drop the map CSV to load it";position:fixed;inset:
 
     <div class="sect">
       <span class="eyebrow">Trace</span>
-      <div class="field"><label for="from-sel">From (cause)</label><select id="from-sel"></select></div>
-      <div class="field"><label for="to-sel">To (effect)</label><select id="to-sel"></select></div>
+      <div class="field">
+        <label for="from-box">From (cause)</label>
+        <div class="combo" data-for="from-sel">
+          <input class="combo-input" id="from-box" type="text" autocomplete="off" spellcheck="false"
+                 role="combobox" aria-expanded="false" aria-autocomplete="list" placeholder="Type to filter boxes…">
+          <div class="combo-pop" hidden role="listbox"></div>
+        </div>
+        <select id="from-sel" hidden></select>
+      </div>
+      <div class="field">
+        <label for="to-box">To (effect)</label>
+        <div class="combo" data-for="to-sel">
+          <input class="combo-input" id="to-box" type="text" autocomplete="off" spellcheck="false"
+                 role="combobox" aria-expanded="false" aria-autocomplete="list" placeholder="Type to filter boxes…">
+          <div class="combo-pop" hidden role="listbox"></div>
+        </div>
+        <select id="to-sel" hidden></select>
+      </div>
       <div class="row-btns">
         <button class="btn btn--primary" id="run">Condense</button>
         <button class="btn" id="worst">Worst case</button>
@@ -608,9 +645,50 @@ function laneFamiliesFromLabels(nodes, edges) {
     .filter(([t, c]) => c >= 2 && !/^[0-9]+$/.test(t) && t.length > 1)
     .map(([t]) => t));
 
-  const kept = families
+  let kept = families
     .filter(f => f.members.every(m => laneValues.has(m.token)))
     .sort((a, b) => b.members.length - a.members.length);
+
+  // One more test, and it matters on maps where ordinary nouns repeat.
+  // "Pick rate" / "Damage rate" / "Contract rate" is a legitimate one-word
+  // family and passes everything above — but those boxes are not parallel
+  // copies of one another, they just share a noun. Folding them invents lanes
+  // that explain nothing, and every section then carries a meaningless
+  // "Pick only" badge.
+  //
+  // Names cannot settle it; the graph can. Boxes that are really the same box
+  // once per lane PLAY THE SAME PART: Cannabis Seizure and Cocaine Seizure both
+  // sit between an Import and a Testing and both touch Border Force FTE and Lab
+  // capacity. Boxes that merely share a noun connect to unrelated things.
+  //
+  // So: give every box a provisional role from the names, then ask whether a
+  // family's members have neighbours playing the same ROLES. Comparing roles
+  // rather than box ids is what makes this work for lanes that share no
+  // infrastructure at all — each lane's own neighbours still map to the same
+  // roles as every other lane's.
+  const NEIGHBOUR_ROLE_OVERLAP = 0.25;
+  const provisional = new Map();
+  for (const f of kept) for (const m of f.members) if (!provisional.has(m.id)) provisional.set(m.id, "L:" + f.stem);
+  for (const n of nodes) if (!provisional.has(n.id)) provisional.set(n.id, "N:" + n.id);
+
+  const nbrRoles = new Map(nodes.map(n => [n.id, new Set()]));
+  for (const e of edges) {
+    if (nbrRoles.has(e.from)) nbrRoles.get(e.from).add("out" + provisional.get(e.to));
+    if (nbrRoles.has(e.to)) nbrRoles.get(e.to).add("in" + provisional.get(e.from));
+  }
+  const overlap = (a, b) => {
+    let shared = 0;
+    for (const r of a) if (b.has(r)) shared++;
+    const union = a.size + b.size - shared;
+    return union ? shared / union : 0;
+  };
+  kept = kept.filter(f => {
+    const sets = f.members.map(m => nbrRoles.get(m.id) || new Set());
+    let sum = 0, pairs = 0;
+    for (let i = 0; i < sets.length; i++)
+      for (let j = i + 1; j < sets.length; j++) { sum += overlap(sets[i], sets[j]); pairs++; }
+    return pairs > 0 && (sum / pairs) >= NEIGHBOUR_ROLE_OVERLAP;
+  });
 
   const roleOf = new Map(), laneOf = new Map();
   for (const f of kept) {
@@ -1121,6 +1199,135 @@ function render() {
 // ===========================================================================
 // WIRING
 // ===========================================================================
+
+// ===========================================================================
+// FILTER-AS-YOU-TYPE BOX PICKERS
+// ---------------------------------------------------------------------------
+// A native <select> holding a few hundred boxes is unusable — you cannot type
+// past the first letter. Each picker is therefore a text input over a popup
+// list, with the original <select> kept underneath as the value it carries, so
+// every other line in this file still reads `pickerValue("from-sel")` and
+// nothing else had to change.
+// ===========================================================================
+const COMBO_MAX = 200;    // rows put in the DOM per keystroke
+
+// Rank: a box whose name starts with what you typed beats one that merely
+// contains it, and a match at the start of any word beats one mid-word. That
+// ordering is what makes typing two or three letters land on the right box.
+function scoreMatch(label, q) {
+  const hay = label.toLowerCase();
+  const at = hay.indexOf(q);
+  if (at < 0) return -1;
+  if (at === 0) return 3;
+  return /\s/.test(hay.charAt(at - 1)) ? 2 : 1;
+}
+
+function comboFor(selectId) {
+  return document.querySelector('.combo[data-for="' + selectId + '"]');
+}
+
+function comboOptions(selectId) {
+  const sel = document.getElementById(selectId);
+  return [...sel.querySelectorAll("option")].map(o => ({
+    value: o.value, label: o.textContent,
+    group: o.parentElement && o.parentElement.tagName === "OPTGROUP" ? o.parentElement.label : "",
+  }));
+}
+
+function markMatch(label, q) {
+  if (!q) return esc(label);
+  const at = label.toLowerCase().indexOf(q);
+  if (at < 0) return esc(label);
+  return esc(label.slice(0, at)) + "<mark>" + esc(label.slice(at, at + q.length)) + "</mark>" +
+         esc(label.slice(at + q.length));
+}
+
+function renderCombo(selectId, query) {
+  const combo = comboFor(selectId);
+  const pop = combo.querySelector(".combo-pop");
+  const q = query.trim().toLowerCase();
+  const opts = comboOptions(selectId);
+  const matches = (q
+    ? opts.map(o => ({ o, s: scoreMatch(o.label, q) })).filter(x => x.s >= 0)
+        .sort((a, b) => b.s - a.s || a.o.label.length - b.o.label.length).map(x => x.o)
+    : opts);
+  combo._matches = matches.slice(0, COMBO_MAX);
+  combo._active = 0;
+  if (!matches.length) {
+    pop.innerHTML = '<div class="combo-none">No box matches that.</div>';
+  } else {
+    pop.innerHTML = combo._matches.map((o, i) =>
+      `<div class="combo-opt${i === 0 ? " active" : ""}" role="option" data-value="${esc(o.value)}">` +
+      `<span>${markMatch(o.label, q)}</span>` +
+      (o.group ? `<span class="grp">${esc(o.group)}</span>` : "") + `</div>`).join("") +
+      (matches.length > COMBO_MAX
+        ? `<div class="combo-more">${matches.length - COMBO_MAX} more — keep typing to narrow it down.</div>` : "");
+  }
+  pop.hidden = false;
+  combo.querySelector(".combo-input").setAttribute("aria-expanded", "true");
+}
+
+function closeCombo(selectId) {
+  const combo = comboFor(selectId);
+  if (!combo) return;
+  combo.querySelector(".combo-pop").hidden = true;
+  combo.querySelector(".combo-input").setAttribute("aria-expanded", "false");
+}
+
+function moveCombo(selectId, delta) {
+  const combo = comboFor(selectId);
+  if (!combo._matches || !combo._matches.length) return;
+  const rows = combo.querySelectorAll(".combo-opt");
+  combo._active = Math.max(0, Math.min(rows.length - 1, combo._active + delta));
+  rows.forEach((r, i) => r.classList.toggle("active", i === combo._active));
+  const row = rows[combo._active];
+  if (row && row.scrollIntoView) row.scrollIntoView({ block: "nearest" });
+}
+
+// The one way anything sets a picker, so the visible text and the underlying
+// <select> can never drift apart.
+function setPickerValue(selectId, value) {
+  const sel = document.getElementById(selectId);
+  sel.value = value;
+  const opt = [...sel.querySelectorAll("option")].find(o => o.value === value);
+  const input = comboFor(selectId).querySelector(".combo-input");
+  input.value = opt ? opt.textContent : "";
+  closeCombo(selectId);
+}
+const pickerValue = selectId => document.getElementById(selectId).value;
+
+function initCombo(selectId) {
+  const combo = comboFor(selectId);
+  const input = combo.querySelector(".combo-input");
+  const pop = combo.querySelector(".combo-pop");
+
+  input.addEventListener("focus", () => { input.select(); renderCombo(selectId, ""); });
+  input.addEventListener("input", () => renderCombo(selectId, input.value));
+  input.addEventListener("keydown", e => {
+    if (e.key === "ArrowDown") { e.preventDefault(); if (pop.hidden) renderCombo(selectId, input.value); else moveCombo(selectId, 1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); moveCombo(selectId, -1); }
+    else if (e.key === "Enter") {
+      e.preventDefault();
+      const pick = combo._matches && combo._matches[combo._active];
+      if (pick) setPickerValue(selectId, pick.value);
+    } else if (e.key === "Escape") {
+      // Abandon the half-typed text and go back to what is actually selected.
+      e.preventDefault();
+      setPickerValue(selectId, pickerValue(selectId));
+      input.blur();
+    }
+  });
+  // A click lands before blur, so commit on mousedown or the popup closes first.
+  pop.addEventListener("mousedown", e => {
+    const row = e.target.closest(".combo-opt");
+    if (!row) return;
+    e.preventDefault();
+    setPickerValue(selectId, row.getAttribute("data-value"));
+  });
+  // Leaving with unmatched text would show a box that isn't selected.
+  input.addEventListener("blur", () => setTimeout(() => setPickerValue(selectId, pickerValue(selectId)), 120));
+}
+
 function fillPickers() {
   const groups = new Map();
   for (const n of G.nodes) {
@@ -1133,6 +1340,10 @@ function fillPickers() {
     list.map(n => `<option value="${esc(n.id)}">${esc(n.label)}</option>`).join("") + "</optgroup>").join("");
   document.getElementById("from-sel").innerHTML = html;
   document.getElementById("to-sel").innerHTML = html;
+  const first = G.nodes.length ? G.nodes[0].id : "";
+  const last = G.nodes.length ? G.nodes[G.nodes.length - 1].id : "";
+  setPickerValue("from-sel", first);
+  setPickerValue("to-sel", last);
 }
 
 function summarise() {
@@ -1211,8 +1422,8 @@ function findWorstPair() {
       if (!best || total > best.total) best = { from: s, to: t, total };
     }
     if (!best || !best.total) { main.innerHTML = '<p class="busy">No connected pair found. Pick two boxes yourself.</p>'; return; }
-    document.getElementById("from-sel").value = best.from;
-    document.getElementById("to-sel").value = best.to;
+    setPickerValue("from-sel", best.from);
+    setPickerValue("to-sel", best.to);
     runTrace(best.from, best.to);
   }, 16);
 }
@@ -1296,7 +1507,7 @@ window.addEventListener("drop", e => {
 });
 
 document.getElementById("run").addEventListener("click", () =>
-  runTrace(document.getElementById("from-sel").value, document.getElementById("to-sel").value));
+  runTrace(pickerValue("from-sel"), pickerValue("to-sel")));
 document.getElementById("worst").addEventListener("click", findWorstPair);
 document.getElementById("lane-mode").addEventListener("change", () => {
   refreshLanes();
@@ -1322,6 +1533,8 @@ document.getElementById("theme-btn").addEventListener("click", () => {
   root.setAttribute("data-theme", (now ? now === "dark" : sysDark) ? "light" : "dark");
 });
 
+initCombo("from-sel");
+initCombo("to-sel");
 loadMap(makeLaneMap());
 findWorstPair();
 </script>

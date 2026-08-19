@@ -22,7 +22,9 @@ something to look at.
 
 **Then:** hit **Worst case** to jump straight to the pair of boxes with the
 most routes between them — the trace that breaks the list — or pick a From and
-To yourself and hit **Condense**.
+To yourself and hit **Condense**. The two box pickers filter as you type
+(arrows to move, Enter to pick, Esc to cancel), because a native dropdown
+holding a few hundred boxes cannot be typed past its first letter.
 
 ### The problem it exists to test
 
@@ -69,14 +71,27 @@ reliable:
 | **The map's own rows** | Same, using `stream`. |
 | **Don't collapse lanes** | Off, for comparison. |
 
-The name-based mode rests on one test worth knowing about, because it is what
-makes it work at all. *Cannabis Seizure* and *Cocaine Seizure* differ by one
-word — but so do *Cannabis Import* and *Cannabis Seizure*, and those are a
-**sequence**, not alternatives. The difference: lane members are alternatives
-to one another, so **none of them is linked to another**. A sequence always
-fails that test, a set of parallel lanes always passes. Bare numbers are also
-excluded as lane values, since *Overtime 3* is an instance counter rather than
-a lane.
+The name-based mode rests on two tests, and both are load-bearing.
+
+**Not a sequence.** *Cannabis Seizure* and *Cocaine Seizure* differ by one word
+— but so do *Cannabis Import* and *Cannabis Seizure*, and those are a
+**sequence**, not alternatives. Lane members are alternatives to one another,
+so none of them is linked to another; a sequence always fails that, parallel
+lanes always pass. Bare numbers are excluded too, since *Overtime 3* is an
+instance counter rather than a lane.
+
+**Same part in the graph.** *Pick rate* / *Damage rate* / *Contract rate* is a
+perfectly good one-word family that passes everything above — but those boxes
+merely share a noun, and folding them invents lanes that explain nothing. Names
+cannot settle it; the graph can. Boxes that really are the same box once per
+lane **play the same part**: they sit between the same kinds of neighbour. So
+each box gets a provisional role from its name, and a family is kept only if
+its members' neighbours play the same *roles*. Comparing roles rather than box
+ids is what lets this work for lanes that share no infrastructure at all.
+
+On the 296-box demo, whose boxes are not parallel copies, these tests cut the
+false lanes from 15 to 6 and the boxes folded from 65 to 6. It is a heuristic,
+not a proof — check the lane list in the left rail against what you know.
 
 ### Reading a section
 
