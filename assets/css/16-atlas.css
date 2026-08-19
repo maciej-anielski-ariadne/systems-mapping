@@ -340,3 +340,43 @@ svg.atlas.panning { cursor: grabbing; }
  * turning the sliders on doesn't have to redraw the picture to explain them. */
 .atlas-legend .sim-only { display: none; }
 body.sim-mode .atlas-legend .sim-only { display: inline; }
+
+/* Zoom trio, bottom-right — the same place and shape as the map's, because it
+ * does the same job. */
+.atlas-zoom {
+  position: absolute;
+  right: var(--space-2);
+  bottom: var(--space-2);
+  display: flex;
+  gap: var(--space-1);
+  z-index: 2;
+}
+
+.atlas-zoom .atlas-btn { min-width: 34px; text-align: center; font-variant-numeric: tabular-nums; }
+
+/* The boxes behind a circle. A circle can stand for twenty of them, and this
+ * is the only place they are named — so they are a list of real buttons, each
+ * one a way back to that box on the map. */
+.ins .k-head {
+  margin: var(--space-3) 0 var(--space-1_5);
+  font-size: var(--fs-cap);
+  letter-spacing: var(--tracking-cap);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.ins .k-head .m { display: inline; text-transform: none; letter-spacing: 0; }
+
+.atlas-boxes { display: flex; flex-direction: column; gap: 2px; }
+
+.atlas-box {
+  text-align: left;
+  padding: 4px var(--space-2);
+  border-radius: var(--radius-interactive);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
+  cursor: pointer;
+}
+
+.atlas-box:hover { background: var(--act-tint); color: var(--text-primary); }

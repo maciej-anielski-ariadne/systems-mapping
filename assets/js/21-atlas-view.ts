@@ -20,6 +20,7 @@
 import { EDGES, NODES, nodeById, state } from "./03-state";
 import { escapeHtml } from "./04-utils";
 import { resolveEdgeElasticity } from "./07-simulation-engine";
+import { scrollNodeIntoView, selectNode } from "./09-graph-selection";
 import { renderDetailPanel } from "./15-detail-panel";
 import {
   END,
@@ -206,7 +207,17 @@ function viewAtlas(A: any, M: any) {
     place();
   }
   const at = new Map<any, any>(used.flat().map(id => [id, [PAD + M.depth.get(id) * COL_W, y.get(id)]]));
-  WORLD = { W, H, at, rOf, A, M };
+  // What is actually drawn, edges of the circles included. Fitting to the
+  // nominal width instead clipped whichever element was fat enough to hang past
+  // it — usually the start box, the last one you want cut off.
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const [id, p] of at) {
+    const r = rOf.get(id);
+    minX = Math.min(minX, p[0] - r); maxX = Math.max(maxX, p[0] + r);
+    minY = Math.min(minY, p[1] - r); maxY = Math.max(maxY, p[1] + r);
+  }
+  const bounds = { x: minX - 12, y: minY - 22, w: (maxX - minX) + 24, h: (maxY - minY) + 44 };
+  WORLD = { W, H, at, rOf, A, M, bounds };
 
   const parts: any[] = [];
   for (const [a, outs] of A.succ) {
@@ -251,9 +262,15 @@ function viewAtlas(A: any, M: any) {
       <div class="atlas-controls">
         <button class="atlas-btn" type="button" data-atlas-close>← Back to the map</button>
         <div class="zoomctl" id="atlas-zoomctl" hidden>
-          <button class="atlas-btn" type="button" data-zoomout>Back out</button>
+          <button class="atlas-btn" type="button" data-zoomout>Fit to width</button>
           <button class="atlas-btn" type="button" data-replay>Replay the loops</button>
         </div>
+      </div>
+      <div class="atlas-zoom" role="group" aria-label="Zoom the atlas">
+        <button class="atlas-btn" type="button" data-atlas-zoom="out" aria-label="Zoom out">−</button>
+        <button class="atlas-btn" type="button" id="atlas-zoom-readout"
+          data-atlas-zoom="fit" aria-label="Fit the whole picture across the frame">100%</button>
+        <button class="atlas-btn" type="button" data-atlas-zoom="in" aria-label="Zoom in">+</button>
       </div>
     </div>`;
 }
@@ -321,17 +338,44 @@ function setScale() {
   svg.setAttribute("viewBox", `${VB.x.toFixed(1)} ${VB.y.toFixed(1)} ${VB.w.toFixed(1)} ${VB.h.toFixed(1)}`);
   // The frame moves every animation frame, and what belongs to a zoomed-in
   // frame — the grab cursor, the way back out — has to keep up with it.
-  const zoomedIn = VB.w < WORLD.W - 1;
+  const zoomedIn = VB.w < wholePicture().w - 1;
   svg.classList.toggle("zoomed", zoomedIn);
   const ctl = document.getElementById("atlas-zoomctl");
   if (ctl) {
-    ctl.hidden = !zoomedIn;
+    // The way back is offered whenever there is somewhere to come back FROM —
+    // inside a tangle, or simply zoomed in past the whole picture.
+    ctl.hidden = !zoomedIn && !FOCUS;
+    const out = ctl.querySelector("[data-zoomout]") as HTMLElement | null;
+    if (out) out.textContent = FOCUS ? "Back out" : "Fit to width";
     const rp = ctl.querySelector("[data-replay]") as HTMLElement | null;
     if (rp) rp.hidden = !FOCUS;
   }
+  const readout = document.getElementById("atlas-zoom-readout");
+  if (readout) readout.textContent = Math.round(atlasZoomPercent() * 100) + "%";
 }
 
-const wholePicture = () => ({ x: 0, y: 0, w: WORLD.W, h: WORLD.H });
+// The frame the picture rests in: the whole of it across the width, filling
+// the frame rather than sitting letterboxed inside it. The SVG keeps its aspect
+// ratio, so a viewBox shaped like the frame is what stops the browser padding
+// the sides.
+function frameAspect(): number {
+  const svg = svgEl();
+  const box = svg ? svg.getBoundingClientRect() : null;
+  const w = box && box.width ? box.width : 16;
+  const h = box && box.height ? box.height : 9;
+  return w / h;
+}
+
+function wholePicture(): any {
+  const b = WORLD.bounds || { x: 0, y: 0, w: WORLD.W, h: WORLD.H };
+  const aspect = frameAspect();
+  // Fit the width of what is drawn. Where the picture is taller than that
+  // leaves room for, the rest is panned to rather than shrunk away: a tall map
+  // squeezed into a short frame stops being readable long before it fits.
+  let w = b.w, h = w / aspect;
+  if (h < b.h) { h = b.h; w = h * aspect; }
+  return { x: b.x - (w - b.w) / 2, y: b.y - (h - b.h) / 2, w, h };
+}
 
 function frameOn(id: any) {
   const [cx, cy] = WORLD.at.get(id), r = WORLD.rOf.get(id);
@@ -539,33 +583,38 @@ export function atlasPanelHtml(): string {
 
   if (SELECT && A.nodes.has(SELECT)) {
     const node = A.nodes.get(SELECT);
-    const names = (set: any) => [...set].filter(x => x !== END).map(labelOf);
+    const names = (set: any) => [...set].filter((x: any) => x !== END).map(labelOf);
     const ins = names(A.pred.get(SELECT) || new Set<any>()), outs = names(A.succ.get(SELECT) || new Set<any>());
     const list = (l: any) => l.length
       ? l.slice(0, 6).map((n: any) => `<em>${escapeHtml(clip(n, 30))}</em>`).join("") +
         (l.length > 6 ? `<i>+${l.length - 6} more</i>` : "")
       : `<i>nothing</i>`;
-    const lanes = [...(node.lanes || [])].sort();
+    // The one thing the picture cannot say. A circle can stand for twenty
+    // boxes; here they are by name, and each one opens itself on the map.
+    const boxes = node.boxes.map((b: any) =>
+      `<button type="button" class="atlas-box" data-atlas-box="${escapeHtml(b)}">${
+        escapeHtml(clip(boxLabel(b), 44))}</button>`).join("");
     return `<div class="ins">
       <header><b>${escapeHtml(node.label)}</b>
         <span class="m">${pct(M.weight(SELECT))} of everything${
           node.boxes.length > 1 ? ` · ${node.boxes.length} boxes` : ""}</span></header>
-      <p class="cap"><b>${pct(M.weight(SELECT))}</b> of the readings from <b>${escapeHtml(start)}</b> pass
-        through here${node.boxes.length > 1
-          ? `, and this one circle stands for ${node.boxes.length} boxes that behave alike — the rail
-             lists them` : ""}.</p>
+      <p class="cap"><b>${pct(M.weight(SELECT))}</b> of the readings from <b>${escapeHtml(start)}</b>
+        pass through here${node.boxes.length > 1
+          ? `, and this one circle stands for ${node.boxes.length} boxes that behave alike`
+          : ""}.</p>
       <div class="wires"><span class="k">reached from</span><div class="chain">${list(ins)}</div></div>
       <div class="wires"><span class="k">leads to</span><div class="chain">${list(outs)}</div></div>
-      ${lanes.length ? `<p class="hint" style="margin-top:7px">Lanes: ${escapeHtml(lanes.slice(0, 8).join(", "))}${
-        lanes.length > 8 ? ` +${lanes.length - 8}` : ""}</p>` : ""}
+      <p class="k-head">${node.boxes.length === 1 ? "The box" : "The " + node.boxes.length + " boxes"}
+        behind this circle <span class="m">— click one to open it on the map</span></p>
+      <div class="atlas-boxes">${boxes}</div>
       ${explain}</div>`;
   }
 
   return `<div class="ins">
     <header><b>Everything downstream of ${escapeHtml(start)}</b>
       <span class="m">${A.elements} elements · ${formatCount(A.shapes)} readings</span></header>
-    <p class="lede">Point at any circle to name it. Click one to light up what it reaches and what
-      reaches it. Click an amber <b>↻</b> to go inside a knot of feedback and watch its loops.</p>
+    <p class="lede">Click a circle for the boxes behind it and what it touches. An amber
+      <b>↻</b> opens as a wheel of its own feedback.</p>
     ${explain}</div>`;
 }
 
@@ -776,6 +825,61 @@ export function refreshAtlasValues(): void {
 }
 
 // ---------------------------------------------------------------------------
+// ZOOM AND PAN
+// ---------------------------------------------------------------------------
+// The frame is a viewBox, so zooming is arithmetic on four numbers rather than
+// a transform stack: divide the width about the cursor and the picture grows
+// under it. 100% is the whole picture across the width — the view it rests in —
+// so the readout means here what it means on the map: you are seeing all of it.
+//
+// The gestures match the map on purpose: plain wheel / two-finger scroll pans,
+// ctrl (or pinch) zooms about the cursor.
+// ---------------------------------------------------------------------------
+export const ATLAS_ZOOM_MIN = 0.25;
+export const ATLAS_ZOOM_MAX = 24;
+
+export function atlasZoomPercent(): number {
+  if (!WORLD || !VB) return 1;
+  return wholePicture().w / VB.w;
+}
+
+export function atlasFitWidth(): void {
+  if (!WORLD) return;
+  stopTour();
+  FOCUS = null;
+  paintAtlas();
+  zoomTo(wholePicture());
+}
+
+export function atlasZoomBy(factor: number, anchorClientX?: number, anchorClientY?: number): void {
+  if (!WORLD || !VB) return;
+  const base = wholePicture().w;
+  const w = Math.max(base / ATLAS_ZOOM_MAX, Math.min(base / ATLAS_ZOOM_MIN, VB.w / factor));
+  if (Math.abs(w - VB.w) < 0.01) return;
+  const h = VB.h * (w / VB.w);
+
+  // Anchored on the cursor when there is one: the point under the pointer is
+  // what the reader is thinking about, and it should not move.
+  const svg = svgEl();
+  let fx = 0.5, fy = 0.5;
+  if (svg && typeof anchorClientX === "number" && typeof anchorClientY === "number") {
+    const box = svg.getBoundingClientRect();
+    if (box.width && box.height) {
+      fx = Math.max(0, Math.min(1, (anchorClientX - box.left) / box.width));
+      fy = Math.max(0, Math.min(1, (anchorClientY - box.top) / box.height));
+    }
+  }
+  VB = { x: VB.x + (VB.w - w) * fx, y: VB.y + (VB.h - h) * fy, w, h };
+  setScale();
+}
+
+export function atlasPanBy(dxWorld: number, dyWorld: number): void {
+  if (!VB) return;
+  VB = { ...VB, x: VB.x + dxWorld, y: VB.y + dyWorld };
+  setScale();
+}
+
+// ---------------------------------------------------------------------------
 // THE PICTURE ANSWERS THE POINTER
 // ---------------------------------------------------------------------------
 // One delegated listener set on the stage, bound once. Click an element to
@@ -787,7 +891,7 @@ let panMoved = 0;
 
 function atlasPointerDown(e: PointerEvent): void {
   const svg = svgEl();
-  if (!svg || !VB || !FOCUS) return;
+  if (!svg || !VB) return;
   panFrom = { x: e.clientX, y: e.clientY, vb: { ...VB } };
   panMoved = 0;
 }
@@ -826,6 +930,23 @@ export function initAtlasStage(): void {
   stage.dataset.wired = "1";
 
   stage.addEventListener("pointerdown", e => { if ((e.target as Element).closest("svg.atlas")) atlasPointerDown(e); });
+
+  // Ctrl / Cmd + wheel and trackpad pinch zoom about the cursor; a plain wheel
+  // or two-finger scroll pans. The same division of labour as the map, so the
+  // gesture you already know keeps working when the picture changes.
+  stage.addEventListener("wheel", event => {
+    const e = event as WheelEvent;
+    if (!VB || !(e.target as Element).closest("svg.atlas")) return;
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey) {
+      atlasZoomBy(Math.exp(-e.deltaY * 0.0022), e.clientX, e.clientY);
+      return;
+    }
+    const svg = svgEl();
+    const box = svg ? svg.getBoundingClientRect() : null;
+    const perPx = box && box.width ? VB.w / box.width : 1;
+    atlasPanBy(e.deltaX * perPx, e.deltaY * perPx);
+  }, { passive: false });
   stage.addEventListener("pointermove", atlasPointerMove);
   stage.addEventListener("pointerup", atlasPointerUp);
   stage.addEventListener("pointercancel", atlasPointerUp);
@@ -837,7 +958,18 @@ export function initAtlasStage(): void {
     if (!target || !target.closest) return;
 
     if (target.closest("[data-atlas-close]")) { closeAtlas(); return; }
-    if (target.closest("[data-zoomout]"))     { leaveTangle(false); return; }
+    const zoomBtn = target.closest("[data-atlas-zoom]") as HTMLElement | null;
+    if (zoomBtn) {
+      const which = zoomBtn.dataset.atlasZoom;
+      if (which === "fit") atlasFitWidth();
+      else atlasZoomBy(which === "in" ? 1.3 : 1 / 1.3);
+      return;
+    }
+    // Inside a tangle this backs out of it; merely zoomed in, it fits the width.
+    if (target.closest("[data-zoomout]")) {
+      if (FOCUS) leaveTangle(false); else atlasFitWidth();
+      return;
+    }
     if (target.closest("[data-replay]"))      { WHEEL_PICK = null; paintAtlas(); playTour(); return; }
     if (target.closest("[data-wheelnext]"))   { WHEEL_LOOP++; paintAtlas(); return; }
 
@@ -848,6 +980,14 @@ export function initAtlasStage(): void {
     if (!g) return;
     if (g.dataset.loop) enterTangle(g.dataset.el);
     else selectEl(g.dataset.el);
+  });
+
+  // Double-click closes the frame in on any element, tangle or not.
+  stage.addEventListener("dblclick", event => {
+    const g = (event.target as Element).closest("svg.atlas g.n") as HTMLElement | null;
+    if (!g || !WORLD || !WORLD.at.has(g.dataset.el)) return;
+    event.preventDefault();
+    zoomTo(frameOn(g.dataset.el));
   });
 
   stage.addEventListener("keydown", event => {
@@ -891,6 +1031,23 @@ export function initAtlasStage(): void {
     tip.style.top  = (event as MouseEvent).clientY + 14 + "px";
   });
 
+  // The panel is the app's, so its atlas content is wired here rather than in
+  // the detail panel — clicking a box name closes the atlas and opens that box.
+  const content = document.getElementById("detail-content");
+  if (content && !content.dataset.atlasWired) {
+    content.dataset.atlasWired = "1";
+    content.addEventListener("click", event => {
+      const el = (event.target as Element).closest("[data-atlas-box]") as HTMLElement | null;
+      if (!el || !atlasIsOpen()) return;
+      const id = el.dataset.atlasBox!;
+      closeAtlas();
+      if (nodeById[id] && typeof selectNode === "function") {
+        selectNode(id);
+        if (typeof scrollNodeIntoView === "function") scrollNodeIntoView(id);
+      }
+    });
+  }
+
   stage.addEventListener("mouseleave", () => {
     const tip = document.getElementById("tooltip");
     if (tip) tip.classList.remove("visible");
@@ -907,4 +1064,10 @@ document.addEventListener("keydown", event => {
   closeAtlas();
 });
 
-addEventListener("resize", () => { if (atlasIsOpen() && VB) setScale(); });
+addEventListener("resize", () => {
+  if (!atlasIsOpen() || !VB || !WORLD) return;
+  // At rest the view IS the frame's shape, so a resize re-fits it; zoomed in or
+  // inside a tangle, the reader chose that frame and it is left alone.
+  if (!FOCUS && VB.w >= wholePicture().w - 1) VB = wholePicture();
+  setScale();
+});
