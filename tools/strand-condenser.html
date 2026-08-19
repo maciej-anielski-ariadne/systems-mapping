@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<!--
+================================================================================
+ Strand condenser — a standalone analysis tool for Ariadne Maps.
+
+ NOT part of the app. Open this file directly in a browser, then drop in the
+ CSV the app saves with its CSV button. Everything runs locally in the page;
+ nothing is uploaded anywhere.
+
+ What it is for: when a strand has tens of thousands of routes between the same
+ two boxes, "the strongest ten" is ten near-identical chains. This tool runs
+ four ways of condensing that list side by side, on your real map, so you can
+ see which one actually reads.
+
+   Strongest first  — what the app does today, for comparison.
+   Most different   — same number of rows, each as unlike the others as possible.
+   Families         — group routes sharing a spine; show the differing stretch.
+   Where they differ— no list; name the boxes where routes actually split.
+
+ The header stats are the point: "closest pair" is how different the two most
+ similar rows on screen are. Low means you are reading the same route twice.
+
+ See tools/README.md for the findings this was built to test.
+================================================================================
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect width='24' height='24' rx='6' fill='%2314161d'/><path d='M4 17C8 17 8 8 12 8s4 9 8 9' fill='none' stroke='%23bfaede' stroke-width='1.6' stroke-linecap='round'/><circle cx='4' cy='17' r='2' fill='%23bfaede'/><circle cx='12' cy='8' r='2' fill='%23bfaede'/><circle cx='20' cy='17' r='2' fill='%23bfaede'/></svg>">
+<title>Strand Condenser</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+
+<style>
+/* Tokens lifted from the app's 01-variables.css so this reads as part of
+   Ariadne. Light (Linen) is the base; Twilight (dark) overrides the bases. */
+:root {
+  --bg-deepest:#fbfaf7; --bg-deep:#f3f1ea; --bg-mid:#eae7de; --bg-light:#e0dcd1; --bg-lighter:#d2cdc0;
+  --border-subtle:#e7e2d7; --border-strong:#c2bcac;
+  --text-primary:#3b3a40; --text-secondary:#6b6a73; --text-tertiary:#8c8a93;
+  --accent-blue:#5b82b8; --accent-blue-hi:#486ea3; --accent-amber:#b48a52;
+  --accent-green:#5f9e7e; --accent-red:#bd7780; --accent-purple:#8a76b3;
+  --shadow-color:90,85,75; --shadow-strength:.16;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg-deepest:#14161d; --bg-deep:#1c1f28; --bg-mid:#262a35; --bg-light:#313643; --bg-lighter:#3d4251;
+    --border-subtle:#2c313d; --border-strong:#444a5e;
+    --text-primary:#e6e4ea; --text-secondary:#aeb0c0; --text-tertiary:#83879a;
+    --accent-blue:#8fb6d9; --accent-blue-hi:#aecce8; --accent-amber:#e6c79c;
+    --accent-green:#9ed1b4; --accent-red:#e3a3a8; --accent-purple:#bfaede;
+    --shadow-color:0,0,0; --shadow-strength:.5;
+  }
+}
+:root[data-theme="dark"] {
+  --bg-deepest:#14161d; --bg-deep:#1c1f28; --bg-mid:#262a35; --bg-light:#313643; --bg-lighter:#3d4251;
+  --border-subtle:#2c313d; --border-strong:#444a5e;
+  --text-primary:#e6e4ea; --text-secondary:#aeb0c0; --text-tertiary:#83879a;
+  --accent-blue:#8fb6d9; --accent-blue-hi:#aecce8; --accent-amber:#e6c79c;
+  --accent-green:#9ed1b4; --accent-red:#e3a3a8; --accent-purple:#bfaede;
+  --shadow-color:0,0,0; --shadow-strength:.5;
+}
+:root {
+  --act:var(--accent-blue); --act-hi:var(--accent-blue-hi);
+  --act-tint:color-mix(in srgb, var(--accent-blue) 14%, transparent);
+  --act-on:color-mix(in srgb, var(--accent-blue) 22%, transparent);
+  --focus-ring:0 0 0 2px color-mix(in srgb, var(--accent-blue) 55%, transparent);
+  --shadow-float:0 10px 30px rgba(var(--shadow-color), var(--shadow-strength));
+  --r-i:6px; --r-s:12px;
+  --fs-cap:11px; --fs-body:13px; --fs-title:18px; --track:.08em;
+  --font-ui:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --font-mono:'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,monospace;
+  color-scheme: light dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg-deepest);color:var(--text-primary);
+  font-family:var(--font-ui);font-size:var(--fs-body);line-height:1.5;-webkit-font-smoothing:antialiased}
+button,select,input{font:inherit;color:inherit}
+button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible{outline:none;box-shadow:var(--focus-ring)}
+.eyebrow{font-family:var(--font-mono);font-size:var(--fs-cap);letter-spacing:var(--track);
+  text-transform:uppercase;color:var(--text-tertiary)}
+
+.shell{display:grid;grid-template-rows:56px 1fr;grid-template-columns:326px 1fr;
+  grid-template-areas:"head head" "rail main";height:100dvh}
+.head{grid-area:head;display:flex;align-items:center;gap:16px;padding:0 16px;
+  border-bottom:1px solid var(--border-subtle);background:var(--bg-deep)}
+.head h1{font-size:var(--fs-title);font-weight:600;margin:0;letter-spacing:-.01em}
+.brand{display:flex;flex-direction:column;gap:1px;line-height:1.2}
+.spacer{flex:1}
+.icon-btn{border:1px solid var(--border-subtle);background:var(--bg-mid);border-radius:var(--r-i);
+  padding:5px 10px;color:var(--text-secondary);cursor:pointer}
+.icon-btn:hover{background:var(--act-tint);color:var(--text-primary)}
+
+.rail{grid-area:rail;border-right:1px solid var(--border-subtle);background:var(--bg-deep);
+  overflow-y:auto;display:flex;flex-direction:column}
+.sect{padding:14px 16px;border-bottom:1px solid var(--border-subtle)}
+.sect>.eyebrow{display:block;margin-bottom:10px}
+.field{display:flex;flex-direction:column;gap:4px;margin-bottom:8px}
+.field label{font-family:var(--font-mono);font-size:var(--fs-cap);color:var(--text-tertiary);
+  letter-spacing:var(--track);text-transform:uppercase}
+select,textarea{background:var(--bg-mid);color:var(--text-primary);border:1px solid var(--border-subtle);
+  border-radius:var(--r-i);padding:6px 8px;width:100%;font-size:var(--fs-body)}
+textarea{font-family:var(--font-mono);font-size:10px;min-height:78px;resize:vertical}
+.btn{border:1px solid var(--border-subtle);background:transparent;color:var(--text-secondary);
+  padding:7px 12px;border-radius:var(--r-i);cursor:pointer;flex:1}
+.btn:hover{background:var(--act-tint);color:var(--text-primary)}
+.btn--primary{background:var(--act);border-color:var(--act);color:var(--bg-deepest);font-weight:600}
+.btn--primary:hover{background:var(--act-hi);border-color:var(--act-hi);color:var(--bg-deepest)}
+.row-btns{display:flex;gap:6px;margin-top:4px}
+.hint{color:var(--text-tertiary);font-size:var(--fs-cap);line-height:1.55;margin:8px 0 0}
+
+.strategies{display:flex;flex-direction:column;gap:4px}
+.strategy{width:100%;text-align:left;border:1px solid transparent;background:transparent;
+  border-radius:var(--r-i);padding:8px 10px;cursor:pointer;display:flex;flex-direction:column;gap:3px}
+.strategy:hover{background:var(--act-tint)}
+.strategy[aria-pressed="true"]{background:var(--act-on);border-color:color-mix(in srgb,var(--act) 45%,transparent)}
+.strategy b{font-weight:600;font-size:var(--fs-body)}
+.strategy span{font-size:var(--fs-cap);color:var(--text-tertiary);line-height:1.45}
+
+.slider-row{display:flex;align-items:center;gap:10px}
+input[type=range]{flex:1;accent-color:var(--act)}
+.slider-val{font-family:var(--font-mono);font-size:var(--fs-cap);min-width:22px;text-align:right;
+  font-variant-numeric:tabular-nums}
+
+.main{grid-area:main;overflow-y:auto;padding:22px 24px 60px}
+.stats{display:flex;flex-wrap:wrap;width:max-content;max-width:100%;border:1px solid var(--border-subtle);
+  border-radius:var(--r-i);background:var(--bg-deep);overflow:hidden;margin-bottom:20px}
+.stats>div{padding:9px 16px;border-right:1px solid var(--border-subtle)}
+.stats>div:last-child{border-right:0}
+.stats .k{display:block;font-family:var(--font-mono);font-size:10px;letter-spacing:var(--track);
+  text-transform:uppercase;color:var(--text-tertiary)}
+.stats .v{font-family:var(--font-mono);font-size:15px;font-variant-numeric:tabular-nums}
+.stats .v.good{color:var(--accent-green)}
+.stats .v.bad{color:var(--accent-red)}
+
+h2.section{font-size:var(--fs-title);font-weight:600;margin:0 0 4px}
+p.lede{color:var(--text-secondary);max-width:66ch;margin:0 0 18px;line-height:1.6}
+
+.routes{display:flex;flex-direction:column;gap:8px}
+.route{border:1px solid var(--border-subtle);border-radius:var(--r-i);background:var(--bg-deep);
+  padding:10px 12px;display:flex;flex-direction:column;gap:7px}
+.route-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.route-n{font-family:var(--font-mono);font-size:var(--fs-cap);color:var(--text-tertiary);
+  font-variant-numeric:tabular-nums;min-width:22px}
+.route-tag{font-size:var(--fs-cap);padding:1px 6px;border-radius:3px;
+  background:color-mix(in srgb,var(--accent-amber) 18%,transparent);color:var(--accent-amber);font-weight:600}
+.route-meta{margin-left:auto;font-family:var(--font-mono);font-size:var(--fs-cap);
+  color:var(--text-tertiary);font-variant-numeric:tabular-nums}
+.chain{display:flex;flex-wrap:wrap;align-items:center;gap:3px 5px;line-height:1.7}
+.hop{padding:1px 6px;border-radius:4px;font-size:var(--fs-cap);white-space:nowrap}
+.hop.shared{background:var(--bg-mid);color:var(--text-tertiary)}
+.hop.only{background:color-mix(in srgb,var(--act) 26%,transparent);color:var(--text-primary);font-weight:600}
+.hop.end{background:var(--bg-light);color:var(--text-primary);font-weight:600}
+.arrow{color:var(--text-tertiary);font-size:10px}
+
+.family{border:1px solid var(--border-strong);border-radius:var(--r-i);background:var(--bg-deep);
+  padding:12px;display:flex;flex-direction:column;gap:9px}
+.slot{display:inline-flex;flex-direction:column;gap:3px;border:1px dashed color-mix(in srgb,var(--act) 55%,transparent);
+  border-radius:4px;padding:3px 5px;background:color-mix(in srgb,var(--act) 8%,transparent)}
+.slot-alt{font-size:10px;font-family:var(--font-mono);color:var(--text-secondary);white-space:nowrap;
+  cursor:pointer;padding:1px 3px;border-radius:3px}
+.slot-alt:hover{background:var(--act-tint)}
+.slot-alt.live{background:var(--act-on);color:var(--text-primary);font-weight:600}
+.slot-label{font-family:var(--font-mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--text-tertiary)}
+
+.branch{display:flex;flex-direction:column;gap:5px;border:1px solid var(--border-subtle);
+  border-radius:var(--r-i);background:var(--bg-deep);padding:10px 12px}
+.branch-head{display:flex;align-items:baseline;gap:8px}
+.branch-name{font-weight:600}
+.branch-share{font-family:var(--font-mono);font-size:var(--fs-cap);color:var(--text-tertiary)}
+.bar{display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--bg-mid)}
+.bar i{display:block;height:100%}
+.legs{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:var(--fs-cap);color:var(--text-secondary)}
+.legs em{font-style:normal;font-family:var(--font-mono);color:var(--text-tertiary)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+
+.busy{color:var(--text-tertiary);font-family:var(--font-mono);font-size:var(--fs-cap)}
+.note{border-left:2px solid var(--accent-amber);padding:8px 0 8px 12px;color:var(--text-secondary);
+  font-size:var(--fs-cap);line-height:1.6;margin:16px 0;max-width:70ch}
+body.dropping::after{content:"Drop the map CSV to load it";position:fixed;inset:12px;z-index:99;
+  border:2px dashed var(--act);border-radius:var(--r-s);background:color-mix(in srgb,var(--bg-deepest) 88%,transparent);
+  display:flex;align-items:center;justify-content:center;font-size:var(--fs-title);font-weight:600;
+  color:var(--act);pointer-events:none}
+@media (max-width:900px){.shell{grid-template-columns:1fr;grid-template-areas:"head" "main"}.rail{display:none}}
+</style>
+
+</head>
+<body>
+<div class="shell">
+  <header class="head">
+    <div class="brand">
+      <span class="eyebrow">Ariadne Maps · prototype</span>
+      <h1>Strand condenser</h1>
+    </div>
+    <div class="spacer"></div>
+    <span class="eyebrow" id="map-summary"></span>
+    <button class="icon-btn" id="theme-btn">Theme</button>
+  </header>
+
+  <aside class="rail">
+    <div class="sect">
+      <span class="eyebrow">Map</span>
+      <div class="field">
+        <label for="map-pick">Source</label>
+        <select id="map-pick">
+          <option value="hub">Synthetic · 296 boxes, 839 links</option>
+          <option value="own">Your own spreadsheet</option>
+        </select>
+      </div>
+      <div id="own-wrap" hidden>
+        <div class="row-btns" style="margin-bottom:8px">
+          <button class="btn btn--primary" id="pick-file">Choose a .csv file…</button>
+        </div>
+        <input type="file" id="csv-file" accept=".csv,text/csv" hidden>
+        <p class="hint" style="margin:0 0 8px">…or drop the file anywhere on this page, or paste it below.</p>
+        <textarea id="csv-in" placeholder="Paste your map CSV here — the same file the app saves with the CSV button."></textarea>
+        <div class="row-btns"><button class="btn" id="load-csv">Load pasted text</button></div>
+        <p class="hint" id="csv-status"></p>
+      </div>
+    </div>
+
+    <div class="sect">
+      <span class="eyebrow">Trace</span>
+      <div class="field"><label for="from-sel">From (cause)</label><select id="from-sel"></select></div>
+      <div class="field"><label for="to-sel">To (effect)</label><select id="to-sel"></select></div>
+      <div class="row-btns">
+        <button class="btn btn--primary" id="run">Condense</button>
+        <button class="btn" id="worst">Worst case</button>
+      </div>
+      <p class="hint">“Worst case” finds the pair in this map with the most routes between them — the one that breaks the list.</p>
+    </div>
+
+    <div class="sect">
+      <span class="eyebrow">How to condense</span>
+      <div class="strategies" id="strategies">
+        <button class="strategy" data-s="strongest" aria-pressed="true">
+          <b>Strongest first</b>
+          <span>What the app does today. Ranked by elasticity product, capped.</span>
+        </button>
+        <button class="strategy" data-s="diverse" aria-pressed="false">
+          <b>Most different</b>
+          <span>Same budget of rows, chosen so each is as unlike the others as possible.</span>
+        </button>
+        <button class="strategy" data-s="families" aria-pressed="false">
+          <b>Families</b>
+          <span>Group routes that share a spine; show the differing stretch as a slot.</span>
+        </button>
+        <button class="strategy" data-s="branches" aria-pressed="false">
+          <b>Where they differ</b>
+          <span>Skip the list entirely. Name the boxes where routes actually split.</span>
+        </button>
+      </div>
+      <div class="field" style="margin-top:12px">
+        <label for="k">Rows to show</label>
+        <div class="slider-row">
+          <input type="range" id="k" min="3" max="20" value="8">
+          <span class="slider-val" id="k-val">8</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="sect">
+      <span class="eyebrow">Sampling</span>
+      <p class="hint" id="sample-note"></p>
+    </div>
+  </aside>
+
+  <main class="main" id="main"><p class="busy">Building the map…</p></main>
+</div>
+
+<script>
+// ===========================================================================
+// A synthetic map matched to the reported shape — 296 boxes, 839 links —
+// wired by preferential attachment so a minority of boxes become hubs, the
+// way a real systems map behaves. Seeded, so every run is identical.
+// Replaceable by pasting a real CSV.
+// ===========================================================================
+let seed = 20260819;
+const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+
+const ROW_WORDS = [
+  ["Demand", ["enquiries","web visits","referrals","campaign reach","repeat orders","lead quality","pipeline","conversions","churn risk","brand recall"]],
+  ["Fulfilment", ["depot capacity","pick rate","van hours","route density","load factor","dispatch delay","stock cover","damage rate","returns","handover time"]],
+  ["Service", ["contacts raised","first-time fix","wait time","agent cover","escalations","satisfaction","complaint rate","knowledge base","triage speed","callbacks"]],
+  ["Cost", ["fuel spend","overtime","unit cost","fleet lease","agency spend","write-offs","energy bill","insurance","maintenance","contract rate"]],
+  ["Workforce", ["headcount","training hours","attrition","sickness","shift fill","supervisor span","competency","recruitment lag","engagement","overtime appetite"]],
+  ["Compliance", ["audit findings","checks passed","incident rate","documentation","certification","near misses","policy gaps","reporting lag","inspections","remediation"]],
+];
+const STAGE_NAMES = ["Inputs","Capacity","Process","Flow","Quality","Outcomes","Impact","Result"];
+
+function makeSyntheticMap() {
+  seed = 20260819;
+  const ROWS = 6, COLS = 8, N = 296, E = 839;
+  const nodes = [];
+  for (let i = 0; i < N; i++) {
+    const row = i % ROWS, col = Math.floor(i / (N / COLS));
+    const [rowName, words] = ROW_WORDS[row];
+    const w = words[Math.floor(i / ROWS) % words.length];
+    const n = Math.floor(i / (ROWS * words.length)) + 1;
+    nodes.push({
+      id: "n" + i,
+      label: w.charAt(0).toUpperCase() + w.slice(1) + (n > 1 ? " " + n : ""),
+      stream: rowName, stage: STAGE_NAMES[col], col,
+    });
+  }
+  const byCol = Array.from({ length: COLS }, (_, c) => nodes.filter(n => n.col === c));
+  const weight = {};
+  for (const n of nodes) weight[n.id] = rnd() < 0.12 ? 12 + rnd() * 20 : 0.4 + rnd();
+  const wpick = pool => {
+    const tot = pool.reduce((a, n) => a + weight[n.id], 0);
+    let r = rnd() * tot;
+    for (const n of pool) { r -= weight[n.id]; if (r <= 0) return n; }
+    return pool[pool.length - 1];
+  };
+  const edges = [], seen = new Set();
+  const EFFECTS = ["increases", "increases", "increases", "decreases", "enables"];
+  const add = (a, b) => {
+    if (a === b || seen.has(a + ">" + b)) return false;
+    seen.add(a + ">" + b);
+    const effect = EFFECTS[Math.floor(rnd() * EFFECTS.length)];
+    const mag = 0.15 + rnd() * 0.7;
+    edges.push({ from: a, to: b, effect, elasticity: effect === "decreases" ? -mag : mag });
+    return true;
+  };
+  for (const n of nodes) {
+    if (n.col >= COLS - 1) continue;
+    const pool = byCol[Math.min(COLS - 1, n.col + (rnd() < 0.75 ? 1 : 2))];
+    if (pool.length) add(n.id, wpick(pool).id);
+  }
+  let guard = 0;
+  while (edges.length < E && guard++ < E * 60) {
+    const a = nodes[Math.floor(rnd() * nodes.length)];
+    if (rnd() < 0.04 && a.col > 0) add(a.id, wpick(byCol[Math.max(0, a.col - 1)]).id);
+    else {
+      const c = Math.min(COLS - 1, a.col + 1 + Math.floor(rnd() * 2));
+      if (byCol[c].length) add(a.id, wpick(byCol[c]).id);
+    }
+  }
+  return { nodes, edges, synthetic: true };
+}
+
+// ── Parse the app's own multi-section CSV, so a real map can be dropped in ──
+function parseAriadneCsv(text) {
+  const lines = text.split(/\r?\n/);
+  const sections = {};
+  let current = null, headers = null;
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    const m = line.match(/^#\s*SECTION:\s*(\w+)/i);
+    if (m) { current = m[1].toLowerCase(); sections[current] = []; headers = null; continue; }
+    if (line.startsWith("#")) continue;
+    if (!current) continue;
+    const cells = splitCsvLine(line);
+    if (!headers) { headers = cells.map(c => c.trim().toLowerCase()); continue; }
+    const obj = {};
+    headers.forEach((h, i) => { obj[h] = (cells[i] ?? "").trim(); });
+    sections[current].push(obj);
+  }
+  const nodes = (sections.nodes || []).map(r => ({
+    id: r.id, label: r.label || r.id, stream: r.stream, stage: r.stage,
+    controllable: r.controllable === "true", direction: r.direction || "",
+  }));
+  const known = new Set(nodes.map(n => n.id));
+  const defaults = { enables: 0.30, increases: 0.25, decreases: -0.25 };
+  for (const d of sections.defaults || []) {
+    if (d.key === "elasticity_enables") defaults.enables = parseFloat(d.value);
+    if (d.key === "elasticity_increases") defaults.increases = parseFloat(d.value);
+    if (d.key === "elasticity_decreases") defaults.decreases = parseFloat(d.value);
+  }
+  const edges = (sections.edges || [])
+    .filter(r => known.has(r.from) && known.has(r.to))
+    .map(r => {
+      const raw = parseFloat(r.elasticity);
+      const effect = r.effect || "increases";
+      return { from: r.from, to: r.to, effect, elasticity: isNaN(raw) ? (defaults[effect] ?? 0.25) : raw };
+    });
+  return { nodes, edges, synthetic: false };
+}
+
+function splitCsvLine(line) {
+  const out = []; let cur = "", q = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (q) {
+      if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+      else if (ch === '"') q = false;
+      else cur += ch;
+    } else if (ch === '"') q = true;
+    else if (ch === ",") { out.push(cur); cur = ""; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+
+// ===========================================================================
+// GRAPH + ROUTE COLLECTION
+// ===========================================================================
+const SAMPLE_CAP = 30000;     // routes held for analysis
+const STEP_BUDGET = 400000;   // same budget the app's search uses
+
+let G = null, LAST = null;
+let strategy = "strongest";
+
+function buildGraph(map) {
+  const out = {}, inc = {}, byId = {};
+  for (const n of map.nodes) { out[n.id] = []; inc[n.id] = []; byId[n.id] = n; }
+  for (const e of map.edges) {
+    if (!out[e.from] || !inc[e.to]) continue;
+    out[e.from].push(e); inc[e.to].push(e);
+  }
+  return { ...map, out, inc, byId };
+}
+const label = id => (G.byId[id] ? G.byId[id].label : id);
+
+function reach(start, adj, key) {
+  const seen = new Set([start]), st = [start];
+  while (st.length) { const id = st.pop();
+    for (const e of adj[id]) if (!seen.has(e[key])) { seen.add(e[key]); st.push(e[key]); } }
+  return seen;
+}
+
+// Walk every simple downstream route, keeping a sample and an honest count.
+function collectRoutes(from, to, cap = SAMPLE_CAP, budget = STEP_BUDGET) {
+  if (!from || !to || from === to) return { routes: [], total: 0, truncated: false };
+  const useful = reach(to, G.inc, "from");
+  if (!useful.has(from)) return { routes: [], total: 0, truncated: false };
+  const routes = []; let total = 0, steps = 0, truncated = false;
+  const path = [from], edgePath = [], onPath = new Set([from]);
+  (function walk(id, strength, sign) {
+    if (truncated) return;
+    if (++steps > budget) { truncated = true; return; }
+    for (const e of G.out[id]) {
+      if (onPath.has(e.to) || !useful.has(e.to)) continue;
+      const s = strength * Math.abs(e.elasticity);
+      const sg = sign * (e.elasticity < 0 ? -1 : 1);
+      path.push(e.to); edgePath.push(e);
+      if (e.to === to) {
+        total++;
+        if (routes.length < cap) routes.push({ ids: path.slice(), strength: s, sign: sg > 0 ? 1 : -1 });
+      } else { onPath.add(e.to); walk(e.to, s, sg); onPath.delete(e.to); }
+      path.pop(); edgePath.pop();
+      if (truncated) return;
+    }
+  })(from, 1, 1);
+  return { routes, total, truncated };
+}
+
+// ===========================================================================
+// CONDENSATION STRATEGIES
+// ===========================================================================
+const jaccard = (a, b) => {
+  const A = a instanceof Set ? a : new Set(a);
+  let inter = 0;
+  for (const x of b) if (A.has(x)) inter++;
+  return inter / (A.size + (b.length || b.size) - inter);
+};
+
+// 1 — what the app does today.
+function pickStrongest(routes, k) {
+  return [...routes].sort((a, b) => b.strength - a.strength).slice(0, k);
+}
+
+// 2 — greedy max-min: repeatedly take the route furthest from everything
+// already chosen. Same number of rows, each one earning its place.
+function pickDiverse(routes, k) {
+  if (!routes.length) return [];
+  const pool = [...routes].sort((a, b) => b.strength - a.strength).slice(0, 4000);
+  const sets = pool.map(r => new Set(r.ids));
+  const chosen = [0];                       // seed with the strongest
+  const minDist = pool.map((_, i) => 1 - jaccard(sets[0], pool[i].ids));
+  while (chosen.length < k && chosen.length < pool.length) {
+    let best = -1, bestD = -1;
+    for (let i = 0; i < pool.length; i++) {
+      if (chosen.includes(i)) continue;
+      if (minDist[i] > bestD) { bestD = minDist[i]; best = i; }
+    }
+    if (best < 0) break;
+    chosen.push(best);
+    for (let i = 0; i < pool.length; i++) {
+      const d = 1 - jaccard(sets[best], pool[i].ids);
+      if (d < minDist[i]) minDist[i] = d;
+    }
+  }
+  return chosen.map(i => pool[i]);
+}
+
+// 3 — families: cluster, then factor out the shared spine.
+function lcs2(a, b) {
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => new Int32Array(n + 1));
+  for (let i = m - 1; i >= 0; i--)
+    for (let j = n - 1; j >= 0; j--)
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const out = []; let i = 0, j = 0;
+  while (i < m && j < n) {
+    if (a[i] === b[j]) { out.push(a[i]); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) i++; else j++;
+  }
+  return out;
+}
+function slotsFor(ids, spine) {
+  const slots = []; let at = 0;
+  for (const anchor of spine) {
+    const idx = ids.indexOf(anchor, at);
+    if (idx < 0) return null;
+    slots.push(ids.slice(at, idx));
+    at = idx + 1;
+  }
+  slots.push(ids.slice(at));
+  return slots;
+}
+function varyingCount(members, spine) {
+  const per = members.map(r => slotsFor(r.ids, spine));
+  if (per.some(p => !p)) return Infinity;
+  let v = 0;
+  for (let s = 0; s < spine.length + 1; s++) {
+    const seen = new Set(per.map(p => p[s].join(">")));
+    if (seen.size > 1) v++;
+  }
+  return v;
+}
+const MIN_SPINE = 3, MAX_SLOTS = 2, MIN_SHARE = 0.5;
+
+function buildFamilies(routes, k) {
+  // Cluster a diverse-and-strong shortlist rather than the whole sample: with
+  // 200k routes the shortlist IS the thing being condensed, and clustering
+  // everything would just rediscover the corridor.
+  const shortlist = pickDiverse(routes, Math.min(60, Math.max(k * 4, 20)));
+  const families = [], taken = new Set();
+  for (let i = 0; i < shortlist.length; i++) {
+    if (taken.has(i)) continue;
+    taken.add(i);
+    const members = [shortlist[i]];
+    let spine = shortlist[i].ids.slice();
+    for (let j = i + 1; j < shortlist.length; j++) {
+      if (taken.has(j)) continue;
+      const cand = lcs2(spine, shortlist[j].ids);
+      if (cand.length < MIN_SPINE) continue;
+      if (cand.length < MIN_SHARE * Math.min(spine.length, shortlist[j].ids.length)) continue;
+      if (varyingCount([...members, shortlist[j]], cand) > MAX_SLOTS) continue;
+      taken.add(j); members.push(shortlist[j]); spine = cand;
+    }
+    const per = members.map(r => slotsFor(r.ids, spine));
+    const slots = [];
+    for (let s = 0; s < spine.length + 1; s++) {
+      const seen = new Map();
+      for (const p of per) seen.set(p[s].join(">"), p[s]);
+      if (seen.size > 1) slots.push({ after: s - 1, alternatives: [...seen.values()] });
+    }
+    families.push({ spine, members, slots });
+    if (families.length >= k) break;
+  }
+  return families;
+}
+
+// 4 — where they differ: the boxes that actually carry a choice.
+function branchPoints(routes, minShare = 0.15) {
+  const seenAt = new Map(), splits = new Map();
+  for (const r of routes) {
+    for (let i = 0; i < r.ids.length; i++) {
+      seenAt.set(r.ids[i], (seenAt.get(r.ids[i]) || 0) + 1);
+      if (i === r.ids.length - 1) continue;
+      if (!splits.has(r.ids[i])) splits.set(r.ids[i], new Map());
+      const m = splits.get(r.ids[i]);
+      m.set(r.ids[i + 1], (m.get(r.ids[i + 1]) || 0) + 1);
+    }
+  }
+  const n = routes.length;
+  return [...splits].map(([id, m]) => ({
+      id, ways: m.size, share: (seenAt.get(id) || 0) / n,
+      legs: [...m].map(([to, c]) => ({ to, pct: c / (seenAt.get(id) || 1) })).sort((a, b) => b.pct - a.pct),
+    }))
+    .filter(b => b.ways > 1 && b.share >= minShare)
+    .sort((a, b) => b.share * Math.log2(b.ways) - a.share * Math.log2(a.ways));
+}
+
+// How distinct is a chosen set? The closest pair is the honest measure — one
+// near-duplicate anywhere is what makes a list feel redundant.
+function closestPair(list) {
+  let closest = 1;
+  for (let i = 0; i < list.length; i++)
+    for (let j = i + 1; j < list.length; j++)
+      closest = Math.min(closest, 1 - jaccard(new Set(list[i].ids), list[j].ids));
+  return list.length < 2 ? 1 : closest;
+}
+
+// ===========================================================================
+// RENDER
+// ===========================================================================
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const pct = v => (v * 100).toFixed(0) + "%";
+const num = v => v.toLocaleString("en-GB");
+const EFFECT_COLOR = { increases: "var(--accent-green)", decreases: "var(--accent-red)", enables: "var(--accent-purple)" };
+
+function statsHtml(cells) {
+  return '<div class="stats">' + cells.map(([k, v, tone]) =>
+    `<div><span class="k">${esc(k)}</span><span class="v ${tone || ""}">${esc(v)}</span></div>`).join("") + "</div>";
+}
+
+// One route, with the boxes that make it distinctive picked out. `common` is
+// the set of boxes that appear in every shown route — those read as scaffolding
+// and get dimmed, so what is left is the difference.
+function routeHtml(route, i, common, uniqueTo) {
+  const ids = route.ids;
+  const chain = ids.map((id, idx) => {
+    const isEnd = idx === 0 || idx === ids.length - 1;
+    const cls = isEnd ? "end" : (uniqueTo.has(id) ? "only" : (common.has(id) ? "shared" : ""));
+    return `<span class="hop ${cls}">${esc(label(id))}</span>`;
+  }).join('<span class="arrow">→</span>');
+  const onlyList = [...uniqueTo].map(id => label(id));
+  const tag = onlyList.length
+    ? `<span class="route-tag">only route via ${esc(onlyList.join(", "))}</span>` : "";
+  return `<div class="route">
+    <div class="route-head">
+      <span class="route-n">${i + 1}</span>${tag}
+      <span class="route-meta">${ids.length - 1} hops · net ${route.sign > 0 ? "↑" : "↓"} · ${route.strength < 0.0005 ? "≈0" : route.strength.toFixed(3)}</span>
+    </div>
+    <div class="chain">${chain}</div>
+  </div>`;
+}
+
+function renderList(list, heading, lede) {
+  const counts = new Map();
+  for (const r of list) for (const id of new Set(r.ids)) counts.set(id, (counts.get(id) || 0) + 1);
+  // "Shared" means half the rows or more, not every row. Requiring every row
+  // greys almost nothing (usually just the two ends) and hides the very thing
+  // this view is meant to expose: how much of each row repeats its neighbours.
+  const common = new Set([...counts].filter(([, c]) => c >= Math.max(2, list.length / 2)).map(([id]) => id));
+  const rows = list.map((r, i) => {
+    // Once the rows are genuinely different, MOST boxes are unique to their
+    // row — highlighting all of them lights up the whole chain and says
+    // nothing. Mark at most three, in path order, and let the tag name the
+    // same three, so the label and the chain agree.
+    const uniq = new Set(r.ids.filter(id => counts.get(id) === 1).slice(0, 3));
+    return routeHtml(r, i, common, uniq);
+  }).join("");
+  const closest = closestPair(list);
+  const covered = new Set(list.flatMap(r => r.ids)).size;
+  return `<h2 class="section">${esc(heading)}</h2><p class="lede">${lede}</p>` +
+    statsHtml([
+      ["Rows", String(list.length)],
+      ["Closest pair", pct(closest), closest >= 0.4 ? "good" : "bad"],
+      ["Boxes covered", String(covered)],
+      ["Repeated boxes", String(common.size)],
+    ]) +
+    `<div class="routes">${rows}</div>`;
+}
+
+function renderFamilies(families, sample) {
+  const rows = families.map((fam, fi) => {
+    const parts = [];
+    const spine = fam.spine;
+    for (let s = 0; s <= spine.length; s++) {
+      const slot = fam.slots.find(x => x.after === s - 1);
+      if (slot) {
+        parts.push(`<span class="slot"><span class="slot-label">${slot.alternatives.length} ways</span>` +
+          slot.alternatives.slice(0, 6).map((alt, ai) =>
+            `<span class="slot-alt${ai === 0 ? " live" : ""}">${alt.length ? esc(alt.map(label).join(" → ")) : "— direct —"}</span>`).join("") +
+          (slot.alternatives.length > 6 ? `<span class="slot-alt">+${slot.alternatives.length - 6} more</span>` : "") +
+          `</span>`);
+      }
+      if (s < spine.length) {
+        parts.push(`<span class="hop end">${esc(label(spine[s]))}</span>`);
+        if (s < spine.length - 1 || fam.slots.some(x => x.after === s)) parts.push('<span class="arrow">→</span>');
+      }
+    }
+    const combos = fam.slots.reduce((a, s) => a * s.alternatives.length, 1);
+    return `<div class="family">
+      <div class="route-head"><span class="route-n">${fi + 1}</span>
+        <span class="route-meta">${fam.members.length} routes · ${fam.slots.length} slot${fam.slots.length === 1 ? "" : "s"} · ${combos} combination${combos === 1 ? "" : "s"}</span></div>
+      <div class="chain">${parts.join("")}</div>
+    </div>`;
+  }).join("");
+  const shown = families.reduce((a, f) => a + f.members.length, 0);
+  const widest = families.reduce((a, f) => Math.max(a, ...f.slots.map(s => s.alternatives.length), 0), 0);
+  // Be honest about when this shape stops working. A slot holding a dozen
+  // unrelated detours is not a family — it is a bucket with a label on it, and
+  // pretending otherwise would make the view look like it succeeded.
+  const caution = widest > 4
+    ? `<div class="note"><b>This is where the shape breaks down.</b> The widest slot here holds
+       ${widest} alternatives that are not variants of one another — they are separate routes sharing
+       two endpoints. Grouping works when routes differ by a detour or two, which is what a small map
+       gives you; on a map this dense the spine gets short and the slot swallows everything.
+       Compare “Most different”, which makes no structural assumption.</div>`
+    : "";
+  return `<h2 class="section">Families</h2>
+    <p class="lede">Routes that share a spine, collapsed into one row each. The dashed
+    boxes are the stretches where the members differ — everything else is common to all of them.</p>`
+    + caution +
+    statsHtml([["Rows", String(families.length)], ["Routes folded in", String(shown)],
+               ["Sampled from", num(sample.total) + (sample.truncated ? "+" : "")]]) +
+    `<div class="routes">${rows}</div>`;
+}
+
+function renderBranches(routes, sample) {
+  const bps = branchPoints(routes).slice(0, 12);
+  const union = new Set(routes.flatMap(r => r.ids)).size;
+  const rows = bps.map(b => {
+    const legs = b.legs.slice(0, 6);
+    const bar = legs.map((l, i) => {
+      const hue = ["var(--act)", "var(--accent-green)", "var(--accent-amber)", "var(--accent-purple)", "var(--accent-red)", "var(--bg-lighter)"][i % 6];
+      return `<i style="width:${(l.pct * 100).toFixed(1)}%;background:${hue}"></i>`;
+    }).join("");
+    const legText = legs.map((l, i) => {
+      const hue = ["var(--act)", "var(--accent-green)", "var(--accent-amber)", "var(--accent-purple)", "var(--accent-red)", "var(--bg-lighter)"][i % 6];
+      return `<span><span class="dot" style="background:${hue}"></span>${esc(label(l.to))} <em>${pct(l.pct)}</em></span>`;
+    }).join("");
+    return `<div class="branch">
+      <div class="branch-head"><span class="branch-name">${esc(label(b.id))}</span>
+        <span class="branch-share">on ${pct(b.share)} of routes · splits ${b.ways} ways</span></div>
+      <div class="bar">${bar}</div><div class="legs">${legText}</div></div>`;
+  }).join("");
+  return `<h2 class="section">Where the strands differ</h2>
+    <p class="lede">No list at all. These are the boxes where routes actually part company,
+    biggest fork first — each bar shows how the routes through that box divide.
+    Everything not named here is agreed on by every route.</p>` +
+    statsHtml([["Fork points", String(bps.length)], ["Boxes in play", String(union)],
+               ["Routes", num(sample.total) + (sample.truncated ? "+" : "")]]) +
+    `<div class="routes">${rows}</div>`;
+}
+
+function render() {
+  const main = document.getElementById("main");
+  if (!LAST) { main.innerHTML = '<p class="busy">Pick two boxes and hit Condense.</p>'; return; }
+  const { sample, from, to } = LAST;
+  if (!sample.routes.length) {
+    main.innerHTML = `<h2 class="section">No downstream route</h2>
+      <p class="lede">Nothing leads from <b>${esc(label(from))}</b> to <b>${esc(label(to))}</b> following the arrows.</p>`;
+    return;
+  }
+  const k = Number(document.getElementById("k").value);
+  const head = `<p class="lede" style="margin-bottom:14px">
+    <b>${esc(label(from))}</b> → <b>${esc(label(to))}</b> ·
+    ${num(sample.total)}${sample.truncated ? "+" : ""} routes,
+    analysed from a sample of ${num(sample.routes.length)}.</p>`;
+
+  let body;
+  if (strategy === "strongest") {
+    body = renderList(pickStrongest(sample.routes, k), "Strongest first",
+      "What the app does today. Ranked by the elasticities multiplied along the chain. Note how much of each row repeats the one above — the dimmed boxes are shared by every route shown.");
+  } else if (strategy === "diverse") {
+    body = renderList(pickDiverse(sample.routes, k), "Most different",
+      "The same number of rows, chosen so every one is as unlike the others as possible. Highlighted boxes appear in only one row — those are the reason it is there.");
+  } else if (strategy === "families") {
+    body = renderFamilies(buildFamilies(sample.routes, k), sample);
+  } else {
+    body = renderBranches(sample.routes, sample);
+  }
+  main.innerHTML = head + body;
+}
+
+// ===========================================================================
+// WIRING
+// ===========================================================================
+function fillPickers() {
+  const from = document.getElementById("from-sel"), to = document.getElementById("to-sel");
+  const groups = new Map();
+  for (const n of G.nodes) {
+    if (!groups.has(n.stream)) groups.set(n.stream, []);
+    groups.get(n.stream).push(n);
+  }
+  const html = [...groups].map(([stream, list]) =>
+    `<optgroup label="${esc(stream || "—")}">` +
+    list.map(n => `<option value="${esc(n.id)}">${esc(n.label)}</option>`).join("") + "</optgroup>").join("");
+  from.innerHTML = html; to.innerHTML = html;
+}
+
+function summarise() {
+  document.getElementById("map-summary").textContent =
+    `${G.nodes.length} boxes · ${G.edges.length} links` + (G.synthetic ? " · synthetic" : " · your map");
+}
+
+function runTrace(fromId, toId) {
+  const main = document.getElementById("main");
+  main.innerHTML = '<p class="busy">Walking the routes…</p>';
+  // Yield a frame so the message paints before the search blocks the thread.
+  setTimeout(() => {
+    const t0 = performance.now();
+    const sample = collectRoutes(fromId, toId);
+    const ms = Math.round(performance.now() - t0);
+    LAST = { sample, from: fromId, to: toId, ms };
+    document.getElementById("sample-note").innerHTML = sample.routes.length
+      ? `Held ${num(sample.routes.length)} routes of ${num(sample.total)}${sample.truncated ? "+" : ""} found, in ${ms}ms.
+         ${sample.truncated ? "The search hit its budget, so that count is a floor." : "That is every route between these two."}
+         Every figure below is measured on the held sample.`
+      : "No downstream route between these two.";
+    render();
+  }, 16);
+}
+
+// The pair with the most routes — the case that breaks the list.
+function findWorstPair() {
+  const main = document.getElementById("main");
+  main.innerHTML = '<p class="busy">Looking for the worst pair…</p>';
+  setTimeout(() => {
+    const sources = G.nodes.filter(n => G.inc[n.id].length === 0).map(n => n.id);
+    const sinks = G.nodes.filter(n => G.out[n.id].length === 0).map(n => n.id);
+    const froms = sources.length ? sources.slice(0, 12) : G.nodes.slice(0, 12).map(n => n.id);
+    const tos = sinks.length ? sinks.slice(0, 12) : G.nodes.slice(-12).map(n => n.id);
+    let best = null;
+    for (const s of froms) for (const t of tos) {
+      const r = collectRoutes(s, t, 1, 120000);
+      if (!best || r.total > best.total) best = { from: s, to: t, total: r.total };
+    }
+    if (!best || !best.total) { main.innerHTML = '<p class="busy">No connected pair found.</p>'; return; }
+    document.getElementById("from-sel").value = best.from;
+    document.getElementById("to-sel").value = best.to;
+    runTrace(best.from, best.to);
+  }, 16);
+}
+
+function loadMap(map) {
+  G = buildGraph(map);
+  LAST = null;
+  fillPickers();
+  summarise();
+}
+
+document.getElementById("map-pick").addEventListener("change", e => {
+  const own = e.target.value === "own";
+  document.getElementById("own-wrap").hidden = !own;
+  if (!own) { loadMap(makeSyntheticMap()); findWorstPair(); }
+});
+// One path for every way a file can arrive: the picker, a drop, or a paste.
+function ingestCsv(text, sourceName) {
+  const status = document.getElementById("csv-status");
+  try {
+    const map = parseAriadneCsv(text);
+    if (!map.nodes.length) {
+      status.textContent = "No boxes found in that file. It needs to be the CSV the app's CSV button saves — the one with \u0023 SECTION: nodes in it.";
+      return;
+    }
+    document.getElementById("map-pick").value = "own";
+    document.getElementById("own-wrap").hidden = false;
+    loadMap(map);
+    status.textContent = `Loaded ${map.nodes.length} boxes and ${map.edges.length} links` +
+      (sourceName ? ` from ${sourceName}` : "") + ". Finding the worst pair\u2026";
+    findWorstPair();
+  } catch (err) {
+    status.textContent = "Could not read that file: " + err.message;
+  }
+}
+
+function readFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => ingestCsv(String(reader.result), file.name);
+  reader.onerror = () => { document.getElementById("csv-status").textContent = "Could not read that file."; };
+  reader.readAsText(file);
+}
+
+document.getElementById("pick-file").addEventListener("click", () =>
+  document.getElementById("csv-file").click());
+document.getElementById("csv-file").addEventListener("change", e => readFile(e.target.files[0]));
+document.getElementById("load-csv").addEventListener("click", () =>
+  ingestCsv(document.getElementById("csv-in").value, "the pasted text"));
+
+// Drop anywhere on the page. dragover must be cancelled or the browser just
+// navigates to the file instead of handing it over.
+let dragDepth = 0;
+window.addEventListener("dragover", e => { e.preventDefault(); });
+window.addEventListener("dragenter", e => {
+  e.preventDefault();
+  if (++dragDepth === 1) document.body.classList.add("dropping");
+});
+window.addEventListener("dragleave", () => { if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove("dropping"); } });
+window.addEventListener("drop", e => {
+  e.preventDefault();
+  dragDepth = 0;
+  document.body.classList.remove("dropping");
+  const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (file) readFile(file);
+});
+document.getElementById("run").addEventListener("click", () =>
+  runTrace(document.getElementById("from-sel").value, document.getElementById("to-sel").value));
+document.getElementById("worst").addEventListener("click", findWorstPair);
+document.querySelectorAll("#strategies .strategy").forEach(btn => {
+  btn.addEventListener("click", () => {
+    strategy = btn.dataset.s;
+    document.querySelectorAll("#strategies .strategy").forEach(b =>
+      b.setAttribute("aria-pressed", String(b === btn)));
+    render();
+  });
+});
+document.getElementById("k").addEventListener("input", e => {
+  document.getElementById("k-val").textContent = e.target.value;
+  render();
+});
+document.getElementById("theme-btn").addEventListener("click", () => {
+  const root = document.documentElement;
+  const now = root.getAttribute("data-theme");
+  const sysDark = matchMedia("(prefers-color-scheme: dark)").matches;
+  root.setAttribute("data-theme", (now ? now === "dark" : sysDark) ? "light" : "dark");
+});
+
+loadMap(makeSyntheticMap());
+findWorstPair();
+</script>
+
+</body>
+</html>
