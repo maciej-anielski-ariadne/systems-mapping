@@ -96,9 +96,12 @@
 
   <!-- ============== TOP HEADER ============== -->
   <header class="app-header">
-    <!-- Brand lockup: the thread-through-nodes mark + wordmark. Decorative
-         (not a link), drawn in the purple "enable" data-hue so it never reads
-         as the interactive blue. Styles in 03-app-shell.css. -->
+    <!-- Brand mark: the thread through the nodes. Decorative (not a link),
+         drawn in the purple "enable" data-hue so it never reads as the
+         interactive blue. The wordmark is gone — the header row is the app's
+         scarcest space and the name is already in the tab title and on the
+         empty state. The label survives for screen readers.
+         Styles in 03-app-shell.css. -->
     <div class="app-brand" aria-label="Ariadne Maps">
       <svg class="app-brand-mark" width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <path d="M4 17C8 17 8 8 12 8s4 9 8 9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path>
@@ -106,7 +109,6 @@
         <circle cx="12" cy="8" r="2.1" fill="currentColor"></circle>
         <circle cx="20" cy="17" r="2.1" fill="currentColor"></circle>
       </svg>
-      <span class="app-brand-name">Ariadne Maps</span>
     </div>
 
     <!-- Search box (icon + text input) — stretches to fill the row, with the
@@ -154,6 +156,18 @@
 
     <button id="sim-toggle-button" class="header-button" data-tooltip="Turn on what-if mode — a slider on every adjustable input; its effects update live.">Simulate</button>
 
+    <!-- Atlas. A reading tool, so it goes away while editing (.read-only).
+         Unlike Simulate, an atlas is always OF one box: with a box selected the
+         button opens straight into it, and with nothing selected it drops a
+         short list of the boxes worth starting from. A disabled button would
+         have been the easy answer and the wrong one — grey chrome is chrome
+         people stop seeing, and this control's whole job is to be seen. -->
+    <div class="menu-wrap read-only">
+      <button id="atlas-button" class="header-button" aria-haspopup="true" aria-expanded="false"
+              data-tooltip="Every pathway out of one box, as one picture you zoom into.">Atlas</button>
+      <div id="atlas-menu" class="menu" role="menu" hidden></div>
+    </div>
+
     <span class="header-divider" aria-hidden="true"></span>
     <button class="header-button edit-only create-map-trigger" data-tooltip="Clear the map and start from an empty 3×3 grid.">New map</button>
     <button class="header-button edit-only edit-data-trigger" data-tooltip="Edit the whole map in a form — handy for many edits at once.">Bulk edit</button>
@@ -186,27 +200,22 @@
       <div id="simulation-panel" style="display: none;"></div>
     </div>
 
-    <!-- Stages — JS fills the list in 13-sidebar.js. Editable: rename,
-         add, drag-to-reorder, confirm + cascade delete. Stages don't have
-         a filter toggle (filtering by stage isn't a feature), so each row
-         is just a label + drag handle + pencil. -->
+    <!-- Columns — JS fills the list in 13-sidebar.ts. Editable: rename,
+         add, drag-to-reorder, confirm + cascade delete. Columns have no
+         filter toggle (filtering by column isn't a feature).
+         The "+" sits ON the eyebrow rather than under the list: a full-width
+         button per section cost a row plus its margin four times over, and the
+         action belongs beside the thing it adds to. It keeps .sidebar-add-btn
+         and data-add so the one-time wiring in 17-events.ts still finds it. -->
     <div class="sidebar-section" id="stages-section">
-      <div class="sidebar-section-title">
-        <span>Columns</span>
-        <span class="count" id="stages-count"></span>
-      </div>
+      <div class="sidebar-section-title"><span>Columns</span><button class="sidebar-add-btn" data-add="stage" data-tooltip="Add a column" aria-label="Add a column">+</button></div>
       <div id="stages-list"></div>
-      <button class="sidebar-add-btn" data-add="stage">+ Add column</button>
     </div>
 
-    <!-- Stream filters + editing — JS fills the list in 13-sidebar.js -->
+    <!-- Row filters + editing — JS fills the list in 13-sidebar.ts -->
     <div class="sidebar-section" id="stream-filters-section">
-      <div class="sidebar-section-title">
-        <span>Rows</span>
-        <span class="count" id="visible-streams-count"></span>
-      </div>
+      <div class="sidebar-section-title"><span>Rows</span><button class="sidebar-add-btn" data-add="stream" data-tooltip="Add a row" aria-label="Add a row">+</button></div>
       <div id="stream-filters"></div>
-      <button class="sidebar-add-btn" data-add="stream">+ Add row</button>
     </div>
 
     <!-- Category filters + editing — JS fills the list in 13-sidebar.js.
@@ -220,20 +229,14 @@
       <div id="category-filters"></div>
     </div>
 
-    <!-- Edge / trace filters — JS fills these (renderEdgeTypeFilters /
-         renderEdgeStyleFilters / renderTraceFilters in 13-sidebar.js). Each row
-         toggles like Rows: click to hide that link effect / line style on the
-         map (or suppress a highlight direction); click again to show it.
-
-         Folded away by default. They are real controls, but they answer a
-         question most readers never ask, and open they were three more blocks
-         between the panel's top and its bottom. -->
-    <details class="sidebar-fold">
-      <summary class="sidebar-section-title"><span>Link and highlight options</span></summary>
-      <div class="sidebar-section"><div id="edge-type-filters"></div></div>
-      <div class="sidebar-section"><div id="edge-style-filters"></div></div>
-      <div class="sidebar-section"><div id="trace-filters"></div></div>
-    </details>
+    <!-- Link / line-style / highlight filters. Same toggle model as the tags:
+         click to hide that link effect or line style on the map, click again to
+         show it. Each group is three or fewer chips, so they cost a line apiece
+         and are no longer worth folding away — which is what they were, behind
+         a disclosure most readers never opened. -->
+    <div class="sidebar-section"><div id="edge-type-filters"></div></div>
+    <div class="sidebar-section"><div id="edge-style-filters"></div></div>
+    <div class="sidebar-section"><div id="trace-filters"></div></div>
   </aside>
 
   <!-- ============== PANEL RESIZE HANDLES ==============
@@ -287,7 +290,7 @@
 
     <!-- The pathway atlas — everything downstream of one box, drawn over the
          map as one picture you zoom into. Filled by 21-atlas-view.ts when a
-         box's "Everything downstream" is opened; empty and hidden otherwise. -->
+         box's Atlas is opened; empty and hidden otherwise. -->
     <div id="atlas-stage" class="atlas-stage" hidden></div>
 
     <!-- Optional CSV-import overlay. No longer shown at startup — the

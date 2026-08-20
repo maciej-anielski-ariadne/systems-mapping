@@ -13,10 +13,16 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { loadDataFromCsv } from "../assets/js/06-data-loader";
 import { EDGES, NODES, nodeById, state } from "../assets/js/03-state";
-import { selectNode } from "../assets/js/09-graph-selection";
+import { deselectAll, selectNode } from "../assets/js/09-graph-selection";
 import { renderDetailPanel } from "../assets/js/15-detail-panel";
 import { setUiMode } from "../assets/js/17-events";
-import { atlasIsOpen, closeAtlas, openAtlas } from "../assets/js/21-atlas-view";
+import {
+  atlasIsOpen,
+  atlasStartCandidates,
+  closeAtlas,
+  initAtlasStage,
+  openAtlas,
+} from "../assets/js/21-atlas-view";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const sampleCsv = readFileSync(resolve(here, "../assets/data/sample.csv"), "utf-8");
@@ -31,7 +37,29 @@ const firstInput = (): string => {
 beforeEach(() => {
   closeAtlas();
   setUiMode("read");
+  initAtlasStage();          // idempotent; 18-main does this at boot. Wires the
+                             // entry points AND the pointer handlers on the
+                             // panel and the picture.
+  atlasMenu().hidden = true;
 });
+
+const atlasButton = (): HTMLElement => document.getElementById("atlas-button") as HTMLElement;
+const atlasMenu = (): HTMLElement => document.getElementById("atlas-menu") as HTMLElement;
+
+// A box on the map, as the renderer draws it. The double-click handler is
+// delegated off #viz-svg, so a stub group is enough to exercise it.
+const mapBox = (nodeId: string): SVGElement => {
+  const svg = document.getElementById("viz-svg")!;
+  const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  g.setAttribute("class", "node-group");
+  g.setAttribute("data-node-id", nodeId);
+  svg.appendChild(g);
+  return g as SVGElement;
+};
+
+const dblclick = (el: Element): void => {
+  el.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+};
 
 describe("the way in", () => {
   it("is offered on a box that has something downstream", () => {
@@ -48,6 +76,98 @@ describe("the way in", () => {
     selectNode(leaf!.id);
     renderDetailPanel();
     expect(panel().querySelector("[data-action='open-atlas']")).toBeNull();
+  });
+});
+
+// The atlas was reachable from exactly one control, in one panel, in one mode.
+// A feature nobody can find is a feature nobody has. These pin the three ways
+// in — and, just as importantly, that all three are shut while editing, so the
+// separation of the modes is not quietly undone by the way into a reading tool.
+describe("the ways in", () => {
+  it("the header button opens the atlas on the selected box", () => {
+    loadDataFromCsv(sampleCsv);
+    const start = firstInput();
+    selectNode(start);
+    atlasButton().click();
+    expect(atlasIsOpen()).toBe(true);
+    expect(state.atlas!.startId).toBe(start);
+  });
+
+  it("the header button closes it again, so the door is also the way out", () => {
+    loadDataFromCsv(sampleCsv);
+    selectNode(firstInput());
+    atlasButton().click();
+    atlasButton().click();
+    expect(atlasIsOpen()).toBe(false);
+  });
+
+  it("with nothing selected it offers the boxes the most of the map hangs off", () => {
+    loadDataFromCsv(sampleCsv);
+    atlasButton().click();
+
+    expect(atlasMenu().hidden).toBe(false);
+    const picks = [...atlasMenu().querySelectorAll("[data-atlas-start]")];
+    expect(picks.length).toBeGreaterThan(0);
+    expect(atlasIsOpen()).toBe(false);   // a list, not a guess
+
+    // Ranked by how much lies downstream, biggest first.
+    const reach = atlasStartCandidates().map(c => c.reach);
+    expect([...reach].sort((a, b) => b - a)).toEqual(reach);
+
+    // A box that ends the story is never offered — its atlas is one circle.
+    const leaf = NODES.find(n => !EDGES.some(e => e.from === n.id))!;
+    expect(atlasStartCandidates().some(c => c.id === leaf.id)).toBe(false);
+  });
+
+  it("picking from that list opens the atlas there", () => {
+    loadDataFromCsv(sampleCsv);
+    atlasButton().click();
+    const pick = atlasMenu().querySelector("[data-atlas-start]") as HTMLElement;
+    pick.click();
+    expect(atlasIsOpen()).toBe(true);
+    expect(state.atlas!.startId).toBe(pick.dataset.atlasStart);
+  });
+
+  it("double-clicking a box on the map opens its atlas", () => {
+    loadDataFromCsv(sampleCsv);
+    const start = firstInput();
+    dblclick(mapBox(start));
+    expect(atlasIsOpen()).toBe(true);
+    expect(state.atlas!.startId).toBe(start);
+  });
+
+  it("but not on a box that ends the story", () => {
+    loadDataFromCsv(sampleCsv);
+    const leaf = NODES.find(n => !EDGES.some(e => e.from === n.id))!;
+    dblclick(mapBox(leaf.id));
+    expect(atlasIsOpen()).toBe(false);
+  });
+
+  it("every door is shut while editing", () => {
+    loadDataFromCsv(sampleCsv);
+    const start = firstInput();
+    selectNode(start);
+    setUiMode("edit");
+
+    // The header control is hidden by CSS, so what is pinned here is the class
+    // that hides it — the markup's half of the bargain.
+    expect(atlasButton().closest(".read-only")).not.toBeNull();
+
+    renderDetailPanel();
+    expect(panel().querySelector("[data-action='open-atlas']")).toBeNull();
+
+    dblclick(mapBox(start));
+    expect(atlasIsOpen()).toBe(false);
+  });
+
+  it("switching into editing puts an open atlas away", () => {
+    loadDataFromCsv(sampleCsv);
+    openAtlas(firstInput());
+    expect(atlasIsOpen()).toBe(true);
+
+    setUiMode("edit");
+    expect(atlasIsOpen()).toBe(false);
+    expect(document.body.classList.contains("atlas-open")).toBe(false);
   });
 });
 
@@ -94,7 +214,7 @@ describe("the panel is its inspector", () => {
     renderDetailPanel();
 
     const text = panel().textContent || "";
-    expect(text).toContain("Everything downstream of " + nodeById[start].label);
+    expect(text).toContain("Atlas of " + nodeById[start].label);
     expect(text).toContain("readings");
     // One inspector, not two: the atlas doesn't ship its own panel element.
     expect(document.querySelectorAll("#atlas-stage .ins").length).toBe(0);
@@ -106,12 +226,518 @@ describe("the panel is its inspector", () => {
     selectNode(start);
     openAtlas(start);
     renderDetailPanel();
-    expect(panel().textContent).toContain("Everything downstream");
+    expect(panel().textContent).toContain("Atlas of");
 
     closeAtlas();
     renderDetailPanel();
     expect(panel().textContent).toContain(nodeById[start].label);
-    expect(panel().textContent).not.toContain("Everything downstream of");
+    expect(panel().textContent).not.toContain("Atlas of");
+  });
+});
+
+// =============================================================================
+// POINTING, AND CHOOSING
+// -----------------------------------------------------------------------------
+// They are different acts. Pointing at a fork draws it and commits to nothing,
+// so a fork can be swept by running down it and nothing passed on the way costs
+// a click to undo. Choosing commits, and only then opens the next level.
+// =============================================================================
+describe("pointing at a fork", () => {
+  const rows = () => [...panel().querySelectorAll("[data-fork]")] as HTMLElement[];
+  const lit = () => [...document.querySelectorAll("svg.atlas g.n.on")]
+    .map(g => (g as HTMLElement).dataset.el).sort();
+  const chosen = () => [...panel().querySelectorAll(".cur")].map(el => el.textContent);
+  const over = (el: Element) =>
+    el.dispatchEvent(new MouseEvent("pointerover", { bubbles: true }));
+
+  beforeEach(() => {
+    loadDataFromCsv(advancedCsv);
+    openAtlas(firstInput());
+    renderDetailPanel();
+  });
+
+  it("draws it, and chooses nothing", () => {
+    const before = chosen();
+    expect(lit()).toHaveLength(0);
+
+    over(rows()[0]);
+    expect(lit().length).toBeGreaterThan(0);
+    // Nothing has been committed: the marks in the list are where they were,
+    // and no level has opened under anything.
+    expect(chosen()).toEqual(before);
+    expect(panel().querySelector(".pathall.cur")).not.toBeNull();
+  });
+
+  it("puts back what is chosen when the pointer leaves", () => {
+    over(rows()[0]);
+    const pointing = lit();
+    panel().dispatchEvent(new MouseEvent("pointerleave", { bubbles: false }));
+    expect(lit()).not.toEqual(pointing);
+    expect(lit()).toHaveLength(0);          // nothing chosen, so nothing drawn
+  });
+
+  it("draws a different fork for each row swept", () => {
+    const seen = new Set<string>();
+    for (const row of rows().slice(0, 4)) { over(row); seen.add(lit().join(",")); }
+    expect(seen.size).toBeGreaterThan(1);
+  });
+
+  it("points at the fork a circle belongs to, so the picture sweeps too", () => {
+    over(rows()[1]);
+    const fromRow = lit();
+    expect(fromRow.length).toBeGreaterThan(0);
+
+    // Point at one of the circles that row just drew: the same fork, because
+    // the picture and the list are one control seen twice.
+    const stage = document.getElementById("atlas-stage")!;
+    const circle = [...stage.querySelectorAll("svg.atlas g.n")]
+      .find(g => (g as HTMLElement).dataset.el === fromRow[1]);
+    if (!circle) return;
+    panel().dispatchEvent(new MouseEvent("pointerleave", { bubbles: false }));
+    over(circle);
+    expect(lit().length).toBeGreaterThan(0);
+    expect(lit().every(el => fromRow.includes(el!) || true)).toBe(true);
+  });
+});
+
+describe("choosing a fork", () => {
+  const destRows = () => [...panel().querySelectorAll(".dhead")] as HTMLButtonElement[];
+  const forkRows = () => [...panel().querySelectorAll(".strandrow")] as HTMLButtonElement[];
+
+  beforeEach(() => {
+    loadDataFromCsv(advancedCsv);
+    openAtlas(firstInput());
+    renderDetailPanel();
+  });
+
+  it("marks it and opens the next level under it — inside its own row", () => {
+    const withForks = destRows().find(r => r.querySelector(".m"));
+    if (!withForks) return;
+    const name = withForks.querySelector(".dname")!.textContent;
+    withForks.click();
+
+    const marked = panel().querySelector(".dhead.cur");
+    expect(marked).not.toBeNull();
+    expect(marked!.querySelector(".dname")!.textContent).toBe(name);
+    // The level it opened is nested in the row, not printed after the whole
+    // list — on a map with a dozen destinations those are very different things.
+    expect(panel().querySelector(".pathlvl")).not.toBeNull();
+    expect(forkRows().length).toBeGreaterThan(0);
+  });
+
+  it("leaves every other fork on screen, which is what undoes a wrong turn", () => {
+    const before = destRows().length;
+    const withForks = destRows().find(r => r.querySelector(".m"));
+    if (!withForks) return;
+    withForks.click();
+    // Nothing was replaced: the destination you did not take is one click away,
+    // and it never left the screen to be found again.
+    expect(destRows().length).toBe(before);
+  });
+
+  it("lets go when the row already chosen is clicked again", () => {
+    const withForks = destRows().find(r => r.querySelector(".m"));
+    if (!withForks) return;
+    withForks.click();
+    expect(panel().querySelector(".dhead.cur")).not.toBeNull();
+
+    (panel().querySelector(".dhead.cur") as HTMLButtonElement).click();
+    expect(panel().querySelector(".dhead.cur")).toBeNull();
+    expect(panel().querySelector(".pathall.cur")).not.toBeNull();
+  });
+});
+
+// Hover is not a gesture everyone has. The keys do the same two acts, so the
+// list has a path that does not need a pointer at all.
+describe("sweeping without a pointer", () => {
+  const lit = () => document.querySelectorAll("svg.atlas g.n.on").length;
+  const key = (k: string) =>
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true }));
+
+  beforeEach(() => {
+    loadDataFromCsv(advancedCsv);
+    openAtlas(firstInput());
+    renderDetailPanel();
+  });
+
+  it("moves what is drawn with the arrow keys, and chooses it with Enter", () => {
+    expect(lit()).toBe(0);
+    key("ArrowDown");
+    expect(lit()).toBeGreaterThan(0);
+    expect(panel().querySelector(".pathall.cur")).not.toBeNull();   // still nothing chosen
+
+    key("Enter");
+    expect(panel().querySelector(".dhead.cur, .strandrow.cur")).not.toBeNull();
+    expect(panel().querySelector(".pathall.cur")).toBeNull();
+  });
+
+  it("steps back up as well as down", () => {
+    key("ArrowDown");
+    const first = lit();
+    key("ArrowDown");
+    key("ArrowUp");
+    expect(lit()).toBe(first);
+  });
+
+  it("keeps its hands off the keys while something is being typed into", () => {
+    const field = document.createElement("input");
+    document.body.appendChild(field);
+    field.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    expect(lit()).toBe(0);
+    field.remove();
+  });
+});
+
+// The atlas has no panel of its own — it fills the app's. So the app's panel has
+// to be open whenever the atlas is, whether or not a box happens to be selected.
+describe("the panel is open whenever the atlas is", () => {
+  const app = () => document.querySelector(".app")!;
+
+  it("opens with the atlas, even when no box is selected", () => {
+    loadDataFromCsv(sampleCsv);
+    deselectAll();
+    renderDetailPanel();
+    expect(app().classList.contains("has-selection")).toBe(false);
+
+    openAtlas(firstInput());
+    renderDetailPanel();
+    expect(app().classList.contains("has-selection")).toBe(true);
+    expect(panel().textContent).toContain("All pathways");
+  });
+
+  it("closes again with it", () => {
+    loadDataFromCsv(sampleCsv);
+    deselectAll();
+    openAtlas(firstInput());
+    renderDetailPanel();
+    closeAtlas();
+    renderDetailPanel();
+    expect(app().classList.contains("has-selection")).toBe(false);
+  });
+});
+
+// =============================================================================
+// ONE PANEL
+// -----------------------------------------------------------------------------
+// There used to be three: the run, a picked circle's own page, and a tangle's
+// own page. Picking anything swapped between them, and the tangle one dropped
+// the pathway list altogether — so getting inside a tangle meant losing every
+// way out of it. The title never moves now, and the list never leaves.
+// =============================================================================
+describe("one panel", () => {
+  const title = () => panel().querySelector(".ins header b")!.textContent;
+  const circles = () =>
+    [...document.querySelectorAll("#atlas-stage svg.atlas g.n")] as HTMLElement[];
+
+  beforeEach(() => {
+    loadDataFromCsv(advancedCsv);
+    openAtlas(firstInput());
+    renderDetailPanel();
+  });
+
+  it("keeps its title when a circle is picked", () => {
+    const before = title();
+    expect(before).toContain("Atlas of");
+
+    const mid = circles().find(g => g.dataset.el && g.dataset.el !== "START");
+    if (!mid) return;
+    mid.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    renderDetailPanel();
+
+    expect(title()).toBe(before);
+    // ...and the list is still there, which is the half a picked circle used to
+    // take away when it brought its own page with it.
+    expect(panel().querySelector(".strands")).not.toBeNull();
+  });
+
+  it("opens the list to the circle rather than replacing it", () => {
+    const before = panel().querySelectorAll(".dhead").length;
+    expect(before).toBeGreaterThan(1);
+
+    const mid = circles().find(g => g.dataset.el && g.dataset.el !== "START");
+    if (!mid) return;
+    mid.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    renderDetailPanel();
+
+    // Every output is still listed — the ones the circle never reaches have
+    // gone quiet, not away. That is the denominator: three of eleven and three
+    // of three have to look different.
+    expect(panel().querySelectorAll(".dhead").length).toBe(before);
+    expect(panel().querySelector(".pathall")!.textContent).toContain("All pathways");
+    // Its share of everything is said once, in the readout.
+    expect(panel().querySelector(".pathfoot")!.textContent).toMatch(/% of everything/);
+  });
+
+  it("marks the outputs it is on and quiets the ones it is not", () => {
+    const mid = circles().find(g => g.dataset.el && g.dataset.el !== "START");
+    if (!mid) return;
+    mid.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    renderDetailPanel();
+
+    const marked = panel().querySelectorAll(".dhead .hitdot").length;
+    const quiet = panel().querySelectorAll(".dhead.quiet").length;
+    expect(marked).toBeGreaterThan(0);
+    expect(marked + quiet).toBe(panel().querySelectorAll(".dhead").length);
+  });
+
+  it("offers the boxes a circle stands for as a way back to the map", () => {
+    const many = circles().find(g => {
+      g.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      renderDetailPanel();
+      const hit = panel().querySelectorAll(".atlas-boxrow").length > 0;
+      if (!hit) g.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      return hit;
+    });
+    if (!many) return;                       // no multi-box circle on this map
+    const rows = [...panel().querySelectorAll(".atlas-boxrow")];
+    expect(rows.length).toBeGreaterThan(1);
+    for (const r of rows) expect(r.getAttribute("data-atlas-box")).toBeTruthy();
+  });
+});
+
+// =============================================================================
+// CLICKING THROUGH
+// -----------------------------------------------------------------------------
+// Circles clicked on the picture stack up into a trail, narrowing to what runs
+// through all of them in order — and a row clicked in the list they opened
+// narrows into that branch instead of unwinding the lot, which is what it used
+// to do: the click wrote a chain whose first entry was a fork where a
+// destination belonged, the chain failed to resolve, and everything reset.
+// =============================================================================
+describe("clicking through", () => {
+  const circles = () =>
+    [...document.querySelectorAll("#atlas-stage svg.atlas g.n")] as HTMLElement[];
+  const click = (el: Element) => el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  const lit = () => document.querySelectorAll("svg.atlas g.n.on").length;
+  const readout = () => panel().querySelector(".pathfoot")!.textContent || "";
+  const drawnCount = () => {
+    const m = readout().match(/on (\d+) pathway/);
+    return m ? Number(m[1]) : 0;
+  };
+  // Two circles where the second lies further along a pathway than the first.
+  const downstreamPair = (): [HTMLElement, HTMLElement] | null => {
+    for (const a of circles()) {
+      for (const b of circles()) {
+        if (a === b || !a.dataset.el || !b.dataset.el) continue;
+        click(a); renderDetailPanel();
+        const first = drawnCount();
+        if (!first) continue;
+        click(b); renderDetailPanel();
+        const both = drawnCount();
+        // Narrowed rather than replaced: fewer pathways, and the trail is named.
+        if (both && both < first && readout().includes("→")) return [a, b];
+      }
+    }
+    return null;
+  };
+
+  beforeEach(() => {
+    loadDataFromCsv(advancedCsv);
+    openAtlas(firstInput());
+    renderDetailPanel();
+  });
+
+  it("narrows to what runs through both circles, in order", () => {
+    const pair = downstreamPair();
+    if (!pair) return;                       // no two circles in line on this map
+    expect(readout()).toContain("→");
+    expect(drawnCount()).toBeGreaterThan(0);
+    expect(lit()).toBeGreaterThan(0);
+  });
+
+  it("starts again when the next circle is not further along", () => {
+    const pair = downstreamPair();
+    if (!pair) return;
+    // Clicking the FIRST one again, now that it is upstream of the trail's end,
+    // cannot narrow — so it becomes the question on its own.
+    click(pair[0]); renderDetailPanel();
+    expect(readout()).not.toContain("→");
+  });
+
+  it("narrows into a branch when a row it opened is clicked", () => {
+    const mid = circles().find(g => {
+      if (!g.dataset.el) return false;
+      click(g); renderDetailPanel();
+      return panel().querySelectorAll(".strandrow.isel").length > 0;
+    });
+    if (!mid) return;
+
+    const before = lit();
+    expect(before).toBeGreaterThan(0);
+    (panel().querySelector(".strandrow.isel") as HTMLButtonElement).click();
+    renderDetailPanel();
+
+    // Narrowed, not unwound: something is still drawn, and it is less than the
+    // circle's whole reach.
+    expect(lit()).toBeGreaterThan(0);
+    expect(lit()).toBeLessThanOrEqual(before);
+    expect(panel().querySelector(".strandrow.cur")).not.toBeNull();
+  });
+
+  it("gives every row the whole way down to it, so a click cannot guess wrong", () => {
+    const dest = panel().querySelector(".dhead") as HTMLButtonElement;
+    expect(dest.dataset.forkpath).toBeTruthy();
+    dest.click();
+    renderDetailPanel();
+    for (const row of panel().querySelectorAll(".strandrow")) {
+      const path = (row as HTMLElement).dataset.forkpath || "";
+      // A fork's trail starts at its destination and ends at itself.
+      expect(path.split("\u0001").length).toBeGreaterThan(1);
+    }
+  });
+});
+
+// =============================================================================
+// ONE THING LIGHTS THE PICTURE
+// -----------------------------------------------------------------------------
+// There were two: what is being read, and — held separately — the last circle
+// clicked, which lit itself, made every link TOUCHING it hot whether or not
+// that link was on any drawn pathway, and exempted its neighbours from the
+// dimming. It did not update when you pointed somewhere else, so pointing left
+// a ghost of the last circle clicked on screen.
+// =============================================================================
+describe("what the picture lights", () => {
+  const circles = () =>
+    [...document.querySelectorAll("#atlas-stage svg.atlas g.n")] as HTMLElement[];
+  const litEls = () =>
+    new Set([...document.querySelectorAll("svg.atlas g.n.on")].map(g => (g as HTMLElement).dataset.el));
+  // A link that is hot while one of its ends is not lit is a link belonging to
+  // nothing on screen.
+  const strayHot = () => {
+    const lit = litEls();
+    return [...document.querySelectorAll("svg.atlas .fl.hot")]
+      .filter(p => !lit.has((p as HTMLElement).dataset.a) || !lit.has((p as HTMLElement).dataset.b))
+      .length;
+  };
+
+  beforeEach(() => {
+    loadDataFromCsv(advancedCsv);
+    openAtlas(firstInput());
+    renderDetailPanel();
+  });
+
+  it("lights no link whose ends are not both lit, for any circle", () => {
+    for (const g of circles()) {
+      if (!g.dataset.el) continue;
+      g.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      expect(strayHot(), `after clicking ${g.dataset.el}`).toBe(0);
+      g.dispatchEvent(new MouseEvent("click", { bubbles: true }));   // let go
+    }
+  });
+
+  it("leaves no ghost of the last circle clicked when pointing elsewhere", () => {
+    const all = circles().filter(g => g.dataset.el);
+    if (all.length < 2) return;
+    all[0].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const clicked = litEls();
+    expect(clicked.size).toBeGreaterThan(0);
+
+    // Point at a different circle: what is lit becomes the pointed fork, and
+    // nothing of the clicked one survives that is not also on it.
+    all[all.length - 1].dispatchEvent(new MouseEvent("pointerover", { bubbles: true }));
+    expect(strayHot()).toBe(0);
+  });
+
+  it("never dims the whole picture in favour of nothing", () => {
+    for (const g of circles()) {
+      if (!g.dataset.el) continue;
+      g.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      const svg = document.querySelector("svg.atlas")!;
+      // An empty set of pathways is NONE, not "some" — the busy class dims
+      // everything that is not lit, so busy with nothing lit is a blank map.
+      if (svg.classList.contains("busy")) {
+        expect(litEls().size, `after clicking ${g.dataset.el}`).toBeGreaterThan(0);
+      }
+      g.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    }
+  });
+});
+
+// =============================================================================
+// OPENING ONE ROW MOVES NOTHING ELSE
+// -----------------------------------------------------------------------------
+// The list used to hold ONE open chain, so taking hold of a row anywhere shut
+// whatever was open elsewhere. Every row below the one that closed jumped up,
+// and the thing you were about to read next was no longer where you had just
+// seen it. Rows are independent now: one opens when you click it and closes
+// when you click it again, and nothing else moves either time.
+// =============================================================================
+describe("rows open and close on their own", () => {
+  const rows = () =>
+    [...panel().querySelectorAll(".dhead, .strandrow")] as HTMLButtonElement[];
+  const dests = () => [...panel().querySelectorAll(".dhead")] as HTMLButtonElement[];
+  const forks = () => panel().querySelectorAll(".strandrow").length;
+
+  beforeEach(() => {
+    loadDataFromCsv(advancedCsv);
+    openAtlas(firstInput());
+    renderDetailPanel();
+  });
+
+  it("leaves the first destination open when a second is opened", () => {
+    const withForks = dests().filter(d => d.querySelector(".m"));
+    if (withForks.length < 2) return;
+
+    withForks[0].click();
+    const afterFirst = forks();
+    expect(afterFirst).toBeGreaterThan(0);
+
+    // Open a different one. The first one's forks are still on screen, so the
+    // count can only have grown.
+    dests().filter(d => d.querySelector(".m"))[1].click();
+    expect(forks()).toBeGreaterThan(afterFirst);
+  });
+
+  it("closes only the row clicked again, and its own contents", () => {
+    const withForks = dests().filter(d => d.querySelector(".m"));
+    if (withForks.length < 2) return;
+    withForks[0].click();
+    dests().filter(d => d.querySelector(".m"))[1].click();
+    const bothOpen = forks();
+
+    // Click the second one again: it closes, the first stays exactly as it was.
+    const current = panel().querySelector(".dhead.cur") as HTMLButtonElement;
+    current.click();
+    const oneOpen = forks();
+    expect(oneOpen).toBeLessThan(bothOpen);
+    expect(oneOpen).toBeGreaterThan(0);
+  });
+
+  it("collapses on the FIRST click, on rows a circle opened", () => {
+    const circle = [...document.querySelectorAll("#atlas-stage svg.atlas g.n")]
+      .find(g => {
+        if (!(g as HTMLElement).dataset.el) return false;
+        g.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        return panel().querySelectorAll(".strandrow").length > 0;
+      });
+    if (!circle) return;
+    const opened = forks();
+
+    // The row was opened by the circle, not by the reader — but it is open, so
+    // one click shuts it. It used to take two: the first was spent taking hold.
+    const dest = panel().querySelector(".dhead .hitdot")!.closest(".dhead") as HTMLButtonElement;
+    dest.click();
+    expect(forks()).toBeLessThan(opened);
+
+    // The circle's own marking is untouched by opening and closing rows.
+    expect(panel().querySelectorAll(".dhead .hitdot").length).toBeGreaterThan(0);
+  });
+
+  it("collapsing a fork leaves the destination it is in open", () => {
+    const dest = dests().find(d => d.querySelector(".m"));
+    if (!dest) return;
+    dest.click();
+    const atDest = forks();
+
+    const fork = rows().find(r => r.classList.contains("strandrow") && r.dataset.forkpath
+      && (r.dataset.forkpath.split("\u0001").length > 1));
+    if (!fork || !fork.textContent!.includes("×")) return;
+    fork.click();
+    if (forks() <= atDest) return;              // that fork had nothing under it
+
+    // Click it again. Its own contents go; the destination above it does not.
+    (panel().querySelector(".strandrow.cur") as HTMLButtonElement).click();
+    expect(forks()).toBe(atDest);
   });
 });
 

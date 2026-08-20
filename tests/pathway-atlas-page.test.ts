@@ -61,8 +61,18 @@ const rim = () => [...document.querySelectorAll("#stage g.n.focus .nd")] as HTML
 const click = (el: Element) => el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 const escape = () => dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 const inspector = () => document.getElementById("inspector")!.textContent!.replace(/\s+/g, " ");
-// the frame moves over half a second, so anything that reads it waits for it
-const settle = () => new Promise(r => setTimeout(r, 800));
+// The frame animates on requestAnimationFrame, which under jsdom is a timer —
+// so when the suite is busy, a 620ms animation can take considerably longer in
+// wall clock than 620ms. Waiting a FIXED 800ms therefore raced the clock and
+// lost whenever the rest of the run was heavy: the test was intermittently red
+// for reasons that had nothing to do with the code under test. Wait for the
+// frame to ARRIVE instead, with a generous ceiling so a genuine failure still
+// fails rather than hanging.
+const until = async (ok: () => boolean, ms = 5000): Promise<boolean> => {
+  const t0 = Date.now();
+  while (!ok() && Date.now() - t0 < ms) await new Promise(r => setTimeout(r, 25));
+  return ok();
+};
 let WHOLE: { w: number } | null = null;
 
 beforeAll(async () => {
@@ -128,8 +138,8 @@ describe("going inside a tangle", () => {
     expect(page.state().focus).toBe(tangles()[0].dataset.el);
     expect(document.querySelector(".loopdrawer")).toBeNull();   // no floating box
     expect(document.querySelector("svg.atlas.inside")).not.toBeNull();
-    await settle();
-    expect(page.state().vb!.w).toBeLessThan(WHOLE!.w);          // the frame closed in
+    // the frame closed in
+    expect(await until(() => page.state().vb!.w < WHOLE!.w)).toBe(true);
   });
 
   it("keeps the picture the same shape while it is zoomed", () => {
@@ -165,10 +175,9 @@ describe("going inside a tangle", () => {
     escape();
     expect(page.state().focus).toBeNull();
     expect(document.querySelector("svg.atlas.inside")).toBeNull();
-    await settle();
-    // and the frame is on its way back out (this DOM animates on a lazy clock,
-    // so what is asserted is the direction, not the exact frame)
-    expect(page.state().vb!.w).toBeGreaterThan(WHOLE!.w * 0.85);
+    // and the frame is on its way back out (what is asserted is the direction,
+    // not the exact frame)
+    expect(await until(() => page.state().vb!.w > WHOLE!.w * 0.85)).toBe(true);
   });
 
   it("forgets where it was when a different map is loaded", async () => {

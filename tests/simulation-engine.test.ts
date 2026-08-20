@@ -187,3 +187,46 @@ describe("runaway feedback loop", () => {
     }
   });
 });
+
+// =============================================================================
+// THE WORD DECIDES THE DIRECTION
+// -----------------------------------------------------------------------------
+// A link carries a kind ("increases") and a strength (0.55), and nothing kept
+// them in step — so a minus sign typed into the strength column silently
+// reversed the link while the word beside it went on saying the opposite. The
+// border map had two of these, and both read as plausible results rather than
+// as data errors, because nothing on screen contradicted them.
+// =============================================================================
+describe("elasticity signs", () => {
+  const edge = (effect: string, elasticity?: number) =>
+    ({ id: "e", from: "a", to: "b", effect, elasticity } as any);
+
+  it("takes the magnitude from the number and the sign from the word", () => {
+    expect(resolveEdgeElasticity(edge("increases", -0.55))).toBe(0.55);
+    expect(resolveEdgeElasticity(edge("decreases", 0.4))).toBe(-0.4);
+  });
+
+  it("leaves a link whose sign already agrees exactly as it was", () => {
+    expect(resolveEdgeElasticity(edge("increases", 0.3))).toBe(0.3);
+    expect(resolveEdgeElasticity(edge("decreases", -0.25))).toBe(-0.25);
+    expect(resolveEdgeElasticity(edge("enables", 0.7))).toBe(0.7);
+  });
+
+  it("normalises the defaults too", () => {
+    // A blank strength falls back to the default for its kind, and that default
+    // is subject to the same rule — "decreases" is negative however it is typed.
+    expect(resolveEdgeElasticity(edge("increases"))).toBeGreaterThan(0);
+    expect(resolveEdgeElasticity(edge("decreases"))).toBeLessThan(0);
+  });
+
+  it("leaves a kind it does not know exactly as typed", () => {
+    // Normalising against a rule nobody has written would be a worse guess than
+    // the data itself.
+    expect(resolveEdgeElasticity(edge("wobbles", -0.9))).toBe(-0.9);
+    expect(resolveEdgeElasticity(edge("wobbles", 0.9))).toBe(0.9);
+  });
+
+  it("keeps zero at zero", () => {
+    expect(resolveEdgeElasticity(edge("decreases", 0))).toBe(0);
+  });
+});

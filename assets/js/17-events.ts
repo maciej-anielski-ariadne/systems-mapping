@@ -25,6 +25,7 @@ import { hideTooltip } from "./12-tooltip";
 import { toggleSimulationMode } from "./14-simulation-panel";
 import { renderSidebar } from "./13-sidebar";
 import { renderDetailPanel } from "./15-detail-panel";
+import { atlasIsOpen, closeAtlas } from "./21-atlas-view";
 import { downloadCsvBlob, readCsvFile } from "./16-file-io";
 import { closeBuilder, openBuilder } from "./16a-builder-state";
 import { bootEmptyStateGrid } from "./16e-canvas-edit";
@@ -187,6 +188,14 @@ export function applyUiMode(): void {
     state.canvasEdit.editMode = false;
   }
 
+  // The mirror of the same rule: the atlas is a picture you read, so switching
+  // into editing puts it away. Otherwise you would be "editing" while looking
+  // at a read-only picture drawn over the map you were meant to be editing —
+  // with the button that closes it hidden by the mode you just entered.
+  if (!reading && typeof atlasIsOpen === "function" && atlasIsOpen()) {
+    closeAtlas();
+  }
+
   applyPanelPinnedClasses();
   applySelectionClass();
 
@@ -217,7 +226,13 @@ if (modeToggleButton) {
 export function applySelectionClass(): void {
   const app = document.querySelector(".app");
   if (!app) return;
-  app.classList.toggle("has-selection", !!state.selectedNodeId);
+  // The panel opens when it has something to say. A selected box is one reason;
+  // an open atlas is the other — the atlas has no panel of its own, it fills
+  // this one, so leaving it shut left the picture with its inspector nailed to
+  // zero pixels. That happened on every atlas opened from the header with
+  // nothing selected, which is most of them.
+  const hasAtlas = typeof atlasIsOpen === "function" && atlasIsOpen();
+  app.classList.toggle("has-selection", !!state.selectedNodeId || hasAtlas);
 }
 
 // ───── Filters drawer ────────────────────────────────────────────────────

@@ -137,12 +137,12 @@ export function initCanvasEdit(): void {
         render();
       }
     });
-    // Shift+mousedown on blank grid (incl. over the pointer-transparent
-    // placeholder) arms a candidate: a drag past threshold becomes a marquee
-    // multi-select, a no-drag release becomes a shift+click that creates a note
-    // at the placeholder's slot (see cleanupPendingMarquee). Node / edge
-    // affordances arm their own gestures and are excluded here. Plain (no-shift)
-    // drag still pans (17-events.js, which bails when Shift is held).
+    // Shift+mousedown on blank grid arms a marquee candidate: a drag past the
+    // threshold becomes a marquee multi-select. Shift stays here because this is
+    // a SELECTION gesture, the same convention as Shift+click, and because the
+    // plain drag belongs to panning in both modes — one gesture, one meaning,
+    // whichever mode you are in. Node / edge affordances arm their own gestures
+    // and are excluded.
     vizSvg.addEventListener("mousedown", (event: MouseEvent) => {
       if (event.button !== 0) return;
       if (!event.shiftKey) return;
@@ -151,6 +151,34 @@ export function initCanvasEdit(): void {
       if (target.closest &&
           target.closest(".node-group, .row-label-group, .edge-handle, .edge-hit, .edge-path")) return;
       beginMarqueeCandidate(event.clientX, event.clientY);
+    });
+
+    // Plain mousedown on blank grid, editing: a candidate "create here". The
+    // plain drag belongs to panning, so this only fires when the pointer did
+    // NOT travel — press and release on the previewed cell and a box appears.
+    //
+    // Creating a box used to need Shift+click, which rode in on the marquee
+    // candidate above. Now Shift means marquee and a plain click means create,
+    // which is what the ghost cell has been previewing the whole time.
+    vizSvg.addEventListener("mousedown", (event: MouseEvent) => {
+      if (event.button !== 0 || event.shiftKey) return;
+      if (state.uiMode !== "edit") return;
+      const target = event.target as HTMLElement;
+      if (target.closest &&
+          target.closest(".node-group, .row-label-group, .edge-handle, .edge-hit, .edge-path")) return;
+      if (!state.canvasEdit.hoverCell) return;
+      const startX = event.clientX, startY = event.clientY;
+      const onUp = (up: MouseEvent): void => {
+        window.removeEventListener("mouseup", onUp);
+        // Travelled: that was a pan, not a click. Leave it alone.
+        if (Math.abs(up.clientX - startX) >= MARQUEE_DRAG_THRESHOLD ||
+            Math.abs(up.clientY - startY) >= MARQUEE_DRAG_THRESHOLD) return;
+        if (!state.canvasEdit.hoverCell) return;
+        // Swallow the trailing click so the background-deselect handler does
+        // not immediately undo the new box's selection.
+        if (createNodeAtPlaceholder()) swallowNextClick();
+      };
+      window.addEventListener("mouseup", onUp);
     });
   }
 
@@ -436,13 +464,13 @@ export function bootEmptyStateGrid(): void {
   if (typeof clearHistory === "function") clearHistory();
 }
 
-// Mirror the Shift state into both the canvasEdit flag and a body class so
-// CSS can hide the edit affordances without any per-render bookkeeping.
+// Mirror the Shift state into the canvasEdit flag and a body class.
+//
+// Shift no longer reveals or arms anything — edit mode does that. What is left
+// is a selection modifier, and the flag survives only so the marquee code can
+// ask whether it is held. The body class is kept for the same reason: nothing
+// in the stylesheet gates an affordance on it any more.
 export function setShiftHeld(held: boolean): void {
-  // Shift is the editing key: it reveals the ghost cells, the edge handles and
-  // the drag-to-move affordance. Reading mode never arms it — otherwise a
-  // Shift-click would create a box that the (correctly) read-only keyboard then
-  // refused to let you name.
   if (held && state.uiMode !== "edit") held = false;
   state.canvasEdit.shiftHeld = !!held;
   if (document.body) {
@@ -458,7 +486,7 @@ export function setShiftHeld(held: boolean): void {
 // add-stream / add-stage flows live in the sidebar and the right detail panel.
 //
 // The mutating gestures (edge-handle mousedown, node mousedown for drag) are
-// gated on event.shiftKey so the canvas is read-only by default. Edge click →
+// gated on EDIT MODE, so the canvas is read-only while reading. Edge click →
 // select stays ungated because it's navigation, not a mutation.
 let _canvasEditDelegationBound = false;
 export function attachCanvasEditHandlers(): void {
@@ -477,12 +505,25 @@ export function attachCanvasEditHandlers(): void {
   // (initCanvasEdit mousedown → cleanupPendingMarquee), while a shift+drag in
   // the same space draws a marquee.
 
-  // Shift-gated mousedown → either an edge-draw candidate (from a node's edge
-  // handle) or a node drag-to-move candidate. Without Shift we arm neither, so
-  // the plain click → selectNode (11-rendering's delegated click) still fires.
+  // Mousedown → either an edge-draw candidate (from a box's edge handle) or a
+  // box drag-to-move candidate. EDIT MODE is the gate, and the only gate.
+  //
+  // These used to need Shift held as well, which made editing a mode inside a
+  // mode: you were in edit mode, and then you had to say so again, with a key,
+  // every time you wanted to move a box or draw a link. Being in edit mode IS
+  // the statement. Reading mode arms neither, so the canvas stays read-only
+  // there exactly as before.
+  //
+  // A plain click still selects: both gestures are only CANDIDATES until the
+  // pointer travels past its threshold, so a click can never become an
+  // accidental move or a stray link.
   vizSvg.addEventListener("mousedown", (event: Event) => {
     const e = event as MouseEvent;
-    if (e.button !== 0 || !e.shiftKey) return;
+    if (e.button !== 0) return;
+    if (state.uiMode !== "edit") return;
+    // Shift keeps its SELECTION meanings — held here it means "add to the
+    // selection" / "marquee", so it must not also start a drag.
+    if (e.shiftKey) return;
     const t = e.target as Element | null;
     if (!t || typeof t.closest !== "function") return;
 
@@ -522,10 +563,12 @@ export function handleSvgMouseMove(event: MouseEvent): void {
   if (state.canvasEdit && state.canvasEdit.draftEdge) return;  // dragging an edge — separate render loop owns hoverCell
   if (state.canvasEdit && state.canvasEdit.marquee) return;    // marqueeing — its own move loop owns the render
   if (state.canvasEdit && state.canvasEdit.draggingNode) return; // node drag owns the layout (its own dropCell)
-  // Suppress ghost-cell hover when Shift isn't held — without Shift the canvas
-  // is read-only and the ghost cell isn't a valid affordance. The cursor-cell
-  // keyboard path (state.canvasEdit.cursorCell, set by 16i) is independent.
-  if (!state.canvasEdit.shiftHeld) {
+  // Reading mode has no ghost cell: the canvas is read-only there and an
+  // insertion preview is not a thing you can act on. Editing shows it wherever
+  // the cursor is over a gap. (It used to require Shift held as well, which is
+  // the modal-inside-a-mode this removes.) The cursor-cell keyboard path
+  // (state.canvasEdit.cursorCell, set by 16i) is independent.
+  if (state.uiMode !== "edit") {
     if (state.canvasEdit.hoverCell) {
       state.canvasEdit.hoverCell = null;
       setLayout(computeLayout());

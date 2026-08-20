@@ -88,7 +88,7 @@
 
 .detail-empty h3 {
   font-family: var(--font-display);
-  font-weight: 500;
+  font-weight: var(--fw-semibold);
   font-style: italic;
   font-size: var(--fs-title);
   color: var(--text-secondary);
@@ -118,68 +118,63 @@
   color: var(--text-secondary);
 }
 
-/* === View / Edit toggle ===
- * Prominent full-width button. In view mode it sits between the
- * quantification block and Direct Inputs and reads "Edit Node". In edit
- * mode it sits at the top of the form and reads "Done editing" (filled
- * accent style). Clicking flips between the two modes. */
-.detail-mode-toggle {
-  margin: var(--section-gap) 0 var(--section-gap);
+/* === The way into the atlas ===
+ * A full-width card directly under the box's name, in reading mode only. It
+ * carries its own line of explanation rather than a bare label: "Atlas" is a
+ * name, and a name is no use to someone meeting it for the first time. The
+ * line is what makes the header button's bare "Atlas" legible afterwards —
+ * the two controls are one feature in two places, so they are worded the same.
+ *
+ * (This block was the View / Edit toggle. That button is gone: editing is a
+ * mode you enter from the header now, not per box.) */
+.detail-atlas {
+  margin: var(--section-gap) 0;
 }
 
-.detail-mode-button {
+.detail-atlas-button {
   display: block;
   width: 100%;
+  text-align: left;
   background: var(--bg-mid);
   color: var(--text-primary);
   border-radius: var(--radius-interactive);
-  padding: var(--pad-button);
+  padding: var(--space-2) var(--space-3);
   font-family: var(--font-ui);
-  font-size: var(--fs-body);
-  font-weight: var(--fw-semibold);
-  letter-spacing: 0.04em;
-  text-align: center;
   cursor: pointer;
   transition: background var(--dur-fast), color var(--dur-fast);
 }
 
-.detail-mode-button:hover {
+.detail-atlas-button:hover {
   background: var(--act-tint);
+}
+
+.detail-atlas-button b {
+  display: block;
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-cap);
   color: var(--text-primary);
 }
 
-.detail-mode-button.active {
-  background: var(--act);
-  color: var(--bg-deepest);
-}
-
-.detail-mode-button.active:hover {
-  background: var(--act-hi);
+.detail-atlas-button span {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--fs-body);
+  color: var(--text-secondary);
+  line-height: 1.35;
 }
 
 /* === Tags row at the top of a selected node's details === */
+/* The tag strip. Its pills ARE .filter-chip — the drawer's chip, defined once
+ * in 04-sidebar.css and reused here rather than re-cut at a different size. The
+ * strip used to be mono uppercase blocks filled with each tag's own colour:
+ * loud enough to outrank the box's name below them, and wide enough that three
+ * tags wrapped to two lines. */
 .detail-tags {
   display: flex;
-  gap: var(--gap-md);
-  margin-bottom: var(--section-gap);
   flex-wrap: wrap;
-}
-
-.detail-tag {
-  font-family: var(--font-mono);
-  font-size: var(--fs-cap);
-  letter-spacing: var(--tracking-cap);
-  text-transform: uppercase;
-  padding: var(--pad-row);
-  border-radius: 0;
-  color: var(--text-secondary);
-  background: var(--bg-mid);
-}
-
-/* The category tag uses the category's own fill colour */
-.detail-tag.category {
-  color: var(--bg-deepest);
-  font-weight: var(--fw-semibold);
+  gap: var(--space-1);
+  margin-bottom: var(--space-2);
 }
 
 /* === Node name + description === */
@@ -209,32 +204,117 @@
 
 /* Edit-mode description textarea occupies the same slot as the display text. */
 .detail-edit-input.detail-desc-input {
-  font-size: var(--fs-body);
-  line-height: 1.65;
-  margin-bottom: var(--section-gap);
+  font-size: var(--fs-cap);
+  line-height: 1.6;
+  margin-bottom: var(--space-2);
 }
 
 .detail-description {
-  font-size: var(--fs-body);
-  line-height: 1.65;
+  font-size: var(--fs-cap);
+  line-height: 1.6;
   color: var(--text-secondary);
-  margin-bottom: var(--section-gap);
+  margin-bottom: var(--space-2);
 }
 
 /* === List title (e.g. "Direct Inputs", "Direct Impacts") === */
+/* An eyebrow, not a heading: the same mark the atlas panel uses to open a
+ * section. Small, flush left, no rule under it — the rows below start close
+ * enough that the label plainly belongs to them, and a horizontal rule every
+ * few rows chops a narrow panel into slices. */
 .detail-list-title {
-  font-family: var(--font-mono);
-  font-size: var(--fs-cap);
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--text-tertiary);
-  margin: var(--section-gap) 0 var(--heading-gap);
   display: flex;
   justify-content: space-between;
+  align-items: baseline;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-cap);
+  font-size: var(--fs-eyebrow);
+  color: var(--text-tertiary);
+  margin: var(--space-3) 0 var(--space-1);
 }
 
 .detail-list-title .count {
+  font-family: var(--font-mono);
   color: var(--text-tertiary);
+}
+
+/* === One link, one line =================================================
+ * Name on the left, its strength in the column every other number in this
+ * panel lands in. What used to sit between them — the effect word and the
+ * link's own sentence — is in the tooltip.
+ *
+ * Same row language as the atlas panel, down to the fill bleeding 8px past the
+ * text on both sides: the words stay in their column and the picked fill still
+ * has air around it. `z-index: 0` makes the row a stacking context so that
+ * layer stays behind the ROW rather than disappearing behind the panel. */
+.drow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  padding: 2px calc(var(--space-2) + 1px) 2px 0;
+  margin: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: var(--fs-body);
+  text-align: left;
+  cursor: pointer;
+  position: relative;
+  z-index: 0;
+}
+.drow::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0 calc(-1 * var(--space-2));
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+  transition: background var(--dur-fast) ease;
+}
+.drow:hover::before { background: var(--bg-mid); }
+.drow:focus-visible { outline: none; }
+.drow:focus-visible::before { background: var(--bg-mid); }
+.drow:focus-visible { box-shadow: var(--focus-ring); }
+
+/* Which way the link runs. Tertiary and mono so a column of them reads as a
+ * margin mark rather than as part of the names. */
+.drow-dir {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-cap);
+  color: var(--text-tertiary);
+}
+
+.drow-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-cap);
+  color: var(--text-secondary);
+}
+.drow:hover .drow-name { color: var(--text-primary); }
+
+/* The shared number column. Tabular figures so the decimal points line up
+ * down the list, which is the whole reason the column exists. */
+.drow-num {
+  flex: 0 0 52px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--fs-cap);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.drow-num.pos { color: var(--status-good); }
+.drow-num.neg { color: var(--status-bad); }
+
+.drow-empty {
+  color: var(--text-tertiary);
+  font-size: var(--fs-cap);
+  padding: 2px 0;
 }
 
 /* === One row in a list of edges (input / impact) ===
@@ -245,9 +325,8 @@
 /* Shared edge-stripe frame — the 3px coloured left stripe signals the effect
  * type (green = increases, red = decreases, purple = enables) on a bg-mid card.
  * box-shadow:inset because the flat look uses no CSS borders. ONE definition
- * used by both the read-only edge rows (.edge-stripe--nav, a <button>) and the
- * editable edge editors (.edge-stripe--edit, a <div>); only --edge-color differs
- * per effect modifier. */
+ * used by the read-only edge stripes; --edge-color differs
+ * per effect modifier. (The read-only rows left this frame behind — see .drow.) */
 .edge-stripe {
   --edge-color: var(--border-strong);
   background: var(--bg-mid);
@@ -258,95 +337,12 @@
 .edge-stripe.decreases { --edge-color: var(--accent-red);    }
 .edge-stripe.enables   { --edge-color: var(--accent-purple); }
 
-/* Read-only variant — a <button> so "jump to the connected node" is keyboard
- * operable. Resets native chrome; content sits past the 3px stripe with R:0 so
- * the elasticity lands on the value rail. */
-.edge-stripe--nav {
-  display: block;
-  width: 100%;
-  text-align: left;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-  padding: var(--space-1) var(--space-2) var(--space-1) calc(var(--edge-stripe-w) + var(--space-2));
-  margin-bottom: var(--row-gap);
-  transition: background var(--dur-fast), transform var(--dur-fast);   /* for the :hover translateX/background (the edit variant had none) */
-}
-.edge-stripe--nav:hover {
-  background: var(--act-tint);
-  transform: translateX(2px);
-}
-/* Keyboard focus: re-state the inset colour stripe AND add the ring, so the
- * global button:focus-visible (which would otherwise REPLACE box-shadow) can't
- * erase the coloured edge marker. */
-.edge-stripe--nav:focus-visible {
-  outline: none;
-  background: var(--act-tint);
-  box-shadow: inset 3px 0 0 var(--edge-color), var(--focus-ring);
-}
-/* The global reduced-motion block only zeroes durations, not the translateX
- * nudge — suppress it explicitly. */
-@media (prefers-reduced-motion: reduce) {
-  .edge-stripe--nav:hover,
-  .edge-stripe--nav:focus-visible { transform: none; }
-}
+/* The read-only edge row is now .drow above: one line, name and strength, the
+ * sentence and the effect word on hover. What stood here — the 3px stripe, the
+ * translateX nudge, and the .detail-edge-name / -elasticity / -effect / -desc
+ * blocks that dressed its three lines — went with it. The .edge-stripe base and
+ * its --edit variant stay: the edit-mode editors still use them. */
 
-.detail-edge-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: var(--gap-lg);
-}
-
-.detail-edge-name {
-  font-size: var(--fs-body);
-  font-weight: var(--fw-medium);
-  color: var(--text-primary);
-  /* Wrap the full connected-node title (mirroring how node labels grow to fit on
-   * the canvas) instead of truncating; the elasticity value stays right-aligned
-   * and the name wraps onto extra lines beneath it. */
-  flex: 1 1 auto;
-  min-width: 0;
-  white-space: normal;
-  overflow-wrap: break-word;
-}
-
-.detail-edge-elasticity {
-  font-family: var(--font-mono);
-  font-size: var(--fs-cap);
-  color: var(--text-tertiary);
-  flex-shrink: 0;
-  font-weight: var(--fw-semibold);
-}
-
-.detail-edge-effect {
-  font-family: var(--font-mono);
-  font-size: var(--fs-cap);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-cap);
-  color: var(--text-tertiary);
-}
-
-.detail-edge-effect.increases { color: var(--accent-green);  }
-.detail-edge-effect.decreases { color: var(--accent-red);    }
-.detail-edge-effect.enables   { color: var(--accent-purple); }
-
-.detail-edge-desc {
-  font-size: var(--fs-cap);
-  color: var(--text-tertiary);
-  line-height: 1.5;
-  margin-top: var(--row-gap);
-}
-
-/* Hint under Direct Inputs in edit mode: incoming edges are edited from the
- * source node, not here (the Inputs / Impacts asymmetry, made obvious). */
-.detail-edge-hint {
-  font-size: var(--fs-cap);
-  color: var(--text-tertiary);
-  font-style: italic;
-  margin: calc(-1 * var(--row-gap)) 0 var(--space-2);
-  padding-left: calc(var(--edge-stripe-w) + var(--space-0_5));
-}
 
 /* === Quantification block (baseline, current, delta) === */
 .detail-quant-block {
@@ -360,21 +356,43 @@
 /* Label left, value right. Now that the block reaches the panel content edge,
  * space-between right-aligns every value on the shared rail without a fixed
  * column (which would wrap long descriptors like "↑ higher is better"). */
+/* The box's own figures, in the same column the rows above use. The label is
+ * sentence case at caption size rather than upper-case at body size: it is the
+ * quietest half of the row, and it was the loudest. */
+/* A settings row. It carries the hover / focus fill for whatever field sits in
+ * it — the same job .field-row does in 02-base.css. The fill bleeds 4px past
+ * the label on the left so the row reads as a band rather than as a box drawn
+ * tight around the text. */
 .detail-quant-row {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: var(--gap-lg);
-  padding: var(--space-0_5) 0;
-  font-size: var(--fs-body);
+  gap: var(--space-2);
+  padding: 3px calc(var(--space-2) + 1px) 3px var(--space-1);
+  margin-left: calc(-1 * var(--space-1));
+  border-radius: 3px 3px 0 0;
+  font-size: var(--fs-cap);
+  position: relative;
+  transition: background var(--dur-fast) ease;
 }
 
+/* A HINT only — half strength, and only on rows that actually hold a field.
+ * Current and Change vs start are computed, so they never light: lighting them
+ * promised an edit that was not on offer.
+ *
+ * The control inside is what answers (02-base.css). This row fill used to be
+ * the whole signal, which told you a row was live without telling you which
+ * part of it you could type in. */
+.detail-quant-row:has(input, textarea, select):hover,
+.detail-edit-row:hover {
+  background: color-mix(in srgb, var(--accent-blue) 7%, transparent);
+}
+
+/* The quiet half of the row. It was upper-case mono at body size — louder than
+ * the figure it labels, and four of them stacked read as four headings. */
 .detail-quant-label {
   color: var(--text-tertiary);
-  font-family: var(--font-mono);
   font-size: var(--fs-cap);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-cap);
 }
 
 .detail-quant-value {
@@ -389,35 +407,71 @@
  * (right-aligned, fixed width) so a display value "unlocks" into an input in
  * the same spot; the direction select and controllable checkbox share that
  * right edge. */
+/* Padding, so the hover fill has somewhere to be: without it the fill hugs the
+ * glyphs and reads as a highlighter pen rather than as a field. The right
+ * padding stays 0 — every value in this panel ends on one line (see below). */
 .detail-quant-row .detail-quant-input {
   flex: 0 0 124px;
   width: 124px;
   text-align: right;
-  padding: var(--space-0_5) var(--space-1_5);
+  padding: 1px 0 1px var(--space-1_5);
 }
 .detail-quant-input-text { font-family: var(--font-ui); }
 .detail-quant-control { flex: 0 0 150px; }
 .detail-quant-control .detail-edit-input { width: 100%; }
-.detail-quant-check {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-md);
-  font-size: var(--fs-body);
-  color: var(--text-secondary);
-  cursor: pointer;
+
+/* === One right edge ======================================================
+ * Every value in this panel — typed, chosen, computed or read-only — ends on
+ * the SAME vertical line, so the column reads as a column.
+ *
+ * It didn't before, and not because anything was left-aligned: the boxes all
+ * ended in the same place, but their padding-right differed (0px on the
+ * computed values, 4px on Row / Column, 6px on the quant inputs), so the TEXT
+ * landed three pixels apart in three different places. The two dropdowns were
+ * worse — left-aligned, with 24px held open on the right for their chevron.
+ *
+ * So: no right padding on anything, and the chevron moves out of the field
+ * into the row's own padding band (see below). */
+.detail-quant-row input,
+.detail-quant-row select,
+.detail-quant-row .detail-quant-value,
+.detail-quant-row .typeable-dropdown-input,
+.detail-edit-row input,
+.detail-edit-row select,
+.detail-edit-row .typeable-dropdown-input {
+  text-align: right;
+  padding-right: 0;
 }
-.detail-quant-check input { margin: 0; cursor: pointer; }
+/* Checkboxes are boxes, not text — a text-align on them does nothing useful,
+ * and their label already ends on the line. */
+.detail-quant-row input[type="checkbox"] { text-align: initial; }
+
+/* The chevron sits in the 9px band the row already reserves to its right,
+ * clear of the value rather than inside it. .typeable-dropdown is the wrapper
+ * the upgrade puts around the input (04b), so hanging it here costs the text
+ * nothing. Scoped to this panel: the builder's dropdowns keep the inline
+ * chevron, where a table cell has no such band to spare. */
+.detail-panel .typeable-dropdown { position: relative; }
+.detail-panel .typeable-dropdown-input { background-image: none; }
+.detail-panel .typeable-dropdown::after {
+  content: "";
+  position: absolute;
+  right: -7px;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  transform: translateY(-50%);
+  background-image:
+    linear-gradient(45deg,  transparent 50%, var(--text-tertiary) 50%),
+    linear-gradient(135deg, var(--text-tertiary) 50%, transparent 50%);
+  background-position: 0 0, 100% 0;
+  background-size: 50% 100%, 50% 100%;
+  background-repeat: no-repeat;
+  pointer-events: none;
+}
 /* Current + Δ are computed, so they stay read-only inside the otherwise-editable
  * block — mark them so the mixed lock state reads as intentional. */
 .detail-quant-derived { font-style: italic; opacity: 0.75; }
-
-/* A row whose control needs the panel's full width rather than the narrow
- * right-hand value rail (the formula box). Label above, control below. */
-.detail-quant-row--wide {
-  flex-direction: column;
-  align-items: stretch;
-  gap: var(--gap-sm);
-}
 
 /* A label carrying data-tooltip help is hoverable — say so with the cursor
  * rather than with another mark competing for attention in the rail. */
@@ -425,11 +479,13 @@
   cursor: help;
 }
 
-/* The formula box: an expression, so monospace and full width. */
+/* The formula box: an expression, so monospace. It used to be a stacked row —
+ * label above, box below, 57px — sitting in every box whether or not it had a
+ * formula. On the rail like everything else it costs a line, and a formula
+ * long enough to need more room scrolls. */
 .detail-quant-formula {
   font-family: var(--font-mono);
   font-size: var(--fs-cap);
-  width: 100%;
 }
 
 /* Editable current-value input shown in the "Current" row when the
@@ -437,16 +493,11 @@
  * propagate via applySimMultiplier (assets/js/14-simulation-panel.js). */
 .detail-value-input {
   width: var(--value-col);
-  background: var(--bg-mid);
-  color: var(--text-primary);
-  border-radius: var(--radius-interactive);
-  padding: var(--pad-input);
+  padding: 1px var(--space-1);
   font-family: var(--font-mono);
   font-size: var(--fs-cap);
   text-align: right;
-  outline: none;
   cursor: text;
-  box-shadow: var(--edit-cue);
   -moz-appearance: textfield;
 }
 .detail-value-input::-webkit-outer-spin-button,
@@ -454,9 +505,7 @@
   -webkit-appearance: none;
   margin: 0;
 }
-.detail-value-input:focus {
-  box-shadow: var(--focus-ring);
-}
+
 
 /* === Calculation breakdown ("How this number is calculated") ===
  * Shown under the quantification block in simulation mode: the plain-language
@@ -472,10 +521,10 @@
 /* The one-sentence rule name. Prose, not a readout — this is the line that has
  * to make sense to someone who has never opened the CSV. */
 .calc-rule {
-  font-size: var(--fs-body);
-  line-height: 1.5;
-  color: var(--text-secondary);
-  margin-bottom: var(--heading-gap);
+  font-size: var(--fs-cap);
+  line-height: 1.4;
+  color: var(--text-tertiary);
+  margin: 0 0 var(--space-1);
 }
 
 /* The expression itself, verbatim. Long formulas wrap rather than scroll, so
@@ -496,15 +545,18 @@
 /* One input row: name left, its value and its share of the answer on the
  * right-hand rail. The quiet inset stripe echoes the edge rows below without
  * claiming an effect colour it doesn't have. */
+/* The working, one line per input, reading down the same left edge and into
+ * the same number column as everything above it. It kept a 3px stripe and an
+ * indent per row, which stepped the whole block in from the panel and made a
+ * dozen inputs read as a dozen quotations. */
 .calc-input {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: var(--gap-lg);
-  padding: var(--space-0_5) var(--space-2) var(--space-0_5) calc(var(--edge-stripe-w) + var(--space-2));
-  margin-bottom: var(--row-gap);
+  gap: var(--space-2);
+  padding: 2px calc(var(--space-2) + 1px) 2px 0;
+  margin: 0;
   font-size: var(--fs-body);
-  box-shadow: inset 3px 0 0 var(--border-strong);
 }
 
 .calc-input-label {
@@ -512,10 +564,11 @@
   min-width: 0;
   display: flex;
   align-items: baseline;
-  flex-wrap: wrap;
-  gap: var(--gap-md);
-  color: var(--text-primary);
-  overflow-wrap: break-word;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .calc-input-value {
@@ -557,8 +610,7 @@
 
 /* Small inline markers on an input row ("previous step", "gates this"). */
 .calc-badge {
-  font-family: var(--font-mono);
-  font-size: var(--fs-cap);
+  font-size: var(--fs-eyebrow);
   text-transform: uppercase;
   letter-spacing: var(--tracking-cap);
   color: var(--accent-purple);
@@ -592,10 +644,15 @@
   background: color-mix(in srgb, var(--status-bad) 12%, transparent);
 }
 
-/* === Generic detail-panel action buttons === */
+/* === Generic detail-panel action buttons ===
+ * "Delete box" ends the panel, and it sat one 8px gap below "Add a link out" —
+ * two adjacent controls, one that adds a link and one that destroys the box.
+ * A rule and real space put it in its own territory. */
 .detail-actions {
   display: flex;
   gap: var(--gap-lg);
+  margin-top: var(--space-6);
+  padding-top: var(--space-3);
   margin-bottom: var(--section-gap);
 }
 
@@ -605,9 +662,7 @@
   color: var(--text-secondary);
   padding: var(--pad-button);
   border-radius: var(--radius-interactive);
-  font-family: var(--font-mono);
   font-size: var(--fs-cap);
-  letter-spacing: 0.04em;
   cursor: pointer;
   transition: background var(--dur-base), color var(--dur-base), box-shadow var(--dur-base);
 }
@@ -630,107 +685,173 @@
   color: var(--danger);
 }
 
-/* === Inline edit block (renders below the quantification block) === */
+/* === Placement (Row / Column) ===
+ * Flat, like every other block in the panel. It used to be a raised card, which
+ * made two settings look like a different KIND of thing from the ten settings
+ * directly below them — they aren't, they're just the two that say where the
+ * box sits. */
 .detail-edit-block {
-  margin: var(--section-gap) 0 var(--space-1_5);
-  padding: var(--pad-card);
-  background: var(--bg-mid);
-  border-radius: var(--radius-surface);
+  margin: 0 0 var(--space-1_5);
 }
 
+/* Row / Column. Label BESIDE the control, on the same rail every quant row
+ * below uses. These two used to stack their label above the select — 50px each
+ * against the 22px of the rows underneath — which made the panel read as two
+ * different forms stacked rather than one list of settings. */
 .detail-edit-row {
   display: flex;
-  flex-direction: column;
-  gap: var(--gap-sm);
-  margin-bottom: var(--space-2);
-}
-
-.detail-edit-row:last-child {
-  margin-bottom: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: 22px;
+  padding: 1px calc(var(--space-2) + 1px) 1px var(--space-1);
+  margin-left: calc(-1 * var(--space-1));
+  border-radius: 3px 3px 0 0;
+  position: relative;
+  transition: background var(--dur-fast) ease;
 }
 
 .detail-edit-label {
-  font-family: var(--font-mono);
+  flex: 0 0 auto;
   font-size: var(--fs-cap);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-cap);
   color: var(--text-tertiary);
+  white-space: nowrap;
 }
 
+/* The select takes what the label leaves, and no more — so a long row name
+ * ellipsizes inside its own control instead of pushing the row wider. */
 .detail-edit-control {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: var(--gap-sm);
+  justify-content: flex-end;
+}
+/* width: 100%, stated. A text input left to size itself takes its intrinsic
+ * ~20-character width and ignores the room the flex row is offering — so
+ * "Resources & Infrastructure" clipped inside a 128px box while 253px sat
+ * empty beside it. (Same trap as the simulation panel's number fields.) */
+.detail-edit-control,
+.detail-edit-control .typeable-dropdown { width: 100%; }
+.detail-edit-control .detail-edit-input {
+  width: 100%;
+  padding: 1px 0;
+  text-align: right;
+  font-size: var(--fs-cap);
 }
 
-/* Multi-select category editor (Primary / Secondary checkbox groups). */
-.detail-cat-group { margin-bottom: var(--space-1_5); }
-.detail-cat-group:last-child { margin-bottom: 0; }
-.detail-cat-group-title {
-  font-size: var(--fs-cap);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+
+/* === Tags, while editing =================================================
+ * The strip is the tag editor. It used to be a display strip with a twelve-row
+ * checkbox list 330px below it changing the same twelve tags — the same
+ * information twice, in two visual languages, on one screen.
+ *
+ * The pill itself is .filter-chip (04-sidebar.css). What edit adds is the
+ * on/off distinction: a tag the box HAS is filled with the app's toggled-on
+ * tint, one it doesn't is a plain chip, and the ones it doesn't have only
+ * appear once "+ tag" is pressed — at rest the strip should say what this box
+ * is, not offer a palette. Off is NOT struck through here: in the drawer that
+ * mark means "hidden from the map", which is a different statement entirely. */
+.detail-tags--edit .filter-chip.on {
+  background: var(--act-on);
+  color: var(--text-primary);
+}
+.detail-tags--edit .filter-chip.off { opacity: 0.6; }
+.detail-tags--edit .filter-chip.off:hover { opacity: 1; }
+
+/* "+ tag" / "− less" — unfolds the tags this box doesn't carry. Dashed, so it
+ * reads as an opening rather than as another tag. */
+.detail-tag-more {
+  background: none;
+  border: 1px dashed var(--border-subtle);
   color: var(--text-tertiary);
-  margin: var(--space-0_5) 0 var(--space-0_5);
 }
-.detail-cat-opt {
+.detail-tag-more:hover { border-color: var(--act); color: var(--act); background: none; }
+
+/* === One link, one line — the EDIT side ==================================
+ * An outgoing link reads as a row — direction, name, kind, strength — exactly
+ * as the Causes list above it does, and unfolds its controls underneath when
+ * clicked. It used to be a 121px block per link, all of them open at once:
+ * ten links was 1200px of form and the list stopped being a list.
+ * .drow itself is defined with the reading-mode rows; this is what edit adds. */
+.drow--edit { width: 100%; text-align: left; }
+
+/* Brief pulse when an edge was just clicked — or just drawn — on the map, so
+ * the eye finds the row the canvas is talking about. A FILL, like every other
+ * state in the app; the old version was a background flash on the edge-stripe
+ * block that went with it when links became rows. It runs once and ends on the
+ * open row's own styling, so nothing needs to remove it mid-animation. */
+@keyframes drow-flash {
+  0%   { background: color-mix(in srgb, var(--act) 55%, transparent); }
+  100% { background: var(--act-tint); }
+}
+.drow--edit.flash { animation: drow-flash 1.4s var(--ease); }
+@media (prefers-reduced-motion: reduce) {
+  .drow--edit.flash { animation: none; }
+}
+.drow--edit.open {
+  background: var(--act-tint);
+  border-radius: var(--radius-interactive) var(--radius-interactive) 0 0;
+}
+/* The kind, as the colour the link is drawn in on the map. The signed strength
+ * beside it is what the engine reads, and the two can disagree — so the colour
+ * is a small mark rather than a word competing with the number. */
+.drow-kind {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--edge-default);
+}
+.drow-kind.increases { background: var(--edge-increases); }
+.drow-kind.decreases { background: var(--edge-decreases); }
+.drow-kind.enables   { background: var(--edge-enables); }
+
+.edge-open {
+  padding: var(--space-1) var(--space-2) var(--space-2);
+  margin-bottom: var(--space-1);
+  background: var(--act-tint);
+  border-radius: 0 0 var(--radius-interactive) var(--radius-interactive);
+}
+.edge-open .detail-quant-row:last-of-type { border-bottom: 0; }
+.edge-open .detail-edit-textarea { margin-top: var(--space-1); min-height: 36px; }
+/* The add row — the Effects list's last line. Quieter than a real link (there
+ * is no box named yet, so no colour and no strength), and its "+" sits in the
+ * arrow column so the list keeps one left edge. */
+.drow--add { color: var(--act); }
+.drow--add .drow-dir { color: var(--act); }
+.drow--add .drow-name { color: var(--act); }
+.drow--add:hover { background: var(--act-tint); }
+
+.edge-open-actions {
   display: flex;
-  align-items: center;
-  gap: var(--gap-md);
-  font-size: var(--fs-body);
-  color: var(--text-secondary);
-  padding: var(--space-0_5) 0;
-  cursor: pointer;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
 }
-.detail-cat-opt input { margin: 0; cursor: pointer; }
-.detail-cat-swatch {
-  width: 12px;
-  height: 12px;
-  border-radius: 0;
-  flex-shrink: 0;
-  /* White ring (~3:1) so even a dark, near-background fill keeps a visible
-     boundary — matches the left sidebar's .sidebar-edit-swatch (WCAG 1.4.11). */
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
-}
+.detail-edit-link.danger { color: var(--text-tertiary); }
+.detail-edit-link.danger:hover { color: var(--danger); }
 
 /* T4: cap category-colour saturation so it stays quiet next to the accents. */
-.detail-cat-swatch,
-.detail-tag.category {
-  filter: saturate(0.65);
-}
-.detail-tag.category.secondary { font-size: var(--fs-cap); opacity: 0.95; }
+/* T4: cap tag-colour saturation so it stays quiet next to the accents. The dot
+ * is the only coloured thing in the pill now, so this is all it applies to. */
+.detail-tag > i { filter: saturate(0.65); }
 
+/* Geometry only — the box chrome lives nowhere now. See the field rules in
+ * 02-base.css: the row this sits in is what lights up. */
+/* Geometry and ONE size. Every piece of text in this panel that isn't the box's
+ * name or a section eyebrow is --fs-cap, so a label, a typed value, a chosen
+ * value, a computed value and a link name are all the same size.
+ *
+ * They were not: labels and computed values sat at 11px while the fields
+ * carrying the very same kind of value sat at 13px, and a link's name (13px)
+ * was two steps off the number beside it (11px). Five sizes in a 340px column,
+ * none of them meaning anything by being different. */
 .detail-edit-input {
   width: 100%;
-  background: var(--bg-deepest);
-  color: var(--text-primary);
-  border-radius: var(--radius-interactive);
-  padding: var(--pad-input);
-  font-family: var(--font-ui);
-  font-size: var(--fs-body);
-  outline: none;
+  padding: 2px 4px;
+  font-size: var(--fs-cap);
   cursor: text;
-  box-shadow: var(--edit-cue);
   box-sizing: border-box;
-}
-
-.detail-edit-input:focus {
-  box-shadow: var(--focus-ring);
-}
-
-/* One-shot "fields unlocked" pulse — a ring that ripples out of each field when
- * the user toggles INTO edit mode. Gated by .just-unlocked, which renderDetailPanel
- * adds only on the view→edit toggle (via _justUnlocked) and never on the field
- * re-renders that happen while editing, so it doesn't replay. */
-@keyframes detail-field-unlock {
-  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--act) 55%, transparent); }
-  100% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--act) 0%, transparent); }
-}
-.is-editing.just-unlocked .detail-edit-input {
-  animation: detail-field-unlock var(--dur-flash) var(--ease);
-}
-@media (prefers-reduced-motion: reduce) {
-  .is-editing.just-unlocked .detail-edit-input { animation: none; }
 }
 
 .detail-edit-textarea {
@@ -768,7 +889,7 @@
   color: var(--act);
   font-family: var(--font-mono);
   font-size: var(--fs-cap);
-  letter-spacing: 0.04em;
+  letter-spacing: var(--tracking-cap);
   padding: var(--space-0_5) 0;
   cursor: pointer;
   text-decoration: underline;
@@ -786,99 +907,23 @@
   margin: var(--section-gap) 0 0;
 }
 
+.detail-edge-hint,
 .outgoing-edges-empty {
-  font-size: var(--fs-body);
+  font-size: var(--fs-cap);
   color: var(--text-tertiary);
   font-style: italic;
   padding: var(--space-1_5) 0 var(--space-2);
   line-height: 1.5;
 }
 
-/* Editable variant — a <div> column of editor controls. Frame + colours come
- * from .edge-stripe above; only the editor padding / layout differ here. */
-.edge-stripe--edit {
-  padding: var(--space-1) var(--space-2) var(--space-1) calc(var(--space-2) + 3px);
-  margin-bottom: var(--space-2);
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-md);
-}
-
-/* Brief background highlight when an edge was just clicked on the canvas. The
- * .flash class is dropped on the next render (the animation runs once and ends
- * on the base styling, so no mid-animation removal is needed). */
-@keyframes edge-stripe-flash {
-  0%   { background: color-mix(in srgb, var(--act) 50%, transparent); }
-  100% { background: var(--bg-mid); }
-}
-.edge-stripe--edit.flash {
-  animation: edge-stripe-flash 1.4s var(--ease);
-}
-
-.outgoing-edge-header {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-md);
-}
-
-.outgoing-edge-target-link {
-  flex: 1 1 auto;
-  background: none;
-  color: var(--text-primary);
-  text-align: left;
-  font-size: var(--fs-body);
-  font-weight: var(--fw-medium);
-  padding: var(--space-0_5) 0;
-  cursor: pointer;
-  white-space: normal;
-  overflow-wrap: break-word;
-}
-.outgoing-edge-target-link:hover {
-  color: var(--act);
-}
-
-.outgoing-edge-delete {
-  width: 22px;
-  height: 22px;
-  background: var(--bg-deep);
-  color: var(--danger);
-  border-radius: var(--radius-interactive);
-  cursor: pointer;
-  font-size: var(--fs-body);
-  line-height: 1;
-  flex: 0 0 22px;
-  transition: background var(--dur-fast), color var(--dur-fast);
-}
-.outgoing-edge-delete:hover {
-  background: var(--danger-tint);
-  color: var(--danger);
-}
-
-.outgoing-edge-controls {
-  display: flex;
-  gap: var(--gap-md);
-  align-items: center;
-}
-
-.outgoing-edge-controls .detail-edit-select {
-  flex: 1 1 auto;
-  padding-right: 22px;
-}
-
-.outgoing-edge-elasticity {
-  flex: 0 0 88px;   /* edit-mode control in a 3-up row — not the view rail (would overflow) */
-  text-align: right;
-}
-
+/* The link's own description, in the panel that unfolds under its row. */
 .outgoing-edge-description {
   font-family: var(--font-ui);
-  font-size: var(--fs-body);
+  font-size: var(--fs-cap);
   min-height: 32px;
 }
 
-.outgoing-edge-add-toggle {
-  margin-top: var(--space-1);
-}
+
 
 .outgoing-edge-add {
   margin: var(--space-1_5) 0 var(--space-2);
@@ -891,8 +936,7 @@
 }
 
 .outgoing-edge-add-title {
-  font-family: var(--font-mono);
-  font-size: var(--fs-cap);
+  font-size: var(--fs-eyebrow);
   text-transform: uppercase;
   letter-spacing: var(--tracking-cap);
   color: var(--text-tertiary);

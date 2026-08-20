@@ -213,13 +213,20 @@ export function applyRestoredUiState(ui: any): void {
   // recompute layout so the map renders with collapsed rows/columns.
   if (state.hiddenStreams.size > 0 || state.hiddenStages.size > 0) setLayout(computeLayout());
 
+  // The restored sliders are only positions until something solves with them —
+  // so solve FIRST, whichever branch follows. This used to sit in the `else`
+  // only, which meant the one path that restores you INTO simulation mode was
+  // the one path that never applied its own overrides: the panel came back with
+  // a slider at 21% while every value on the map still read its starting
+  // number. Silent while the map only showed numbers; loud now that simulation
+  // colours the boxes, because the whole map came back grey ("nothing has
+  // moved") next to a slider that plainly had.
+  recomputeValues();
+
   // Simulation mode toggle redraws everything that depends on it.
   if (ui.simulationMode && !state.simulationMode) {
     toggleSimulationMode();
   } else {
-    // Even without entering sim mode, we may have overrides — recompute so
-    // values match the restored sliders, then refresh the sidebar + map.
-    recomputeValues();
     renderSidebar();
     render();
   }

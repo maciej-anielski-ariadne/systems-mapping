@@ -315,6 +315,12 @@ export function selectEdge(edgeId: string): void {
   }
   state.canvasEdit.editMode = true;
   state.canvasEdit.flashedEdgeId = edgeId;
+  // The panel lists links as one-line rows that unfold when asked. Clicking an
+  // edge on the map — or drawing a new one, which ends here too — IS the ask,
+  // so unfold this one. Without it, drawing a link from a node handle landed
+  // you on a closed row with nothing to fill in, which is the opposite of what
+  // just drawing it was for.
+  state.canvasEdit.openEdgeId = edgeId;
   // Promote to a real selection so Delete-key dispatch (16e:deleteSelection)
   // and the .edge-path.selected CSS (05-visualization.css:260) both fire.
   state.selectedEdgeId = edgeId;
@@ -363,7 +369,10 @@ export function deselectAll(): void {
   state.ancestorSet = new Set();
   state.descendantSet = new Set();
   state.highlightedEdgeIds = new Set();
-  if (state.canvasEdit) state.canvasEdit.flashedEdgeId = null;
+  if (state.canvasEdit) {
+    state.canvasEdit.flashedEdgeId = null;
+    state.canvasEdit.openEdgeId = null;
+  }
   renderSelectionChange();
   renderDetailPanel();
   if (typeof renderMultiSelectBar === "function") renderMultiSelectBar();

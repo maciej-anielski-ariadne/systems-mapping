@@ -78,9 +78,7 @@ export function renderSidebar(): void {
 // ───── Stages ──────────────────────────────────────────────────────────
 export function renderStagesList(): void {
   const container = document.getElementById("stages-list");
-  const countEl   = document.getElementById("stages-count");
   if (!container) return;
-  if (countEl) countEl.textContent = STAGES.filter(s => !state.hiddenStages.has(s.id)).length + " / " + STAGES.length;
 
   if (STAGES.length === 0) {
     container.innerHTML = '<div class="sidebar-empty">No columns yet. Click "+ Add column" to create one.</div>';
@@ -92,13 +90,13 @@ export function renderStagesList(): void {
     const stage = STAGES[i];
     const count = stageNodeCount[stage.id] || 0;
     const isHidden = state.hiddenStages.has(stage.id);
-    const tip = (isHidden ? "Click to show " : "Click to hide ") + stage.label + " — " + count + " box" + (count === 1 ? "" : "es") + " on the map. Shift-click the name to rename.";
-    html += '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="stage" data-id="' + escapeHtml(stage.id) + '" data-index="' + i + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
-    html +=   '<span class="sidebar-edit-label sidebar-inline-edit" data-field="label" data-tooltip="Shift-click to rename">' + escapeHtml(stage.label) + '</span>';
-    html +=   '<span class="count-swatch count-swatch--plain">' + count + '</span>';
-    html +=   dragHandleButton("Drag to reorder");
-    html +=   deleteIconButton("Delete column");
-    html += '</div>';
+    const tip = (isHidden ? "Click to show " : "Click to hide ") + stage.label + " — " + count + " box" + (count === 1 ? "" : "es") + " on the map. Click the name to rename.";
+    // No colour on a column, so no dot and no slot held open for one: these
+    // names sit flush on the same left edge as the eyebrow above them.
+    html += editRowHtml({
+      kind: "stage", id: stage.id, index: i, label: stage.label, tip: tip,
+      count: count, disabled: isHidden, deleteTitle: "Delete column",
+    });
   }
   html += '<div class="sidebar-drop-end" data-kind="stage" data-target-index="' + STAGES.length + '"></div>';
   container.innerHTML = html;
@@ -113,8 +111,6 @@ export function renderStreamsList(): void {
 
   if (STREAMS.length === 0) {
     container.innerHTML = '<div class="sidebar-empty">No rows yet. Click "+ Add row" to create one.</div>';
-    const visEl = document.getElementById("visible-streams-count");
-    if (visEl) visEl.textContent = "0 / 0";
     return;
   }
 
@@ -125,21 +121,15 @@ export function renderStreamsList(): void {
     const count = streamNodeCount[stream.id] || 0;
     const short = stream.short || (typeof deriveShortLabel === "function" ? deriveShortLabel(stream.label) : "");
 
-    const tip = (isHidden ? "Click to show " : "Click to hide ") + stream.label + " — " + count + " box" + (count === 1 ? "" : "es") + " on the map. Shift-click the name to rename.";
-    html += '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="stream" data-id="' + escapeHtml(stream.id) + '" data-index="' + i + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
-    html +=   '<div class="filter-label sidebar-inline-edit" data-field="label" data-tooltip="Shift-click to rename">' + escapeHtml(stream.label) + '</div>';
-    html +=   '<span class="sidebar-short-chip sidebar-inline-edit" data-field="short" data-tooltip="Shift-click to edit the short label">' + escapeHtml(short) + '</span>';
-    html +=   countSwatch(stream.color, count);
-    html +=   dragHandleButton("Drag to reorder");
-    html +=   deleteIconButton("Delete row");
-    html += '</div>';
+    const tip = (isHidden ? "Click to show " : "Click to hide ") + stream.label + " — " + count + " box" + (count === 1 ? "" : "es") + " on the map. Click the name to rename.";
+    html += editRowHtml({
+      kind: "stream", id: stream.id, index: i, label: stream.label, tip: tip,
+      color: stream.color, short: short, count: count,
+      disabled: isHidden, deleteTitle: "Delete row",
+    });
   }
   html += '<div class="sidebar-drop-end" data-kind="stream" data-target-index="' + STREAMS.length + '"></div>';
   container.innerHTML = html;
-
-  const visEl = document.getElementById("visible-streams-count");
-  if (visEl) visEl.textContent = (STREAMS.length - state.hiddenStreams.size) + " / " + STREAMS.length;
-
   wireRowHandlers(container, "stream");
 }
 
@@ -164,33 +154,65 @@ export function renderCategoriesList(): void {
     const isHidden = state.hiddenCategories.has(catId);
     const count = categoryNodeCount[catId] || 0;
     const isSecondary = (cat.class || "primary") === "secondary";
-    const reclassLabel = isSecondary ? "→ fill tag" : "→ corner tag";
+    // The button used to spell out "→ corner tag" in the row. Two problems: it
+    // repeated what the section heading directly above it already said, and at
+    // ~72px it held that width open even at opacity 0 — which is why tag names
+    // truncated to "Economic Out…" in a 280px drawer. One glyph in a fixed
+    // slot, with the whole sentence in the tooltip.
     const reclassTitle = isSecondary
-      ? "Make this a Fill tag category (fills the box; several blend into a gradient)"
-      : "Make this a Corner tag category (a corner tag)";
+      ? "Move to Fill tag — fills the box; several blend into a gradient"
+      : "Move to Corner tag — a small mark in the box's corner";
     // Category filters hide the COLOUR, not the box (see isNodeVisible in
     // 10-filters.js) — say so, or the count reads as "boxes this removes".
     const boxes = count + " box" + (count === 1 ? "" : "es");
     const kind = isSecondary ? "corner tag" : "fill tag";
     const tip = isHidden
-      ? "Click to show " + cat.label + " again on the " + boxes + " carrying it. Shift-click the name to rename."
-      : "Click to take the " + cat.label + " colour off the " + boxes + " carrying it — a box leaves the map only if it has no other " + kind + " left. Shift-click the name to rename.";
-    let h = '<div class="sidebar-edit-row filter-row ' + (isHidden ? "disabled" : "") + '" data-kind="category" data-id="' + escapeHtml(catId) + '" data-index="' + indexOf[catId] + '" data-tooltip="' + escapeHtml(tip) + '" draggable="true">';
-    h +=   '<div class="filter-label sidebar-inline-edit" data-field="label" data-tooltip="Shift-click to rename">' + escapeHtml(cat.label) + '</div>';
-    h +=   '<button class="sidebar-cat-reclass" data-action="reclass" data-tooltip="' + escapeHtml(reclassTitle) + '">' + reclassLabel + '</button>';
-    h +=   countSwatch(cat.color, count);
-    h +=   dragHandleButton("Drag to reorder");
-    h +=   deleteIconButton("Delete category");
-    h += '</div>';
-    return h;
+      ? "Click to show " + cat.label + " again on the " + boxes + " carrying it. Click the name to rename."
+      : "Click to take the " + cat.label + " colour off the " + boxes + " carrying it — a box leaves the map only if it has no other " + kind + " left. Click the name to rename.";
+    return editRowHtml({
+      kind: "category", id: catId, index: indexOf[catId], label: cat.label, tip: tip,
+      color: cat.color, count: count, disabled: isHidden, deleteTitle: "Delete category",
+      extra: '<button class="sidebar-cat-reclass" data-action="reclass" data-tooltip="' +
+        escapeHtml(reclassTitle) + '" aria-label="' + escapeHtml(reclassTitle) + '">⇄</button>',
+    });
   };
 
+  // Reading the map, a tag is a chip in its own colour — the key to what the
+  // boxes are painted with. Editing it, the same tag is a row, because renaming,
+  // recolouring, reordering and deleting all need somewhere to put a control.
+  const catChip = (catId: string): string => {
+    const cat = CATEGORIES[catId];
+    const isHidden = state.hiddenCategories.has(catId);
+    const count = categoryNodeCount[catId] || 0;
+    const boxes = count + " box" + (count === 1 ? "" : "es");
+    const kind = (cat.class || "primary") === "secondary" ? "corner tag" : "fill tag";
+    const tip = isHidden
+      ? "Click to show " + cat.label + " again on the " + boxes + " carrying it."
+      : "Click to take the " + cat.label + " colour off the " + boxes + " carrying it — a box leaves the map only if it has no other " + kind + " left.";
+    return filterChipHtml('data-kind="category" data-id="' + escapeHtml(catId) + '"',
+      cat.label, cat.color, count, isHidden, tip);
+  };
+
+  const editing = state.uiMode === "edit";
+
   const group = (title: string, classKey: string, ids: string[], addLabel: string): string => {
-    const shown = ids.filter(id => !state.hiddenCategories.has(id)).length;
-    let h = '<div class="sidebar-section-title"><span>' + title + '</span><span class="count">' + shown + ' / ' + ids.length + '</span></div>';
-    const emptyText = 'No ' + title.toLowerCase() + ' categories yet. Click "' + addLabel + '" to create one.';
-    h += ids.length ? ids.map(catRow).join("") : '<div class="sidebar-empty">' + emptyText + '</div>';
-    h += '<button class="sidebar-add-btn sidebar-cat-add" data-cat-class="' + classKey + '">' + addLabel + '</button>';
+    // The "+" rides on the eyebrow, like the Columns and Rows sections. Its
+    // aria-label still spells the action out — the glyph alone is only legible
+    // because the label it sits on says which list it adds to.
+    const add = editing
+      ? '<button class="sidebar-add-btn sidebar-cat-add" data-cat-class="' + classKey + '"' +
+        ' data-tooltip="' + escapeHtml(addLabel.replace(/^\+ /, "")) + '"' +
+        ' aria-label="' + escapeHtml(addLabel.replace(/^\+ /, "")) + '">+</button>'
+      : "";
+    let h = sectionTitleHtml(title, add);
+    const emptyText = 'No ' + title.toLowerCase() + ' categories yet. Use "+" to create one.';
+    if (!ids.length) {
+      h += '<div class="sidebar-empty">' + emptyText + '</div>';
+    } else if (editing) {
+      h += ids.map(catRow).join("");
+    } else {
+      h += '<div class="filter-chips">' + ids.map(catChip).join("") + '</div>';
+    }
     return h;
   };
 
@@ -203,6 +225,10 @@ export function renderCategoriesList(): void {
   container.innerHTML = html;
 
   wireRowHandlers(container, "category");
+  // The chips carry no drag handle or delete, so they want the toggle alone.
+  container.querySelectorAll('.filter-chip[data-kind="category"]').forEach(chip => {
+    chip.addEventListener("click", () => toggleCategory(chip.getAttribute("data-id")!));
+  });
   // The "+ Add" buttons are re-rendered each call, so wiring them here (on the
   // fresh DOM) attaches exactly one listener — no stacking. (The static stream/
   // stage add buttons are still wired once in 17-events.js.)
@@ -218,10 +244,12 @@ export function renderCategoriesList(): void {
 // Stream / Category filters: click a row to hide that edge effect or line
 // style on the map (or to suppress a direction of the causal trace), click
 // again to restore it. Each renders into its own container in index.html.
+// The colour each link effect paints on the map, so the legend can show it as a
+// dot in the same slot the row / tag lists put their colour well.
 export const EDGE_TYPE_FILTERS = [
-  { id: "enables",   label: "Enables / supports" },
-  { id: "increases", label: "Increases" },
-  { id: "decreases", label: "Decreases" },
+  { id: "enables",   label: "Enables / supports", color: "var(--edge-enables)"   },
+  { id: "increases", label: "Increases",          color: "var(--edge-increases)" },
+  { id: "decreases", label: "Decreases",          color: "var(--edge-decreases)" },
 ];
 export const TRACE_FILTERS = [
   { id: "ancestors",   label: "Causes",  varName: "--edge-ancestor"   },
@@ -239,22 +267,24 @@ export const LINE_STYLE_FILTERS = [
 export const LEGEND_FILTER_GROUPS: LegendFilterGroup[] = [
   { kind: "effect", containerId: "edge-type-filters",  title: "Link types", ctx: "links on the map",
     items: EDGE_TYPE_FILTERS,  hiddenSet: () => state.hiddenEffects,
-    swatch: (f, count) => edgeCountBadge(count),
-    count:  (f, counts) => counts.effects[f.id] || 0,
-    countInSwatch: true },
+    swatch: f => '<span class="sidebar-dot sidebar-dot--static" style="background:' + f.color + '"></span>',
+    chipColor: f => f.color || "",
+    count:  (f, counts) => counts.effects[f.id] || 0 },
   { kind: "style", containerId: "edge-style-filters", title: "Line style", ctx: "links on the map",
     items: LINE_STYLE_FILTERS, hiddenSet: () => state.hiddenStyles,
-    swatch: f => '<div class="legend-line ' + f.swatchClass + '"></div>',
+    swatch: f => '<span class="legend-line ' + f.swatchClass + '"></span>',
     count:  () => null },
   { kind: "trace", containerId: "trace-filters", title: "Highlighting", ctx: "when a box is selected",
     items: TRACE_FILTERS, hiddenSet: () => state.hiddenTrace,
-    swatch: f => '<div class="legend-swatch" style="box-shadow: inset 0 0 0 2px var(' + f.varName + '), 0 0 4px var(' + f.varName + ');"></div>',
+    swatch: f => '<span class="sidebar-dot sidebar-dot--static" style="background:var(' + f.varName + ')"></span>',
+    chipColor: f => 'var(' + f.varName + ')',
     count:  () => null },
 ];
 
 interface FilterItem {
   id: string;
   label: string;
+  color?: string;
   varName?: string;
   swatchClass?: string;
 }
@@ -272,8 +302,8 @@ interface LegendFilterGroup {
   items: FilterItem[];
   hiddenSet: () => Set<string>;
   swatch: (f: FilterItem, count?: number | null) => string;
+  chipColor?: (f: FilterItem) => string;
   count: (f: FilterItem, counts: EdgeFilterCounts) => number | null;
-  countInSwatch?: boolean;
 }
 
 // Every edge count the filters need, in one pass over EDGES (instead of a
@@ -288,16 +318,42 @@ export function edgeFilterCounts(): EdgeFilterCounts {
 }
 
 // One filter row. `count` is omitted (null) for trace rows, which aren't counts.
-export function legendFilterRow(kind: string, id: string, swatch: string, label: string, count: number | null, isOff: boolean, tip: string): string {
+// A legend row in edit mode. Same shape as an editable row minus the parts a
+// legend has no use for: these three groups are fixed lists, so there is nothing
+// to add, reorder or delete. `mark` is the group's own leading glyph — a colour
+// dot for link types, a line sample for line style, a ring for highlighting —
+// and it sits where the colour dot sits on the lists above, so all four groups
+// share one left edge for their names.
+export function legendFilterRow(kind: string, id: string, mark: string, label: string, count: number | null, isOff: boolean, tip: string): string {
   return '<div class="legend-filter-row filter-row ' + (isOff ? "disabled" : "") + '" data-legend-kind="' + kind + '" data-legend-id="' + escapeHtml(id) + '" data-tooltip="' + escapeHtml(tip) + '">' +
+    mark +
     '<div class="filter-label">' + escapeHtml(label) + '</div>' +
-    (count != null ? '<div class="filter-count">' + count + '</div>' : '') +
-    swatch +
+    (count != null ? '<span class="sidebar-count">' + count + '</span>' : '') +
     '</div>';
 }
 
-export function sectionTitleHtml(label: string, shown: number, total: number): string {
-  return '<div class="sidebar-section-title"><span>' + label + '</span><span class="count">' + shown + ' / ' + total + '</span></div>';
+// An eyebrow, and only that. It used to carry a "shown / total" count, which is
+// a number about the FILTER rather than about the map — and every row under it
+// already carries the count that matters, of boxes or links. Two counts a
+// centimetre apart, meaning different things, is worse than one.
+export function sectionTitleHtml(label: string, addHtml?: string): string {
+  return '<div class="sidebar-section-title"><span>' + label + '</span>' + (addHtml || "") + '</div>';
+}
+
+// One filter, as a chip: the colour it paints on the map, its name, and how
+// many things carry it. A wrap of these IS the map's key, which is what this
+// part of the drawer has always been — a column of rows only ever spelled it
+// out one item per line.
+export function filterChipHtml(
+  attrs: string, label: string, color: string | null, count: number | null,
+  isOff: boolean, tip: string,
+): string {
+  return '<button type="button" class="filter-chip' + (isOff ? " off" : "") + '" ' + attrs +
+    ' data-tooltip="' + escapeHtml(tip) + '" aria-pressed="' + (!isOff) + '">' +
+    (color ? '<i style="background:' + escapeHtml(color) + '"></i>' : '<i class="plain"></i>') +
+    '<span class="filter-chip-label">' + escapeHtml(label) + '</span>' +
+    (count != null ? '<b>' + count + '</b>' : '') +
+    '</button>';
 }
 
 // Render all three filter groups (edge types / line style / trace) from
@@ -312,15 +368,24 @@ export function renderLegendFilters(): void {
     // ever missing (e.g. a state-restore race or a partially-loaded state) —
     // the row simply renders as "not hidden" rather than crashing the sidebar.
     const hidden = g.hiddenSet() || new Set<string>();
-    const shown = g.items.filter(f => !hidden.has(f.id)).length;
-    let html = sectionTitleHtml(g.title, shown, g.items.length);
+    let html = sectionTitleHtml(g.title);
+    // Reading the map, these are a legend: a wrap of chips. Editing it, they
+    // stay rows, because a row is what carries a drag handle and a delete.
+    const asChips = state.uiMode !== "edit";
+    if (asChips) html += '<div class="filter-chips">';
     for (const f of g.items) {
       const isOff = hidden.has(f.id);
       const cnt = g.count(f, counts);
-      const sw  = g.countInSwatch ? g.swatch(f, cnt) : g.swatch(f);
-      html += legendFilterRow(g.kind, f.id, sw, f.label, g.countInSwatch ? null : cnt, isOff,
-        "Click to " + (isOff ? "show " : "hide ") + f.label.toLowerCase() + " " + g.ctx + ".");
+      const tip = "Click to " + (isOff ? "show " : "hide ") + f.label.toLowerCase() + " " + g.ctx + ".";
+      if (asChips) {
+        html += filterChipHtml(
+          'data-legend-kind="' + g.kind + '" data-legend-id="' + escapeHtml(f.id) + '"',
+          f.label, g.chipColor ? g.chipColor(f) : null, cnt, isOff, tip);
+      } else {
+        html += legendFilterRow(g.kind, f.id, g.swatch(f), f.label, cnt, isOff, tip);
+      }
     }
+    if (asChips) html += '</div>';
     c.innerHTML = html;
     wireLegendFilters(c);
   }
@@ -329,7 +394,9 @@ export function renderLegendFilters(): void {
 // Wire each filter row to its toggle. Re-rendered each call on fresh DOM, so
 // exactly one listener per row (no stacking).
 export function wireLegendFilters(container: HTMLElement): void {
-  container.querySelectorAll(".legend-filter-row").forEach(row => {
+  // Rows in edit mode, chips in reading mode — the handler keys on the data
+  // attribute both carry rather than on either one's class.
+  container.querySelectorAll("[data-legend-id]").forEach(row => {
     row.addEventListener("click", () => {
       const kind = row.getAttribute("data-legend-kind");
       const id   = row.getAttribute("data-legend-id")!;
@@ -340,23 +407,51 @@ export function wireLegendFilters(container: HTMLElement): void {
   });
 }
 
-// Right-side colour box that doubles as the node-count badge: the colour input
-// fills it (click to recolour), with the count on top in an auto-contrasting
-// colour so it stays legible on any user-chosen fill.
-export function countSwatch(color: string, count: number): string {
-  const c = color || "#94a3b8";
-  const tc = (typeof pickTextColor === "function") ? pickTextColor(c) : "#0a0e1a";
-  return '<span class="count-swatch">' +
-    '<input type="color" class="sidebar-edit-color" data-field="color" value="' + escapeHtml(c) + '" data-tooltip="Colour" aria-label="Colour">' +
-    '<span class="count-num" style="color:' + tc + '">' + count + '</span>' +
-    '</span>';
-}
-
-// Neutral count badge for the edge-type legend rows. The box is not an editable
-// colour picker, so it matches the sidebar background like the other non-picker
-// boxes — only the editable Category / Stream swatches carry colour.
-export function edgeCountBadge(count: number | null | undefined): string {
-  return '<span class="count-swatch count-swatch--plain">' + count + '</span>';
+// One editable row, in one shape: an optional colour dot, the name, whatever
+// small marks that list carries, the count, and the delete.
+//
+// Three things about it are deliberate.
+//
+// 1. The colour and the count are SEPARATE. They used to be one 30x18 pill:
+//    the count printed on top of the colour input. That badge answered "how
+//    many?" in a colour that changed as you recoloured it, and nothing about it
+//    said "click me to recolour". A 9px dot is the well; the count is mono
+//    beside it. Same split the reading-mode chips already use.
+//
+// 2. A list with no colour gets NO dot slot — its names sit flush against the
+//    same left edge as the eyebrow above them. An empty ring in the slot reads
+//    as an unchecked checkbox (the trap .sidebar-stage-mark was written for),
+//    and an invisible spacer just pushes the names off the edge everything else
+//    lines up on.
+//
+// 3. There is no drag grip. The whole row has always been the drag target; the
+//    grip was only ever a hint, and it was competing for the slot the delete
+//    needs. The delete is always on show — at a 24px row pitch, hunting for a
+//    control that only appears under the pointer is worse than the small amount
+//    of furniture it costs.
+export function editRowHtml(opts: {
+  kind: string; id: string; index: number; label: string; tip: string;
+  color?: string | null; count?: number | null; short?: string | null;
+  extra?: string; disabled?: boolean; deleteTitle?: string | null;
+}): string {
+  let h = '<div class="sidebar-edit-row filter-row' + (opts.disabled ? " disabled" : "") + '"' +
+    ' data-kind="' + escapeHtml(opts.kind) + '" data-id="' + escapeHtml(opts.id) + '"' +
+    ' data-index="' + opts.index + '" data-tooltip="' + escapeHtml(opts.tip) + '" draggable="true">';
+  if (opts.color) {
+    h += '<input type="color" class="sidebar-dot" data-field="color" value="' + escapeHtml(opts.color) +
+      '" data-tooltip="Colour" aria-label="Colour">';
+  }
+  h += '<span class="filter-label sidebar-inline-edit" data-field="label"' +
+    ' data-tooltip="Click to rename">' + escapeHtml(opts.label) + '</span>';
+  if (opts.short != null) {
+    h += '<span class="sidebar-short-chip sidebar-inline-edit" data-field="short"' +
+      ' data-tooltip="Click to edit the short label">' + escapeHtml(opts.short) + '</span>';
+  }
+  h += opts.extra || "";
+  if (opts.count != null) h += '<span class="sidebar-count">' + opts.count + '</span>';
+  if (opts.deleteTitle) h += deleteIconButton(opts.deleteTitle);
+  h += '</div>';
+  return h;
 }
 
 // Small inline trash-icon delete button shared by every sidebar row.
@@ -366,17 +461,6 @@ export function deleteIconButton(title: string): string {
     '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" focusable="false">' +
     '<path fill="currentColor" d="M6.5 1.5h3a1 1 0 0 1 1 1V3h2.5a.5.5 0 0 1 0 1h-.54l-.7 9.06A1.5 1.5 0 0 1 10.27 14.5H5.73a1.5 1.5 0 0 1-1.49-1.44L3.54 4H3a.5.5 0 0 1 0-1h2.5v-.5a1 1 0 0 1 1-1Zm-1.95 2.5.69 8.98a.5.5 0 0 0 .49.52h4.54a.5.5 0 0 0 .49-.52L11.45 4H4.55ZM6.5 3h3v-.5h-3V3Zm.25 2.75a.5.5 0 0 1 .5.5v5a.5.5 0 0 1-1 0v-5a.5.5 0 0 1 .5-.5Zm2.5 0a.5.5 0 0 1 .5.5v5a.5.5 0 0 1-1 0v-5a.5.5 0 0 1 .5-.5Z"/>' +
     '</svg></button>';
-}
-
-// Trailing drag grip — the default reorder affordance. The whole row is
-// draggable, so this is a visual hint (not a separate drag trigger). It shares
-// the trailing slot with the delete button; CSS shows the grip by default and
-// swaps to the delete button while Shift is held.
-export function dragHandleButton(title: string): string {
-  return '<span class="sidebar-row-drag" data-tooltip="' + escapeHtml(title) + '" aria-hidden="true">' +
-    '<svg viewBox="0 0 16 16" width="13" height="13" focusable="false">' +
-    '<path fill="currentColor" d="M6 3.25a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Zm6.5 0a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0ZM6 8a1.25 1.25 0 1 1-2.5 0A1.25 1.25 0 0 1 6 8Zm6.5 0a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0ZM6 12.75a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Zm6.5 0a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Z"/>' +
-    '</svg></span>';
 }
 
 // Turn an inline-editable element into a text editor: make it contenteditable,
@@ -391,8 +475,10 @@ export function dragHandleButton(title: string): string {
 // guard: blur and keydown can both try to end the edit, and without it we'd run
 // the save-and-rebuild twice — `finished` makes sure `finish()` only runs once.
 export function beginInlineEdit(el: HTMLElement | null, row: HTMLElement | null, kind: string, id: string, field: string): void {
-  // Reading mode never renames. (Editing mode still asks for Shift, so the
-  // panel stays click-to-filter in both.)
+  // Reading mode never renames. Editing mode needs no modifier: a plain click
+  // on the name edits it, and the name carries a visible field affordance at
+  // rest so it reads as one. Shift used to be required here, which meant the
+  // drawer's central action was invisible unless you already knew about it.
   if (state.uiMode !== "edit") return;
   if (!el || el.getAttribute("contenteditable") === "true") return;
   const original = el.textContent;
@@ -493,23 +579,32 @@ export function wireRowHandlers(container: HTMLElement, kind: string): void {
     // filter.
     if (isFilter) {
       row.addEventListener("click", event => {
-        if ((event as MouseEvent).shiftKey) return; // Shift is the edit key — never toggle while held
-        if ((event.target as HTMLElement).closest(".sidebar-row-drag, .sidebar-edit-color, .sidebar-row-delete, .sidebar-cat-reclass")) return;
+        // The controls that live INSIDE a row do their own thing; a click on one
+        // of them must not also flip the row's filter. (.sidebar-dot is the
+        // colour well — it replaced .sidebar-edit-color, and the drag grip it
+        // used to sit beside is gone: the row itself is the drag target.)
+        if ((event.target as HTMLElement).closest(".sidebar-dot, .sidebar-row-delete, .sidebar-cat-reclass")) return;
+        // Editing: the name is a field, so a click there types rather than
+        // filters. Reading: it is just part of the row and toggles like the rest.
+        if (state.uiMode === "edit" && (event.target as HTMLElement).closest(".sidebar-inline-edit")) return;
         toggle();
       });
     }
 
-    // Inline text editing — Shift-click any editable element (the name, or a
-    // stream's short-label chip) to edit it, mirroring the canvas where Shift is
-    // the app-wide edit key. A plain click bubbles through to the filter toggle
-    // (or is a no-op on stage rows, which don't filter), so no disambiguation
-    // timer is needed.
+    // Inline text editing. While editing the map, clicking a name edits it —
+    // no modifier. The name is the one part of the row that is NOT the filter
+    // toggle (see the guard above), which is the trade: in edit mode the row's
+    // main click target is renaming, and the filter is still a click away on
+    // the dot, the count or the space between them.
+    //
+    // While reading, these clicks fall through to the toggle as before —
+    // beginInlineEdit returns immediately outside edit mode.
     row.querySelectorAll(".sidebar-inline-edit").forEach(el => {
       const field = el.getAttribute("data-field")!;
       el.addEventListener("click", event => {
-        if (!(event as MouseEvent).shiftKey) return; // plain click bubbles → toggle
+        if (state.uiMode !== "edit") return;   // reading: bubble → toggle
         event.preventDefault();
-        event.stopPropagation();     // don't also toggle the filter
+        event.stopPropagation();
         beginInlineEdit(el as HTMLElement, row as HTMLElement, kind, id, field);
       });
     });

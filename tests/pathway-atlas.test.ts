@@ -22,14 +22,14 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { buildGraph, buildAtlas, detectLanes, END, familyLabel } from "../assets/js/20-atlas-engine";
+import { buildGraph, buildAtlas, detectLanes, END, familyLabel, strands } from "../assets/js/20-atlas-engine";
 
 // The standalone page still ships, and the last describe block below checks the
 // few things about it that are promises rather than implementation.
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const html = readFileSync(resolve(root, "tools/pathway-atlas.html"), "utf8");
 
-const engine = { buildGraph, buildAtlas, detectLanes, END, familyLabel };
+const engine = { buildGraph, buildAtlas, detectLanes, END, familyLabel, strands };
 
 const E = (from: string, to: string, elasticity = 0.3) => ({
   from, to, effect: elasticity < 0 ? "decreases" : "increases", elasticity,
@@ -363,5 +363,51 @@ describe("the page", () => {
     const tabs = [...html.matchAll(/role="tab" data-v="(\w+)"/g)].map(m => m[1]);
     expect(tabs).toEqual(["atlas", "loops"]);
     expect(/const VIEWS = \{ atlas: viewAtlas, loops: viewLoops \};/.test(html)).toBe(true);
+  });
+});
+
+// A strand is one reading made concrete — start element to finish. The claim is
+// that pulling them out one at a time agrees exactly with walking the whole
+// tree, that they arrive shortest first, and that filtering by an element gives
+// precisely the strands that pass through it.
+describe("strands: one reading at a time", () => {
+  const maps = [
+    ["lane map", lanesMap(), "policy"],
+    ["cyclic map", cyclicMap(), "a"],
+    ["cross-linked map", crossLinkedMap(), "start"],
+  ] as const;
+
+  for (const [name, map, start] of maps) {
+    const atlasOf = () => engine.buildAtlas(engine.buildGraph(map), start, { grouping: "strict" });
+
+    it(`${name}: given room, it finds exactly the readings and no others`, () => {
+      const atlas = atlasOf();
+      const got = engine.strands(atlas, { limit: 100000 });
+      expect(got.list.map((p: string[]) => p.join(">")).sort()).toEqual(readings(atlas));
+      expect(BigInt(got.list.length)).toBe(atlas.shapes);
+    });
+
+    it(`${name}: they come out shortest first`, () => {
+      const lens = engine.strands(atlasOf(), { limit: 100000 }).list.map((p: string[]) => p.length);
+      expect(lens).toEqual([...lens].sort((a, b) => a - b));
+    });
+
+    it(`${name}: filtering by an element gives exactly the strands through it`, () => {
+      const atlas = atlasOf();
+      const all = engine.strands(atlas, { limit: 100000 }).list;
+      for (const el of [...atlas.nodes.keys()].filter((k: string) => k !== engine.END)) {
+        const want = all.filter((p: string[]) => p.includes(el)).map((p: string[]) => p.join(">")).sort();
+        const got = engine.strands(atlas, { limit: 100000, through: el }).list
+          .map((p: string[]) => p.join(">")).sort();
+        expect(got).toEqual(want);
+      }
+    });
+  }
+
+  it("stops at the limit rather than walking a map it cannot hold, and says so", () => {
+    const atlas = engine.buildAtlas(engine.buildGraph(crossLinkedMap()), "start", { grouping: "strict" });
+    const got = engine.strands(atlas, { limit: 2 });
+    expect(got.list.length).toBe(2);
+    expect(got.truncated).toBe(true);
   });
 });

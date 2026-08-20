@@ -8,7 +8,7 @@
 
 import { state } from "./03-state";
 import { escapeHtml, formatScalar } from "./04-utils";
-import { formatNodeDelta } from "./07-simulation-engine";
+import { formatNodeDelta, gatedBy } from "./07-simulation-engine";
 import type { GraphNode } from "./types";
 
 export const tooltip = document.getElementById("tooltip") as HTMLDivElement;
@@ -35,10 +35,27 @@ export function showTooltip(node: GraphNode | null | undefined, event: MouseEven
       '</div>';
   }
 
+  // Why a box that did not move did not move. It is the one thing a still box
+  // has to say, and on the map it is the ONLY place it can say it in full —
+  // there is room on the box for the word "held" and no room at all for what is
+  // holding it.
+  let heldLine = "";
+  const gate = state.simulationMode ? gatedBy(node.id) : null;
+  if (gate) {
+    heldLine = '<div class="tooltip-held">Held back by <b>' + escapeHtml(gate.label) + '</b></div>';
+  }
+
+  // What the box IS comes straight after its name; what it is DOING follows.
+  // The description was arriving last, under the numbers, which put the one
+  // line that tells a reader what they are looking at below the lines that
+  // assume they already know.
+  const description = (node.description || "").trim();
+
   tooltip.innerHTML =
     '<div class="tooltip-title">' + escapeHtml(node.label) + '</div>' +
+    (description ? '<div class="tooltip-desc">' + escapeHtml(description) + '</div>' : "") +
     valueLine +
-    '<div class="tooltip-desc">' + escapeHtml(node.description || "") + '</div>';
+    heldLine;
 
   tooltip.classList.add("visible");
   invalidateTooltipSize();

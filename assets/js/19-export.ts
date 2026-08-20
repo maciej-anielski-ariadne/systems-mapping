@@ -65,11 +65,15 @@ import {
   maxReachableDepth,
   measureLabelLines,
   nodeCategoryIds,
+  simEffectFill,
+  SIM_FLAT_FILL,
+  SIM_INK,
 } from "./04-utils";
 import {
   formatNodeDelta,
   formatNodeValue,
   getOutcomeBorderColor,
+  nodeEffect,
 } from "./07-simulation-engine";
 import { measureNode, packColumns, packRows, rowHeightFor, stackHeight } from "./08-layout";
 import { isEdgeVisible, isNodeVisible } from "./10-filters";
@@ -666,13 +670,24 @@ export function renderExportSvg(
     const pos = lay.positions[node.id];
     if (!pos) continue;
     const stream   = streamById[node.stream]   || ({ color: "#94a3b8" } as Stream);
-    const fillInfo = nodePrimaryFill(node, "xgrad_" + (_xnodeGradSeq++));
+    // The export already carries the run's numbers (the value + delta below),
+    // so it carries the run's colours too — otherwise a shared file would show
+    // "+39.0%" on a box painted as though nothing had happened. Same three-way
+    // decision as the live map (11-rendering's node loop).
+    const effect   = state.simulationMode ? nodeEffect(node.id) : null;
+    const fillInfo = effect
+      ? { defs: "", fill: effect.moved ? simEffectFill(effect.merit, effect.strength) : SIM_FLAT_FILL, textColor: SIM_INK }
+      : nodePrimaryFill(node, "xgrad_" + (_xnodeGradSeq++));
     const stroke   = exportNodeStroke(node.id, pal);
     // Round the box once, up front, and derive every emitted coordinate (and
     // the chips, which are placed off this rect) from the rounded values — so
     // the whole box stays internally consistent to the tenth of a pixel.
     const xpos = { x: n1(pos.x), y: n1(pos.y), width: n1(pos.width), height: n1(pos.height), labelLines: pos.labelLines };
-    const chips    = nodeSecondaryChips(node, xpos);
+    // Same rule as the screen: while the sliders are out the corner belongs to
+    // the run's number, not to what kind of box this is.
+    const chips    = state.simulationMode
+      ? { svg: "", leftEdge: xpos.x + xpos.width }
+      : nodeSecondaryChips(node, xpos);
 
     s += '<g class="xnode" data-node-id="' + escapeHtml(node.id) + '">';
     s += fillInfo.defs;   // per-node gradient (empty unless multi-primary)
@@ -705,7 +720,7 @@ export function renderExportSvg(
     s += '</text>';
 
     // Value + delta (only for quantified nodes).
-    const valueText = formatNodeValue(node.id);
+    const valueText = state.simulationMode ? formatNodeValue(node.id) : "";
     if (valueText) {
       const valueY = n1(xpos.y + xpos.height - 12);
       s += '<text class="xn-value" x="' + lx + '" y="' + valueY +

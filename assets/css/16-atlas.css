@@ -97,6 +97,21 @@ svg.atlas.panning { cursor: grabbing; }
 .atlas.zoomed .fl.hot { opacity: 0.12; }
 .atlas.zoomed .fl:not(.hot) { opacity: 0.03; }
 
+/* The gate across a held box's way in. Drawn only when the box is actually
+ * held, and at a constant width however far the frame has closed in — it is a
+ * mark, and a mark that thickens with the zoom stops being one. */
+.atlas .gate { stroke: none; }
+.atlas g.n.held .gate {
+  stroke: var(--accent-amber);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  opacity: 0.85;
+}
+/* Dimmed with everything else off the run, so a held box away from what is
+ * being read does not shout over it. */
+.atlas.busy g.n.held:not(.on) .gate { opacity: 0.2; }
+
 /* Elements. Area is the measure — the radius is its square root. */
 .atlas .bub { fill: var(--act); opacity: 0.82; transition: opacity var(--dur-base) ease; }
 .atlas .bub.start { fill: var(--act-hi); }
@@ -112,20 +127,16 @@ svg.atlas.panning { cursor: grabbing; }
   pointer-events: all;
 }
 
-.atlas.busy g.n:not(.on):not(.near) .bub { opacity: 0.16; }
+.atlas.busy g.n:not(.on) .bub { opacity: 0.16; }
 .atlas g.n { cursor: pointer; }
 .atlas g.n:hover .bub { opacity: 1; }
-.atlas g.n.on .bub {
-  stroke: var(--text-primary);
-  stroke-width: 2;
-  vector-effect: non-scaling-stroke;
-  opacity: 1;
-}
-
-/* Going inside a tangle marks it .on, which would put the ring straight back
- * round it. Opacity already carries that state, so the tangle goes without.
- * Ordinary elements keep their ring, and so does keyboard focus below. */
-.atlas g.n.tangle.on:not(:focus-visible) .bub { stroke: none; }
+/* No ring. The argument the tangle rule below used to make on its own applies
+ * to every circle: opacity already carries this state — a lit circle sits at 1
+ * while everything off the run drops to 0.16 — and a stroke round a disc whose
+ * colour is the answer (in simulation, the size and merit of its move) only
+ * puts a hard edge between the reader and the fill they came to read. Keyboard
+ * focus keeps its ring: that one is not decoration. */
+.atlas g.n.on .bub { opacity: 1; }
 
 /* The browser's own focus ring is a rectangle round a circle; the ring goes on
  * the circle instead. */
@@ -156,6 +167,36 @@ svg.atlas.panning { cursor: grabbing; }
 
 .atlas g.n:hover > text,
 .atlas g.n.on > text { opacity: 1; }
+
+/* A TRACE runs from the box asked about all the way back to the sliders, and on
+ * a real map that is a dozen circles or more. Naming every one of them at once
+ * buries the picture under its own labels — so only the box asked about is
+ * named. The rest of the run is still lit, and still says who it is when
+ * pointed at.
+ *
+ * A pathway is different and keeps its labels: it is one route, a handful of
+ * circles long, and reading the name and the size of the move at each step IS
+ * what a pathway is for. */
+.atlas.traced g.n.on:not(.ends):not(:hover) > text { opacity: 0; }
+
+/* The size of the move, beside the name. Mono and bold so a run of them read
+ * as a column of figures rather than as more label; coloured by what the move
+ * did, the same three colours the fills and the panel's numbers use. */
+.atlas .mag {
+  font-family: var(--font-mono);
+  font-weight: var(--fw-bold);
+  fill: var(--text-secondary);
+}
+/* What is holding a box back reads as a note, not as a number — lighter and
+ * unbold, so a column of real figures is not competing with a column of words. */
+.atlas .mag.hold {
+  font-family: var(--font-ui);
+  font-weight: var(--fw-regular);
+  fill: var(--text-tertiary);
+}
+.atlas .mag.good { fill: var(--status-good); }
+.atlas .mag.bad  { fill: var(--status-bad); }
+.atlas .mag.none { fill: var(--accent-amber); }
 .atlas.inside g.n:not(.focus) > text { opacity: 0; }
 
 /* === Inside a tangle: the wheel === */
@@ -231,10 +272,7 @@ svg.atlas.panning { cursor: grabbing; }
 .atlas-controls .zoomctl[hidden] { display: none; }
 
 .atlas-btn {
-  font-family: var(--font-mono);
   font-size: var(--fs-cap);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
   padding: var(--pad-button);
   border-radius: var(--radius-interactive);
   background: var(--bg-mid);
@@ -286,7 +324,6 @@ svg.atlas.panning { cursor: grabbing; }
 .ins .hint {
   margin: 10px 0 0;
   padding-top: 9px;
-  border-top: 1px solid var(--border-subtle);
   font-size: var(--fs-cap);
   color: var(--text-tertiary);
 }
@@ -323,7 +360,7 @@ svg.atlas.panning { cursor: grabbing; }
 
 .ins .wires { display: flex; gap: var(--space-2); align-items: baseline; margin-top: var(--space-2); }
 .ins .wires .k {
-  font-size: var(--fs-cap);
+  font-size: var(--fs-eyebrow);
   letter-spacing: var(--tracking-cap);
   text-transform: uppercase;
   color: var(--text-tertiary);
@@ -335,10 +372,7 @@ svg.atlas.panning { cursor: grabbing; }
 
 .ins .row-btns { display: flex; flex-wrap: wrap; gap: var(--space-1_5); }
 .ins .btn {
-  font-family: var(--font-mono);
   font-size: var(--fs-cap);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
   padding: var(--pad-button);
   border-radius: var(--radius-interactive);
   background: var(--bg-mid);
@@ -349,18 +383,42 @@ svg.atlas.panning { cursor: grabbing; }
 .ins .btn:hover { background: var(--act-tint); color: var(--text-primary); }
 
 /* === What simulation is doing ===
- * Colour says which way a place has moved; size still says how much runs
- * through it. Merit colours (the map's own good / bad) where the boxes agree
- * on which way is better, plain up / down where they don't. */
-.atlas.simulating g.n.good .bub { fill: var(--status-good); }
-.atlas.simulating g.n.bad  .bub { fill: var(--status-bad); }
-.atlas.simulating g.n.up   .bub { fill: var(--edge-increases); }
-.atlas.simulating g.n.down .bub { fill: var(--edge-decreases); }
-.atlas.simulating g.n.good .bub.loop,
-.atlas.simulating g.n.bad  .bub.loop,
-.atlas.simulating g.n.up   .bub.loop,
-.atlas.simulating g.n.down .bub.loop { fill-opacity: 0.55; }
-.sw-good { background: linear-gradient(90deg, var(--status-bad) 0 50%, var(--status-good) 50% 100%); }
+ * Colour says what the run did to a place; size still says how much runs
+ * through it. The colour itself is written onto each element as --simfill by
+ * refreshAtlasValues (21-atlas-view): the hue is the merit — the map's own good
+ * and bad where its boxes agree on which way is better, amber where they don't
+ * — and how far it is from grey is how big the move was against the biggest
+ * mover on the whole map. That is the same scale the map's own boxes use, so a
+ * circle here and a box there at the same strength moved by the same amount.
+ * (Up / down used to be --edge-increases / --edge-decreases, which are the same
+ * green and red as good / bad — so "it went up" and "that is good news" were
+ * indistinguishable. Amber is the third thing that was missing.) */
+/* A link the run never travelled is not drawn at all while the sliders are out.
+ * Dimming it was not enough: the atlas is mostly routes the effect did NOT take,
+ * and forty faint ribbons still read as a thicket. */
+.atlas .fl.off { display: none; }
+
+.atlas.simulating g.n .bub { fill: var(--simfill, var(--act)); }
+.atlas.simulating g.n.flat .bub { fill: var(--border-strong); opacity: 0.4; }
+.atlas.simulating g.n .bub.loop { fill-opacity: 0.55; }
+/* Zoomed into a tangle the loops are the point, and a wash behind them only
+ * makes them harder to follow — so the no-fill rule keeps its say over the
+ * effect colour, exactly as it does over the resting amber. */
+.atlas.simulating.zoomed g.n .bub.loop,
+.atlas.simulating.zoomed g.n.flat .bub.loop { fill: none; }
+/* The rim dots inside a tangle ARE boxes, so they carry their own move rather
+ * than the wheel's average. */
+.atlas.simulating .nd { fill: var(--simfill, var(--accent-amber)); }
+.sw-good { background: linear-gradient(90deg, var(--status-bad) 0 33%, var(--accent-amber) 33% 66%, var(--status-good) 66% 100%); }
+/* The gate, at legend size: the mark itself, not a colour sample — it is a bar,
+ * and a round swatch would say nothing about what to look for. */
+.sw-gate {
+  width: 3px;
+  height: 12px;
+  border-radius: 1.5px;
+  background: var(--accent-amber);
+  vertical-align: -2px;
+}
 
 /* The simulation line is written once and shown only while it is true, so
  * turning the sliders on doesn't have to redraw the picture to explain them. */
@@ -385,7 +443,7 @@ body.sim-mode .atlas-legend .sim-only { display: inline; }
  * one a way back to that box on the map. */
 .ins .k-head {
   margin: var(--space-3) 0 var(--space-1_5);
-  font-size: var(--fs-cap);
+  font-size: var(--fs-eyebrow);
   letter-spacing: var(--tracking-cap);
   text-transform: uppercase;
   color: var(--text-tertiary);
@@ -407,97 +465,566 @@ body.sim-mode .atlas-legend .sim-only { display: inline; }
 
 .atlas-box:hover { background: var(--act-tint); color: var(--text-primary); }
 
-/* === The loops inside a tangle, one diagram each ==========================
- * The wheel says how the tangle is wired; these say what its loops actually
- * ARE, one causal loop diagram apiece — which is the form people already read
- * feedback in. The panel lives outside the svg, so it carries its own copy of
- * the polarity hues the picture uses. */
+/* === The loops inside a tangle, one line each ============================
+ * The wheel beside this list is the drawing. A second, smaller drawing of the
+ * same shape in the panel said it twice and cost five times the height, so a
+ * loop is written here instead: which way it runs, what it goes through, and
+ * how strong it is. Polarity is the letter, not only the colour. */
 .loopcards {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: 1px;
   margin-top: var(--space-2);
 }
 
 .loopcard {
   --c1: var(--accent-amber);   /* reinforcing */
   --c2: var(--act);            /* balancing */
-  border: 1px solid var(--border-subtle);
-  border-left: 4px solid var(--c2);
-  border-radius: var(--radius-sm);
-  background: var(--bg-deep);
-  padding: var(--space-2) var(--space-3) var(--space-3);
-  cursor: pointer;
-  transition: background var(--dur-fast) ease, border-color var(--dur-fast) ease;
-}
-.loopcard.r { border-left-color: var(--c1); }
-.loopcard:hover { background: var(--bg-mid); }
-
-/* The one being drawn on the wheel right now. */
-.loopcard.sel { background: var(--bg-mid); border-color: var(--text-tertiary); }
-/* Pointed at a box on the rim: the loops that pass through it. */
-.loopcard.rel { border-color: var(--border-strong); }
-
-.loopcard:focus-visible {
-  outline: 2px solid var(--act-hi);
-  outline-offset: 2px;
-}
-
-.loopcard header {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1_5);
-  align-items: baseline;
-  margin-bottom: var(--space-0_5);
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  /* No side padding: the fill behind it is what holds the words off its edge,
+   * and without it the loop list reads down the same edge as the rows above. */
+  padding: var(--space-1) 0;
+  cursor: pointer;
 }
+
+
+/* === Picked, everywhere in this panel ===================================
+ * Four kinds of item can be picked — a mover's row, a destination's heading, a
+ * pathway, a loop — and they were saying so three different ways: a tinted
+ * fill, a grey fill with an inset ring, a grey fill with a border. Three
+ * languages for one state means the reader learns which list they are in
+ * before they can read what is picked in it.
+ *
+ * So: the tint, and only the tint. --act-on is the app's own selected fill,
+ * already what the mover rows use and what toggled controls use everywhere
+ * else, and it separates cleanly from hover (grey) — where a grey selected
+ * state cannot, since the two then look identical under the cursor. No ring
+ * and no border on any of them: an edge costs a pixel of layout, is the first
+ * thing to look wrong at a corner radius, and says nothing the fill has not.
+ */
+
+
+.loopcard:focus-visible { outline: 2px solid var(--act-hi); outline-offset: 2px; }
+
+/* R or B, and it is the whole of what says which. Big enough to read down the
+ * list at a glance, filled rather than outlined, and still the letter — a
+ * coloured dot would have made the two loops the same shape in every way but
+ * hue, which is no use to anyone reading them apart by colour alone. */
 .loopcard .pol {
-  font-size: var(--fs-cap);
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--fs-body);
   font-weight: var(--fw-bold);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--c2);
+  line-height: 1;
+  background: var(--c2);
+  color: var(--bg-deepest);
 }
-.loopcard .pol.r { color: var(--c1); }
+.loopcard.r .pol { background: var(--c1); }
+
+.loopcard .lbl {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-body);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.loopcard.sel .lbl { color: var(--text-primary); }
+
+.loopcard .lbl i {
+  font-style: normal;
+  color: var(--text-tertiary);
+  margin: 0 5px;
+}
+
 .loopcard .m {
+  flex: none;
+  /* `.ins .m` is the panel header's meta line and carries a 5px top margin.
+   * Inherited here it pushed the strength 2.5px below the centre line the chip
+   * and the chain sit on — the three have to read as one line. */
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-cap);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* === Strands: one reading, left edge to right ============================
+ * A row is one line — where the strand arrives, and how many steps it took.
+ * They all begin in the same place, so the destination is what tells them
+ * apart and the destination leads. The chain only unfolds for the strand
+ * being read, which is the same one lit on the picture. */
+/* The list takes whatever the header leaves, rather than a guessed fraction of
+ * the window: a viewport fraction cannot know how tall this header is or how
+ * tall the sidebar is, so it always cuts off short or overflows. The panel
+ * becomes a column, the header keeps its own height, and the list is the part
+ * that flexes and scrolls. */
+body.atlas-open .detail-panel { display: flex; flex-direction: column; }
+body.atlas-open #detail-content { flex: 1 1 auto; min-height: 0; }
+body.atlas-open .ins { display: flex; flex-direction: column; height: 100%; }
+.ins > .strands,
+.ins > .loopcards { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+
+/* === The picked fill ====================================================
+ * A picked row's colour should not stop at the last letter. But these rows are
+ * flush left on purpose — the names, the bars and the numbers each sit in a
+ * column read straight down the panel — so the fill cannot be widened by
+ * padding the rows: that moves every one of those columns.
+ *
+ * So the fill is a layer of its own, stretched past the row on both sides,
+ * sitting behind the words. Nothing about the row's own box changes: the text
+ * starts where it started, the numbers stay in their column, and the hairline
+ * dividers still begin where the text begins rather than running out into the
+ * margin.
+ *
+ * `z-index: 0` on the row matters. It makes the row a stacking context, which
+ * is what keeps the `z-index: -1` layer behind the ROW and not behind the
+ * panel's own background, where it would be invisible. */
+.ins { --pick-bleed: var(--space-2); }
+
+/* A list that scrolls clips at its own edge, so the bleed is handed to it as
+ * padding and taken straight back as margin: the rows stay in the same column,
+ * and the fill has somewhere to go. */
+.ins > .strands,
+.ins > .loopcards,
+.ins .mvrows.open {
+  margin-inline: calc(-1 * var(--pick-bleed));
+  padding-inline: var(--pick-bleed);
+}
+
+.ins .mv,
+.ins .dhead,
+.strandrow,
+.loopcard { position: relative; z-index: 0; }
+
+.ins .mv::before,
+.ins .dhead::before,
+.strandrow::before,
+.loopcard::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0 calc(-1 * var(--pick-bleed));
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+  transition: background var(--dur-fast) ease;
+}
+
+.ins .mv:hover::before,
+.ins .dhead:hover::before,
+.strandrow:hover::before,
+.loopcard:hover::before { background: var(--bg-mid); }
+
+.ins .mv.lit::before,
+.loopcard.sel::before { background: var(--act-on); }
+
+/* Pointed at a box on the rim: the loops that run through it. Related, not
+ * picked — so the same colour, at less than half the strength. */
+.loopcard.rel::before { background: color-mix(in srgb, var(--act-on) 40%, transparent); }
+.loopcard.sel.rel::before { background: var(--act-on); }
+
+.strands {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: var(--space-2);
+}
+
+.strandrow {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  /* Flush left: a pathway reads as one of the ways into the destination above
+   * it, not as a sub-item stepped in from it — the "via" already says which
+   * relation it is in. The right inset keeps its contribution in the same
+   * column as every other number in the panel. */
+  padding: var(--space-1) calc(var(--space-2) + 1px) var(--space-1) 0;
+  cursor: pointer;
+}
+
+
+.strandrow:focus-visible { outline: 2px solid var(--act-hi); outline-offset: 2px; }
+
+.strandrow > .line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.strandrow .dest {
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.strandrow > .line > .m {
+  flex: none;
   font-family: var(--font-mono);
   font-size: var(--fs-cap);
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
 }
 
-svg.ring { display: block; }
-svg.ring .lk { stroke: var(--border-strong); stroke-width: 1.6; fill: none; }
-svg.ring .ah { fill: var(--border-strong); }
-svg.ring .bx { fill: var(--bg-deepest); stroke: var(--text-secondary); stroke-width: 1.6; }
-svg.ring .bl { font-family: var(--font-ui); font-size: 9.5px; fill: var(--text-secondary); }
-svg.ring .sg {
-  font-family: var(--font-mono);
-  font-size: 13px;
-  font-weight: var(--fw-semibold);
-  fill: var(--text-primary);
-  text-anchor: middle;
-}
-svg.ring .rb {
-  font-family: var(--font-ui);
-  font-size: 26px;
-  font-weight: var(--fw-bold);
-  fill: var(--c2);
-  opacity: 0.85;
-}
-svg.ring .rb.r { fill: var(--c1); }
+/* A contribution is coloured by what it does to ITS destination, so a route
+ * pulling against the rest reads as the opposite colour to the total it is
+ * part of — which is the one thing a column of numbers cannot say on its own.
+ * Lighter than the heading: the total is the statement, these are its parts. */
+.strandrow > .line > .m.good { color: var(--status-good); }
+.strandrow > .line > .m.bad  { color: var(--status-bad); }
+.strandrow > .line > .m.none { color: var(--accent-amber); }
 
-/* A loop with more boxes than a ring can name, written as a line instead. */
-.flatloop {
+
+/* === The effect block in the panel ===
+ * While the sliders are out, every panel state opens with the same three
+ * things: the headline move, one line saying what that number is an average
+ * OF, and a row per box. One shape for a single element, a group and a tangle
+ * — a reader should not have to learn it three times. */
+.ins .effect { margin-bottom: var(--space-4); }
+.ins .effect .big {
+  font-family: var(--font-mono);
+  font-size: var(--fs-title);
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--text-primary);
+}
+.ins .effect .big.good { color: var(--status-good); }
+.ins .effect .big.bad  { color: var(--status-bad); }
+.ins .effect .big.none { color: var(--accent-amber); }
+.ins .effect .big.flat { color: var(--text-tertiary); }
+.ins .effect .sub {
+  color: var(--text-tertiary);
+  font-size: var(--fs-cap);
+  margin-top: 2px;
+}
+
+/* One rhythm for the whole panel: a clear gap ABOVE each section name, a tight
+ * one below it, so a name reads as belonging to the list under it rather than
+ * floating between two. The first section takes its distance from the effect
+ * block's own margin instead of stacking the two. */
+.ins .eyebrow {
+  color: var(--text-tertiary);
+  font-size: var(--fs-eyebrow);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-cap);
+  margin: var(--space-5) 0 var(--space-1_5);
+}
+
+.ins .effect + .eyebrow { margin-top: var(--space-4); }
+.ins .mvrows + .eyebrow,
+.ins button.mv.more + .eyebrow { margin-top: var(--space-5); }
+
+/* The list below these keeps the flexible height (it is the one that scrolls),
+ * so the effect block states its own and holds it. */
+.ins .effect,
+.ins .eyebrow,
+.ins .mvrows { flex: 0 0 auto; }
+
+.ins .mvrows { display: flex; flex-direction: column; }
+.ins .mv {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-1);
-  margin: var(--space-2) 0 var(--space-0_5);
+  width: 100%;
+  /* Flush left, like the eyebrows above them and the pathway rows below: the
+   * panel reads down one edge. (The right inset is the shared number column.) */
+  padding: 2px calc(var(--space-2) + 1px) 2px 0;
+  margin: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
   font-size: var(--fs-body);
+  text-align: left;
+  cursor: pointer;
 }
-.flatloop .el { color: var(--text-secondary); }
-.flatloop .arrow, .flatloop .back {
+
+.ins button.mv:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+/* The row you are pointing at in the picture. It is a highlight, not a
+ * selection — the panel stays where it is, so the list can be walked down one
+ * row at a time. The fill itself is the shared layer above; what is left here
+ * is the divider, which a filled row does not need. */
+.ins .mv.lit { border-bottom-color: transparent; }
+.ins .mv.lit .nm { color: var(--text-primary); }
+.ins .mv .nm {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+.ins .mv .pc {
+  flex: 0 0 52px;
+  text-align: right;
   font-family: var(--font-mono);
   font-size: var(--fs-cap);
   color: var(--text-tertiary);
 }
+.ins .mv.good .pc { color: var(--status-good); }
+.ins .mv.bad  .pc { color: var(--status-bad); }
+.ins .mv.none .pc { color: var(--accent-amber); }
+/* The cap's release valve. A real <button>, so Enter and Space work and it
+ * reads as clickable rather than as a caption that happens to be greyer. */
+.ins button.mv.more {
+  display: block;
+  width: 100%;
+  text-align: left;
+  color: var(--text-tertiary);
+  font-family: inherit;
+  font-size: var(--fs-cap);
+  background: none;
+  border: 0;
+  border-bottom: 0;
+  padding: var(--space-1) 0 0;
+  cursor: pointer;
+}
+.ins button.mv.more:hover { color: var(--act); }
+.ins button.mv.more:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-interactive);
+}
+
+/* Open, the list shares the panel's flexible height with the pathways below it
+ * and scrolls, instead of pushing them off the bottom. */
+.ins .mvrows.open {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* A bar that grows either side of a centre line, so which way a box went is
+ * legible without reading the number. Measured on the same scale as the
+ * colours: full width is the biggest mover on the map. */
+.ins .bar {
+  position: relative;
+  flex: 0 0 58px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--bg-mid);
+  overflow: hidden;
+}
+.ins .bar i { position: absolute; top: 0; bottom: 0; display: block; border-radius: 3px; }
+.ins .bar::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border-strong);
+}
+
+/* === Pathways: pointing, and choosing ===
+ * The list is a tree that is never replaced. Every level opened stays on
+ * screen with the forks beside it, the chosen one in white, the next level
+ * indented under it — so the fork you did not take is always one point away,
+ * and a wrong turn costs nothing to undo.
+ *
+ * Depth is a rail, not a colour: the number of hairlines to a row's left is how
+ * deep it is, countable at a glance, and it costs 9px a level rather than a
+ * background tint this build reserves for interactive state. */
+/* Depth is indentation and nothing else. There were rails down the left of
+ * each level; with rows this quiet they were the loudest thing in the panel,
+ * and a list that is mostly hairlines reads as a table rather than a list. */
+.pathlvl { padding-left: 11px; }
+
+/* The way back to nothing chosen, and the count everything below is part of. */
+.pathall {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: 0 calc(var(--space-2) + 1px) 3px 0;
+}
+.pathall .dname {
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+}
+.pathall.cur .dname { color: var(--text-primary); }
+.pathall .m { font-family: var(--font-mono); font-size: var(--fs-body); color: var(--text-tertiary); }
+
+/* What a picked circle has to say beyond its pathways: the loops it contains,
+ * and the boxes it stands for. A level of the list rather than a block beside
+ * it — indented like any other level, because that is what it is. */
+.pathaside { padding-left: 11px; }
+
+/* A box inside a circle, and the way back out of the atlas to it on the map.
+ * The only row in this panel that LEAVES, so it says so at its right edge. */
+.atlas-boxrow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: 2px calc(var(--space-2) + 1px) 2px 0;
+  border-radius: var(--radius-sm);
+}
+.atlas-boxrow:hover { background: var(--act-tint); }
+
+.atlas-boxrow .bn {
+  font-size: var(--fs-body);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.atlas-boxrow:hover .bn { color: var(--text-primary); }
+
+.atlas-boxrow .go {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--tracking-cap);
+  color: var(--act);
+}
+
+/* An output the picked circle is on. The dot is the whole mark — the rows it
+ * opens beneath say the rest, and a second cue on the same row would be saying
+ * "this one" twice. */
+.hitdot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--act);
+  margin-right: 5px;
+  vertical-align: middle;
+}
+
+/* An output the circle never reaches. Still listed, still countable — three of
+ * eleven has to look different from three of three — but plainly not part of
+ * what is being read. */
+.ins .dhead.quiet { opacity: 0.42; }
+
+/* The row the circle is ON, as opposed to a row on the way down to it. */
+.strandrow.isel .dest { color: var(--text-primary); font-weight: var(--fw-semibold); }
+
+/* The chosen row at each level. It is white and heavier — the one cue that says
+ * "this is the one the level below belongs to". Pointing is hover, which the
+ * shared ::before fill already draws, so the two never say the same thing. */
+.ins .dhead.cur .dname,
+.strandrow.cur .dest { color: var(--text-primary); font-weight: var(--fw-semibold); }
+
+/* What is drawn, and the way in that has no pointer. Quiet: it is a footnote to
+ * the list, and it is read once. */
+.pathfoot {
+  margin-top: var(--space-2);
+  padding-top: var(--space-1);
+  font-size: var(--fs-body);
+  color: var(--text-tertiary);
+  line-height: 1.35;
+}
+
+.ins .dhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  /* Same gap the mover rows use, so the bar and the number land in the same
+   * two columns rather than four pixels off them. */
+  gap: var(--space-1);
+  width: 100%;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: 3px calc(var(--space-2) + 1px) 3px 0;
+}
+
+.ins .dhead:hover .dname { color: var(--act); }
+.ins .dhead:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+/* Same track as the rows below, so the two stacks read as one column. */
+.ins .dhead .bar { flex: 0 0 58px; }
+
+.ins .dhead .dname {
+  /* Flexible, so what follows it lands in a COLUMN. Content-sized (the default)
+   * put the bar at a different x on every heading — a ragged stack of bars
+   * that could not be compared by eye, which is the only thing they are for. */
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.ins .dhead .m { margin: 0; }
+
+/* What actually happened at this destination, next to its name — the rows under
+ * it say by which route. */
+.ins .dhead .dmove {
+  /* Same column as the rows' own numbers below it (.mv .pc). */
+  flex: 0 0 52px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--fs-cap);
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+}
+.ins .dhead .dmove.good { color: var(--status-good); }
+.ins .dhead .dmove.bad  { color: var(--status-bad); }
+.ins .dhead .dmove.none { color: var(--accent-amber); }
+
+/* How many pathways leave by this branch. Quiet — the branch's name is what is
+ * being read, the count is a footnote to it. */
+.ins .strandrow .dest em {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: var(--fs-cap);
+  color: var(--text-tertiary);
+  margin-left: var(--space-1);
+}
+
+
+
+/* The hover's version of the same line. */
+.tooltip-move { font-size: var(--fs-body); margin: 2px 0 4px; color: var(--text-secondary); }
+.tooltip-move b { font-family: var(--font-mono); font-weight: var(--fw-semibold); }
+.tooltip-move.good b { color: var(--status-good); }
+.tooltip-move.bad  b { color: var(--status-bad); }
+.tooltip-move.none b { color: var(--accent-amber); }
+.tooltip-move.flat b { color: var(--text-tertiary); }

@@ -12,20 +12,15 @@
  * ========================================================================== */
 
 .sidebar {
-  /* Shared layout tokens so the filter rows and their section headings stay
-   * aligned: the heading indents below are derived from these same widths, so
-   * tweaking a handle/swatch/delete size keeps title and rows in lockstep. */
-  --row-pad-l: var(--space-1);     /* row padding-left (matches .sidebar-edit-row) */
-  --row-pad-r: var(--space-1_5);     /* row padding-right */
+  /* Shared layout tokens. ONE left edge runs down the whole drawer: the eyebrow
+   * text, the colour dots, the reading-mode chips and the names of any list
+   * that has no colour all start on it. A list WITH colour indents its names by
+   * the dot; a list without one does not hold the slot open, because an empty
+   * gap only pushes those names off the edge everything else lines up on. */
+  --row-pad-l: var(--space-1);       /* row padding-left (matches .sidebar-edit-row) */
+  --row-pad-r: var(--space-2);       /* row padding-right — the delete column */
   --row-gap: var(--space-1_5);       /* flex gap between row children */
-  --drag-w: 16px;       /* fixed drag-handle width */
-  --swatch-w: 16px;     /* colour swatch */
-  --delete-w: 22px;     /* hover-reveal delete button */
-  /* Heading-text indent = everything left of the item name */
-  --title-indent-l:        calc(var(--row-pad-l) + var(--drag-w) + var(--row-gap));          /* 26px — stages (no swatch) */
-  --title-indent-l-swatch: calc(var(--title-indent-l) + var(--swatch-w) + var(--row-gap));   /* 48px — streams/categories */
-  /* Heading-counter indent = everything right of the item count */
-  --title-indent-r:        calc(var(--row-pad-r) + var(--delete-w) + var(--row-gap));         /* 34px */
+  --delete-w: 18px;                  /* delete button */
 
   background: var(--bg-deep);
   overflow-y: auto;
@@ -97,38 +92,36 @@
   margin-bottom: var(--section-gap);
 }
 
-/* Small uppercase heading at the top of each sidebar block */
+/* An eyebrow at the top of each block — same mark the atlas, the box panel and
+ * the slider panel now use. It was a mono capital heading at caption size, one
+ * step louder than the names under it. */
 .sidebar-section-title {
-  font-family: var(--font-mono);
-  font-size: var(--fs-cap);
+  font-size: var(--fs-eyebrow);
   text-transform: uppercase;
   letter-spacing: var(--tracking-cap);
   color: var(--text-tertiary);
-  margin-bottom: var(--heading-gap);
+  margin-bottom: var(--space-1);
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
-.sidebar-section-title .count {
-  color: var(--text-tertiary);
-  font-size: var(--fs-cap);
-}
-
-/* Heading + "+ Add" buttons + swatches share ONE left column (the row's content
- * edge); the item labels sit one swatch-width further in. So the heading caps
- * the swatch column with a straight label column to its right — and all the
- * sections agree (no zigzag), matching the mockup. */
+/* The eyebrow shares the rows' own padding, so its text starts on the drawer's
+ * left edge and its "+" lands over the delete column. */
 .sidebar-section-title {
   padding-left: var(--row-pad-l);
-  padding-right: var(--title-indent-r);
+  padding-right: var(--row-pad-r);
 }
 
-/* === Filter rows (one per stream / category) === */
+/* === Filter rows (one per stream / column) === */
 .filter-row {
   display: flex;
   align-items: center;
-  padding: var(--pad-row);
+  min-height: 22px;
+  /* Same left edge as the eyebrow and the chips. The row's hover fill still
+   * starts at the section's edge, so the fill bleeds a few pixels past the
+   * text rather than starting at it. */
+  padding: 1px var(--space-2) 1px var(--row-pad-l);
   border-radius: var(--radius-interactive);
   cursor: pointer;
   transition: background var(--dur-fast);
@@ -140,13 +133,16 @@
   background: var(--act-tint);
 }
 
-/* Visual state for a filter that has been clicked off */
+/* Off. Struck through AND dimmed, not dimmed alone: at a glance down a column
+ * of short rows, "a bit fainter" is not a difference anyone can read, and "what
+ * have I switched off?" is the one question this drawer exists to answer. */
 .filter-row.disabled {
-  opacity: 0.4;
+  opacity: 0.55;
 }
 
 .filter-row.disabled .filter-label {
   text-decoration: line-through;
+  color: var(--text-tertiary);
 }
 
 .filter-label {
@@ -161,92 +157,100 @@
   color: var(--text-tertiary);
 }
 
-/* Right-side colour box that doubles as the node-count badge (see countSwatch
- * in 13-sidebar.js). The colour input fills it; the count sits on top in an
- * auto-contrasting colour. Replaces the old left-edge swatch + separate count. */
-.count-swatch {
-  position: relative;
-  flex: 0 0 auto;
-  width: 30px;
-  height: 18px;
-  border-radius: var(--radius-interactive);
-  overflow: hidden;
-  filter: saturate(0.65);   /* match the muted map fills */
-}
-.count-swatch .sidebar-edit-color {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+/* === The colour well, as a dot =========================================
+ * This was a 30x18 pill with the count printed on top of the colour input.
+ * Two problems: the count sat on a colour the user could change out from under
+ * it, and nothing about a filled badge says "click to recolour". Now the dot is
+ * the well and the count is mono text beside it — the same split the reading
+ * chips use, and ~14px of row width handed back to the name.
+ *
+ * It stays a native <input type="color"> so the OS picker still opens on click;
+ * only its chrome is reset. 12px is the smallest it can be and still be worth
+ * aiming at — the 24px row gives the pointer plenty of vertical slack. */
+.sidebar-dot {
+  flex: 0 0 12px;
+  width: 12px;
+  height: 12px;
   padding: 0;
-  border-radius: var(--radius-interactive);
+  border: 0;
+  border-radius: 50%;
+  background: none;
   cursor: pointer;
+  /* A dark, near-background colour would otherwise vanish on the panel. */
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
 }
-.count-swatch .count-num {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.sidebar-dot::-webkit-color-swatch-wrapper { padding: 0; }
+.sidebar-dot::-webkit-color-swatch { border: 0; border-radius: 50%; }
+.sidebar-dot::-moz-color-swatch    { border: 0; border-radius: 50%; }
+.sidebar-dot:hover { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4); }
+.sidebar-dot:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+/* The legend groups aren't recolourable, so their mark is a plain span in the
+ * same slot — same size, same position, no pointer. */
+.sidebar-dot--static { cursor: default; }
+
+/* The count, beside the dot rather than on top of it. */
+.sidebar-count {
+  flex: 0 0 auto;
+  min-width: 16px;
+  text-align: right;
   font-family: var(--font-mono);
-  font-size: var(--fs-cap);
+  font-size: var(--fs-body);
   font-weight: var(--fw-semibold);
-  pointer-events: none;   /* clicks fall through to the colour input behind it */
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
 }
-/* Neutral badge for every NON-picker box (stages, edge-types, line-style, trace):
- * filled with the sidebar background so it reads as "not editable", unlike the
- * coloured Category / Stream colour-picker boxes. */
-.count-swatch--plain {
+
+/* Reclassify — moves a tag between the Fill tag and Corner tag lists.
+ * Always on show, in a fixed 18px slot. It was a hover-revealed text button
+ * reading "→ corner tag", which cost ~72px of row width whether or not it was
+ * visible (opacity hides a thing; it does not take it out of the layout), and
+ * that width came straight off the tag names. */
+.sidebar-cat-reclass {
+  flex: 0 0 18px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-deepest);   /* visible neutral box, but no border */
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
-  font-size: var(--fs-cap);
-  filter: none;
-}
-
-
-/* Reclassify button ("→ chip" / "→ fill") — moves a category between the
- * Primary and Secondary groups. Hidden until the row is hovered, like the
- * row's trash icon, so the compact row stays clean. */
-.sidebar-cat-reclass {
-  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
   background: transparent;
-  color: var(--text-tertiary);
-  font-size: var(--fs-cap);
-  letter-spacing: 0.02em;
-  padding: var(--space-0_5) var(--space-1);
+  border: 0;
   border-radius: var(--radius-interactive);
+  color: var(--text-tertiary);
+  font-size: var(--fs-body);
+  line-height: 1;
   cursor: pointer;
-  opacity: 0;
+  opacity: 0.4;
   transition: opacity var(--dur-fast), background var(--dur-fast), color var(--dur-fast);
 }
-.sidebar-edit-row:hover .sidebar-cat-reclass,
-.sidebar-edit-row:focus-within .sidebar-cat-reclass { opacity: 1; }
-.sidebar-cat-reclass:hover { color: var(--text-primary); background: var(--act-tint); }
+.sidebar-edit-row:hover .sidebar-cat-reclass { opacity: 0.75; }
+.sidebar-cat-reclass:hover { opacity: 1; color: var(--text-primary); background: var(--act-tint); }
+.sidebar-cat-reclass:focus-visible { outline: none; box-shadow: var(--focus-ring); opacity: 1; }
 
 /* Gap between the Primary and Secondary category groups. */
 .sidebar-cat-group-gap { height: 14px; }
 
-/* === Sidebar edit rows (Streams, Stages) ===
- * Two states: compact (drag handle + label + count + pencil) and expanded
- * (inline form with label / colour / short / delete). Drag-to-reorder via
- * native HTML5 DnD. Visual feedback comes from .dragging and .drop-target. */
+/* === Sidebar edit rows (Columns, Rows, Tags) ===
+ * One line each: an optional colour dot, the name, the count, the delete.
+ * Drag-to-reorder via native HTML5 DnD on the row itself — see editRowHtml in
+ * 13-sidebar.ts for why there is no longer a separate grip. Visual feedback
+ * comes from .dragging and .drop-target.
+ *
+ * 24px, matching the reading-mode filter rows to within the 2px their padding
+ * differs by. It was 30px, which put 23 rows and four full-width add buttons
+ * ~400px past the bottom of the drawer. */
 .sidebar-edit-row {
   display: flex;
   align-items: center;
-  gap: var(--row-gap);
-  padding: var(--space-1) var(--row-pad-r) var(--space-1) var(--row-pad-l);
+  gap: var(--space-1_5);
+  min-height: 24px;
+  padding: 1px var(--space-2) 1px var(--row-pad-l);
   border-radius: var(--radius-interactive);
   transition: background var(--dur-fast);
   user-select: none;
   margin-bottom: 0;
   position: relative;
-}
-
-.sidebar-edit-row {
   cursor: pointer;
 }
 
@@ -264,16 +268,6 @@
 
 .sidebar-edit-row.dragging { cursor: grabbing; }
 
-.sidebar-edit-label {
-  flex: 1 1 auto;
-  font-size: var(--fs-body);
-  color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sidebar-edit-row.filter-row.disabled .sidebar-edit-label,
 .sidebar-edit-row.filter-row.disabled .filter-label {
   text-decoration: line-through;
 }
@@ -282,113 +276,51 @@
   opacity: 0.4;
 }
 
-.sidebar-edit-count {
-  font-family: var(--font-mono);
-  font-size: var(--fs-cap);
-  color: var(--text-tertiary);
-}
-
-/* Native colour input used as a swatch. Reset its chrome so .sidebar-edit-swatch
- * can size it down to a tidy square. */
-.sidebar-edit-color {
-  background: none;
-  padding: 0;
-  cursor: pointer;
-  border-radius: var(--radius-interactive);
-}
-.sidebar-edit-color::-webkit-color-swatch-wrapper { padding: 0; }
-.sidebar-edit-color::-webkit-color-swatch         { border-radius: var(--radius-interactive); }
-.sidebar-edit-color::-moz-color-swatch            { border-radius: var(--radius-interactive); }
-
-/* Compact inline colour swatch — a native colour input shrunk to swatch size
- * so streams / categories can be recoloured directly in the filter row without
- * expanding. Shares the wrapper resets from .sidebar-edit-color above. */
-.sidebar-edit-swatch {
-  flex: 0 0 var(--swatch-w);
-  width: var(--swatch-w);
-  height: 16px;
-  border-radius: var(--radius-interactive);
-  /* Ring strong enough (~3:1) that even a dark, near-background swatch colour
-     keeps a visible boundary on the dark panel (WCAG 1.4.11). */
-  box-shadow: inset 0 0 0 1px var(--border-strong);
-}
-
-/* Invisible spacer in the swatch slot of STAGE rows — stages have no colour, so
- * the slot stays empty rather than carrying a box outline (which read as an
- * unchecked checkbox). It only reserves the swatch width so stage labels line
- * up with the swatched rows below. */
-.sidebar-stage-mark {
-  flex: 0 0 var(--swatch-w);
-  width: var(--swatch-w);
-  pointer-events: none;
-}
-
-/* Trailing controls for draggable rows — the drag grip and the delete button
- * share one trailing slot (width: --delete-w). By default the grip is the
- * affordance; while Shift is held (body.canvas-shift-edit, the app-wide edit
- * key) the grip swaps out for the delete button. Only one is ever in flow, so
- * the count swatch never shifts. Both reveal on row hover to keep the list clean. */
-.sidebar-row-drag,
+/* === Delete ============================================================
+ * Always visible, not revealed on hover. At a 24px pitch a control that only
+ * appears under the pointer is a control you have to go looking for, and the
+ * grip that used to share this slot is gone, so nothing is competing for it.
+ * It sits quiet until pointed at: tertiary on transparent, red on its own
+ * hover. Deleting a row still asks first — see wireRowHandlers. */
 .sidebar-row-delete {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: var(--delete-w);
-  height: 22px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
   background: transparent;
   color: var(--text-tertiary);
+  border: 0;
   border-radius: var(--radius-interactive);
-  opacity: 0;
+  opacity: 0.45;
+  cursor: pointer;
   transition: background var(--dur-fast), color var(--dur-fast), opacity var(--dur-fast);
 }
-
-/* Drag grip — default trailing affordance (no Shift). It receives pointer
- * events (so a click here is caught by the toggle guard rather than flipping the
- * filter); the grab itself still initiates on the draggable row ancestor. */
-.sidebar-row-drag {
-  cursor: grab;
-}
-.sidebar-row-drag:active {
-  cursor: grabbing;
-}
-.sidebar-edit-row:hover .sidebar-row-drag,
-.sidebar-edit-row:focus-within .sidebar-row-drag {
-  opacity: 1;
-}
-
-/* Delete button — hidden out of flow until Shift is held, then it takes the
- * grip's slot and reveals on hover; turns red on its own hover. */
-.sidebar-row-delete {
-  display: none;
-  cursor: pointer;
-}
-body.canvas-shift-edit .sidebar-row-drag {
-  display: none;
-}
-body.canvas-shift-edit .sidebar-row-delete {
-  display: flex;
-}
-body.canvas-shift-edit .sidebar-edit-row:hover .sidebar-row-delete,
-body.canvas-shift-edit .sidebar-edit-row:focus-within .sidebar-row-delete {
-  opacity: 1;
-}
-
+.sidebar-edit-row:hover .sidebar-row-delete { opacity: 0.8; }
 .sidebar-row-delete:hover {
   background: var(--danger-tint);
   color: var(--danger);
+  opacity: 1;
 }
+.sidebar-row-delete:focus-visible { outline: none; box-shadow: var(--focus-ring); opacity: 1; }
 
-/* Filter-row variant: the inline-editable label sits between the swatch and
- * the count. Same alignment as the compact sidebar-edit-row layout. */
-.sidebar-edit-row.filter-row .filter-label {
+/* The name takes every pixel the row's other parts don't need — which is the
+ * point of splitting the colour off the count and dropping the grip. On the
+ * border map that's the difference between "Economic Out…" and the whole of
+ * "Economic Outcome". */
+.sidebar-edit-row.filter-row .filter-label,
+.legend-filter-row .filter-label {
   flex: 1 1 auto;
+  min-width: 0;
   font-size: var(--fs-body);
   color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.sidebar-edit-row:hover .filter-label { color: var(--text-primary); }
 
 /* Compact monospace badge showing a stream's short label. Shift-click to edit
  * it inline (it carries .sidebar-inline-edit). */
@@ -397,7 +329,7 @@ body.canvas-shift-edit .sidebar-edit-row:focus-within .sidebar-row-delete {
   font-family: var(--font-mono);
   font-size: var(--fs-cap);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--tracking-cap);
   color: var(--text-tertiary);
   background: var(--bg-deepest);
   border-radius: 0;
@@ -406,19 +338,27 @@ body.canvas-shift-edit .sidebar-edit-row:focus-within .sidebar-row-delete {
   text-align: center;
 }
 
-/* Inline rename/edit: the element becomes a contenteditable text box. Show a
- * clear edit affordance and let the text be selected/wrapped while editing. */
-/* Shift is the app-wide edit key: while it's held, reveal that sidebar labels
- * are editable (mirrors the body.canvas-shift-edit affordances on the canvas).
- * Skip elements already in edit mode so the .editing styling below wins. */
-body.canvas-shift-edit .sidebar-inline-edit:not(.editing) {
+/* Inline rename. While EDITING the map a name is a field, and a field in this
+ * app carries no box, no underline and no ring — see 02-base.css. What says so
+ * is the I-beam cursor over the name and the row filling underneath it; while
+ * you type, the row takes the accent fill and its leading bar.
+ *
+ * This used to need Shift held, which made the drawer's central action both
+ * invisible and unreachable unless you already knew about it. A rule that hides
+ * itself is not an affordance. */
+/* A name is an editable control, so it answers like every other one: point at
+ * it and it fills, type in it and the fill deepens (02-base.css). Padding gives
+ * the fill something to sit in; the negative margin keeps the text on the same
+ * left edge it had without it, so nothing shifts on hover. */
+body.editing .sidebar-inline-edit:not(.editing) {
   cursor: text;
-  border-radius: var(--radius-interactive);
-  box-shadow: inset 0 0 0 1px var(--border-subtle);
+  border-radius: 4px;
+  padding: 0 var(--space-1);
+  margin: 0 calc(-1 * var(--space-1));
 }
-body.canvas-shift-edit .sidebar-inline-edit:not(.editing):hover {
+body.editing .sidebar-inline-edit:not(.editing):hover {
+  background: var(--act-tint);
   color: var(--text-primary);
-  box-shadow: var(--focus-ring);
 }
 
 .sidebar-inline-edit.editing {
@@ -426,13 +366,16 @@ body.canvas-shift-edit .sidebar-inline-edit:not(.editing):hover {
   overflow: visible;
   white-space: normal;
   color: var(--text-primary);
-  background: var(--bg-deepest);
-  border-radius: var(--radius-interactive);
-  padding: var(--space-0_5) var(--space-1_5);
-  margin: calc(-1 * var(--space-0_5)) 0;
-  outline: none;
-  box-shadow: var(--focus-ring);
+  background: var(--act-on);
+  border-radius: 4px;
+  padding: 0 var(--space-1);
+  margin: 0 calc(-1 * var(--space-1));
   text-decoration: none !important;
+}
+
+/* The row gives a quiet hint; the name gives the answer. */
+body.editing .sidebar-edit-row:hover {
+  background: color-mix(in srgb, var(--accent-blue) 7%, transparent);
 }
 
 .sidebar-edit-row.filter-row .filter-count {
@@ -455,27 +398,42 @@ body.canvas-shift-edit .sidebar-inline-edit:not(.editing):hover {
   opacity: 0.6;
 }
 
-/* "+ Add stream" / "+ Add stage" buttons */
-.sidebar-add-btn {
-  margin-top: var(--space-2);
-  width: 100%;
+/* === "+" ===============================================================
+ * One per section, riding on the eyebrow. It was a full-width button under
+ * each list — four of them, ~34px apiece including margin, all saying a
+ * version of what the label above them already said. The glyph is only legible
+ * because of the label it sits next to, which is exactly why it sits there.
+ * The visible mark is 12px; the hit area is 20px. */
+.sidebar-section-title .sidebar-add-btn {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin: -4px -4px -4px 0;   /* the padding grows the target, not the eyebrow */
+  padding: 0;
   background: transparent;
-  color: var(--act);
+  border: 0;
   border-radius: var(--radius-interactive);
-  padding: var(--pad-button);
-  padding-left: var(--row-pad-l);   /* "+" lines up with the heading + swatch column */
-  font-family: var(--font-mono);
-  font-size: var(--fs-cap);
-  letter-spacing: 0.04em;
-  text-align: left;
+  color: var(--text-tertiary);
+  font-size: var(--fs-body);
+  line-height: 1;
   cursor: pointer;
-  transition: background var(--dur-fast), color var(--dur-fast);
+  opacity: 0.75;
+  transition: background var(--dur-fast), color var(--dur-fast), opacity var(--dur-fast);
+}
+.sidebar-section-title .sidebar-add-btn:hover {
+  background: var(--act-tint);
+  color: var(--act);
+  opacity: 1;
+}
+.sidebar-section-title .sidebar-add-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  opacity: 1;
 }
 
-.sidebar-add-btn:hover {
-  background: var(--act-tint);
-  color: var(--act-hi);
-}
 
 /* Generic empty-state text for sidebar sections */
 .sidebar-empty {
@@ -493,24 +451,16 @@ body.canvas-shift-edit .sidebar-inline-edit:not(.editing):hover {
   padding: var(--pad-row);
 }
 
-.legend-swatch {
-  width: 14px;
-  height: 14px;
-  border-radius: 0;
-  margin-left: var(--space-2);   /* indicator now sits on the RIGHT, like the count badges */
-  flex-shrink: 0;
-}
-
+/* The line sample for the Line style group, in the same 12px slot every other
+ * group puts its colour dot in — so all four legend groups, and the Column /
+ * Row / Tag lists above them, share one left edge for their marks and one for
+ * their names. 12px is short for a dash pattern, hence the tighter repeat
+ * below: at the old 5px-on/4px-off it read as a single dash. */
 .legend-line {
-  width: 24px;
+  flex: 0 0 12px;
+  width: 12px;
   height: 2px;
-  margin-left: var(--space-2);   /* indicator now sits on the RIGHT */
-  flex-shrink: 0;
-}
-
-.legend-label {
-  font-size: var(--fs-body);
-  color: var(--text-secondary);
+  border-radius: 1px;
 }
 
 /* Clickable legend rows (Edge types / Line style / Trace filters). Same
@@ -519,16 +469,14 @@ body.canvas-shift-edit .sidebar-inline-edit:not(.editing):hover {
 .legend-filter-row {
   display: flex;
   align-items: center;
-  gap: var(--row-gap);
-  /* Match the Stream/Stage/Category rows exactly (the sidebar baseline): same
-     vertical padding, left inset and gap → same 30px height + 13px label, and
-     the same right reserve (--title-indent-r) so the indicator lines up with
-     the count badges above. Labels/counts inherit the base .filter-label /
-     .filter-count (no smaller-font override). */
-  padding: var(--space-1) var(--title-indent-r) var(--space-1) var(--row-pad-l);
-  /* The editable rows are 30px tall because their (hover-hidden) delete button
-     is 22px; legend rows have no delete, so match the height explicitly. */
-  min-height: 30px;
+  gap: var(--space-1_5);
+  /* Match the Column / Row / Tag rows exactly: same padding, left inset, gap
+     and height, so all four groups share one left edge for their marks and one
+     right edge for their counts. These rows carry no delete — there is nothing
+     to remove from a fixed legend — so the right padding reserves that column
+     rather than filling it. */
+  padding: 1px calc(var(--row-pad-r) + var(--delete-w) + var(--space-1_5)) 1px var(--row-pad-l);
+  min-height: 24px;
   box-sizing: border-box;
   border-radius: var(--radius-interactive);
   cursor: pointer;
@@ -541,7 +489,7 @@ body.canvas-shift-edit .sidebar-inline-edit:not(.editing):hover {
  * CSS borders (02-base.css). The dashed one is a repeating
  * gradient: 5px dash, 4px gap. */
 .legend-line-solid  { background: var(--text-secondary); }
-.legend-line-dashed { background: repeating-linear-gradient(to right, var(--text-secondary) 0 5px, transparent 5px 9px); }
+.legend-line-dashed { background: repeating-linear-gradient(to right, var(--text-secondary) 0 3px, transparent 3px 5px); }
 
 /* === "Map appearance" accordion ===
  * Folds the advanced edge-type / line-style / trace filters into one
@@ -555,8 +503,7 @@ body.canvas-shift-edit .sidebar-inline-edit:not(.editing):hover {
   background: transparent;
   cursor: pointer;
   padding: var(--space-0_5) 0;
-  font-family: var(--font-mono);
-  font-size: var(--fs-cap);
+  font-size: var(--fs-eyebrow);
   text-transform: uppercase;
   letter-spacing: var(--tracking-cap);
   font-weight: var(--fw-semibold);
@@ -574,8 +521,7 @@ body.canvas-shift-edit .sidebar-inline-edit:not(.editing):hover {
 /* T4: cap decorative stream / category swatch saturation so the custom colours
    stay quiet next to the semantic accent hues (blue / amber / green / red /
    purple). Matches the muted map fills. */
-.sidebar-edit-swatch,
-.legend-swatch {
+.sidebar-dot {
   filter: saturate(0.65);
 }
 
@@ -621,3 +567,91 @@ body.canvas-shift-edit .sidebar-inline-edit:not(.editing):hover {
 }
 
 .sidebar-fold .sidebar-section:first-of-type { padding-top: var(--heading-gap); }
+
+
+/* === Tags, link types and styles as chips ================================
+ * Reading the map, these sections ARE its key: which colour means what, and how
+ * many boxes carry it. A column of rows spelled that out one item per line and
+ * gave each one a full sidebar's width to say two words in. A wrap of chips is
+ * what a key looks like everywhere else, and it fits ten tags in the height
+ * that showed four.
+ *
+ * Editing, the same tags stay rows — see renderCategoriesList. A chip has
+ * nowhere to put a drag handle, a colour well and a delete. */
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  /* Left edge shared with the eyebrow above and the rows in the sections
+   * either side — the drawer reads down one line, not three. The chip's own
+   * background then starts where the eyebrow's first letter does.
+   *
+   * The top padding matches the GAP, not the padding, of a row section. A row
+   * is invisible at rest, so the eye measures from the eyebrow to its TEXT —
+   * 8px, of which 4 is the eyebrow's margin and 4 is the row's own padding. A
+   * chip is painted, so the eye stops at its edge; without this the chip
+   * sections read as sitting 4px tighter under their labels than the rest. */
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--row-pad-l);
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 2px var(--space-2) 2px var(--space-1_5);
+  border: 0;
+  border-radius: 11px;
+  background: var(--bg-mid);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--fs-cap);
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background var(--dur-fast) ease, opacity var(--dur-fast) ease;
+}
+
+/* The colour the tag paints on the map. A dot rather than a filled chip: ten
+ * fully-coloured chips in a 280px column is a paint chart, and the label is
+ * what you are reading. */
+.filter-chip > i {
+  flex: none;
+  display: block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+.filter-chip > i.plain { background: var(--border-strong); }
+
+.filter-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-chip > b {
+  font-family: var(--font-mono);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.filter-chip:hover {
+  background: var(--act-on);
+  color: var(--text-primary);
+}
+.filter-chip:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* Off: struck through and faded, the same statement the rows make. */
+.filter-chip.off {
+  opacity: 0.45;
+}
+.filter-chip.off .filter-chip-label {
+  text-decoration: line-through;
+}

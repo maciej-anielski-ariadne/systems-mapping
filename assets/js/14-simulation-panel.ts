@@ -15,8 +15,8 @@
 
 import type { GraphNode } from "./types";
 import { state, NODES, STREAMS, nodeById } from "./03-state";
-import { escapeHtml, formatScalar } from "./04-utils";
-import { recomputeValues, formatNodeDelta } from "./07-simulation-engine";
+import { escapeHtml, formatScalar, formatScalarInput } from "./04-utils";
+import { biggestMover, recomputeValues, formatNodeDelta } from "./07-simulation-engine";
 import { render, scheduleRender, updateSimulationValuesInPlace } from "./11-rendering";
 import { patchDetailPanelValues, renderDetailPanel } from "./15-detail-panel";
 import { saveUiStateToStorage, scheduleUiStateSave } from "./04a-storage";
@@ -48,7 +48,15 @@ export function renderSimulationPanel(): void {
   html +=   '<div class="sim-title">Adjustable inputs</div>';
   html +=   '<button class="sim-reset" id="sim-reset-button">Reset</button>';
   html += '</div>';
-  html += '<div class="sim-help">Drag a slider or type a value. Its effects update live.</div>';
+  // The help line that stood here said what a number field is. The scale note
+  // below says what the map's colours currently mean, which changes as you
+  // drag — that one is worth its two lines and this one was not.
+  // The map's colours are measured against the biggest mover, which changes as
+  // you drag — so the scale has to say out loud what its top end currently is,
+  // or a colour would mean something different every few seconds with no way to
+  // tell. Kept in the DOM and patched inline (updateSimScaleNote) for the same
+  // reason the solver badge is: a scrub must not rebuild the panel.
+  html += '<div class="sim-scale" id="sim-scale-note"></div>';
   // Placeholder for the feedback-loop non-convergence warning. Kept in the DOM
   // (toggled via updateSimSolverBadge) so slider drags can update it inline
   // without re-rendering the whole panel and stealing focus.
@@ -64,21 +72,26 @@ export function renderSimulationPanel(): void {
     for (const node of streamNodes) {
       const userMultiplier = state.userOverrides[node.id] !== undefined ? state.userOverrides[node.id] : 1.0;
       const currentValue = node.baseline! * userMultiplier;
-      const sliderMax = node.sliderMax || 2.0;
-      const sliderStep = 0.01;
       const sliderPct = Math.round(userMultiplier * 100);
       const unit = node.unit || "";
 
-      html += '<div class="sim-slider-row" data-node-id="' + node.id + '">';
-      html +=   '<div class="sim-slider-label">';
-      html +=     '<span class="sim-slider-name">' + escapeHtml(node.label) + '</span>';
-      html +=     '<span class="sim-slider-readout">';
-      html +=       '<input type="number" class="sim-value-input" step="any" value="' + formatScalar(currentValue) + '" data-node-id="' + node.id + '" aria-label="Current value of ' + escapeHtml(node.label) + '" />';
-      if (unit) html += ' <span class="sim-slider-unit">' + escapeHtml(unit) + '</span>';
-      html +=     ' <span class="sim-slider-pct">(' + sliderPct + '%)</span>';
-      html +=     '</span>';
-      html +=   '</div>';
-      html +=   '<input type="range" class="sim-slider" min="0" max="' + sliderMax + '" step="' + sliderStep + '" value="' + userMultiplier + '" data-node-id="' + node.id + '" />';
+      // ONE LINE, and no track. A track spends a whole line on a position you
+      // can read off the percentage beside it, and thirty-three of them made
+      // this panel two and a bit screens tall. What is left is what the reader
+      // actually sets: the figure, and how far it is from where it started.
+      //
+      // BOTH are editable and both mean the same thing — type 13230 or type
+      // 147, whichever you happen to know. Dragging sideways on either scrubs
+      // it, so the panel has not lost its drag, only the furniture around it.
+      const moved = Math.abs(userMultiplier - 1) > 0.0005;
+      html += '<div class="sim-slider-row' + (moved ? " moved" : "") + '" data-node-id="' + node.id + '">';
+      html +=   '<span class="sim-slider-name" title="' + escapeHtml(node.label) + '">' + escapeHtml(node.label) + '</span>';
+      html +=   '<input type="number" class="sim-value-input" step="any" value="' + formatScalarInput(currentValue) + '" data-node-id="' + node.id + '" aria-label="Value of ' + escapeHtml(node.label) + ' in ' + escapeHtml(unit || "units") + '. Drag sideways or type." />';
+      html +=   '<span class="sim-slider-unit">' + escapeHtml(unit) + '</span>';
+      html +=   '<span class="sim-pct-field">';
+      html +=     '<input type="number" class="sim-pct-input" step="1" value="' + sliderPct + '" data-node-id="' + node.id + '" aria-label="' + escapeHtml(node.label) + ' as a percentage of its starting value. Drag sideways or type." />';
+      html +=     '<span class="sim-pct-sign">%</span>';
+      html +=   '</span>';
       html += '</div>';
     }
 
@@ -87,6 +100,7 @@ export function renderSimulationPanel(): void {
 
   simPanel.innerHTML = html;
   updateSimSolverBadge();
+  updateSimScaleNote();
 
   bindSimPanelHandlers(simPanel);
 }
@@ -110,16 +124,17 @@ function bindSimPanelHandlers(simPanel: HTMLElement): void {
     const nodeId = target.getAttribute("data-node-id");
     if (!nodeId) return;
 
-    if (target.classList.contains("sim-slider")) {
-      const newMultiplier = parseFloat(target.value);
-      if (isNaN(newMultiplier)) return;
-      scheduleSimTick(nodeId, newMultiplier, target);
-    } else if (target.classList.contains("sim-value-input")) {
+    if (target.classList.contains("sim-value-input")) {
       const node = nodeById[nodeId];
       if (!node || !node.baseline) return;
       const raw = parseFloat(target.value);
       if (isNaN(raw)) return;
       scheduleSimTick(nodeId, raw / node.baseline, target);
+    } else if (target.classList.contains("sim-pct-input")) {
+      // The same setting, said the other way. 100 is where the box started.
+      const pct = parseFloat(target.value);
+      if (isNaN(pct)) return;
+      scheduleSimTick(nodeId, pct / 100, target);
     }
   });
 
@@ -129,11 +144,77 @@ function bindSimPanelHandlers(simPanel: HTMLElement): void {
   simPanel.addEventListener("change", event => {
     const target = event.target as HTMLInputElement;
     if (!target || !target.classList) return;
-    if (!target.classList.contains("sim-slider") && !target.classList.contains("sim-value-input")) return;
+    if (!target.classList.contains("sim-value-input") && !target.classList.contains("sim-pct-input")) return;
     flushSimTick();
     renderDetailPanel();
     saveUiStateToStorage();
   });
+
+  // ───── Dragging, without a track ─────────────────────────────────────
+  // Taking the track away would have taken the drag with it, and dragging is
+  // how a reader sweeps a value to see what happens rather than deciding a
+  // figure in advance. So the NUMBER is the track: press it and move sideways
+  // and it scrubs, one percent of the starting value per pixel.
+  //
+  // A press that never moves is left alone, so clicking still puts a caret in
+  // the field and typing still works. Three pixels is the threshold — below
+  // that a click is a click, however unsteady the hand.
+  let scrub: {
+    input: HTMLInputElement; nodeId: string; startX: number; from: number; live: boolean;
+  } | null = null;
+
+  const scrubbable = (el: Element | null): el is HTMLInputElement =>
+    !!el && !!(el as HTMLElement).classList && (
+      (el as HTMLElement).classList.contains("sim-value-input") ||
+      (el as HTMLElement).classList.contains("sim-pct-input"));
+
+  simPanel.addEventListener("pointerdown", event => {
+    const target = (event as PointerEvent).target as Element;
+    if (!scrubbable(target)) return;
+    const nodeId = target.getAttribute("data-node-id");
+    if (!nodeId) return;
+    scrub = {
+      input: target,
+      nodeId: nodeId,
+      startX: (event as PointerEvent).clientX,
+      from: state.userOverrides[nodeId] !== undefined ? state.userOverrides[nodeId] : 1,
+      live: false,
+    };
+  });
+
+  simPanel.addEventListener("pointermove", event => {
+    if (!scrub) return;
+    const dx = (event as PointerEvent).clientX - scrub.startX;
+    if (!scrub.live) {
+      if (Math.abs(dx) < 3) return;
+      scrub.live = true;
+      // The caret would otherwise sit blinking in a field being dragged, and
+      // the drag would select its text.
+      scrub.input.blur();
+      document.body.classList.add("sim-scrubbing");
+      try { scrub.input.setPointerCapture((event as PointerEvent).pointerId); } catch { /* not captured, still works */ }
+    }
+    event.preventDefault();
+    // Never below zero: a negative multiple of a starting value is not a thing
+    // the map can mean.
+    const next = Math.max(0, scrub.from + dx * 0.01);
+    // No origin element: both fields on the row should follow the drag, since
+    // neither is being typed into.
+    scheduleSimTick(scrub.nodeId, next, null);
+  });
+
+  const endScrub = () => {
+    if (!scrub) return;
+    const wasLive = scrub.live;
+    scrub = null;
+    document.body.classList.remove("sim-scrubbing");
+    if (!wasLive) return;      // a plain click: leave the field to focus itself
+    flushSimTick();
+    renderDetailPanel();
+    saveUiStateToStorage();
+  };
+  simPanel.addEventListener("pointerup", endScrub);
+  simPanel.addEventListener("pointercancel", endScrub);
 
   simPanel.addEventListener("click", event => {
     const target = event.target as Element;
@@ -247,12 +328,31 @@ function applySimUpdate(nodeId: string, originElement: Element | null): void {
   recomputeValues();
   syncSimRow(nodeId, originElement);
   updateSimSolverBadge();
+  updateSimScaleNote();
   // Patch the changed values straight into the existing node DOM. Only when that
   // can't apply cleanly (a delta label must appear or disappear) do we fall back
   // to a coalesced full render.
   if (!updateSimulationValuesInPlace()) scheduleRender();
   // The atlas, if it is open, is looking at the same numbers.
   if (typeof atlasIsOpen === "function" && atlasIsOpen()) refreshAtlasValues();
+}
+
+// What the colours on the map currently mean. Full colour is the biggest mover
+// in this run, so naming it is what stops a relative scale from being a lie:
+// a pale map reads as "nothing moved much" rather than as a broken one.
+export function updateSimScaleNote(): void {
+  const note = document.getElementById("sim-scale-note");
+  if (!note) return;
+  const top = biggestMover();
+  if (!top) {
+    note.innerHTML = "Boxes are grey until they move. Nothing has moved yet.";
+    return;
+  }
+  const delta = formatNodeDelta(top.node.id);
+  note.innerHTML =
+    'Box colour is what this run did: <b class="good">better</b>, <b class="bad">worse</b>, ' +
+    '<b class="none">moved</b>, grey has not moved. Full colour is the biggest mover — ' +
+    '<b>' + escapeHtml(top.node.label) + ' ' + escapeHtml(delta.text) + '</b>.';
 }
 
 // Show or hide the feedback-loop warning in the sim panel. The simulation works
@@ -285,14 +385,15 @@ export function syncSimRow(nodeId: string, originElement: Element | null): void 
   const multiplier = state.userOverrides[nodeId] !== undefined ? state.userOverrides[nodeId] : 1.0;
   const currentValue = node.baseline! * multiplier;
 
-  const slider = row.querySelector(".sim-slider") as HTMLInputElement | null;
-  if (slider && slider !== originElement) slider.value = String(multiplier);
-
+  // Two ways of saying one number, so each follows the other — except the one
+  // being typed into, which is left alone mid-keystroke.
   const valueInput = row.querySelector(".sim-value-input") as HTMLInputElement | null;
-  if (valueInput && valueInput !== originElement) valueInput.value = formatScalar(currentValue);
+  if (valueInput && valueInput !== originElement) valueInput.value = formatScalarInput(currentValue);
 
-  const pctEl = row.querySelector(".sim-slider-pct");
-  if (pctEl) pctEl.textContent = "(" + Math.round(multiplier * 100) + "%)";
+  const pctInput = row.querySelector(".sim-pct-input") as HTMLInputElement | null;
+  if (pctInput && pctInput !== originElement) pctInput.value = String(Math.round(multiplier * 100));
+
+  row.classList.toggle("moved", Math.abs(multiplier - 1) > 0.0005);
 }
 
 // Refresh the detail panel after a sim change — but only when the user
@@ -346,7 +447,7 @@ export function updateDetailPanelDeltaInline(changedNodeId: string): void {
       if (Math.abs(delta.pct) >= 0.5) {
         if      (node.direction === "higher_better") deltaColor = delta.pct > 0 ? "var(--status-good)" : "var(--status-bad)";
         else if (node.direction === "lower_better")  deltaColor = delta.pct < 0 ? "var(--status-good)" : "var(--status-bad)";
-        else                                         deltaColor = delta.pct > 0 ? "var(--accent-blue)" : "var(--accent-orange)";
+        else                                         deltaColor = "var(--accent-amber)";
       }
       valueCell.style.color = deltaColor;
     }

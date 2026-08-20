@@ -146,6 +146,25 @@ export function formatScalar(value: number): string {
   return value.toFixed(3);
 }
 
+// The same number, for an <input type="number">. `formatScalar` groups
+// thousands ("10,080") and folds billions down to a unit count ("1.50" for
+// 1.5e9) — both are display flourishes, and both are POISON in a number field:
+// the browser refuses any value that is not a bare floating-point literal, so a
+// grouped number renders as an EMPTY BOX, and a folded one silently reads back
+// as 1.5. That is why the Border Force FTE field went blank the moment its
+// slider pushed the headcount past 10,000.
+//
+// So the precision ladder is kept — the field shows the same rounding the map
+// does — and only the grouping and the folding are dropped.
+export function formatScalarInput(value: number): string {
+  if (!Number.isFinite(value)) return "";
+  const absValue = Math.abs(value);
+  if (absValue >= 100) return String(Math.round(value));
+  if (absValue >= 10)  return value.toFixed(1);
+  if (absValue >= 1)   return value.toFixed(2);
+  return value.toFixed(3);
+}
+
 // ───── Category / edge helpers (shared by loader, renderer, export, editors) ─
 // A node's full ordered category-id list, with the legacy single-id fallback.
 export function nodeCategoryIds(node: GraphNode): string[] {
@@ -418,4 +437,63 @@ export function cloneEdgeForUndo(edge: Edge): Pick<Edge, "from" | "to" | "effect
 // Shallow clone of a node object — same role as cloneEdgeForUndo, for nodes.
 export function cloneNodeForUndo(node: GraphNode): GraphNode {
   return Object.assign({}, node);
+}
+
+// ───── Simulation effect fills ────────────────────────────────────────────
+// In simulation mode a box's body stops saying what KIND of box it is and says
+// what the run did to it: the hue is whether the map calls the move good, bad,
+// or simply a move it has no view on; the distance from grey is how big the
+// move was against the biggest one on the map (07-simulation-engine's
+// nodeEffect works that out). Grey is a box that has not moved.
+//
+// Literal hex, not theme variables — for the same reason the category fills are
+// literal. A box body is a light chip carrying dark text in BOTH themes, so a
+// fill that followed the theme would flip to a dark chip in light mode and take
+// the label's contrast with it. (Deltas, borders and the atlas circles are
+// chrome rather than chips, and those do follow the theme.)
+export const SIM_FLAT_FILL = "#8b8e98";   // hasn't moved
+export const SIM_INK = "#1c1917";         // label colour on any fill below
+
+// Each merit runs from a pastel (a small move) to a deeper version of itself (a
+// big one). Green / red match the good / bad language used everywhere else;
+// amber is "it moved, and the map has no view on whether that is good" — a box
+// with no direction of merit set.
+const SIM_HUES: Record<string, [string, string]> = {
+  good: ["#9ed1b4", "#4fc493"],
+  bad:  ["#e3a3a8", "#e0727e"],
+  none: ["#e6c79c", "#dfa147"],
+};
+// Where the pastel sits on the ramp: below this the colour is a blend of grey
+// and the pastel, above it the pastel deepens. Two stops rather than one
+// because a single grey→deep blend spent most of its length in muddy middles.
+const SIM_PASTEL_AT = 0.6;
+
+function hexToRgb(hex: string): [number, number, number] {
+  const h = String(hex).trim().replace(/^#/, "");
+  const full = h.length === 3 ? h[0] + h[0] + h[1] + h[1] + h[2] + h[2] : h;
+  return [
+    parseInt(full.slice(0, 2), 16) || 0,
+    parseInt(full.slice(2, 4), 16) || 0,
+    parseInt(full.slice(4, 6), 16) || 0,
+  ];
+}
+
+/** Blend two hex colours; t = 0 is `a`, t = 1 is `b`. Returns #rrggbb. */
+export function mixHex(a: string, b: string, t: number): string {
+  const A = hexToRgb(a), B = hexToRgb(b);
+  const f = Math.max(0, Math.min(1, t));
+  const ch = (i: number) => {
+    const v = Math.round(A[i] + (B[i] - A[i]) * f);
+    return (v < 16 ? "0" : "") + v.toString(16);
+  };
+  return "#" + ch(0) + ch(1) + ch(2);
+}
+
+/** The fill for a box that HAS moved. `strength` is nodeEffect's 0..1. */
+export function simEffectFill(merit: string, strength: number): string {
+  const [pastel, deep] = SIM_HUES[merit] || SIM_HUES.none;
+  const s = Math.max(0, Math.min(1, strength));
+  return s <= SIM_PASTEL_AT
+    ? mixHex(SIM_FLAT_FILL, pastel, 0.18 + (s / SIM_PASTEL_AT) * 0.82)
+    : mixHex(pastel, deep, (s - SIM_PASTEL_AT) / (1 - SIM_PASTEL_AT));
 }

@@ -65,8 +65,7 @@ body.drag-active .drop-zone-inner {
 }
 
 .drop-zone-tagline {
-  font-family: var(--font-mono);
-  font-size: var(--fs-cap);
+  font-size: var(--fs-eyebrow);
   font-weight: 400;
   letter-spacing: var(--tracking-cap);
   text-transform: uppercase;
@@ -76,7 +75,7 @@ body.drag-active .drop-zone-inner {
 .drop-zone-title {
   font-family: var(--font-display);
   font-size: var(--fs-title);
-  font-weight: var(--fw-medium);
+  font-weight: var(--fw-semibold);
   color: var(--text-primary);
   margin-bottom: var(--heading-gap);
 }
@@ -99,7 +98,6 @@ body.drag-active .drop-zone-inner {
 .drop-zone-button {
   font-family: var(--font-ui);
   font-size: var(--fs-body);
-  font-weight: var(--fw-medium);
   background: var(--bg-light);
   color: var(--text-primary);
   padding: var(--pad-button);

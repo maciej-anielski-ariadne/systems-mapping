@@ -55,6 +55,94 @@ select,
   -webkit-user-select: text;
 }
 
+/* === Fields ==============================================================
+ * ONE rule for every input in the app: a field is text, not a box.
+ *
+ * No background, no border, no ring — at rest, on hover, or while you are
+ * typing in it. Fields used to be filled rectangles carrying a 1px accent
+ * underline (--edit-cue) and a 2px focus ring; a panel of eleven settings was
+ * therefore eleven painted rectangles, and the three that were EMPTY were the
+ * loudest things on it — a dark box drawn around nothing.
+ *
+ * What responds instead is the thing the field sits in:
+ *
+ *   • in a row (a settings row, a slider row, a table cell) the ROW fills —
+ *     --act-tint under the pointer, --act-on while focused. A fill, never a
+ *     bar or a rule. See .detail-quant-row, .sim-slider-row, .builder-table td.
+ *   • standing on its own, with no row to speak for it (the search box, the
+ *     bulk-edit bar), the FIELD fills, by the same two tokens. Still no border.
+ *
+ * That keeps a visible focus indicator everywhere (WCAG 2.4.7) without a single
+ * field outline: what moves is the fill, and the focused fill is the stronger
+ * of the two tokens so it stays distinct from a row you are only pointing at.
+ *
+ * Anything needing different geometry sets only size / padding / alignment —
+ * never background, border or box-shadow. */
+input,
+textarea,
+select {
+  background: none;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  box-shadow: none;
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  padding: 0;
+}
+input:focus,
+textarea:focus,
+select:focus,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+/* The one exception: a colour well IS its colour, so it keeps its swatch. */
+input[type="color"] { cursor: pointer; }
+
+/* === Editable says so — one language, every input method ==================
+ * The CONTROL is what responds, not the row it sits in. Point at a value and
+ * that value fills; type in it and the fill deepens and the text comes up to
+ * full strength. A text box, a number, a dropdown and an inline-renamed label
+ * all behave identically, because to the person using them they are the same
+ * promise: this is yours to change.
+ *
+ * The row used to be the only thing that lit, which said "something here is
+ * live" without saying WHAT — and said it just as loudly over the rows that are
+ * computed and cannot be touched. The row still gives a very quiet hint (half
+ * strength, see the panels) so a column of editable rows is discoverable at a
+ * glance; the control gives the answer.
+ *
+ * Still no border, no ring, no underline, at rest or while typing. Fills only. */
+input:not([type="color"]):not([type="checkbox"]),
+textarea,
+select,
+[contenteditable="true"] {
+  border-radius: 4px;
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
+}
+input:not([type="color"]):not([type="checkbox"]):hover,
+textarea:hover,
+select:hover {
+  background: var(--act-tint);
+  color: var(--text-primary);
+}
+input:not([type="color"]):not([type="checkbox"]):focus,
+textarea:focus,
+select:focus,
+[contenteditable="true"]:focus {
+  background: var(--act-on);
+  color: var(--text-primary);
+}
+
+/* A hint, not an answer: half the strength of the control's own fill, so a row
+ * reads as "there is something to change here" and the control reads as "here". */
+.field-row { transition: background var(--dur-fast) ease; }
+.field-row:hover { background: color-mix(in srgb, var(--accent-blue) 7%, transparent); }
+
 /* Subtle grid pattern drawn behind everything else.
    Two thin lines (horizontal + vertical) repeated every 32px. */
 body::before {
@@ -99,7 +187,22 @@ body::before {
 /* === Keyboard focus ring on buttons (accessibility) ===
    Native outlines are removed app-wide, so give every <button> a visible focus
    ring when reached by keyboard. :focus-visible only, so mouse clicks stay
-   clean. Form inputs carry their own focus ring in their component files. */
+   clean. Fields are the exception and take no ring at all — see the field rules
+   above: the row they sit in fills instead. */
+/* === Buttons read as words ==============================================
+ * Sans, sentence case, body size. They were mono CAPS with tracking — the same
+ * treatment the section eyebrows use — so a button and a section label were
+ * indistinguishable by type, and "Bulk edit" arrived as "BULK EDIT". Caps are
+ * now reserved for eyebrows, and mono for figures.
+ *
+ * A <button> does NOT inherit font-family from its ancestors — browsers give it
+ * the OS UI font unless told otherwise. Every button that didn't name a family
+ * of its own was therefore rendering in Arial: the header's menu descriptions,
+ * and the drawer's reclassify glyph among them. One line, app-wide. */
+button {
+  font-family: inherit;
+}
+
 button:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);

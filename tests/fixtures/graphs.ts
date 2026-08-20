@@ -521,3 +521,215 @@ zero,Zero Baseline,,ops,s1,cat,0,,,,
 from,to,effect,elasticity,style,description
 good,ghost,increases,,,
 `;
+
+// One input, twelve boxes in the middle, three outputs with four ways into
+// each. Enough of a middle layer for "along the way" to be a ranking rather
+// than a fact, and enough destinations for the pathway list to have an order.
+// Deliberately unrelated names: shared word-stems would let the atlas fold
+// these into one family element and change the shape under the tests.
+export const WIDE_CSV = `# SECTION: streams
+id,label,short,color
+ops,Operations,OPS,#60a5fa
+
+# SECTION: stages
+id,label
+s1,One
+s2,Two
+s3,Three
+
+# SECTION: categories
+id,label,color,text_color,class
+cat,General,#a3a3a3,#111111,primary
+
+# SECTION: defaults
+key,value
+elasticity_enables,0.30
+elasticity_increases,0.25
+elasticity_decreases,-0.25
+
+# SECTION: nodes
+id,label,description,stream,stage,category,baseline,unit,controllable,direction,slider_max
+hub,Hub,,ops,s1,cat,100,units,true,,400
+i1,Mike,,ops,s2,cat,41,units,,,
+i2,November,,ops,s2,cat,42,units,,,
+i3,Oscar,,ops,s2,cat,43,units,,,
+i4,Papa,,ops,s2,cat,44,units,,,
+i5,Quebec,,ops,s2,cat,45,units,,,
+i6,Romeo,,ops,s2,cat,46,units,,,
+i7,Sierra,,ops,s2,cat,47,units,,,
+i8,Tango,,ops,s2,cat,48,units,,,
+i9,Uniform,,ops,s2,cat,49,units,,,
+i10,Victor,,ops,s2,cat,50,units,,,
+i11,Whiskey,,ops,s2,cat,51,units,,,
+i12,Xray,,ops,s2,cat,52,units,,,
+yankee,Yankee,,ops,s3,cat,100,units,,higher_better,
+zulu,Zulu,,ops,s3,cat,110,units,,higher_better,
+juliett,Juliett,,ops,s3,cat,120,units,,higher_better,
+
+# SECTION: edges
+from,to,effect,elasticity,style,description
+hub,i1,increases,0.20,,Hub lifts Mike
+hub,i2,increases,0.25,,Hub lifts November
+hub,i3,increases,0.30,,Hub lifts Oscar
+hub,i4,increases,0.35,,Hub lifts Papa
+hub,i5,increases,0.40,,Hub lifts Quebec
+hub,i6,increases,0.45,,Hub lifts Romeo
+hub,i7,increases,0.50,,Hub lifts Sierra
+hub,i8,increases,0.55,,Hub lifts Tango
+hub,i9,increases,0.60,,Hub lifts Uniform
+hub,i10,increases,0.65,,Hub lifts Victor
+hub,i11,increases,0.70,,Hub lifts Whiskey
+hub,i12,increases,0.75,,Hub lifts Xray
+i1,yankee,increases,0.30,,Mike into Yankee
+i2,yankee,increases,0.40,,November into Yankee
+i3,yankee,increases,0.50,,Oscar into Yankee
+i4,yankee,increases,0.60,,Papa into Yankee
+i5,zulu,increases,0.30,,Quebec into Zulu
+i6,zulu,increases,0.40,,Romeo into Zulu
+i7,zulu,increases,0.50,,Sierra into Zulu
+i8,zulu,increases,0.60,,Tango into Zulu
+i9,juliett,increases,0.30,,Uniform into Juliett
+i10,juliett,increases,0.40,,Victor into Juliett
+i11,juliett,increases,0.50,,Whiskey into Juliett
+i12,juliett,increases,0.60,,Xray into Juliett
+`;
+
+// Four ways from one input to one output, three of them leaving by the same
+// box — so the pathway list has a branch to merge (via Bravo ×3) and one that
+// stands alone (via Charlie). Deliberately unrelated names, so the atlas does
+// not fold them into a family and change the shape under the test.
+export const FAN_CSV = `# SECTION: streams
+id,label,short,color
+ops,Operations,OPS,#60a5fa
+
+# SECTION: stages
+id,label
+s1,One
+s2,Two
+s3,Three
+s4,Four
+
+# SECTION: categories
+id,label,color,text_color,class
+cat,General,#a3a3a3,#111111,primary
+
+# SECTION: defaults
+key,value
+elasticity_enables,0.30
+elasticity_increases,0.25
+elasticity_decreases,-0.25
+
+# SECTION: nodes
+id,label,description,stream,stage,category,baseline,unit,controllable,direction,slider_max
+alpha,Alpha,,ops,s1,cat,100,units,true,,400
+bravo,Bravo,,ops,s2,cat,50,units,,,
+charlie,Charlie,,ops,s2,cat,40,units,,,
+delta,Delta,,ops,s3,cat,30,units,,,
+echo,Echo,,ops,s3,cat,20,units,,,
+zulu,Zulu,,ops,s4,cat,10,units,,higher_better,
+
+# SECTION: edges
+from,to,effect,elasticity,style,description
+alpha,bravo,increases,0.8,,Alpha lifts Bravo
+alpha,charlie,increases,0.2,,Alpha lifts Charlie
+bravo,zulu,increases,0.5,,straight on to Zulu
+charlie,zulu,increases,0.1,,the other way in
+bravo,delta,increases,0.4,,round by Delta
+delta,zulu,increases,0.6,,Delta to Zulu
+bravo,echo,increases,0.3,,round by Echo
+echo,zulu,increases,0.2,,Echo to Zulu
+`;
+
+// A map with a GATE in the middle of it. `hold` combines its inputs with `min`
+// — "you need all of these" — so its number is taken from whichever input is
+// furthest behind. Move `pump` as far as you like and `hold` does not budge,
+// because `short` is sitting at its baseline and is the weakest of the two.
+//
+//   pump  ──┬──────────┐
+//            │          ├──▶ hold ──▶ far
+//            └──▶ short ─┘
+//
+// `pump → short` is the other half of the fixture: short is a SLIDER, pinned
+// wherever the reader left it, so it does not respond to pump at all. The route
+// pump → short → hold is structurally real and causally dead — which is what
+// the border map's Border Force FTE → Vehicle Physical Search → Lorry Wait
+// Times turned out to be.
+//
+// With pump at ×4: pump's factor is 4^0.5 = 2, short's is 1.0, so min = 1.0 and
+// hold stays at 60. Nothing arrives at far either. That is the whole point of
+// the fixture: hold is not a box the run failed to REACH, it is a box the run
+// reached and was stopped at — and `far` behind it is unreachable by anything
+// the sliders can do from here.
+export const GATED_CSV = `# SECTION: streams
+id,label,short,color
+ops,Operations,OPS,#60a5fa
+
+# SECTION: stages
+id,label
+s1,Inputs
+s2,Middle
+s3,Outputs
+
+# SECTION: categories
+id,label,color,text_color,class
+cat,General,#a3a3a3,#111111,primary
+
+# SECTION: defaults
+key,value
+elasticity_increases,0.25
+
+# SECTION: nodes
+id,label,description,stream,stage,category,baseline,unit,controllable,direction,slider_max,combine
+pump,Pump,,ops,s1,cat,100,units,true,,400,
+short,Short Supply,,ops,s1,cat,100,units,true,,400,
+hold,Held Box,,ops,s2,cat,60,units,,higher_better,,min
+far,Far Output,,ops,s3,cat,20,units,,higher_better,,
+
+# SECTION: edges
+from,to,effect,elasticity,style,description
+pump,hold,increases,0.5,,plenty of this
+short,hold,increases,0.5,,and not enough of this
+pump,short,increases,0.5,,structurally connected and causally dead
+hold,far,increases,0.9,,everything downstream of the gate
+`;
+
+// The same gate, said the other way. `hold` here has no `combine` column at
+// all: its formula opens with min(), which is the identical statement — "you
+// need both of these" — and on a real map it is the commoner of the two forms.
+// The border map has one box using the column and eighteen using formulas.
+//
+//   hold = min(short * 0.5, pump * 0.5)
+//
+// With pump at ×4 the second arm is 200 and the first is 50, so hold sits at 50
+// and does not move however hard pump is pushed. What is short is `short`.
+export const FORMULA_GATE_CSV = `# SECTION: streams
+id,label,short,color
+ops,Operations,OPS,#60a5fa
+
+# SECTION: stages
+id,label
+s1,Inputs
+s2,Middle
+s3,Outputs
+
+# SECTION: categories
+id,label,color,text_color,class
+cat,General,#a3a3a3,#111111,primary
+
+# SECTION: defaults
+key,value
+elasticity_increases,0.25
+
+# SECTION: nodes
+id,label,description,stream,stage,category,baseline,unit,controllable,direction,slider_max,formula
+pump,Pump,,ops,s1,cat,100,units,true,,400,
+short,Short Supply,,ops,s1,cat,100,units,true,,400,
+hold,Held Box,,ops,s2,cat,50,units,,higher_better,,"min(short * 0.5, pump * 0.5)"
+far,Far Output,,ops,s3,cat,20,units,,higher_better,,
+
+# SECTION: edges
+from,to,effect,elasticity,style,description
+pump,hold,increases,0.5,,the arm with plenty in it
+short,hold,increases,0.5,,the arm that is short
+hold,far,increases,0.9,,everything downstream of the gate
+`;

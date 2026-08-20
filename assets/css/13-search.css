@@ -61,7 +61,7 @@
   font-family: var(--font-mono);
   font-size: var(--fs-cap);
   color: var(--text-tertiary);
-  letter-spacing: 0.02em;
+  letter-spacing: var(--tracking-cap);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -80,9 +80,8 @@
 
 /* Three-part stream · stage · category tag on the right. */
 .search-result-meta {
-  font-family: var(--font-mono);
-  font-size: var(--fs-cap);
-  letter-spacing: 0.04em;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--tracking-cap);
   color: var(--text-tertiary);
   text-transform: uppercase;
   white-space: nowrap;

@@ -32,6 +32,7 @@ describe("simulation slider updates node values in place", () => {
 
   it("patches the existing DOM (no rebuild) when no delta label appears/disappears", () => {
     loadDataFromCsv(LINEAR_CSV);
+    state.simulationMode = true;    // a box only carries a number while the sliders are out
 
     // First nudge makes B's delta label appear (a structural change), so this
     // takes the full-render fallback. Flush it synchronously to establish the
@@ -57,6 +58,7 @@ describe("simulation slider updates node values in place", () => {
 
   it("keeps the map value in sync with the computed value", () => {
     loadDataFromCsv(LINEAR_CSV);
+    state.simulationMode = true;
     applySimMultiplier("a", 2.0, null);
     render();
     expect(bValueEl().textContent).toBe(formatNodeValue("b"));
@@ -75,6 +77,7 @@ describe("in-place patching with a selection active", () => {
 
   it("keeps the selection border across a scrub, and still moves the numbers", () => {
     loadDataFromCsv(LINEAR_CSV);
+    state.simulationMode = true;
     applySimMultiplier("a", 1.5, null); // make B's delta label exist
     selectNode("b");                    // b selected → c becomes a descendant
 
@@ -102,19 +105,24 @@ describe("in-place patching with a selection active", () => {
   });
 });
 
-// Slider `input` events arrive far faster than the screen refreshes, so the
-// panel writes the override immediately and coalesces the solve + repaint into
-// one per animation frame. flushSimTick() drains whatever is owed.
+// Input events arrive far faster than the screen refreshes — whether they come
+// from a drag on the number or from a held-down key — so the panel writes the
+// override immediately and coalesces the solve + repaint into one per animation
+// frame. flushSimTick() drains whatever is owed.
+//
+// Driven through the PERCENTAGE field, which is the multiplier in the units the
+// reader sees: 100% is where the box started. (There is no track any more; the
+// numbers are the track.)
 describe("slider events are coalesced into one tick per frame", () => {
-  function slider(nodeId: string): HTMLInputElement {
+  function pctField(nodeId: string): HTMLInputElement {
     return document.querySelector(
-      '.sim-slider[data-node-id="' + nodeId + '"]',
+      '.sim-pct-input[data-node-id="' + nodeId + '"]',
     ) as HTMLInputElement;
   }
 
-  function drag(nodeId: string, value: number): void {
-    const el = slider(nodeId);
-    el.value = String(value);
+  function drag(nodeId: string, multiplier: number): void {
+    const el = pctField(nodeId);
+    el.value = String(multiplier * 100);
     el.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
@@ -144,7 +152,7 @@ describe("slider events are coalesced into one tick per frame", () => {
     expect(state.computedValues.b).toBeCloseTo(50 * Math.sqrt(2.0), 6);
   });
 
-  it("clamps to the slider's range, as the direct call does", () => {
+  it("clamps to the input's range, as the direct call does", () => {
     drag("a", 9999);
     flushSimTick();
     expect(state.userOverrides.a).toBe(400); // the fixture's slider_max
@@ -173,8 +181,8 @@ describe("detail panel patching during a scrub", () => {
       "#detail-content .detail-quant-row",
     )[2].querySelector(".detail-quant-value")!;
 
-    const el = document.querySelector('.sim-slider[data-node-id="a"]') as HTMLInputElement;
-    el.value = "4";
+    const el = document.querySelector('.sim-pct-input[data-node-id="a"]') as HTMLInputElement;
+    el.value = "400";                      // ×4, in the units the panel shows
     el.dispatchEvent(new Event("input", { bubbles: true }));
     flushSimTick();
 
@@ -416,9 +424,9 @@ describe("detail panel calculation-rule edit fields", () => {
       "#detail-content select[data-field='combine']",
     ) as HTMLSelectElement;
     expect(Array.from(select.options).map((o) => [o.value, o.text])).toEqual([
-      ["", "Standard (multiplicative)"],
+      ["", "Standard"],
       ["additive", "Additive"],
-      ["min", "Weakest link (min)"],
+      ["min", "Weakest link"],
     ]);
     expect(select.value).toBe("");
   });
@@ -465,12 +473,77 @@ describe("detail panel calculation-rule edit fields", () => {
   });
 
   it("hangs one-line plain-language help off each new field's label", () => {
-    const tips = Array.from(
-      document.querySelectorAll("#detail-content .detail-quant-label[data-tooltip]"),
-    ).map((el) => el.getAttribute("data-tooltip")!);
-    expect(tips).toHaveLength(4);
-    expect(tips.join(" ")).toContain(
-      "every box named here must also have an arrow into this box",
+    // Named, not counted: other rows in this panel carry help too, and an exact
+    // total made this test fail whenever an unrelated field gained a tooltip.
+    const tips = new Map(
+      Array.from(
+        document.querySelectorAll("#detail-content .detail-quant-label[data-tooltip]"),
+      ).map((el) => [el.textContent, el.getAttribute("data-tooltip")!]),
     );
+    for (const label of ["Combine", "Formula", "Lowest allowed", "Highest allowed"]) {
+      expect(tips.get(label), label + " should carry help").toBeTruthy();
+    }
+    expect(tips.get("Formula")).toContain(
+      "Every box named here must also have an arrow into this box",
+    );
+  });
+});
+
+// =============================================================================
+// TWO WAYS OF SAYING ONE NUMBER
+// -----------------------------------------------------------------------------
+// A row carries the figure and how far it is from where it started, and both
+// are editable: type 13230 or type 147, whichever you happen to know. They are
+// the same setting, so each follows the other.
+// =============================================================================
+describe("the value and the percentage", () => {
+  const row = (id: string) => document.querySelector('.sim-slider-row[data-node-id="' + id + '"]')!;
+  const abs = (id: string) => row(id).querySelector(".sim-value-input") as HTMLInputElement;
+  const pct = (id: string) => row(id).querySelector(".sim-pct-input") as HTMLInputElement;
+  const type = (el: HTMLInputElement, v: string) => {
+    el.value = v;
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    flushSimTick();
+  };
+
+  beforeEach(() => {
+    loadDataFromCsv(LINEAR_CSV);      // a: baseline 100
+    state.simulationMode = true;
+    state.userOverrides = {};
+    recomputeValues();
+    renderSimulationPanel();
+    render();
+  });
+
+  it("sets the same thing from either end", () => {
+    type(abs("a"), "150");
+    expect(state.userOverrides.a).toBeCloseTo(1.5, 6);
+
+    type(pct("a"), "250");
+    expect(state.userOverrides.a).toBeCloseTo(2.5, 6);
+  });
+
+  it("keeps the other field in step with the one being typed into", () => {
+    type(abs("a"), "150");
+    // The field being typed into is left exactly as typed; its partner follows.
+    expect(abs("a").value).toBe("150");
+    expect(pct("a").value).toBe("150");
+
+    type(pct("a"), "300");
+    expect(pct("a").value).toBe("300");
+    expect(abs("a").value).toBe("300");     // 100 × 3
+  });
+
+  it("marks a row that has moved, and unmarks it when it goes back", () => {
+    expect(row("a").classList.contains("moved")).toBe(false);
+    type(pct("a"), "150");
+    expect(row("a").classList.contains("moved")).toBe(true);
+    type(pct("a"), "100");
+    expect(row("a").classList.contains("moved")).toBe(false);
+  });
+
+  it("has no track to drag any more", () => {
+    expect(document.querySelectorAll(".sim-slider").length).toBe(0);
+    expect(document.querySelectorAll('#simulation-panel input[type="range"]').length).toBe(0);
   });
 });

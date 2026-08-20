@@ -323,6 +323,10 @@ export interface CellRef {
 }
 
 export interface CanvasEditState {
+  /** Edit mode: is the tag strip showing every tag, or only the ones set? */
+  tagPickerOpen?: boolean;
+  /** Edit mode: which outgoing link row is unfolded for editing. */
+  openEdgeId?: string | null;
   editMode: boolean;
   shiftHeld: boolean;
   hoverCell: CellRef | null;
@@ -341,7 +345,6 @@ export interface CanvasEditState {
   edgeCycleSession: any | null;
   /** Transient guard set by the detail panel when it unlocks edit mode, so the
    *  same click that unlocked doesn't immediately re-lock. */
-  _justUnlocked?: boolean;
 }
 
 export interface History {

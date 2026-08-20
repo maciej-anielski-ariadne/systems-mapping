@@ -76,7 +76,7 @@ import {
 } from "./03-state";
 import { formatScalar } from "./04-utils";
 import { parseFormula, evaluateFormula, evaluateFormulaValue } from "./07a-formula";
-import type { ParsedFormula, FormulaEvalContext } from "./07a-formula";
+import type { FormulaAst, ParsedFormula, FormulaEvalContext } from "./07a-formula";
 
 // `values` / `nodeById` and friends are plain objects, so a key like
 // "constructor" would otherwise resolve to something off Object.prototype. Every
@@ -107,13 +107,35 @@ export const SOLVER_EPSILON = 1e-7;
 // blow up to -Infinity (matches the original single-pass behaviour).
 export const SOLVER_LOG_RATIO_FLOOR = 1e-6;
 
-// Look up the elasticity to use for one edge. The CSV's per-edge value wins;
-// otherwise we fall back to the default for the edge's effect type.
+// Which way a link pushes is the WORD; how hard is the number.
+//
+// A link carries both — "increases" and 0.55 — and nothing was keeping them in
+// step, so a minus sign typed into the strength column silently reversed the
+// link while the word beside it went on saying the opposite. The border map had
+// two: PCP inspection was declared to INCREASE passenger wait times at −0.55,
+// which made more inspection shorten the queues, and document checks were
+// declared to increase lorry waits at −0.50. Both read as plausible results
+// rather than as data errors, because nothing on screen contradicted them.
+//
+// So the number contributes its MAGNITUDE and the word decides the sign. A word
+// this app does not know is left exactly as it was typed — normalising against
+// a rule that has not been written would be a worse guess than the data.
+const SIGN_BY_EFFECT: Record<string, number> = {
+  increases: 1,
+  enables:   1,
+  decreases: -1,
+};
+
+// The CSV's per-edge value wins; otherwise the default for the effect type.
 export function resolveEdgeElasticity(edge: Edge): number {
-  if (edge.elasticity !== undefined && edge.elasticity !== null && !isNaN(edge.elasticity)) {
-    return edge.elasticity;
-  }
-  return DEFAULT_ELASTICITY_BY_EFFECT[edge.effect] || 0;
+  const raw = (edge.elasticity !== undefined && edge.elasticity !== null && !isNaN(edge.elasticity))
+    ? edge.elasticity
+    : (DEFAULT_ELASTICITY_BY_EFFECT[edge.effect] || 0);
+  const sign = SIGN_BY_EFFECT[edge.effect];
+  if (sign === undefined) return raw;
+  const out = sign * Math.abs(raw);
+  // −1 × 0 is −0, which prints as "−0.00" in a row that means nothing of the sort.
+  return out === 0 ? 0 : out;
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -955,7 +977,12 @@ function makeExplanationView(values: ComputedValues): Record<string, NodeExplana
 // state.computedValues, a freshly-emptied lazy view onto the per-box working
 // into state.explanations (so a stale box can never linger), and records solver
 // status (convergence + loop count) into state.solverStatus for the UI.
+// Bumped by every recomputeValues(). The one thing that reliably changes on a
+// solve — see maxEffectPct for why the values object itself is not.
+let valuesStamp = 0;
+
 export function recomputeValues(): void {
+  valuesStamp++;
   const multipliers = currentMultipliers();
   const moved = movedSliderId(multipliers);
   const values = moved === null ? computeNodeValues() : solveIncremental(moved);
@@ -1022,4 +1049,192 @@ export function getOutcomeBorderColor(
   const isGoodChange = (delta.pct > 0 && node.direction === "higher_better") ||
                        (delta.pct < 0 && node.direction === "lower_better");
   return isGoodChange ? "var(--status-good)" : "var(--status-bad)";
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// WHAT THE SIMULATION IS DOING TO EACH BOX
+// -----------------------------------------------------------------------------
+// While the sliders are out, the map and the atlas both paint a box by what the
+// run did to it. They need the same three answers about one box — has it really
+// moved, does the map call that move good or bad, and how big is it against the
+// biggest move anywhere — so the answers are worked out once, here, next to the
+// numbers they come from. The COLOURS live in 04-utils (simEffectFill).
+// ═════════════════════════════════════════════════════════════════════════════
+
+// Under half a percent, nothing has really moved. The solver's own convergence
+// noise sits orders of magnitude below this (SOLVER_EPSILON is 1e-7), so a box
+// that drifted a rounding error reads as untouched rather than as a faint
+// colour that means nothing.
+export const EFFECT_FLOOR_PCT = 0.5;
+
+/** Whether the map itself calls a move good, bad, or has no view. */
+export type EffectMerit = "good" | "bad" | "none";
+
+export interface NodeEffect {
+  /** Signed % change against the box's starting value. */
+  pct: number;
+  /** False below EFFECT_FLOOR_PCT, and for a box with no number at all. */
+  moved: boolean;
+  /** 0..1 — this move measured against the biggest move on the map. */
+  strength: number;
+  merit: EffectMerit;
+}
+
+// The biggest move anywhere on the map: the top of the colour ramp. Worked out
+// once per solve rather than once per box — a slider drag asks for it for every
+// box, every frame.
+//
+// Keyed on valuesStamp, NOT on the identity of state.computedValues: an
+// incremental solve MUTATES the previous values object and hands the same one
+// back (solveIncremental), so an identity check answers "unchanged" for every
+// solve after the first, and the ramp would be pinned to whatever the first run
+// happened to produce.
+let _maxEffectStamp = -1;
+let _maxEffectPct = 0;
+
+export function maxEffectPct(): number {
+  if (_maxEffectStamp === valuesStamp) return _maxEffectPct;
+  let biggest = 0;
+  for (const node of NODES) {
+    const pct = formatNodeDelta(node.id).pct;
+    if (Number.isFinite(pct) && Math.abs(pct) > biggest) biggest = Math.abs(pct);
+  }
+  _maxEffectStamp = valuesStamp;
+  _maxEffectPct = biggest;
+  return biggest;
+}
+
+// The biggest mover itself, for the sentence that names the top of the scale.
+export function biggestMover(): { node: GraphNode; pct: number } | null {
+  let best: { node: GraphNode; pct: number } | null = null;
+  for (const node of NODES) {
+    const pct = formatNodeDelta(node.id).pct;
+    if (!Number.isFinite(pct) || Math.abs(pct) < EFFECT_FLOOR_PCT) continue;
+    if (!best || Math.abs(pct) > Math.abs(best.pct)) best = { node: node, pct: pct };
+  }
+  return best;
+}
+
+// `precomputedDelta` lets a caller that already formatted this box's delta (the
+// scrub patch does, for every box, every frame) hand it over instead of paying
+// for it twice.
+export function nodeEffect(
+  nodeId: string,
+  precomputedDelta?: { text: string; pct: number },
+): NodeEffect {
+  const node = nodeById[nodeId];
+  const delta = precomputedDelta || formatNodeDelta(nodeId);
+  const pct = Number.isFinite(delta.pct) ? delta.pct : 0;
+  const moved = Math.abs(pct) >= EFFECT_FLOOR_PCT;
+  const top = maxEffectPct();
+  // The ramp is RELATIVE: the biggest mover is always full strength, so the
+  // shape of a run is visible whether it moved things by 3% or 300%. The price
+  // is that a colour means a different number from run to run, which is why the
+  // sliders panel names the box currently sitting at the top of the scale.
+  // The 0.6 power lifts the middle — on a linear ramp one runaway box left
+  // everything else indistinguishably pale.
+  const strength = moved && top > 0 ? Math.pow(Math.min(1, Math.abs(pct) / top), 0.6) : 0;
+  let merit: EffectMerit = "none";
+  if (moved && node) {
+    if      (node.direction === "higher_better") merit = pct > 0 ? "good" : "bad";
+    else if (node.direction === "lower_better")  merit = pct < 0 ? "good" : "bad";
+  }
+  return { pct: pct, moved: moved, strength: strength, merit: merit };
+}
+
+// ───── Held back by something else ────────────────────────────────────────
+// A box that sits still while the map moves around it is not necessarily a box
+// the run failed to reach. Some are HELD: their `combine` rule is `min`, which
+// says "you need all of these", and the weakest of the things they need is not
+// one that moved. Counter-Terrorism Effectiveness on the border map is exactly
+// this — pour as much as you like into the inspection side of it and the number
+// does not shift, because intelligence coverage is what is short.
+//
+// Told apart from "nothing reached it" this is the most useful thing the
+// picture can say: it names what to move instead. Undistinguished, it is the
+// single biggest reason a simulated map reads as broken.
+//
+// Three conditions, all of them necessary:
+//   the box's rule is `min`         — something gates it at all
+//   the box did not move            — the gate is actually biting
+//   something else feeding it DID   — otherwise it is simply not on the run,
+//                                     and "held" would be an odd way to say so
+export interface GatedBy { id: string; label: string }
+
+
+// A formula gates too. `min(a, b)` written inside a formula is the same
+// statement as the `min` combine rule — "you need both of these" — and on a map
+// of any size it is the commoner of the two: the border map has one box using
+// the column and eighteen using formulas, several of them exactly this shape.
+//
+//   vehicle_physical_search =
+//     min(vehicle_xray_scan * search_followup_rate,
+//         border_force_fte   * searches_per_fte_yr)
+//
+// Double the officers and this does not move, because scanning is what is
+// short. Read only through the combine column, that box looked like one the run
+// never reached.
+//
+// Only a min() at the TOP of the formula is read. Buried inside arithmetic the
+// arms are no longer the whole answer, and half an explanation on a picture is
+// worse than none.
+function armIdentifiers(ast: FormulaAst, out: string[]): string[] {
+  switch (ast.kind) {
+    case "identifier":
+    case "delay":   out.push(ast.id); break;
+    case "negate":  armIdentifiers(ast.operand, out); break;
+    case "binary":  armIdentifiers(ast.left, out); armIdentifiers(ast.right, out); break;
+    case "call":    for (const arg of ast.args) armIdentifiers(arg, out); break;
+  }
+  return out;
+}
+
+function formulaGate(nodeId: string): GatedBy | null {
+  const parsed = parsedFormulaByNodeId[nodeId];
+  if (!parsed || parsed.ast.kind !== "call" || parsed.ast.fn !== "min") return null;
+  if (parsed.ast.args.length < 2) return null;
+
+  const ctx = makeEvalContext(explainedValues, null);
+  let binding = parsed.ast.args[0];
+  let smallest = Infinity;
+  for (const arm of parsed.ast.args) {
+    const armValue = evaluateFormulaValue({ ...parsed, ast: arm }, ctx);
+    if (armValue < smallest) { smallest = armValue; binding = arm; }
+  }
+
+  // Something the reader can act on, in the arm that is deciding. A param is a
+  // constant — naming one would answer "what is holding this?" with a number
+  // nobody can move.
+  const inBinding = armIdentifiers(binding, []);
+  const held = inBinding.find(id => !paramById[id] && nodeById[id] && !nodeEffect(id).moved);
+  if (!held) return null;
+
+  // And the other arm has to have moved, or this is simply a box the run never
+  // reached and "held" would be an odd way to say so.
+  const movedElsewhere = parsed.ast.args.some(arm => arm !== binding &&
+    armIdentifiers(arm, []).some(id => !paramById[id] && nodeById[id] && nodeEffect(id).moved));
+  if (!movedElsewhere) return null;
+
+  return { id: held, label: nodeById[held].label || held };
+}
+
+export function gatedBy(nodeId: string): GatedBy | null {
+  const explanation = explainNode(nodeId);
+  if (!explanation) return null;
+  if (nodeEffect(nodeId).moved) return null;
+  if (explanation.rule === "formula") return formulaGate(nodeId);
+  if (explanation.rule !== "min" || !explanation.inputs.length) return null;
+
+  // The weakest link IS the answer under `min` — it is the one the box's value
+  // was taken from.
+  let binding = explanation.inputs[0];
+  for (const input of explanation.inputs) {
+    if ((input.contribution ?? Infinity) < (binding.contribution ?? Infinity)) binding = input;
+  }
+  const movedElsewhere = explanation.inputs.some(
+    input => input.id !== binding.id && input.kind === "node" && nodeEffect(input.id).moved);
+  if (!movedElsewhere) return null;
+
+  const node = nodeById[binding.id];
+  return { id: binding.id, label: (node && node.label) || binding.id };
 }

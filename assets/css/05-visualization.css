@@ -136,6 +136,58 @@ body.panning * {
   opacity: 0.18;
 }
 
+/* === Simulation mode: the body says what the run did ===
+ * The fill is emitted by 11-rendering from simEffectFill (04-utils) — already
+ * the exact colour it should be, so the resting saturate() is switched off the
+ * same way the baked resting fills switch it off. The left stripe stays muted
+ * (it is still saying which row this is, not how far anything moved).
+ *
+ * `.sim-flat` is a box the run did not move. It keeps its place and its label
+ * and steps back, so what is left at full strength is only what changed.
+ * The `.dimmed` pairing below is a box that is BOTH unmoved and outside the
+ * current selection's trace — it must not end up brighter than a plain dimmed
+ * box, so the two are multiplied rather than left to fight over one property. */
+.node-group.sim-fill .node-rect,
+.node-group.sim-fill .node-stripe {
+  filter: none;
+}
+
+.node-group.sim-fill:hover:not(.selected):not(.ancestor):not(.descendant) .node-rect {
+  filter: brightness(1.12);
+}
+
+.node-group.sim-flat {
+  opacity: 0.5;
+}
+
+/* === Held back, not unreached ===========================================
+ * A box whose rule is "weakest input wins" and whose weakest input is not one
+ * that moved. It is still grey — it did not move — and then it says WHY: the
+ * word in the slot a mover uses for its percentage. (A bar across the box's
+ * leading edge said the same thing a second time; on a box carrying a label, a
+ * value and a word, it was one mark too many.)
+ * It sits brighter than the other still boxes because on a map where a third of
+ * everything is grey, this is the one still box worth reading. */
+.node-group.sim-held {
+  opacity: 0.78;
+}
+.node-held {
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  fill: var(--accent-amber);
+}
+
+/* Unmoved AND outside the selection's trace. It must not come out BRIGHTER
+ * than a plain dimmed box (the `.sim-flat` rule above would otherwise win on
+ * source order), but it must not go under it either — 0.12 was legible on the
+ * dark ground and all but invisible on the light one. Matching `.dimmed` is
+ * enough: the box is already grey, which is the other half of what it is
+ * saying. */
+.node-group.sim-flat.dimmed {
+  opacity: 0.18;
+}
+
 /* === Selection / trace state glows ===
  * Flat look → node rectangles never show an outline; selection and causal-trace
  * states read as stacked drop-shadow halos instead. Each stacks a tight inner
@@ -208,27 +260,27 @@ body.panning * {
 .node-label {
   font-family: var(--font-ui);
   font-weight: var(--fw-medium);
-  font-size: calc(var(--fs-body) * var(--map-text-scale, 1));
+  font-size: calc(var(--fs-map-label) * var(--map-text-scale, 1));
   pointer-events: none;   /* clicks pass through to the underlying rect */
   user-select: none;
 }
 
 .node-value {
   font-family: var(--font-mono);
-  font-size: calc(var(--fs-cap) * var(--map-text-scale, 1));
+  font-size: calc(var(--fs-map-note) * var(--map-text-scale, 1));
   font-weight: var(--fw-medium);
   pointer-events: none;
   user-select: none;
-  letter-spacing: 0.01em;
+  letter-spacing: var(--tracking-cap);
 }
 
 .node-delta {
   font-family: var(--font-mono);
-  font-size: calc(var(--fs-cap) * var(--map-text-scale, 1));
+  font-size: calc(var(--fs-map-note) * var(--map-text-scale, 1));
   font-weight: var(--fw-semibold);
   pointer-events: none;
   user-select: none;
-  letter-spacing: 0.01em;
+  letter-spacing: var(--tracking-cap);
 }
 
 /* === Edges (the arrows connecting nodes) === */
@@ -280,9 +332,9 @@ body.panning * {
 
 .row-label-text {
   font-family: var(--font-mono);
-  font-size: calc(var(--fs-cap) * var(--map-text-scale, 1));
+  font-size: calc(var(--fs-map-note) * var(--map-text-scale, 1));
   font-weight: var(--fw-semibold);
-  letter-spacing: 0.1em;
+  letter-spacing: var(--tracking-cap);
   text-transform: uppercase;
   pointer-events: none;
 }
@@ -302,7 +354,7 @@ body.panning * {
 }
 
 .row-label-group.collapsed .row-label-text {
-  font-size: calc(var(--fs-cap) * var(--map-text-scale, 1));
+  font-size: calc(var(--fs-map-note) * var(--map-text-scale, 1));
   opacity: 0.55;
 }
 
@@ -321,9 +373,9 @@ body.panning * {
 
 .col-header-text {
   font-family: var(--font-mono);
-  font-size: calc(var(--fs-cap) * var(--map-text-scale, 1));
+  font-size: calc(var(--fs-map-note) * var(--map-text-scale, 1));
   font-weight: var(--fw-semibold);
-  letter-spacing: 0.12em;
+  letter-spacing: var(--tracking-cap);
   text-transform: uppercase;
   fill: var(--text-secondary);
   pointer-events: none;
@@ -352,14 +404,14 @@ body.panning * {
   pointer-events: all;
 }
 .col-header-group.collapsed .col-header-text {
-  font-size: calc(var(--fs-cap) * var(--map-text-scale, 1));
+  font-size: calc(var(--fs-map-note) * var(--map-text-scale, 1));
   opacity: 0.55;
 }
 .col-header-group.collapsed:hover .col-header-text {
   opacity: 1;
 }
 .col-header-group.collapsed .col-header-plus {
-  font-size: calc(var(--fs-body) * var(--map-text-scale, 1));
+  font-size: calc(var(--fs-map-label) * var(--map-text-scale, 1));
   opacity: 0.7;
 }
 
@@ -392,19 +444,19 @@ body.panning * {
 .ghost-cell text {
   fill: var(--accent-blue);
   font-family: var(--font-mono);
-  font-size: calc(var(--fs-cap) * var(--map-text-scale, 1));
+  font-size: calc(var(--fs-map-note) * var(--map-text-scale, 1));
   font-weight: var(--fw-semibold);
-  letter-spacing: 0.04em;
+  letter-spacing: var(--tracking-cap);
   pointer-events: none;
   user-select: none;
   opacity: 0;
   transition: opacity var(--dur-fast);
 }
-body.canvas-shift-edit .ghost-cell rect {
+body.editing .ghost-cell rect {
   opacity: 1;
   fill: color-mix(in srgb, var(--accent-blue) 18%, transparent);
 }
-body.canvas-shift-edit .ghost-cell text {
+body.editing .ghost-cell text {
   opacity: 0.85;
 }
 
@@ -423,9 +475,9 @@ body.canvas-shift-edit .ghost-cell text {
 .cursor-cell text {
   fill: var(--accent-blue);
   font-family: var(--font-mono);
-  font-size: calc(var(--fs-cap) * var(--map-text-scale, 1));
+  font-size: calc(var(--fs-map-note) * var(--map-text-scale, 1));
   font-weight: var(--fw-semibold);
-  letter-spacing: 0.04em;
+  letter-spacing: var(--tracking-cap);
   pointer-events: none;
   user-select: none;
   opacity: 0.95;
@@ -447,28 +499,26 @@ body.canvas-shift-edit .ghost-cell text {
   font-family: var(--font-ui);
 }
 .canvas-edge-picker-label {
-  font-family: var(--font-mono);
-  font-size: var(--fs-cap);
-  letter-spacing: 0.06em;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--tracking-cap);
   text-transform: uppercase;
   color: var(--text-tertiary);
   margin-bottom: var(--heading-gap);
 }
+/* Standalone — a floating picker with no row behind it, so the field fills
+ * itself (see 02-base.css). Still no border. */
 .canvas-edge-picker .typeable-dropdown-input {
   width: 100%;
   background: var(--bg-deepest);
-  color: var(--text-primary);
   border-radius: var(--radius-interactive);
   padding: var(--pad-input);
   font-family: var(--font-ui);
   font-size: var(--fs-body);
   cursor: text;
-  box-shadow: var(--edit-cue);
-  outline: none;
+  transition: background var(--dur-fast) ease;
 }
-.canvas-edge-picker .typeable-dropdown-input:focus {
-  box-shadow: var(--focus-ring);
-}
+.canvas-edge-picker .typeable-dropdown-input:hover { background: var(--act-tint); }
+.canvas-edge-picker .typeable-dropdown-input:focus { background: var(--act-on); }
 
 /* Edge handle on the right edge of every node. Hidden by default; reveals
  * on node hover/selected only while Shift is held (canvas direct-edit
@@ -482,24 +532,26 @@ body.canvas-shift-edit .ghost-cell text {
   transition: opacity var(--dur-fast), r var(--dur-fast);
   pointer-events: none;
 }
-body.canvas-shift-edit .edge-handle {
+/* EDIT MODE arms these, not a held key. The handle appears on the box you are
+ * pointing at (or the selected one) and nowhere else, so the map stays quiet
+ * while still saying "you can draw from here" exactly where you are looking. */
+body.editing .edge-handle {
   pointer-events: all;
 }
-body.canvas-shift-edit .node-group:hover .edge-handle,
-body.canvas-shift-edit .node-group.selected .edge-handle {
+body.editing .node-group:hover .edge-handle,
+body.editing .node-group.selected .edge-handle {
   opacity: 0.9;
 }
-body.canvas-shift-edit .edge-handle:hover {
+body.editing .edge-handle:hover {
   opacity: 1;
   r: 7;
 }
-/* Grab cursor on nodes while Shift is held, so the user gets a visual cue
- * that drag-to-move is armed. Without Shift the default cursor signals
- * "selectable, not draggable". */
-body.canvas-shift-edit .node-group {
+/* Grab cursor on every box while editing: drag-to-move is armed, so say so.
+ * While reading, the default cursor signals "selectable, not draggable". */
+body.editing .node-group {
   cursor: grab;
 }
-body.canvas-shift-edit .node-group:active {
+body.editing .node-group:active {
   cursor: grabbing;
 }
 
@@ -559,7 +611,7 @@ body.canvas-shift-edit .node-group:active {
   font-family: var(--font-mono);
   font-size: var(--fs-cap);
   font-style: normal;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--tracking-cap);
 }
 
 /* Node drag-to-move (move between cells + reorder within a cell, 16e) */

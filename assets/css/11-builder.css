@@ -47,7 +47,7 @@
 .builder-title {
   font-family: var(--font-display);
   font-size: var(--fs-title);
-  font-weight: 500;
+  font-weight: var(--fw-semibold);
   color: var(--text-primary);
 }
 
@@ -58,8 +58,7 @@
 }
 
 .builder-step-dot {
-  font-family: var(--font-mono);
-  font-size: var(--fs-cap);
+  font-size: var(--fs-eyebrow);
   letter-spacing: var(--tracking-cap);
   text-transform: uppercase;
   background: var(--bg-light);
@@ -157,7 +156,7 @@
 .builder-step-heading {
   font-family: var(--font-display);
   font-size: var(--fs-title);
-  font-weight: 500;
+  font-weight: var(--fw-semibold);
   color: var(--text-primary);
   margin: 0 0 var(--heading-gap) 0;
 }
@@ -195,8 +194,7 @@
 
 .builder-table th {
   text-align: left;
-  font-family: var(--font-mono);
-  font-size: var(--fs-cap);
+  font-size: var(--fs-eyebrow);
   letter-spacing: var(--tracking-cap);
   text-transform: uppercase;
   color: var(--text-tertiary);
@@ -218,33 +216,37 @@
   vertical-align: middle;
 }
 
+/* Cell fields carry no chrome — the CELL is what fills, so the grid is drawn
+ * by the table rather than by a rectangle around every value. See 02-base.css.
+ * This was one filled box per cell with an accent underline on each; at 17
+ * columns that was 17 boxes per row competing with the values in them. */
 .builder-table input[type="text"],
 .builder-table input[type="number"],
 .builder-table select {
   width: 100%;
-  background: var(--bg-deep);
-  color: var(--text-primary);
-  border-radius: var(--radius-interactive);
   padding: var(--pad-cell-input);
   font-family: var(--font-mono);
   font-size: var(--fs-body);
-  outline: none;
-  box-shadow: var(--edit-cue);
   cursor: text;
-  transition: box-shadow var(--dur-fast);
   box-sizing: border-box;
 }
 
 /* Subtle pop-out: any focused cell input/select gets a blue ring so the user
  * can find it quickly even with many rows on screen. */
-.builder-table input:focus,
-.builder-table select:focus,
-.builder-table textarea:focus,
-.builder-defaults input:focus {
-  box-shadow: var(--focus-ring);
+/* The cell does the work: a hairline grid so an empty cell is still a cell, a
+ * tint under the pointer, and the accent fill while you type — the same two
+ * tokens every other field in the app uses, and no border on either. */
+.builder-table td {
+  border-bottom: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle);
   position: relative;
-  z-index: 2;
+  transition: background var(--dur-fast) ease;
 }
+.builder-table td:last-child { border-right: 0; }
+/* The cell gives the quiet hint; the field inside gives the answer, and shows
+ * focus itself (02-base.css) rather than the cell showing it for it. */
+.builder-table td:hover { background: color-mix(in srgb, var(--accent-blue) 7%, transparent); }
+.builder-table td:focus-within { z-index: 2; }
 
 /* Invalid cell — red inset ring (the flat-look stand-in for a red border). */
 .builder-table input.invalid,
@@ -379,10 +381,7 @@
   color: var(--text-secondary);
   padding: var(--pad-button);
   border-radius: var(--radius-interactive);
-  font-family: var(--font-mono);
   font-size: var(--fs-cap);
-  letter-spacing: var(--tracking-cap);
-  text-transform: uppercase;
   cursor: pointer;
   transition: background var(--dur-fast), color var(--dur-fast);
 }
@@ -447,8 +446,7 @@
 }
 
 .builder-bulk-count {
-  font-family: var(--font-mono);
-  font-size: var(--fs-cap);
+  font-size: var(--fs-eyebrow);
   letter-spacing: var(--tracking-cap);
   text-transform: uppercase;
   color: var(--text-secondary);
@@ -462,16 +460,13 @@
 /* Bulk-field dropdowns. The class is copied onto the typeable-dropdown input
  * when the <select> is upgraded (04b), so it styles both forms. */
 .builder-bulk-select {
-  background: var(--bg-deep);
-  color: var(--text-primary);
   border-radius: var(--radius-interactive);
   padding: var(--pad-input);
   font-family: var(--font-mono);
   font-size: var(--fs-cap);
-  outline: none;
-  box-shadow: var(--edit-cue);
   cursor: text;
   min-width: 130px;
+  transition: background var(--dur-fast) ease;
 }
 
 .builder-bulk-elasticity {
@@ -482,15 +477,12 @@
 
 .builder-bulk-input {
   width: 110px;
-  background: var(--bg-deep);
-  color: var(--text-primary);
   border-radius: var(--radius-interactive);
   padding: var(--pad-input);
   font-family: var(--font-mono);
   font-size: var(--fs-body);
-  outline: none;
-  box-shadow: var(--edit-cue);
   cursor: text;
+  transition: background var(--dur-fast) ease;
 }
 
 .builder-bulk-bar .builder-action.danger {
@@ -531,8 +523,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--gap-sm);
-  font-family: var(--font-mono);
-  font-size: var(--fs-cap);
+  font-size: var(--fs-eyebrow);
   color: var(--text-tertiary);
   letter-spacing: var(--tracking-cap);
   text-transform: uppercase;
@@ -540,15 +531,12 @@
 
 .builder-defaults input {
   width: 100px;
-  background: var(--bg-deep);
-  color: var(--text-primary);
   border-radius: var(--radius-interactive);
   padding: var(--pad-input);
   font-family: var(--font-mono);
   font-size: var(--fs-body);
-  outline: none;
-  box-shadow: var(--edit-cue);
   cursor: text;
+  transition: background var(--dur-fast) ease;
 }
 
 /* ───── Review step (step 6) ────────────────────────────────────────── */
@@ -566,8 +554,7 @@
 }
 
 .builder-review-tile-label {
-  font-family: var(--font-mono);
-  font-size: var(--fs-cap);
+  font-size: var(--fs-eyebrow);
   letter-spacing: var(--tracking-cap);
   text-transform: uppercase;
   color: var(--text-tertiary);
@@ -588,8 +575,7 @@
 }
 
 .builder-validation-title {
-  font-family: var(--font-mono);
-  font-size: var(--fs-cap);
+  font-size: var(--fs-eyebrow);
   letter-spacing: var(--tracking-cap);
   text-transform: uppercase;
   margin-bottom: var(--heading-gap);
@@ -647,13 +633,17 @@
  * class so open + close animate smoothly, but per-keystroke resize during
  * typing is INSTANT — otherwise the 100ms transition starts overlapping on
  * fast typing and the box visibly jitters. */
+/* The floating cell editor. It is a popover, not an inline field, so it does
+ * need to separate itself from the table underneath — but by ELEVATION, not by
+ * a border: a raised surface and a drop shadow. It used to carry the 2px focus
+ * ring, which is the one mark no field in this app draws any more. */
 .builder-cell-editor {
   position: fixed;
   z-index: var(--z-cell-editor);
-  background: var(--bg-deep);
+  background: var(--bg-light);
   color: var(--text-primary);
   border-radius: var(--radius-interactive);
-  box-shadow: var(--focus-ring);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
   padding: var(--pad-cell-input);      /* matches .builder-table input */
   font-family: var(--font-mono);       /* matches .builder-table input */
   font-size: var(--fs-body);           /* matches .builder-table input */
@@ -703,3 +693,20 @@
 @media (prefers-reduced-motion: reduce) {
   .builder-cell-editor-backdrop { transition: none; }
 }
+
+/* === Standalone fields (the bulk bar and the defaults strip) =============
+ * These sit in a bar, not in a row, so there is nothing behind them to carry
+ * the state. They fill themselves instead — --act-tint under the pointer,
+ * --act-on while focused — by the same rule as everything else: a field shows
+ * itself with a fill, never with a border. */
+.builder-bulk-input,
+.builder-bulk-select,
+.builder-defaults input {
+  background: var(--bg-deep);
+}
+.builder-bulk-input:hover,
+.builder-bulk-target:hover,
+.builder-defaults input:hover { background: var(--act-tint); }
+.builder-bulk-input:focus,
+.builder-bulk-target:focus,
+.builder-defaults input:focus { background: var(--act-on); color: var(--text-primary); }

@@ -14,7 +14,7 @@
  * AFFORDANCE LANGUAGE (the visual grammar this build follows):
  *   appearance encodes interactivity and NOTHING else. The blue accent is
  *   reserved for things you can act on; hierarchy comes from weight + opacity;
- *   one cue per affordance. The --act / --edit-cue / --danger / --on tokens
+ *   one cue per affordance. The --act / --danger / --on tokens
  *   below are that grammar's vocabulary. The map's data hues (green / red /
  *   purple = increase / decrease / enable) are the one sanctioned exception —
  *   they encode DATA, not UI affordance.
@@ -53,7 +53,6 @@
   --act-hi:     var(--accent-blue-hi);  /* primary-action hover */
   --act-tint:   color-mix(in srgb, var(--accent-blue) 14%, transparent);  /* clickable hover bg */
   --act-on:     color-mix(in srgb, var(--accent-blue) 22%, transparent);  /* toggled-on / selected fill */
-  --edit-cue:   inset 0 -1px 0 var(--accent-blue);   /* editable: 1px underline at rest */
   --danger:     var(--accent-red);                   /* destructive (UI), never used for non-destructive chrome */
   --danger-tint: color-mix(in srgb, var(--accent-red) 16%, transparent);
 
@@ -124,16 +123,39 @@
   --value-col:    88px;
   --edge-stripe-w: 3px;
 
-  /* ===== Type — collapsed to two prose sizes + one mono caption ========= *
-   * Hierarchy is carried by weight + opacity, not by many sizes. Mono caption
-   * is the single small "this is a number / a tracked label" signal. The old
-   * fs-* names alias onto these three so existing rules resolve; the component
-   * layer points each element at --fs-cap / --fs-body / --fs-title directly. */
-  --fs-cap:   11px;   /* mono captions, counts, eyebrows, numeric readouts */
-  --fs-body:  13px;   /* all prose / labels / inputs / buttons */
-  --fs-title: 18px;   /* the one heading size */
-  --tracking-cap: 0.08em;   /* one tracking value for mono eyebrows */
-  --fs-2xs:  var(--fs-cap);
+  /* ===== Type — THREE sizes, and that is the whole scale ================ *
+   *
+   *   --fs-eyebrow  9px   section labels. The only capitalised text in the app.
+   *   --fs-body    11px   EVERYTHING else: names, values, labels, buttons,
+   *                       counts, prose, fields. One size.
+   *   --fs-title   18px   the box's name, the brand. Nothing else.
+   *
+   * There used to be nine sizes (9, 10, 11, 13, 14, 16, 18, and 18 again at a
+   * second weight). The same kind of text sat at different sizes depending on
+   * which panel it was in — a row's name was 13px in the drawer and 11px in the
+   * box panel; counts existed at 9, 10 and 11. None of those differences meant
+   * anything, so none of them survive.
+   *
+   * Hierarchy comes from weight, colour and CAPS, not from size. If something
+   * needs to be quieter, it goes tertiary; if it needs to lead, it goes 600.
+   *
+   * --fs-cap is kept as an alias of --fs-body (they are now the same 11px) so
+   * the many rules naming it still resolve; new rules should say --fs-body.
+   * The other fs-* aliases are the pre-consolidation names, kept for the same
+   * reason. */
+  --fs-eyebrow: 9px;
+  --fs-body:   11px;
+  --fs-title:  18px;
+  /* The MAP is not chrome. Its text is drawn into the SVG and scaled by the
+   * zoom, so it is sized for reading a diagram at 57%, not for reading a
+   * 280px column — and it keeps the sizes it had when the chrome collapsed
+   * from nine sizes to three. Pointing it at --fs-body would have quietly
+   * shrunk every box label on the map by 2px. */
+  --fs-map-label: 13px;
+  --fs-map-note:  11px;
+  --fs-cap:  var(--fs-body);
+  --tracking-cap: 0.08em;   /* ONE tracking value for capitalised text */
+  --fs-2xs:  var(--fs-eyebrow);
   --fs-xs:   var(--fs-cap);
   --fs-sm:   var(--fs-body);
   --fs-base: var(--fs-body);
@@ -142,6 +164,9 @@
   --fs-xl:   var(--fs-title);
 
   /* ===== Font weights =================================================== */
+  /* 500 survives for the MAP only (.node-label / .node-value). In the chrome
+   * there are two weights and each has a job: 400 body, 600 titles. A third
+   * weight meant three near-identical headings with no rule for which to use. */
   --fw-medium:   500;
   --fw-semibold: 600;
   --fw-bold:     700;

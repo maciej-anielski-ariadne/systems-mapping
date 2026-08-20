@@ -13,6 +13,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { loadDataFromCsv } from "../assets/js/06-data-loader";
+import { LINEAR_CSV } from "./fixtures/graphs";
+import { renderSidebar } from "../assets/js/13-sidebar";
 import { renderDetailPanel } from "../assets/js/15-detail-panel";
 import { NODES, state } from "../assets/js/03-state";
 import { selectNode, deselectAll } from "../assets/js/09-graph-selection";
@@ -173,22 +175,27 @@ describe("what a reader gets when they select a box", () => {
     loadDataFromCsv(sampleCsv);
     selectNode(NODES[0].id);
     renderDetailPanel();
-    expect(panel().querySelector("[data-action='toggle-edit-mode']")).toBeNull();
+    expect(panel().querySelector(".detail-edit-input")).toBeNull();
 
+    // ...and once you are, the fields are simply there. There is no second,
+    // per-box "Edit box" switch to find first — being in edit mode IS the
+    // answer, and it used to have to be given again for every box selected.
     setUiMode("edit");
     renderDetailPanel();
-    expect(panel().querySelector("[data-action='toggle-edit-mode']")).not.toBeNull();
+    expect(panel().querySelector(".detail-edit-input")).not.toBeNull();
+    expect(panel().querySelector("[data-action='toggle-edit-mode']")).toBeNull();
   });
 });
 
 describe("the drawer", () => {
-  it("keeps the link and highlight filters, folded", () => {
-    const fold = document.querySelector("#sidebar details.sidebar-fold") as HTMLDetailsElement;
-    expect(fold).not.toBeNull();
-    expect(fold.open).toBe(false);
-    expect(fold.querySelector("#edge-type-filters")).not.toBeNull();
-    expect(fold.querySelector("#edge-style-filters")).not.toBeNull();
-    expect(fold.querySelector("#trace-filters")).not.toBeNull();
+  it("shows the link and highlight filters, unfolded", () => {
+    // They were behind a disclosure most readers never opened. As chips each
+    // group costs a single line, which is less than the disclosure asking about
+    // them did.
+    expect(document.querySelector("#sidebar details.sidebar-fold")).toBeNull();
+    for (const id of ["#edge-type-filters", "#edge-style-filters", "#trace-filters"]) {
+      expect(document.querySelector("#sidebar " + id)).not.toBeNull();
+    }
   });
 });
 
@@ -277,12 +284,12 @@ describe("editing controls belong to editing", () => {
     setUiMode("read");
   });
 
-  it("keeps the colour swatch while reading — it is the key, not just a picker", () => {
+  it("keeps the colour dot while reading — it is the key, not just a picker", () => {
     const css = readFileSync(resolve(here, "../assets/css/03-app-shell.css"), "utf8");
     const hidden = css.slice(css.indexOf("body.reading .edit-only,"));
     const rule = hidden.slice(0, hidden.indexOf("}"));
-    expect(rule, "the colour swatch IS the count badge — hiding it loses the colour key").not.toContain("sidebar-edit-color");
-    expect(css).toMatch(/body\.reading \.sidebar-edit-color\s*\{[^}]*pointer-events:\s*none/);
+    expect(rule, "the dot is what says which colour a row paints — hiding it loses the key").not.toContain("sidebar-dot");
+    expect(css).toMatch(/body\.reading \.sidebar-dot\s*\{[^}]*pointer-events:\s*none/);
   });
 });
 
@@ -301,5 +308,96 @@ describe("simulation brings its own panel out", () => {
 
     toggleSimulationMode();
     expect(document.body.classList.contains("sim-mode")).toBe(false);
+  });
+});
+
+// =============================================================================
+// A LINK IS ONE LINE
+// -----------------------------------------------------------------------------
+// It used to be three — name and strength, the effect word beneath them, then
+// the link's own sentence — so a box with six links spent eighteen lines saying
+// what six rows say. The sentence and the word move to the tooltip; the row
+// keeps what the maths uses, in the column every other number lands in.
+// =============================================================================
+describe("a link row in the box panel", () => {
+  const rows = () => [...document.querySelectorAll("#detail-content .drow")] as HTMLElement[];
+
+  it("is one row per link, with the strength in the number column", () => {
+    loadDataFromCsv(LINEAR_CSV);
+    selectNode("b");
+    renderDetailPanel();
+
+    expect(rows().length).toBeGreaterThan(0);
+    for (const row of rows()) {
+      expect(row.querySelector(".drow-name")).not.toBeNull();
+      expect(row.querySelector(".drow-num")!.textContent).toMatch(/^[+−]?\d+\.\d\d$/);
+      // Nothing left of the three-line shape.
+      expect(row.querySelector(".detail-edge-desc")).toBeNull();
+      expect(row.querySelector(".detail-edge-effect")).toBeNull();
+    }
+  });
+
+  it("carries the kind and the sentence on hover, not on the row", () => {
+    loadDataFromCsv(LINEAR_CSV);
+    selectNode("b");
+    renderDetailPanel();
+    const tip = rows()[0].getAttribute("data-tooltip") || "";
+    expect(tip).toMatch(/increases|decreases|enables/);
+    expect(rows()[0].textContent).not.toMatch(/increases|decreases|enables/);
+  });
+
+  it("stays a button that jumps to the box it names", () => {
+    loadDataFromCsv(LINEAR_CSV);
+    selectNode("b");
+    renderDetailPanel();
+    const row = rows()[0];
+    expect(row.tagName.toLowerCase()).toBe("button");
+    expect(row.getAttribute("data-target-node")).toBeTruthy();
+    expect(row.getAttribute("aria-label")).toContain("Jump to it");
+  });
+});
+
+// =============================================================================
+// THE TAGS ARE A KEY, NOT A LIST
+// -----------------------------------------------------------------------------
+// Reading the map, the tag sections say which colour means what and how many
+// boxes carry it — that is a legend, and a legend is a wrap of chips. Editing
+// it, the same tags are rows, because renaming, recolouring, reordering and
+// deleting each need somewhere to put a control.
+// =============================================================================
+describe("tag filters, by mode", () => {
+  const chips = () => document.querySelectorAll("#category-filters .filter-chip");
+  const rows  = () => document.querySelectorAll("#category-filters .sidebar-edit-row");
+
+  beforeEach(() => {
+    loadDataFromCsv(LINEAR_CSV);
+    renderSidebar();
+  });
+  afterEach(() => setUiMode("read"));
+
+  it("draws them as chips while reading", () => {
+    setUiMode("read");
+    expect(chips().length).toBeGreaterThan(0);
+    expect(rows()).toHaveLength(0);
+    // A chip carries its colour, its name and its count.
+    const chip = chips()[0];
+    expect(chip.querySelector("i")).not.toBeNull();
+    expect(chip.querySelector(".filter-chip-label")!.textContent).toBeTruthy();
+  });
+
+  it("draws them as editable rows while editing", () => {
+    setUiMode("edit");
+    expect(rows().length).toBeGreaterThan(0);
+    expect(chips()).toHaveLength(0);
+    // The controls a chip has nowhere to put.
+    expect(rows()[0].querySelector("[data-action='delete']")).not.toBeNull();
+  });
+
+  it("gives no section a shown/total count", () => {
+    setUiMode("read");
+    for (const title of document.querySelectorAll("#sidebar .sidebar-section-title")) {
+      expect(title.querySelector(".count")).toBeNull();
+      expect(title.textContent).not.toMatch(/\d+\s*\/\s*\d+/);
+    }
   });
 });

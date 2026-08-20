@@ -90,11 +90,10 @@
    not a loud button. */
 .panel-pin { gap: var(--space-1_5); }
 
+/* "Collapse" is a control, not a section label — so it reads as a word, at body
+ * size, like every other button. Caps are for eyebrows only. */
 .panel-pin-label {
-  font-family: var(--font-mono);
-  font-size: var(--fs-cap);
-  letter-spacing: var(--tracking-cap);
-  text-transform: uppercase;
+  font-size: var(--fs-body);
   color: var(--text-tertiary);
   white-space: nowrap;
 }
@@ -157,20 +156,10 @@ body.no-data .panel-pin {
   color: var(--accent-purple);
 }
 
-.app-brand-name {
-  font-family: var(--font-display);
-  font-size: var(--fs-title);
-  font-weight: var(--fw-semibold);
-  color: var(--text-primary);
-  letter-spacing: -0.01em;
-  white-space: nowrap;
-}
-
-/* Narrow viewports: keep the mark, drop the wordmark text so the search box
- * and actions keep their room. */
-@media (max-width: 720px) {
-  .app-brand-name { display: none; }
-}
+/* The wordmark used to sit here. It is gone at every width now, not just the
+ * narrow ones: the header row is where every action competes for space, and
+ * the app's name was the one thing in it that did nothing. It survives in the
+ * tab title, on the empty state, and as this element's aria-label. */
 
 /* === Search box ===
  * Stretches to fill the available header space; the action buttons sit to
@@ -181,18 +170,21 @@ body.no-data .panel-pin {
   min-width: 0;
 }
 
+/* The one field that stands entirely on its own in the header, so it keeps a
+ * resting fill — without it there is nothing to aim at. It follows the same
+ * rule as the rest all the same: the FILL changes, never a border, and the
+ * accent underline it used to carry is gone. */
 .search-input {
   width: 100%;
   background: var(--bg-mid);
-  color: var(--text-primary);
-  font-family: var(--font-mono);
   font-size: var(--fs-body);
   padding: 5px 8px 5px 36px;  /* extra left padding leaves room for the icon */
   border-radius: var(--radius-interactive);
-  outline: none;
   cursor: text;
-  box-shadow: var(--edit-cue);   /* editable: 1px accent underline at rest */
+  transition: background var(--dur-fast) ease;
 }
+.search-input:hover { background: var(--bg-light); }
+.search-input:focus { background: var(--act-on); }
 
 .search-icon {
   position: absolute;
@@ -209,10 +201,7 @@ body.no-data .panel-pin {
   color: var(--text-secondary);
   padding: var(--pad-button);
   border-radius: var(--radius-interactive);
-  font-family: var(--font-mono);
   font-size: var(--fs-cap);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
   cursor: pointer;
   transition: background var(--dur-fast), color var(--dur-fast), box-shadow var(--dur-fast);
 }
@@ -384,16 +373,20 @@ body.reading .app:not(.has-selection) .detail-panel {
 body.editing #filters-button,
 body.reading.sim-mode #filters-button { display: none; }
 
+/* The mirror of .edit-only: chrome that belongs to reading and steps out of
+ * the way while editing. Reading tools do not follow you into edit mode, and
+ * nothing switches your mode out from under you as a side effect of a click. */
+body.editing .read-only { display: none; }
+
 body.reading .edit-only,
 body.reading .sidebar-add-btn,
-body.reading .sidebar-row-drag,
 body.reading .sidebar-row-delete,
 body.reading .sidebar-cat-reclass { display: none; }
 
-/* The colour swatch on a row IS the <input type="color"> — the count sits on
- * top of it — so hiding it while reading took the colour key away with the
- * picker. It stays, and stops being a control instead. */
-body.reading .sidebar-edit-color {
+/* The colour dot on a row IS the <input type="color">, so hiding it while
+ * reading would take the colour key away with the picker. It stays, and stops
+ * being a control instead. */
+body.reading .sidebar-dot {
   pointer-events: none;
   cursor: default;
 }
@@ -410,7 +403,7 @@ body.editing #mode-toggle-button:hover { background: var(--act-tint); color: var
 /* === Icon-only theme button === */
 .header-button--icon {
   padding: var(--space-1_5) var(--space-2);
-  font-size: 14px;
+  font-size: var(--fs-body);
   line-height: 1;
   letter-spacing: 0;
 }
@@ -461,6 +454,52 @@ body.editing #mode-toggle-button:hover { background: var(--act-tint); color: var
 
 .menu-item span {
   font-size: var(--fs-cap);
+  color: var(--text-tertiary);
+  line-height: 1.35;
+}
+
+/* === The Atlas start picker ===
+ * A list of boxes, not a list of answers, so its rows are one line each:
+ * the box's name, and how much of the map lies downstream of it. */
+.menu-head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--tracking-cap);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.menu-item--pick {
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-2);
+}
+
+.menu-item--pick .pick-name {
+  font-size: var(--fs-body);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A count, so mono — it lines up down the right edge of the list. */
+.menu-item--pick .pick-reach {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-body);
+  color: var(--text-tertiary);
+}
+
+/* The foot is a sentence, not a row: it says where the OTHER boxes are. */
+.menu-foot {
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  font-size: var(--fs-body);
   color: var(--text-tertiary);
   line-height: 1.35;
 }

@@ -972,3 +972,64 @@ export function measure(A: any) {
     linkWeight: (a: any, b: any) => share((into.get(a) || 0n) * (A.paths.get(b) || 0n)),
   };
 }
+
+// ---------------------------------------------------------------------------
+// STRANDS -- one complete reading, left edge to right edge
+// ---------------------------------------------------------------------------
+// A strand is a single pathway from the start element to the finish: the thing
+// every percentage on the atlas is a share OF, made concrete enough to read and
+// point at.
+//
+// The atlas refuses to enumerate pathways, and it is right to — a real map has
+// more of them than can be held. This does not enumerate them either. It walks
+// the frontier one step at a time and stops as soon as it has the `limit`
+// shortest, so the work is bounded by what is asked for rather than by how
+// tangled the map is. Because tangles are already contracted to one element
+// each, no strand can multiply through feedback, and every strand is finite.
+//
+// Breadth-first over partial paths, so strands come out shortest first with no
+// sorting: every link counts one, and a level of the search is a length.
+export function strands(A: any, opts: any = {}) {
+  const limit = Math.max(1, opts.limit || 200);
+  const through = opts.through || null;
+  const FRONTIER = Math.max(2000, limit * 50);   // a hairball must not eat memory
+
+  // Filtering by an element: before the walk reaches it, step only into
+  // elements that can still get there. Everything after it is unconstrained.
+  let gate: Set<any> | null = null;
+  if (through) {
+    const back = new Map<any, any[]>();
+    for (const [n, outs] of A.succ) {
+      for (const s of outs) { if (!back.has(s)) back.set(s, []); back.get(s)!.push(n); }
+    }
+    gate = new Set<any>([through]);
+    const stack = [through];
+    while (stack.length) {
+      const n = stack.pop();
+      for (const p of back.get(n) || []) if (!gate.has(p)) { gate.add(p); stack.push(p); }
+    }
+    if (!gate.has(A.start)) return { list: [], truncated: false, reachable: false };
+  }
+
+  const out: any[][] = [];
+  let level: any[][] = [[A.start]];
+  let truncated = false;
+
+  while (level.length && out.length < limit) {
+    const next: any[][] = [];
+    for (const path of level) {
+      if (out.length >= limit) break;
+      const tail = path[path.length - 1];
+      const passed = !through || path.indexOf(through) >= 0;
+      for (const s of A.succ.get(tail) || []) {
+        if (s === END) { if (passed) out.push(path); continue; }
+        if (path.indexOf(s) >= 0) continue;                 // acyclic already, but cheap
+        if (gate && !passed && !gate.has(s)) continue;
+        if (next.length >= FRONTIER) { truncated = true; break; }
+        next.push(path.concat([s]));
+      }
+    }
+    level = next;
+  }
+  return { list: out.slice(0, limit), truncated: truncated || out.length >= limit, reachable: true };
+}

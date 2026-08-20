@@ -57,10 +57,7 @@
 .undo-toast .undo-link {
   background: none;
   color: var(--act);
-  font-family: var(--font-mono);
   font-size: var(--fs-cap);
-  letter-spacing: var(--tracking-cap);
-  text-transform: uppercase;
   cursor: pointer;
   padding: var(--pad-row);
   border-radius: var(--radius-interactive);
@@ -95,32 +92,29 @@
 }
 
 .multi-select-bar .msb-count {
-  font-family: var(--font-mono);
-  font-size: var(--fs-cap);
+  font-size: var(--fs-eyebrow);
   letter-spacing: var(--tracking-cap);
   text-transform: uppercase;
   color: var(--text-secondary);
   white-space: nowrap;
 }
 
+/* Standalone — sits in a bar, so it fills itself. No border (02-base.css). */
 .multi-select-bar .msb-select {
   background: var(--bg-dark);
-  color: var(--text-primary);
   border-radius: var(--radius-interactive);
   font-size: var(--fs-body);
   padding: var(--pad-input);
   cursor: pointer;
-  box-shadow: var(--edit-cue);
-  transition: box-shadow var(--dur-fast);
+  transition: background var(--dur-fast) ease;
 }
+.multi-select-bar .msb-select:hover { background: var(--act-tint); }
+.multi-select-bar .msb-select:focus { background: var(--act-on); }
 
 .multi-select-bar .msb-delete {
   background: none;
   color: var(--danger);
-  font-family: var(--font-mono);
   font-size: var(--fs-cap);
-  letter-spacing: var(--tracking-cap);
-  text-transform: uppercase;
   cursor: pointer;
   padding: var(--pad-button);
   border-radius: var(--radius-interactive);
@@ -175,13 +169,14 @@ body.no-data .detail-panel {
   backdrop-filter: blur(8px);
   padding: var(--space-1) var(--space-1_5);   /* tight glass control, not a full card */
   border-radius: var(--radius-surface);
-  font-family: var(--font-mono);
 }
 
-/* Card title so the user can tell the two controls apart. */
+/* Card title so the user can tell the two controls apart. An eyebrow, so sans:
+ * mono used to come down from the card wrapper above and made it the one
+ * capitalised label in the app rendered in a different family from its peers. */
 .viz-control-title {
   color: var(--text-tertiary);
-  font-size: var(--fs-cap);
+  font-size: var(--fs-eyebrow);
   text-transform: uppercase;
   letter-spacing: var(--tracking-cap);
   text-align: center;
@@ -219,7 +214,13 @@ body.no-data .detail-panel {
   transition: background var(--dur-fast), color var(--dur-fast);
 }
 
-/* Readouts stretch to fill the space between the −/+ buttons. */
+/* Readouts stretch to fill the space between the −/+ buttons. They are figures,
+ * so they are the part of this card that keeps mono — the −/+ glyphs beside
+ * them are fixed-width buttons and need no help from the font. */
+.viz-depth-readout,
+.viz-zoom-readout {
+  font-family: var(--font-mono);
+}
 .viz-depth-readout {
   flex: 1;
   font-size: var(--fs-body);
@@ -228,7 +229,7 @@ body.no-data .detail-panel {
 .viz-zoom-readout {
   flex: 1;
   font-size: var(--fs-cap);
-  letter-spacing: 0.04em;
+  letter-spacing: var(--tracking-cap);
   cursor: pointer;
   transition: background var(--dur-fast), color var(--dur-fast);
 }

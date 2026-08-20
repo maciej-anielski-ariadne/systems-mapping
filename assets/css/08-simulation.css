@@ -20,8 +20,7 @@
 }
 
 .sim-title {
-  font-family: var(--font-mono);
-  font-size: var(--fs-cap);
+  font-size: var(--fs-eyebrow);
   font-weight: var(--fw-semibold);
   letter-spacing: var(--tracking-cap);
   text-transform: uppercase;
@@ -29,15 +28,12 @@
 }
 
 .sim-reset {
-  font-family: var(--font-mono);
   font-size: var(--fs-cap);
   background: var(--bg-light);
   color: var(--text-secondary);
   padding: var(--pad-button);
   border-radius: var(--radius-interactive);
   cursor: pointer;
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-cap);
   transition: background var(--dur-fast), color var(--dur-fast);
 }
 
@@ -65,123 +61,176 @@
   margin-bottom: var(--section-gap);
 }
 
-/* One block per stream — groups sliders for that stream */
+/* One block per stream — groups the inputs for that stream */
 .sim-stream-block {
-  margin-bottom: var(--section-gap);
+  margin-bottom: var(--space-3);
 }
 
+/* An eyebrow with a colour tick, like every other section label in the app.
+ * It was a mono capital heading with a 3px stripe, which at six streams read
+ * as six headings competing with the names underneath them. */
 .sim-stream-header {
-  font-family: var(--font-mono);
-  font-size: var(--fs-cap);
-  font-weight: var(--fw-semibold);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-  padding-left: 11px;            /* 8 + 3 so the text sits past the stripe */
-  /* Coloured stripe on the left signals which stream this slider group
-   * belongs to. The stream's hex colour comes in via the --stream-color
-   * CSS variable set by JS (14-simulation-panel.js); painted via
-   * box-shadow:inset because the flat look uses no CSS borders. */
-  box-shadow: inset 3px 0 0 var(--stream-color, var(--border-strong));
-  margin-bottom: var(--heading-gap);
-}
-
-/* === One slider row === */
-.sim-slider-row {
-  margin-bottom: var(--space-2);
-}
-
-.sim-slider-label {
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: var(--gap-md);
-  margin-bottom: var(--space-0_5);
+  align-items: center;
+  gap: var(--space-1_5);
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--tracking-cap);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin: var(--space-3) 0 var(--space-1);
 }
+.sim-stream-header::before {
+  content: "";
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  background: var(--stream-color, var(--border-strong));
+}
+
+/* === One input, one line ================================================
+ * Name, the figure, its unit, and how far it is from where it started. No
+ * track: a track spends a whole line showing a position the percentage beside
+ * it already gives, and thirty-three of them made this panel two and a bit
+ * screens tall. Dragging did not go with it — see the scrub handler in
+ * 14-simulation-panel.ts, which turns the numbers themselves into the track. */
+.sim-slider-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px calc(var(--space-2) + 1px) 2px 0;
+  border-radius: var(--radius-sm);
+  position: relative;
+  z-index: 0;
+}
+.sim-slider-row::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0 calc(-1 * var(--space-2));
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+  transition: background var(--dur-fast) ease;
+}
+.sim-slider-row:hover::before { background: var(--bg-mid); }
+/* The FIELD shows focus now (02-base.css), so the row does not repeat it — two
+ * fills for one event just made the row look selected. The row keeps its plain
+ * neutral hover above, which is about pointing at a row, not about editing. */
+
+/* Moved: a tick in the margin, and the percentage picks up the colour the map
+ * uses for "this ran". Thirty-three rows and no marking meant hunting for the
+ * two you had touched. The list stays in map order — a row that jumped to the
+ * top would move out from under the pointer that just set it. */
+.sim-slider-row::after {
+  content: "";
+  position: absolute;
+  left: calc(-1 * var(--space-2) - 3px);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 13px;
+  border-radius: 2px;
+  background: var(--accent-amber);
+  opacity: 0;
+  transition: opacity var(--dur-fast) ease;
+}
+.sim-slider-row.moved::after { opacity: 1; }
 
 .sim-slider-name {
-  font-size: var(--fs-body);
-  color: var(--text-primary);
-  /* Truncate instead of pushing the readout out of alignment. */
-  flex: 1 1 auto;
+  /* Takes what is left, and gives way first: the figures are fixed columns and
+   * the name is the elastic one. */
+  flex: 1 1 40px;
   min-width: 0;
+  font-size: var(--fs-body);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sim-slider-row.moved .sim-slider-name { color: var(--text-primary); }
+
+/* Both fields carry no chrome at all — the row speaks for them, like every
+ * other field in the app (see 02-base.css). They briefly had a border on hover
+ * and focus; a panel of thirty-three rows with two outlined boxes each is a
+ * form, not a list, and an outline that appears only under the pointer is a
+ * poor way to say where you are typing. */
+.sim-value-input,
+.sim-pct-input {
+  font-family: var(--font-mono);
+  font-size: var(--fs-cap);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--text-primary);
+  padding: 0 2px;
+  /* The number IS the track: sideways is where the value goes. */
+  cursor: ew-resize;
+}
+/* WIDTH, not just a flex basis. A number input carries an intrinsic width of
+ * its own (Chrome sizes it near 143px), and leaning on flex-basis alone left
+ * both fields at that size, overflowing the row and squeezing the name to
+ * nothing. An explicit width with min-width: 0 settles it in every engine. */
+.sim-value-input {
+  flex: none;
+  width: 58px;
+  min-width: 0;
+}
+.sim-pct-input {
+  flex: none;
+  width: 30px;
+  min-width: 0;
+  color: var(--text-tertiary);
+}
+.sim-slider-row.moved .sim-pct-input { color: var(--accent-amber); }
+
+.sim-value-input:focus,
+.sim-pct-input:focus { cursor: text; }
+/* The spinners would take a third of a 30px field and are no use to a value
+ * that steps by a hundredth of a starting figure. */
+.sim-value-input::-webkit-outer-spin-button,
+.sim-value-input::-webkit-inner-spin-button,
+.sim-pct-input::-webkit-outer-spin-button,
+.sim-pct-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.sim-value-input, .sim-pct-input { -moz-appearance: textfield; appearance: textfield; }
+
+.sim-slider-unit {
+  flex: 0 1 52px;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-eyebrow);
+  color: var(--text-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.sim-slider-readout {
+/* The percentage and its sign travel together, so the sign sits against the
+ * digits however many of them there are. */
+.sim-pct-field {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+}
+.sim-pct-sign {
   font-family: var(--font-mono);
-  font-size: var(--fs-cap);
-  color: var(--text-secondary);
-  display: inline-flex;
-  align-items: baseline;
-  gap: var(--gap-sm);
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-
-/* Editable number alongside the slider — typed values are converted to a
- * multiplier in 14-simulation-panel.js. Right-aligned, monospaced. */
-.sim-value-input {
-  width: 70px;
-  background: var(--bg-mid);
-  color: var(--text-primary);
-  border-radius: var(--radius-interactive);
-  padding: var(--pad-input);
-  font-family: var(--font-mono);
-  font-size: var(--fs-cap);
-  text-align: right;
-  outline: none;
-  cursor: text;
-  /* at-rest accent underline signals the field is editable */
-  box-shadow: var(--edit-cue);
-  /* hide the spinner; users can use the slider or type for fine control */
-  -moz-appearance: textfield;
-}
-.sim-value-input::-webkit-outer-spin-button,
-.sim-value-input::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-.sim-value-input:focus {
-  box-shadow: var(--focus-ring);
-}
-
-.sim-slider-unit {
-  color: var(--text-secondary);
-}
-
-.sim-slider-pct {
+  font-size: var(--fs-eyebrow);
   color: var(--text-tertiary);
 }
 
-/* The slider itself — custom look across browsers */
-.sim-slider {
-  width: 100%;
-  -webkit-appearance: none;
-  appearance: none;
-  background: var(--bg-light);
-  border-radius: var(--radius-interactive);
-  height: 4px;
-  outline: none;
-  cursor: pointer;
-}
+/* A drag anywhere in the panel must not select the text it passes over. */
+body.sim-scrubbing { user-select: none; cursor: ew-resize; }
 
-.sim-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--act);
-  cursor: pointer;
+/* What the map's colours currently mean. The scale is relative — full colour is
+ * whichever box has moved most in this run — so the top end has to be named, or
+ * the same colour would quietly mean 3% one moment and 300% the next. Patched
+ * inline by updateSimScaleNote (14-simulation-panel) as you drag. */
+.sim-scale {
+  font-size: var(--fs-cap);
+  line-height: 1.5;
+  color: var(--text-tertiary);
+  padding: var(--space-1) 0 var(--space-2);
+  margin-bottom: var(--space-2);
 }
-
-.sim-slider::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--act);
-  cursor: pointer;
-}
+.sim-scale b { color: var(--text-secondary); font-weight: var(--fw-semibold); }
+.sim-scale b.good { color: var(--status-good); }
+.sim-scale b.bad  { color: var(--status-bad); }
+.sim-scale b.none { color: var(--accent-amber); }

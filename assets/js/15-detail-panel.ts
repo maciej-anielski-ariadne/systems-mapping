@@ -37,13 +37,13 @@ import {
   state,
 } from "./03-state";
 import { upgradeSelectsIn } from "./04b-typeable-dropdown";
-import { escapeHtml, formatScalar, splitCategoriesByClass, nodeCategoryIds } from "./04-utils";
+import { escapeHtml, formatScalar, formatScalarInput, splitCategoriesByClass, nodeCategoryIds } from "./04-utils";
 import { explainNode, formatNodeDelta, resolveEdgeElasticity } from "./07-simulation-engine";
 import { EFFECT_OPTIONS } from "./02-config";
 import { selectNode, scrollNodeIntoView } from "./09-graph-selection";
 import { applySimMultiplier, updateDetailPanelDeltaInline } from "./14-simulation-panel";
 import { applySelectionClass } from "./17-events";
-import { atlasIsOpen, atlasPanelHtml, openAtlas } from "./21-atlas-view";
+import { atlasIsOpen, atlasPanelHtml, openAtlas, putScroll, takeScroll } from "./21-atlas-view";
 import { deleteEdgeById, commitNewEdge, deleteSelection } from "./16e-canvas-edit";
 import { applyCanvasMutation } from "./16f-canvas-mutations";
 
@@ -57,8 +57,15 @@ export function renderDetailPanel(): void {
   if (typeof atlasIsOpen === "function" && atlasIsOpen()) {
     emptyState.style.display   = "none";
     contentState.style.display = "block";
-    contentState.classList.remove("is-editing", "just-unlocked");
+    contentState.classList.remove("is-editing");
+    // Replacing the markup throws away where every list inside it was scrolled
+    // to, and this panel is re-rendered on every repaint — so picking something
+    // forty rows down threw you back to the top, and a slider drag did it many
+    // times a second. Lift the offsets out and put them back. See takeScroll in
+    // 21-atlas-view for why they are keyed the way they are.
+    const scrolled = takeScroll(contentState);
     contentState.innerHTML = atlasPanelHtml();
+    putScroll(contentState, scrolled);
     return;
   }
 
@@ -85,16 +92,17 @@ export function renderDetailPanel(): void {
   // not two. The atlas writes its own markup and wires its own buttons through
   // the stage's delegated listener.
   if (typeof atlasIsOpen === "function" && atlasIsOpen()) {
-    contentState.classList.remove("is-editing", "just-unlocked");
+    contentState.classList.remove("is-editing");
     contentState.innerHTML = atlasPanelHtml();
     return;
   }
 
-  // The per-box edit form is an authoring tool: reading mode never shows it,
-  // however the flag was left.
-  const editMode = state.uiMode === "edit" && !!(state.canvasEdit && state.canvasEdit.editMode);
+  // Editing the map means editing the box in front of you. There used to be a
+  // second switch inside the panel — "Edit box" / "Done editing" — so being in
+  // edit mode wasn't enough; you had to say so again, per box, every time the
+  // selection changed. One global mode, one answer.
+  const editMode = state.uiMode === "edit";
   contentState.classList.toggle("is-editing", editMode);
-  contentState.classList.remove("just-unlocked");
   contentState.innerHTML = renderNodeSkeleton(node, editMode);
 
   // Upgrade every freshly-rendered <select> into a typable filterable dropdown.
@@ -111,12 +119,6 @@ export function renderDetailPanel(): void {
     wireViewModeHandlers(node, contentState);
   }
 
-  // One-shot "fields unlocked" pulse, set when the user toggled into edit mode
-  // (cleared immediately so it doesn't replay on subsequent field re-renders).
-  if (state.canvasEdit && state.canvasEdit._justUnlocked) {
-    contentState.classList.add("just-unlocked");
-    state.canvasEdit._justUnlocked = false;
-  }
 }
 
 // =============================================================================
@@ -155,23 +157,19 @@ export function renderNodeSkeleton(node: GraphNode, editMode: boolean): string {
     html += '<div class="detail-description">' + escapeHtml(node.description) + '</div>';
   }
 
-  // ── Mode toggle: the stable anchor between identity and the data ──────
-  //    Editing only — while reading, a button that turns the panel into a
-  //    form is an offer nobody made.
-  if (!reading) {
-    html += '<div class="detail-mode-toggle">';
-    html += editMode
-      ? '<button class="detail-mode-button active" data-action="toggle-edit-mode" aria-pressed="true">Done editing</button>'
-      : '<button class="detail-mode-button" data-action="toggle-edit-mode" aria-pressed="false">Edit box</button>';
-    html += '</div>';
-  }
-
-  // ── Identity edit controls (edit only): the chips' source fields ─────
+  // ── Where the box sits (edit only) ──────────────────────────────────
+  //    Label beside the control, like every row below it. These two used to
+  //    put their label above, which made the panel read as two different forms
+  //    stacked on top of each other and cost ~48px to say so.
+  //
+  //    Categories are NOT here any more. They were a twelve-row checkbox list
+  //    330px down the panel, editing the same tags the strip at the top was
+  //    already showing. The strip is the editor now — see renderTagRow.
   if (editMode) {
+    html += '<div class="detail-list-title"><span>Placement</span></div>';
     html += '<div class="detail-edit-block">';
     html += editRow("Row", selectInput("stream", STREAMS.map(s => ({ value: s.id, label: s.label })), node.stream));
     html += editRow("Column",  selectInput("stage",  STAGES.map(s => ({ value: s.id, label: s.label })),  node.stage));
-    html += editRow("Categories", categoryEditControl(node));
     html += '</div>';
   }
 
@@ -193,11 +191,16 @@ export function renderNodeSkeleton(node: GraphNode, editMode: boolean): string {
     (!editMode && state.simulationMode ? renderCalculationBreakdown(node) : "");
 
   if (reading) {
-    // The way into the atlas. Only offered where it has something to say — a
-    // box with nothing downstream would open a picture of one circle.
+    // The way into the atlas, first thing under the box's name — "what does
+    // this actually feed?" is the thought you have straight after clicking a
+    // box, and this is the answer to it. The card explains itself in a line:
+    // the header button says the same words, so meeting the name here teaches
+    // the one up there. Only offered where it has something to say — a box
+    // with nothing downstream would open a picture of one circle.
     if (directImpacts.length) {
-      html += '<div class="detail-mode-toggle"><button class="detail-mode-button" ' +
-        'data-action="open-atlas">Everything downstream →</button></div>';
+      html += '<div class="detail-atlas"><button class="detail-atlas-button" ' +
+        'data-action="open-atlas"><b>ATLAS →</b>' +
+        '<span>Every pathway out of this box, as one picture.</span></button></div>';
     }
     html += causes;
     html += effects;
@@ -237,7 +240,7 @@ export function renderQuantFrame(node: GraphNode, editMode: boolean): string {
   if (Math.abs(deltaInfo.pct) >= 0.5) {
     if      (node.direction === "higher_better") deltaColor = deltaInfo.pct > 0 ? "var(--status-good)" : "var(--status-bad)";
     else if (node.direction === "lower_better")  deltaColor = deltaInfo.pct < 0 ? "var(--status-good)" : "var(--status-bad)";
-    else                                         deltaColor = deltaInfo.pct > 0 ? "var(--accent-blue)" : "var(--accent-orange)";
+    else                                         deltaColor = "var(--accent-amber)";
   }
   const directionOptions = [
     { value: "",              label: "— none —" },
@@ -251,11 +254,11 @@ export function renderQuantFrame(node: GraphNode, editMode: boolean): string {
   const labelSpan = (label: string, tip?: string): string =>
     '<span class="detail-quant-label"' + (tip ? ' data-tooltip="' + escapeHtml(tip) + '"' : '') + '>' + escapeHtml(label) + '</span>';
   const row = (label: string, leaf: string, tip?: string): string => '<div class="detail-quant-row">' + labelSpan(label, tip) + leaf + '</div>';
-  // Same row, stacked: for a control (the formula box) that needs the panel's
-  // full width rather than the narrow right-hand value rail.
-  const wideRow = (label: string, leaf: string, tip?: string): string => '<div class="detail-quant-row detail-quant-row--wide">' + labelSpan(label, tip) + leaf + '</div>';
 
-  let html = '<div class="detail-quant-block">';
+  // The box's own figures get a label like every other section, so the panel
+  // reads as a stack of named blocks rather than as rows that run out.
+  let html = '<div class="detail-list-title"><span>This box</span></div>';
+  html += '<div class="detail-quant-block">';
 
   // Baseline — display value ↔ number input on the rail
   html += row("Starting value", editMode
@@ -269,7 +272,7 @@ export function renderQuantFrame(node: GraphNode, editMode: boolean): string {
 
   // Current — computed; read-only in edit, an input only in view + sim mode
   if (!editMode && state.simulationMode && node.controllable) {
-    html += row("Current", '<span class="detail-quant-value" style="font-weight:600;"><input type="number" class="detail-value-input" step="any" value="' + (currentValue !== undefined ? formatScalar(currentValue) : node.baseline) + '" data-node-id="' + escapeHtml(node.id) + '" aria-label="Current value of ' + escapeHtml(node.label) + '" />' + (unit ? ' ' + escapeHtml(unit) : '') + '</span>');
+    html += row("Current", '<span class="detail-quant-value" style="font-weight:600;"><input type="number" class="detail-value-input" step="any" value="' + (currentValue !== undefined ? formatScalarInput(currentValue) : node.baseline) + '" data-node-id="' + escapeHtml(node.id) + '" aria-label="Current value of ' + escapeHtml(node.label) + '" />' + (unit ? ' ' + escapeHtml(unit) : '') + '</span>');
   } else {
     html += row("Current", '<span class="detail-quant-value' + (editMode ? ' detail-quant-derived' : '') + '" style="font-weight:600;">' + escapeHtml(currentValue !== undefined ? formatScalar(currentValue) + ' ' + unit : '—') + '</span>');
   }
@@ -277,9 +280,19 @@ export function renderQuantFrame(node: GraphNode, editMode: boolean): string {
   // Δ vs baseline — computed (read-only in both)
   html += row("Change vs start", '<span class="detail-quant-value' + (editMode ? ' detail-quant-derived' : '') + '" style="color:' + deltaColor + '; font-weight:600;">' + escapeHtml(deltaInfo.text || '—') + '</span>');
 
-  // Controllable (edit checkbox) / Type (view descriptor)
+  // Controllable (edit) / Type (view descriptor). A Yes / No dropdown, like
+  // every other choice in this panel — it was a checkbox with the words "has a
+  // slider" beside it, which put a second, differently-shaped control and a
+  // second piece of prose into a column of one-line values. The empty value is
+  // "No" so the existing write path (falsy → delete the flag) is unchanged.
   if (editMode) {
-    html += row("Adjustable", '<label class="detail-quant-check"><input type="checkbox" data-field="controllable"' + (node.controllable ? " checked" : "") + '> has a slider</label>');
+    const adjustableOptions = [
+      { value: "",    label: "No" },
+      { value: "yes", label: "Yes" },
+    ];
+    html += row("Adjustable", '<span class="detail-quant-control">' +
+      selectInput("controllable", adjustableOptions, node.controllable ? "yes" : "") + '</span>',
+      "Gives this box a slider in simulation mode, so its value can be pushed up or down.");
   } else if (node.controllable) {
     html += row("Type", '<span class="detail-quant-value" style="color: var(--text-tertiary);">External input (adjustable)</span>');
   }
@@ -295,9 +308,11 @@ export function renderQuantFrame(node: GraphNode, editMode: boolean): string {
     if (d) html += row("Outcome", d);
   }
 
-  // Slider max — edit only
-  if (editMode) {
-    html += row("Slider max", '<input type="number" step="any" class="detail-edit-input detail-edit-number detail-quant-input" data-field="sliderMax" value="' + (node.sliderMax !== undefined && node.sliderMax !== null ? node.sliderMax : "") + '" placeholder="2 × base">');
+  // Slider max — only where there is a slider to cap. It used to sit here in
+  // every box, greyed and inert, for the ones that aren't adjustable.
+  if (editMode && node.controllable) {
+    html += row("Slider max", '<input type="number" step="any" class="detail-edit-input detail-edit-number detail-quant-input" data-field="sliderMax" value="' + (node.sliderMax !== undefined && node.sliderMax !== null ? node.sliderMax : "") + '" placeholder="2 × base">',
+      "How far the slider can be pushed. Blank means twice the starting value.");
   }
 
   // ── Per-box calculation rules — edit only ────────────────────────────
@@ -309,17 +324,26 @@ export function renderQuantFrame(node: GraphNode, editMode: boolean): string {
     // Blank IS multiplicative, so the default option carries an empty value and
     // an explicit "multiplicative" in the CSV simply shows as the default (a
     // round-trip drops the redundant word; the maths is identical).
+    // Short labels: the parenthetical spelled out the engine's name for each
+    // rule, which the row's own tooltip already explains at length, and at the
+    // width a label-beside control gets it truncated to "Standard (multiplica".
     const combineOptions = [
-      { value: "",            label: "Standard (multiplicative)" },
+      { value: "",            label: "Standard" },
       { value: "additive",    label: "Additive" },
-      { value: "min",         label: "Weakest link (min)" },
+      { value: "min",         label: "Weakest link" },
     ];
     const combineValue = node.combine && node.combine !== "multiplicative" ? node.combine : "";
-    html += row("Combine", '<span class="detail-quant-control">' + selectInput("combine", combineOptions, combineValue) + '</span>',
-      "How the arrows into this box add up: standard compounds each effect, additive stops related inputs overstating the total, weakest link lets the smallest input gate the result.");
+    // A box with a formula is computed from the formula ALONE — its arrows go
+    // descriptive (see the header of 07-simulation-engine.ts). So Combine, which
+    // only ever says how those arrows add up, has nothing left to decide, and
+    // showing it would invite an answer the engine then ignores.
+    if (!node.formula) {
+      html += row("Combine", '<span class="detail-quant-control">' + selectInput("combine", combineOptions, combineValue) + '</span>',
+        "How the arrows into this box add up: standard compounds each effect, additive stops related inputs overstating the total, weakest link lets the smallest input gate the result.");
+    }
 
-    html += wideRow("Formula", '<input type="text" class="detail-edit-input detail-quant-formula" data-field="formula" value="' + escapeHtml(node.formula || "") + '" placeholder="min(a, b) · clamp(x, lo, hi) · delay(x)" spellcheck="false">',
-      "Overrides the arrows' maths — every box named here must also have an arrow into this box.");
+    html += row("Formula", '<input type="text" class="detail-edit-input detail-quant-input detail-quant-formula" data-field="formula" value="' + escapeHtml(node.formula || "") + '" placeholder="none" spellcheck="false">',
+      "Overrides the arrows' maths — e.g. min(a, b), clamp(x, lo, hi), delay(x). Every box named here must also have an arrow into this box.");
 
     html += row("Lowest allowed", '<input type="number" step="any" class="detail-edit-input detail-edit-number detail-quant-input" data-field="minValue" value="' + (node.minValue !== undefined && node.minValue !== null ? node.minValue : "") + '" placeholder="none">',
       "A hard floor in this box's own units — the number can never come out below it.");
@@ -516,7 +540,7 @@ export function patchDetailPanelValues(): boolean {
   const node = nodeById[selectedId];
   if (!node) return false;
   // Edit mode is a different panel (inputs, not values) and isn't a scrub target.
-  if (state.canvasEdit && state.canvasEdit.editMode) return false;
+  if (state.uiMode === "edit") return false;
   const content = document.getElementById("detail-content");
   if (!content || content.style.display === "none") return false;
 
@@ -543,7 +567,7 @@ function patchQuantBlock(node: GraphNode, content: HTMLElement): boolean {
   if (currentInput) {
     // The box the user is holding: never fight what they are typing/dragging.
     if (document.activeElement !== currentInput) {
-      currentInput.value = value !== undefined ? formatScalar(value) : String(node.baseline);
+      currentInput.value = value !== undefined ? formatScalarInput(value) : String(node.baseline);
     }
   } else {
     currentCell.textContent = value !== undefined ? formatScalar(value) + " " + unit : "—";
@@ -563,7 +587,7 @@ function quantDeltaColor(node: GraphNode, pct: number): string {
   if (Math.abs(pct) < 0.5) return "var(--text-secondary)";
   if (node.direction === "higher_better") return pct > 0 ? "var(--status-good)" : "var(--status-bad)";
   if (node.direction === "lower_better") return pct < 0 ? "var(--status-good)" : "var(--status-bad)";
-  return pct > 0 ? "var(--accent-blue)" : "var(--accent-orange)";
+  return "var(--accent-amber)";
 }
 
 // "How this number is calculated": same rule, same inputs in the same order,
@@ -626,50 +650,72 @@ export function editRow(label: string, controlHtml: string): string {
   return '<div class="detail-edit-row"><span class="detail-edit-label">' + escapeHtml(label) + '</span><div class="detail-edit-control">' + controlHtml + '</div></div>';
 }
 
-// Multi-select category editor: a checkbox per category, split into Primary
-// (fill — several blend into a gradient) and Secondary (corner chips) groups by
-// each category's class. Checkboxes carry data-field="categoryToggle" so the
-// existing change-listener routes them to applyNodeFieldEdit.
-export function categoryEditControl(node: GraphNode): string {
-  const primSet = new Set(node.primaryCategories || (node.category ? [node.category] : []));
-  const secSet  = new Set(node.secondaryCategories || []);
-  const byClass = splitCategoriesByClass(Object.keys(CATEGORIES));
-  const group = (title: string, list: string[], checkedSet: Set<string>): string => {
-    if (!list.length) return "";
-    let h = '<div class="detail-cat-group"><div class="detail-cat-group-title">' + title + '</div>';
-    for (const id of list) {
-      const c = CATEGORIES[id];
-      h += '<label class="detail-cat-opt"><input type="checkbox" data-field="categoryToggle" data-cat="' + escapeHtml(id) + '"' +
-           (checkedSet.has(id) ? " checked" : "") + '>' +
-           '<span class="detail-cat-swatch" style="background:' + c.color + '"></span>' + escapeHtml(c.label) + '</label>';
-    }
-    return h + '</div>';
-  };
-  return group("Fill tag", byClass.primary, primSet) +
-         group("Corner tag", byClass.secondary, secSet);
-}
-
-// Category / stream / stage tag chips shown at the top of both view and edit
-// mode. Same markup in both — extracted so changing the chip style (e.g.
-// adding an icon) only happens in one place.
+// The tags a box carries — and, while editing, the control that sets them.
+//
+// These were two separate things. The strip showed the tags; 330px further down
+// a twelve-row checkbox list changed them. Same twelve tags, twice on one
+// screen, in two visual languages. Now the strip IS the editor: the tags the
+// box has are filled in their own colour, and "+ tag" unfolds the rest as
+// outlined chips to click on.
+//
+// The strip also names the box's row and column while reading. Those are not
+// toggles — each is a single choice — so editing shows them under Placement
+// instead, as the selects they have always been.
 export function renderTagRow(node: GraphNode): string {
-  const stream = streamById[node.stream];
-  const stage  = stageById[node.stage];
-  const catIds = nodeCategoryIds(node);
+  const editing = state.uiMode === "edit";
+  const catIds  = nodeCategoryIds(node);
 
-  let html = '<div class="detail-tags">';
-  for (const id of catIds) {
+  let html = '<div class="detail-tags' + (editing ? " detail-tags--edit" : "") + '">';
+
+  if (!editing) {
+    for (const id of catIds) {
+      const c = CATEGORIES[id];
+      if (!c) continue;
+      html += chipHtml(c.label, c.color);
+    }
+    const stream = streamById[node.stream];
+    const stage  = stageById[node.stage];
+    if (stream) html += chipHtml(stream.label, stream.color);
+    if (stage)  html += chipHtml(stage.label, null);
+    return html + '</div>';
+  }
+
+  const on = new Set(catIds);
+  const showAll = !!(state.canvasEdit && state.canvasEdit.tagPickerOpen);
+  const byClass = splitCategoriesByClass(Object.keys(CATEGORIES));
+  const order   = byClass.primary.concat(byClass.secondary);
+
+  for (const id of order) {
     const c = CATEGORIES[id];
     if (!c) continue;
-    // Secondary categories read as the corner chip — show a small leading swatch.
-    const isSecondary = (c.class || "primary") === "secondary";
-    html += '<span class="detail-tag category' + (isSecondary ? " secondary" : "") + '" style="background: ' + c.color + '; color: ' + c.textColor + ';">' +
-            (isSecondary ? '▪ ' : '') + escapeHtml(c.label) + '</span>';
+    const isOn = on.has(id);
+    // Closed, the strip says what the box IS. Open, it offers everything.
+    if (!isOn && !showAll) continue;
+    const kind = (c.class || "primary") === "secondary" ? "corner tag" : "fill tag";
+    const tip  = (isOn ? "Click to take the " : "Click to give this box the ") + c.label + " " + kind + ".";
+    html += '<button type="button" class="filter-chip detail-tag' + (isOn ? " on" : " off") + '"' +
+      ' data-field="categoryToggle" data-cat="' + escapeHtml(id) + '"' +
+      ' aria-pressed="' + isOn + '" data-tooltip="' + escapeHtml(tip) + '">' +
+      '<i style="background:' + escapeHtml(c.color) + '"></i>' +
+      '<span class="filter-chip-label">' + escapeHtml(c.label) + '</span></button>';
   }
-  if (stream) html += '<span class="detail-tag">' + escapeHtml(stream.label) + '</span>';
-  if (stage)  html += '<span class="detail-tag">' + escapeHtml(stage.label) + '</span>';
-  html += '</div>';
-  return html;
+
+  html += '<button type="button" class="filter-chip detail-tag-more" data-action="toggle-tag-picker"' +
+    ' data-tooltip="' + (showAll ? "Hide the tags this box doesn't have" : "Show every tag") + '">' +
+    '<span class="filter-chip-label">' + (showAll ? "− less" : "+ tag") + '</span></button>';
+
+  return html + '</div>';
+}
+
+// The panel's tags are the SAME pill the drawer uses — .filter-chip, defined
+// once in 04-sidebar.css. They were mono uppercase blocks filled with the tag's
+// own colour: three of them wrapped to two lines and shouted louder than the
+// box's name directly underneath. A dot carries the colour; the label is what
+// you read.
+function chipHtml(label: string, color: string | null): string {
+  return '<span class="filter-chip detail-tag">' +
+    (color ? '<i style="background:' + escapeHtml(color) + '"></i>' : '<i class="plain"></i>') +
+    '<span class="filter-chip-label">' + escapeHtml(label) + '</span></span>';
 }
 
 export function selectInput(field: string, options: Array<{ value: string; label: string }>, currentValue: string | undefined): string {
@@ -688,34 +734,63 @@ export function renderOutgoingEdgesBlock(node: GraphNode): string {
   const flashedId = state.canvasEdit && state.canvasEdit.flashedEdgeId;
   const adding = state.canvasEdit && state.canvasEdit.addingEdgeFromNodeId === node.id;
 
+  const openId = (state.canvasEdit && state.canvasEdit.openEdgeId) || null;
+
   let html = '<div class="outgoing-edges-block">';
   html +=   '<div class="detail-list-title"><span>Effects</span><span class="count">' + outgoing.length + '</span></div>';
 
   if (outgoing.length === 0) {
     html += '<div class="outgoing-edges-empty">No links out yet. Drag from the right edge of this box on the map, or add one below.</div>';
   } else {
+    // One line per link, reading the same way the Causes list above it does:
+    // direction, name, strength. Click one and its controls unfold underneath.
+    //
+    // Every link used to be a 121px block — a header, a row of three controls
+    // and a two-line description box — all of it on screen at once. Ten links
+    // was 1200px of form to scroll past to find the one you wanted, and the
+    // list stopped being a list.
     for (const edge of outgoing) {
       const target = nodeById[edge.to];
       const defaultElasticity = DEFAULT_ELASTICITY_BY_EFFECT[edge.effect];
+      const isOpen = edge.id === openId;
       const flashClass = (edge.id === flashedId) ? " flash" : "";
-      html += '<div class="edge-stripe edge-stripe--edit ' + edge.effect + flashClass + '" data-edge-row-id="' + escapeHtml(edge.id) + '">';
-      html +=   '<div class="outgoing-edge-header">';
-      html +=     '<button class="outgoing-edge-target-link" data-jump-node="' + escapeHtml(edge.to) + '" data-tooltip="Jump to this effect">→ ' + escapeHtml(target ? target.label : edge.to) + '</button>';
-      html +=     '<button class="outgoing-edge-delete" data-edge-action="delete" data-edge-id="' + escapeHtml(edge.id) + '" data-tooltip="Delete this link">×</button>';
-      html +=   '</div>';
-      html +=   '<div class="outgoing-edge-controls">';
-      html +=     '<select class="detail-edit-input detail-edit-select" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="effect">';
+      // The same signed, sign-normalised figure the reading rows print, so a
+      // link reads identically whichever mode you are in.
+      const elasticity = resolveEdgeElasticity(edge);
+      const strength = (elasticity > 0 ? "+" : elasticity < 0 ? "−" : "")
+        + Math.abs(elasticity).toFixed(2);
+
+      html += '<button type="button" class="drow drow--edit ' + edge.effect + (isOpen ? " open" : "") + flashClass + '"' +
+        ' data-edge-row-id="' + escapeHtml(edge.id) + '" data-edge-open="' + escapeHtml(edge.id) + '"' +
+        ' aria-expanded="' + isOpen + '"' +
+        ' data-tooltip="' + escapeHtml((isOpen ? "Close" : "Edit") + " this link") + '">' +
+        '<span class="drow-dir">→</span>' +
+        '<span class="drow-name">' + escapeHtml(target ? target.label : edge.to) + '</span>' +
+        '<span class="drow-kind ' + edge.effect + '"></span>' +
+        '<span class="drow-num">' + escapeHtml(strength) + '</span>' +
+        '</button>';
+
+      if (!isOpen) continue;
+
+      html += '<div class="edge-open" data-edge-row-id="' + escapeHtml(edge.id) + '">';
+      html +=   '<div class="detail-quant-row"><span class="detail-quant-label">Effect</span>' +
+                '<span class="detail-quant-control"><select class="detail-edit-input detail-edit-select" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="effect">';
       for (const eff of EFFECT_OPTIONS) {
-        html +=     '<option value="' + eff + '"' + (edge.effect === eff ? " selected" : "") + '>' + eff + '</option>';
+        html +=   '<option value="' + eff + '"' + (edge.effect === eff ? " selected" : "") + '>' + eff + '</option>';
       }
-      html +=     '</select>';
-      html +=     '<input type="number" step="any" class="detail-edit-input detail-edit-number outgoing-edge-elasticity" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="elasticity" value="' + (edge.elasticity !== undefined && edge.elasticity !== null ? edge.elasticity : "") + '" placeholder="default ' + defaultElasticity + '" data-tooltip="Strength (leave blank for the default for this link type)">';
-      html +=     '<select class="detail-edit-input detail-edit-select outgoing-edge-style" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="style" data-tooltip="Line style">';
-      html +=       '<option value="solid"'  + (edge.style === "dashed" ? "" : " selected") + '>Solid</option>';
-      html +=       '<option value="dashed"' + (edge.style === "dashed" ? " selected" : "") + '>Dashed</option>';
-      html +=     '</select>';
-      html +=   '</div>';
+      html +=   '</select></span></div>';
+      html +=   '<div class="detail-quant-row"><span class="detail-quant-label" data-tooltip="Leave blank for the default for this link type">Strength</span>' +
+                '<input type="number" step="any" class="detail-edit-input detail-edit-number detail-quant-input outgoing-edge-elasticity" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="elasticity" value="' + (edge.elasticity !== undefined && edge.elasticity !== null ? edge.elasticity : "") + '" placeholder="default ' + defaultElasticity + '"></div>';
+      html +=   '<div class="detail-quant-row"><span class="detail-quant-label">Line</span>' +
+                '<span class="detail-quant-control"><select class="detail-edit-input detail-edit-select outgoing-edge-style" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="style">' +
+                  '<option value="solid"'  + (edge.style === "dashed" ? "" : " selected") + '>Solid</option>' +
+                  '<option value="dashed"' + (edge.style === "dashed" ? " selected" : "") + '>Dashed</option>' +
+                '</select></span></div>';
       html +=   '<textarea class="detail-edit-input detail-edit-textarea outgoing-edge-description" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="description" rows="2" placeholder="Optional description">' + escapeHtml(edge.description || "") + '</textarea>';
+      html +=   '<div class="edge-open-actions">';
+      html +=     '<button class="detail-edit-link" data-jump-node="' + escapeHtml(edge.to) + '">Go to this box →</button>';
+      html +=     '<button class="detail-edit-link danger" data-edge-action="delete" data-edge-id="' + escapeHtml(edge.id) + '">Delete link</button>';
+      html +=   '</div>';
       html += '</div>';
     }
   }
@@ -759,7 +834,13 @@ export function renderOutgoingEdgesBlock(node: GraphNode): string {
     }
     html += '</div>';
   } else {
-    html += '<button class="detail-edit-link outgoing-edge-add-toggle" data-action="show-add-edge">+ Add a link out</button>';
+    // The last row of the Effects list, not a button parked under it: adding a
+    // link is the same kind of act as editing one, and it reads as belonging to
+    // the list when it sits in it.
+    html += '<button type="button" class="drow drow--edit drow--add" data-action="show-add-edge">' +
+      '<span class="drow-dir">+</span>' +
+      '<span class="drow-name">Add a link out</span>' +
+      '</button>';
   }
 
   html += '</div>';
@@ -771,21 +852,6 @@ export function renderOutgoingEdgesBlock(node: GraphNode): string {
 // =============================================================================
 
 export function wireSharedHandlers(node: GraphNode, contentState: HTMLElement): void {
-  // Toggle between View and Edit. Shared by both modes (just the label and
-  // styling differ).
-  const editToggle = contentState.querySelector("[data-action='toggle-edit-mode']");
-  if (editToggle) {
-    editToggle.addEventListener("click", () => {
-      state.canvasEdit.editMode = !state.canvasEdit.editMode;
-      if (!state.canvasEdit.editMode) {
-        state.canvasEdit.addingEdgeFromNodeId = null;
-      } else {
-        state.canvasEdit._justUnlocked = true;   // pulse the fields on view→edit
-      }
-      renderDetailPanel();
-    });
-  }
-
   // Open the atlas on this box: everything downstream of it, as one picture.
   const atlasButton = contentState.querySelector("[data-action='open-atlas']");
   if (atlasButton) {
@@ -796,7 +862,9 @@ export function wireSharedHandlers(node: GraphNode, contentState: HTMLElement): 
 
   // Edge stripes navigate to the connected node — in BOTH modes. In edit, the
   // Direct Inputs are read-only links to the source node where they're edited.
-  contentState.querySelectorAll(".edge-stripe--nav").forEach(item => {
+  // Keyed on the attribute it reads, not on a styling class: the row's look has
+  // changed once already and took this handler's selector with it.
+  contentState.querySelectorAll("[data-target-node]").forEach(item => {
     item.addEventListener("click", () => {
       const targetNodeId = item.getAttribute("data-target-node")!;
       selectNode(targetNodeId);
@@ -828,6 +896,7 @@ export function wireEditModeHandlers(node: GraphNode, contentState: HTMLElement)
   // Node-field edits.
   contentState.querySelectorAll("[data-field]").forEach(input => {
     if (input.hasAttribute("data-edge-field")) return;     // edge inputs wired below
+    if (input.classList.contains("detail-tag")) return;   // the tag pills are click-wired below
     const field = input.getAttribute("data-field");
     if (!field) return;
     input.addEventListener("change", () => {
@@ -835,21 +904,57 @@ export function wireEditModeHandlers(node: GraphNode, contentState: HTMLElement)
     });
   });
 
-  // Outgoing-edges row edits + delete.
-  contentState.querySelectorAll(".edge-stripe--edit [data-edge-field]").forEach(input => {
+  // Outgoing-edges row edits + delete. The controls sit in the unfolded panel
+  // under whichever link row is open (.edge-open), not in the row itself.
+  contentState.querySelectorAll(".edge-open [data-edge-field]").forEach(input => {
     const edgeId = input.getAttribute("data-edge-id")!;
     const field  = input.getAttribute("data-edge-field")!;
     input.addEventListener("change", () => {
       applyEdgeFieldEdit(edgeId, field, input as HTMLInputElement);
     });
   });
-  contentState.querySelectorAll(".outgoing-edge-target-link").forEach(btn => {
+  contentState.querySelectorAll("[data-jump-node]").forEach(btn => {
     btn.addEventListener("click", () => {
       const targetId = btn.getAttribute("data-jump-node")!;
       if (nodeById[targetId]) {
         selectNode(targetId);
         scrollNodeIntoView(targetId);
       }
+    });
+  });
+
+  // Unfold one link's controls. Clicking the open row folds it again, so the
+  // list can always be returned to a plain list.
+  contentState.querySelectorAll("[data-edge-open]").forEach(row => {
+    row.addEventListener("click", () => {
+      const id = row.getAttribute("data-edge-open")!;
+      state.canvasEdit.openEdgeId = (state.canvasEdit.openEdgeId === id) ? null : id;
+      renderDetailPanel();
+    });
+  });
+
+  // Show every tag, or only the ones this box carries.
+  const tagMore = contentState.querySelector("[data-action='toggle-tag-picker']");
+  if (tagMore) {
+    tagMore.addEventListener("click", event => {
+      event.preventDefault();
+      state.canvasEdit.tagPickerOpen = !state.canvasEdit.tagPickerOpen;
+      renderDetailPanel();
+    });
+  }
+
+  // The tag chips are buttons now, not checkboxes, so they report their own
+  // new state to applyNodeFieldEdit rather than the browser doing it.
+  contentState.querySelectorAll(".detail-tag[data-cat]").forEach(chip => {
+    chip.addEventListener("click", () => {
+      // applyNodeFieldEdit reads a checkbox: type + checked + data-cat. A
+      // chip is a button, so hand it those three and nothing else — the write
+      // path stays exactly as it was when this was a list of checkboxes.
+      applyNodeFieldEdit(node, "categoryToggle", {
+        type: "checkbox",
+        checked: chip.getAttribute("aria-pressed") !== "true",
+        getAttribute: (name: string) => chip.getAttribute(name),
+      } as unknown as HTMLInputElement);
     });
   });
   contentState.querySelectorAll("[data-edge-action='delete']").forEach(btn => {
@@ -1041,7 +1146,7 @@ export function renderEdgeList(title: string, items: Array<{ edge: Edge; otherNo
   html +=     '<span class="count">' + items.length + '</span>';
   html +=   '</div>';
   if (items.length === 0) {
-    html += '<div style="color: var(--text-tertiary); font-size: 12px; padding: 6px 0;">' + escapeHtml(emptyText) + '</div>';
+    html += '<div class="drow-empty">' + escapeHtml(emptyText) + '</div>';
   } else {
     for (const item of items) {
       html += renderEdgeItem(item.otherNode, item.edge, direction);
@@ -1050,24 +1155,39 @@ export function renderEdgeList(title: string, items: Array<{ edge: Edge; otherNo
   return html;
 }
 
+// ONE LINE. It used to be three — the name and its strength, the effect word
+// under them, then the link's own sentence — so a box with six causes spent
+// eighteen lines saying what six rows can say. The sentence moves to the
+// tooltip, where the link's declared kind goes with it; what stays on the row
+// is what the maths actually uses, in the column every other number in this
+// panel lands in.
+//
+// The kind (increases / decreases / enables) is a LABEL on the link, and the
+// signed strength is what the engine reads. They can disagree — the border map
+// has an "increases" link carrying −0.50 — so the number is what the row shows
+// and the word is a hover away, rather than the two competing for the same
+// glance.
 export function renderEdgeItem(otherNode: GraphNode, edge: Edge, direction: string): string {
-  const effectClass = edge.effect;
   const arrow = direction === "from" ? "←" : "→";
   const elasticity = resolveEdgeElasticity(edge);
-  const elasticitySign = elasticity > 0 ? "+" : "";
-  const elasticityText = elasticity !== 0 ? "Strength " + elasticitySign + elasticity.toFixed(2) : "Strength 0";
+  const strength = (elasticity > 0 ? "+" : elasticity < 0 ? "−" : "")
+    + Math.abs(elasticity).toFixed(2);
+  const weight = elasticity > 0 ? " pos" : elasticity < 0 ? " neg" : "";
 
-  // A real <button> so the "jump to the connected node" action is Tab-reachable
-  // and Enter/Space-activatable (the click handler in wireViewModeHandlers works
-  // unchanged). aria-label names the otherwise-implicit navigate action.
+  // Kind first, then the sentence: the tooltip is the row's long form, and the
+  // word is the part of it a reader is most likely to be checking.
+  const tip = edge.effect + (edge.description ? " — " + edge.description : "");
   const jumpDir = direction === "from" ? "(a cause)" : "(an effect)";
-  let html = '<button type="button" class="edge-stripe edge-stripe--nav ' + effectClass + '" data-target-node="' + escapeHtml(otherNode.id) + '" aria-label="Jump to ' + escapeHtml(otherNode.label) + ' ' + jumpDir + '">';
-  html +=   '<div class="detail-edge-header">';
-  html +=     '<div class="detail-edge-name">' + arrow + ' ' + escapeHtml(otherNode.label) + '</div>';
-  html +=     '<div class="detail-edge-elasticity">' + escapeHtml(elasticityText) + '</div>';
-  html +=   '</div>';
-  html +=   '<div class="detail-edge-effect ' + effectClass + '">' + edge.effect + '</div>';
-  html +=   '<div class="detail-edge-desc">' + escapeHtml(edge.description) + '</div>';
-  html += '</button>';
-  return html;
+
+  // Still a real <button>, still carrying data-target-node: Tab reaches it,
+  // Enter follows it, and the click handler in wireViewModeHandlers is untouched.
+  return '<button type="button" class="drow"'
+    + ' data-target-node="' + escapeHtml(otherNode.id) + '"'
+    + ' data-tooltip="' + escapeHtml(tip) + '"'
+    + ' aria-label="' + escapeHtml(otherNode.label) + ', strength ' + strength + ', '
+    + escapeHtml(edge.effect) + ' ' + jumpDir + '. Jump to it.">'
+    + '<span class="drow-dir">' + arrow + '</span>'
+    + '<span class="drow-name">' + escapeHtml(otherNode.label) + '</span>'
+    + '<span class="drow-num' + weight + '">' + strength + '</span>'
+    + '</button>';
 }

@@ -16,12 +16,14 @@
 import type { Category, GraphNode, NodePosition } from "./types";
 import { CATEGORIES, EDGES, NODES, STAGES, STREAMS, layout, nodeById, setLayout, stageById, state, streamById } from "./03-state";
 import { deselectAll, selectNode } from "./09-graph-selection";
-import { computeEdgeAnchorOffsets, deltaColorFor, edgeBezierPath, effectMarkerName, escapeHtml, getMapTextScale, isBackwardEdge, wrapLabel, type AnchorOffset } from "./04-utils";
+import { computeEdgeAnchorOffsets, deltaColorFor, edgeBezierPath, effectMarkerName, escapeHtml, getMapTextScale, isBackwardEdge, simEffectFill, wrapLabel, SIM_FLAT_FILL, SIM_INK, type AnchorOffset } from "./04-utils";
 import { COL_GAP, COL_HEADER_HEIGHT, LABEL_INSET, NODE_GAP_Y, NODE_HEIGHT, NODE_WIDTH, ROW_HEADER_WIDTH, ROW_PADDING, SVG_PADDING_TOP } from "./02-config";
 import { computeLayout, layoutGeometryRevision, slotTopY } from "./08-layout";
 import { computeRenderEdges, type RenderEdge } from "./10a-collapsed-edges";
 import { isCategoryVisible, isEdgeVisible, isNodeVisible, toggleStage, toggleStream } from "./10-filters";
-import { formatNodeDelta, formatNodeValue, getOutcomeBorderColor } from "./07-simulation-engine";
+import { formatNodeDelta, formatNodeValue, getOutcomeBorderColor, nodeEffect,
+  gatedBy,
+} from "./07-simulation-engine";
 import { hideTooltip, moveTooltip, showTooltip } from "./12-tooltip";
 import { attachCanvasEditHandlers } from "./16e-canvas-edit";
 
@@ -1213,9 +1215,21 @@ export function render(): void {
     // Virtualization: skip nodes whose box is outside the viewport cull rect.
     if (cull && !boxInCull(pos.x, pos.y, pos.x + pos.width, pos.y + pos.height, cull)) continue;
     const stream   = streamById[node.stream];
-    const fillInfo = nodePrimaryFill(node, "ngrad_" + (_nodeGradSeq++));
+    // While the sliders are out the body says what the run DID to this box
+    // rather than what kind of box it is — one meaning at a time. See
+    // simEffectFill (04-utils) and nodeEffect (07-simulation-engine).
+    const effect   = state.simulationMode ? nodeEffect(node.id) : null;
+    const fillInfo = effect
+      ? { defs: "", fill: effect.moved ? simEffectFill(effect.merit, effect.strength) : SIM_FLAT_FILL, textColor: SIM_INK }
+      : nodePrimaryFill(node, "ngrad_" + (_nodeGradSeq++));
     const textColor = fillInfo.textColor;
-    const chips    = nodeSecondaryChips(node, pos);
+    // The corner tags are dropped while the sliders are out. They sit in the
+    // bottom-right corner, which is the same corner the run's number wants, and
+    // two things in one corner is one thing too many — the tags say what KIND of
+    // box this is, which is not the question anyone is asking mid-run.
+    const chips    = state.simulationMode
+      ? { svg: "", leftEdge: pos.x + pos.width }
+      : nodeSecondaryChips(node, pos);
 
     // Class flags applied to the <g> wrapper — see 05-visualization.css
     // (state glows) + 13-search.css (search halo).
@@ -1227,10 +1241,20 @@ export function render(): void {
 
     // Bake the resting desaturation into the colours instead of paying for a
     // per-element CSS filter pass. Only plain solid-filled resting boxes qualify.
-    const preDesat = !fillInfo.defs && !hasNonRestingFilter(node.id, ctx);
+    // An effect fill is already exactly the colour it should be, so it takes
+    // the same "no filter, please" tag the baked resting fills use — but not
+    // their desaturation, which would drain the very thing it is saying.
+    const preDesat = !effect && !fillInfo.defs && !hasNonRestingFilter(node.id, ctx);
     if (preDesat) nodeClasses += " pre-desat";
+    if (effect) nodeClasses += " sim-fill" + (effect.moved ? "" : " sim-flat");
+    // Held back rather than unreached: this box's rule is "weakest input wins"
+    // and the weakest one is not something that moved. Without this the box is
+    // the same dead grey as one the run never touched, which is the single
+    // biggest reason a simulated map reads as broken.
+    const gate = effect && !effect.moved ? gatedBy(node.id) : null;
+    if (gate) nodeClasses += " sim-held";
     const rectFill   = preDesat ? desaturateColor(fillInfo.fill)  : fillInfo.fill;
-    const stripeFill = preDesat ? desaturateColor(stream.color) : stream.color;
+    const stripeFill = (preDesat || effect) ? desaturateColor(stream.color) : stream.color;
 
     content += '<g class="' + nodeClasses + '" data-node-id="' + node.id + '">';
     content += fillInfo.defs;   // per-node gradient def (empty unless multi-primary)
@@ -1239,6 +1263,7 @@ export function render(): void {
     const border = nodeRectStroke(node.id, ctx);
 
     content += '<rect class="node-rect" x="' + pos.x + '" y="' + pos.y + '" width="' + pos.width + '" height="' + pos.height + '" rx="5" fill="' + rectFill + '" stroke="' + border.stroke + '" stroke-width="' + border.width + '"></rect>';
+
 
     // ── Coloured stripe down the left edge (the stream colour) ──
     // We draw it as a path so only the left corners are rounded — the right
@@ -1283,12 +1308,26 @@ export function render(): void {
     }
     content += '</text>';
 
-    // ── Value + delta (only for nodes with a baseline) ──
-    const valueText = formatNodeValue(node.id);
+    // ── Value + delta (simulating only, and only for nodes with a baseline) ──
+    // At rest a number on the box is decoration: it is the same number it was
+    // the last time you looked, and it is repeated on every box on the map. It
+    // starts meaning something the moment it can CHANGE, which is what the
+    // sliders being out means — so that is when it is drawn.
+    const valueText = state.simulationMode ? formatNodeValue(node.id) : "";
     if (valueText) {
       const deltaInfo = formatNodeDelta(node.id);
       const valueY = pos.y + pos.height - 12;
       content += '<text class="node-value" x="' + (pos.x + LABEL_INSET) + '" y="' + valueY + '" fill="' + textColor + '" dominant-baseline="middle" opacity="0.75">' + escapeHtml(valueText) + '</text>';
+
+      // Where a mover prints how far it moved, a held box prints that it is
+      // held. What is holding it is named in the panel and on hover — there is
+      // no room for "held by Detection & Seizure Rate" on a box this size, and
+      // a truncated name is worse than none.
+      if (gate) {
+        const heldX = chips.svg ? chips.leftEdge - 6 : pos.x + pos.width - LABEL_INSET;
+        content += '<text class="node-held" x="' + heldX + '" y="' + valueY +
+          '" text-anchor="end" dominant-baseline="middle">held</text>';
+      }
 
       if (deltaInfo.text && deltaInfo.text !== "—") {
         const deltaColor = deltaColorFor(node, deltaInfo);
@@ -1416,13 +1455,26 @@ export function refreshSelectionStyling(): boolean {
     // is never pre-desaturated, so its fills are left exactly as rendered.
     const gradientFilled = !!rect && (rect.getAttribute("fill") || "").startsWith("url(");
     if (rect && !gradientFilled) {
-      const preDesat = !hasNonRestingFilter(id, ctx);
-      if (preDesat) classes += " pre-desat";
-      const solidFill = nodePrimaryFill(node, "").fill;
+      // Same three-way decision the full render makes (see the node loop): an
+      // effect fill while simulating, otherwise the baked resting pair or the
+      // literal colours. This has to agree with render() exactly — a selection
+      // patch that fell back to the category fill repainted the whole map in
+      // its resting colours the first time anything was clicked mid-simulation.
       const stream = streamById[node.stream];
-      setIfChanged(rect, "fill", preDesat ? desaturateColor(solidFill) : solidFill);
-      if (stripe && stream) {
-        setIfChanged(stripe, "fill", preDesat ? desaturateColor(stream.color) : stream.color);
+      const effect = state.simulationMode ? nodeEffect(id) : null;
+      if (effect) {
+        classes += " sim-fill" + (effect.moved ? "" : " sim-flat");
+        setIfChanged(rect, "fill",
+          effect.moved ? simEffectFill(effect.merit, effect.strength) : SIM_FLAT_FILL);
+        if (stripe && stream) setIfChanged(stripe, "fill", desaturateColor(stream.color));
+      } else {
+        const preDesat = !hasNonRestingFilter(id, ctx);
+        if (preDesat) classes += " pre-desat";
+        const solidFill = nodePrimaryFill(node, "").fill;
+        setIfChanged(rect, "fill", preDesat ? desaturateColor(solidFill) : solidFill);
+        if (stripe && stream) {
+          setIfChanged(stripe, "fill", preDesat ? desaturateColor(stream.color) : stream.color);
+        }
       }
     }
     setIfChanged(group, "class", classes);
@@ -1543,15 +1595,31 @@ export function updateSimulationValuesInPlace(): boolean {
     const delta = formatNodeDelta(id);
     const needsDelta = !!(delta.text && delta.text !== "—");
     if (needsDelta !== !!refs.delta) return false;
-    patches.push({ node: node, refs: refs, delta: delta });
+    // A box can be freed or caught by any drag — the gate is only as fixed as
+    // the value of whatever is gating it. Its mark is markup, not an attribute,
+    // so a change there is handed to the full render exactly as a delta
+    // appearing or disappearing is.
+    const held = !!(state.simulationMode && !nodeEffect(id, delta).moved && gatedBy(id));
+    if (held !== group.classList.contains("sim-held")) return false;
+    patches.push({ node: node, group: group, refs: refs, delta: delta });
   }
 
   // Pass 2: patch value text, delta text + colour, and the border.
   const showOutcomeBorders = !state.selectedNodeId && !state.selectedNodeIds.size;
   for (let i = 0; i < patches.length; i++) {
-    const { node, refs, delta } = patches[i];
+    const { node, group, refs, delta } = patches[i];
 
     if (refs.value) refs.value.textContent = formatNodeValue(node.id);
+
+    // The effect fill has to be repainted every frame, not just when this box
+    // moved: the ramp is measured against the biggest mover on the map, so one
+    // box running away restates the colour of every other one.
+    if (state.simulationMode && refs.rect) {
+      const effect = nodeEffect(node.id, delta);
+      refs.rect.setAttribute("fill",
+        effect.moved ? simEffectFill(effect.merit, effect.strength) : SIM_FLAT_FILL);
+      group.classList.toggle("sim-flat", !effect.moved);
+    }
 
     if (refs.delta && delta.text && delta.text !== "—") {
       refs.delta.textContent = delta.text;
@@ -1599,6 +1667,8 @@ interface NodePatchRefs {
 
 interface NodePatch {
   node: GraphNode;
+  /** The <g> wrapper — the effect-fill patch toggles `.sim-flat` on it. */
+  group: Element;
   refs: NodePatchRefs;
   delta: { text: string; pct: number };
 }

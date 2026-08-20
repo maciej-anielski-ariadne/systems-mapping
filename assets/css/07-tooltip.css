@@ -30,19 +30,34 @@
   font-size: var(--fs-body);
 }
 
+/* Why a still box is still — the name of what is holding it, and nothing else.
+ * The amber on the name is what sets the line apart; a rule down its left edge
+ * was a second mark saying the same thing. */
+.tooltip-held {
+  margin-top: var(--space-1_5);
+  color: var(--text-secondary);
+}
+.tooltip-held b { color: var(--accent-amber); font-weight: var(--fw-semibold); }
+
+/* Directly under the name: what the box is, before anything about what it is
+ * doing this run. */
 .tooltip-desc {
   font-size: var(--fs-cap);
   color: var(--text-secondary);
   line-height: 1.4;
+  margin-bottom: var(--space-1_5);
 }
+/* Nothing follows it — no trailing gap. */
+.tooltip-desc:last-child { margin-bottom: 0; }
 
 /* Quantification line: "Current: 9000 FTE (+5% vs baseline 8571 FTE)" */
 .tooltip-quant {
   font-family: var(--font-mono);
   font-size: var(--fs-cap);
   color: var(--text-primary);
-  margin-bottom: var(--space-1_5);
-  padding: var(--space-1) 0;
+  /* It is the LAST thing now, not the middle one — the space it used to hold
+   * open below itself would only hang off the bottom of the tooltip. */
+  padding: var(--space-1) 0 0;
 }
 
 .tooltip-quant-label  { color: var(--text-tertiary); }
