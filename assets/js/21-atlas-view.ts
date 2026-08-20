@@ -45,7 +45,9 @@ let WHEEL_PICK: any = null;           // the box being explained inside a tangle
 let WHEEL_LOOP = 0;                   // which of its loops, when it has several
 let WHEEL_TANGLE: any = null;         // the tangle that box belongs to
 let traceRAF = 0;
-const CHAIN_MAX = 7;                  // boxes named in a loop caption; the rest are on the wheel
+const RING_MAX = 8;                   // boxes a ring can name before the loop is written as a line
+const CARD_MAX = 12;                  // loop diagrams listed in the panel
+let ringSeq = 0;                      // each ring needs its own arrowhead id
 
 // ───── Small helpers the picture leans on ─────────────────────────────────
 const plural = (n: number, one: string, many?: string): string => (n === 1 ? one : many || one + "s");
@@ -555,26 +557,33 @@ export function atlasPanelHtml(): string {
     const node = A.nodes.get(FOCUS), t = node.tangles[0];
     const w = WHEELS.get(FOCUS);
     const loops = w ? w.loops : [];
-    const r = loops.filter((l: any) => l.reinforcing).length;
+    const allLoops = tangleLoops();
+    // Counted from the loops actually listed below, not from the wheel's back
+    // links — otherwise the header says "1R / 0B" over a list of two loops.
+    const r = allLoops.filter((l: any) => l.reinforcing).length;
     const shown = Math.min(TOUR_MAX, loops.length);
     const playing = tourRAF && tourAt >= 0 && tourAt < shown;
     const picked = WHEEL_PICK;
     const through = picked ? loopsThrough(picked) : [];
     const loop = through.length ? rotateTo(through[WHEEL_LOOP % through.length], picked) : null;
+    const cards = allLoops.slice(0, CARD_MAX);
+    const drawnKey = loop ? canonicalCycle(loop.cycle) : null;
     return `<div class="ins">
       <header><b>↻ Inside a tangle of ${t.boxes.length} ${plural(t.boxes.length, "box", "boxes")}</b>
         <span class="m">${w ? w.back.length : 0} ${plural(w ? w.back.length : 0, "link")} back ·
-          ${r}R / ${loops.length - r}B · ${t.independent} independent</span></header>
+          ${r}R / ${allLoops.length - r}B · ${t.independent} independent</span></header>
       <p class="lede">Boxes sit round the rim in an order that makes almost every link run clockwise.
         The chords across the middle are the ones that run back — <b>they are the feedback</b>, and
         cutting them would leave a plain sequence.</p>
       <p class="cap">${playing
-        ? `Playing the loops — <b>${tourAt + 1}</b> of ${shown}${
-            loops.length > shown ? ` (the ${shown} strongest of ${loops.length})` : ""}.`
-        : `<b>${shown}</b> ${plural(shown, "loop")} drawn${
-            loops.length > shown ? ` — the strongest of ${loops.length}` : ""}. Point at a box on the
-            rim to name it; click one to follow its own loop round.`}</p>
-      ${picked ? loopCaption(picked, loop, through) : ""}
+        ? `Playing the loops — <b>${tourAt + 1}</b> of ${shown}.`
+        : `<b>${allLoops.length}</b> ${plural(allLoops.length, "loop")} in this tangle${
+            allLoops.length > cards.length ? ` — the ${cards.length} strongest drawn` : ""}.
+           Click one to follow it round the wheel.`}</p>
+      <div class="loopcards">${cards.map((l: any, i: number) => loopCard(
+        l, i,
+        drawnKey !== null && canonicalCycle(l.cycle) === drawnKey,
+        !!picked && l.cycle.includes(picked))).join("")}</div>
       <div class="row-btns" style="margin-top:9px">
         <button class="btn" type="button" data-replay>Replay the loops</button>
         <button class="btn" type="button" data-zoomout>← Back out to the whole map</button>
@@ -618,32 +627,120 @@ export function atlasPanelHtml(): string {
     ${explain}</div>`;
 }
 
-function loopCaption(picked: any, loop: any, through: any) {
-  if (!loop) return `<p class="cap"><b>${escapeHtml(boxLabel(picked))}</b> — no loop found through it.</p>`;
-  return `<p class="cap"><b>${escapeHtml(boxLabel(picked))}</b> comes back to itself
-      ${through.length} ${plural(through.length, "way")}${through.length > 1
-        ? ` — showing ${WHEEL_LOOP % through.length === 0 ? "the shortest"
-            : (WHEEL_LOOP % through.length) + 1 + " of " + through.length}` : ""}.</p>
-    <p class="chain">${loop.cycle.slice(0, CHAIN_MAX).map((b: any, i: any) =>
-      `<em class="${b === picked ? "head" : ""}">${escapeHtml(clip(boxLabel(b), 24))}</em>` +
-      `<i>${loop.links[i].elasticity < 0 ? "−" : "+"}→</i>`).join("")}${
-      loop.cycle.length > CHAIN_MAX ? `<i>${loop.cycle.length - CHAIN_MAX} more →</i>` : ""}
-      <em class="head">${escapeHtml(clip(boxLabel(picked), 24))}</em></p>
-    <p class="m">${loop.reinforcing ? "Reinforcing" : "Balancing"} ·
-      ${loop.cycle.length} ${plural(loop.cycle.length, "box", "boxes")} ·
-      gain ${loop.gain < 0.0005 ? "≈0" : loop.gain.toFixed(3)}</p>
-    ${through.length > 1
-      ? `<div class="row-btns" style="margin-top:7px">
-           <button class="btn" type="button" data-wheelnext>Next loop through it</button></div>` : ""}`;
+// Every loop in this tangle, once each. The wheel knows one loop per link that
+// runs back; the tangle's own analysis adds the shortest way round each box.
+// A reader wants the union of both, deduped, strongest first.
+function tangleLoops(): any[] {
+  const w = WHEELS.get(FOCUS);
+  if (!w) return [];
+  const all: any[] = [], seen = new Set<any>();
+  for (const l of [...(WHEEL_TANGLE ? WHEEL_TANGLE.loops : []), ...w.loops]) {
+    const k = canonicalCycle(l.cycle);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    all.push(l);
+  }
+  return all.sort((a, b) => b.gain - a.gain || a.cycle.length - b.cycle.length);
 }
 
-// ---------------------------------------------------------------------------
-// INSIDE THE TANGLE — one box, and how it comes back to itself
-// ---------------------------------------------------------------------------
-// The tour shows every loop. This shows one: click a box on the rim and its own
-// loop draws itself round, starting and ending where you clicked, because a
-// loop has no beginning but an explanation does.
-// ---------------------------------------------------------------------------
+const loopSign = (link: any): string => (link.elasticity < 0 ? "\u2212" : "+");
+
+// A loop too long to draw round is still worth reading as a line.
+function flatLoop(loop: any): string {
+  const chain = loop.cycle.map((id: any, i: number) =>
+    `<span class="el">${escapeHtml(clip(boxLabel(id), 22))}</span>` +
+    `<span class="arrow">${loopSign(loop.links[i])}\u2192</span>`).join("");
+  return `<div class="flatloop">${chain}<span class="back">\u21a9 back to ${
+    escapeHtml(clip(boxLabel(loop.cycle[0]), 22))}</span></div>`;
+}
+
+// The causal loop diagram proper: boxes round a ring, an arrow between each
+// pair carrying the sign of that link, and R or B in the middle for what the
+// loop does when you nudge it.
+function ringSvg(loop: any): string {
+  const n = loop.cycle.length;
+  if (n > RING_MAX) return flatLoop(loop);
+  // Sharing one arrowhead id across cards makes them collide and the arrows —
+  // the entire point of a causal loop diagram — silently vanish.
+  const ar = "atlas-ar" + (ringSeq++);
+  const W = 290, H = n <= 2 ? 138 : n <= 5 ? 168 : 208, cx = W / 2, cy = H / 2,
+        R = n <= 2 ? 28 : n <= 5 ? 40 : 50;
+  const pt = (i: number) => {
+    const a = (-Math.PI / 2) + (i * 2 * Math.PI) / n;
+    return [cx + R * Math.cos(a), cy + R * Math.sin(a)];
+  };
+  // Links stop short of the boxes at both ends. Run them all the way and the
+  // box circle — drawn afterwards, on top — hides the arrowhead.
+  const trim = (ax: number, ay: number, bx: number, by: number, head: number, tail: number) => {
+    const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
+    return [ax + (dx / len) * tail, ay + (dy / len) * tail,
+            bx - (dx / len) * head, by - (dy / len) * head];
+  };
+  const parts: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const [rx1, ry1] = pt(i), [rx2, ry2] = pt((i + 1) % n);
+    const [x1, y1, x2, y2] = trim(rx1, ry1, rx2, ry2, 12, 7);
+    if (n === 1) {                                  // a box feeding itself
+      parts.push(`<circle class="lk" cx="${cx}" cy="${cy - 20}" r="18" fill="none"></circle>`);
+      break;
+    }
+    if (n === 2) {                                  // two boxes, bowed apart
+      const bow = i === 0 ? 26 : -26;
+      const mx = (rx1 + rx2) / 2 + bow, my = (ry1 + ry2) / 2;
+      parts.push(`<path class="lk" d="M${x1} ${y1}Q${mx} ${my} ${x2} ${y2}" marker-end="url(#${ar})"></path>`);
+      parts.push(`<text class="sg" x="${mx + (i === 0 ? 10 : -10)}" y="${my + 4}">${loopSign(loop.links[i])}</text>`);
+      continue;
+    }
+    parts.push(`<line class="lk" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" marker-end="url(#${ar})"></line>`);
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+    parts.push(`<text class="sg" x="${mx + (mx - cx) * 0.34}" y="${my + (my - cy) * 0.34 + 4}">${loopSign(loop.links[i])}</text>`);
+  }
+  for (let i = 0; i < n; i++) {
+    const [x, y] = pt(i);
+    const outward = n === 1 ? 0 : (x - cx) / R;
+    const anchor = Math.abs(outward) < 0.35 ? "middle" : outward > 0 ? "start" : "end";
+    const lx = x + outward * 12, ly = y + ((y - cy) / R) * 12 + (Math.abs(outward) < 0.35 ? (y < cy ? -10 : 16) : 4);
+    parts.push(`<circle class="bx" cx="${x}" cy="${y}" r="5"></circle>`);
+    parts.push(`<text class="bl" x="${lx}" y="${ly}" text-anchor="${anchor}">${escapeHtml(clip(boxLabel(loop.cycle[i]), 20))}</text>`);
+  }
+  parts.push(`<text class="rb ${loop.reinforcing ? "r" : "b"}" x="${cx}" y="${cy + 8}" text-anchor="middle">${
+    loop.reinforcing ? "R" : "B"}</text>`);
+  return `<svg class="ring" viewBox="0 0 ${W} ${H}" width="100%" role="img"
+    aria-label="${loop.reinforcing ? "Reinforcing" : "Balancing"} loop: ${
+      escapeHtml(loop.cycle.map(boxLabel).join(" then "))}, back to the start">
+    <defs><marker id="${ar}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5"
+      orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" class="ah"></path></marker></defs>${parts.join("")}</svg>`;
+}
+
+function loopCard(loop: any, i: number, drawn: boolean, related: boolean): string {
+  return `<article class="loopcard ${loop.reinforcing ? "r" : "b"}${drawn ? " sel" : ""}${
+      related && !drawn ? " rel" : ""}" data-loopidx="${i}" tabindex="0" role="button"
+      aria-pressed="${drawn}"
+      aria-label="${loop.reinforcing ? "Reinforcing" : "Balancing"} loop through ${
+        loop.cycle.length} ${plural(loop.cycle.length, "box", "boxes")}. Follow it round the wheel.">
+    <header>
+      <span class="pol ${loop.reinforcing ? "r" : "b"}">${loop.reinforcing ? "Reinforcing" : "Balancing"}</span>
+      <span class="m">${loop.cycle.length} ${plural(loop.cycle.length, "box", "boxes")}</span>
+      <span class="m">gain ${loop.gain < 0.0005 ? "\u22480" : loop.gain.toFixed(3)}</span>
+    </header>
+    ${ringSvg(loop)}
+  </article>`;
+}
+
+// Clicking a card draws that loop. The wheel already knows how to draw "the
+// Nth loop through box B", so a card resolves itself into that rather than
+// carrying a second, parallel idea of what is selected.
+function selectLoopCard(i: number) {
+  const loop = tangleLoops()[i];
+  if (!loop) return;
+  const box = loop.cycle[0];
+  WHEEL_PICK = box;
+  const k = canonicalCycle(loop.cycle);
+  const at = loopsThrough(box).findIndex((l: any) => canonicalCycle(l.cycle) === k);
+  WHEEL_LOOP = at >= 0 ? at : 0;
+  paintAtlas();
+}
+
 function paintWheel() {
   const svg = svgEl();
   if (!svg) return;
@@ -971,7 +1068,6 @@ export function initAtlasStage(): void {
       return;
     }
     if (target.closest("[data-replay]"))      { WHEEL_PICK = null; paintAtlas(); playTour(); return; }
-    if (target.closest("[data-wheelnext]"))   { WHEEL_LOOP++; paintAtlas(); return; }
 
     const nd = target.closest("g.n.focus .nd") as HTMLElement | null;
     if (nd) { pickWheelBox(nd.dataset.box); return; }
@@ -1037,6 +1133,18 @@ export function initAtlasStage(): void {
   if (content && !content.dataset.atlasWired) {
     content.dataset.atlasWired = "1";
     content.addEventListener("click", event => {
+      const t = event.target as Element;
+      // The panel carries its own copies of the atlas controls, and a click on
+      // one of them never reached the stage's handler — so they are wired here.
+      if (t && t.closest && atlasIsOpen()) {
+        const card = t.closest("[data-loopidx]") as HTMLElement | null;
+        if (card) { selectLoopCard(Number(card.dataset.loopidx)); return; }
+        if (t.closest("[data-replay]")) { WHEEL_PICK = null; paintAtlas(); playTour(); return; }
+        if (t.closest("[data-zoomout]")) {
+          if (FOCUS) leaveTangle(false); else atlasFitWidth();
+          return;
+        }
+      }
       const el = (event.target as Element).closest("[data-atlas-box]") as HTMLElement | null;
       if (!el || !atlasIsOpen()) return;
       const id = el.dataset.atlasBox!;

@@ -52,8 +52,8 @@ body.atlas-open .viz-controls-cluster { display: none; }
 }
 
 .sw-el   { background: var(--act); }
-.sw-loop { background: color-mix(in srgb, var(--accent-amber) 55%, transparent);
-           border: 1px solid var(--accent-amber); }
+/* Matches a tangle at rest: fill, no border. */
+.sw-loop { background: color-mix(in srgb, var(--accent-amber) 55%, transparent); }
 
 /* === The picture === */
 .atlaswrap {
@@ -89,14 +89,27 @@ svg.atlas.panning { cursor: grabbing; }
 .atlas .fl.hot { stroke: var(--accent-amber); opacity: 0.7; }
 .atlas.busy .fl:not(.hot) { opacity: 0.045; }
 
+/* Zoomed in, the wheel is the subject and the strands are context. They stay on
+ * screen — you still need to see what enters and leaves a tangle — but they
+ * drop well under the loops rather than competing with them at the same hue and
+ * nearly the same weight. Far out, nothing changes: there the strands ARE the
+ * picture. */
+.atlas.zoomed .fl.hot { opacity: 0.12; }
+.atlas.zoomed .fl:not(.hot) { opacity: 0.03; }
+
 /* Elements. Area is the measure — the radius is its square root. */
 .atlas .bub { fill: var(--act); opacity: 0.82; transition: opacity var(--dur-base) ease; }
 .atlas .bub.start { fill: var(--act-hi); }
-.atlas .bub.loop {
-  fill: color-mix(in srgb, var(--accent-amber) 55%, transparent);
-  stroke: var(--accent-amber);
-  stroke-width: 1.2;
-  vector-effect: non-scaling-stroke;
+/* A tangle is its wheel, not a disc with an outline drawn round it. No border
+ * at any distance; and once the frame has closed in far enough that the wheel
+ * is readable, no fill either — at that point the loops are the whole point,
+ * and a wash of amber behind them only makes them harder to follow. */
+.atlas .bub.loop { fill: color-mix(in srgb, var(--accent-amber) 55%, transparent); }
+.atlas.zoomed .bub.loop {
+  fill: none;
+  /* fill:none also stops hit-testing, and the disc is what you click to go
+   * inside a tangle — so the hit area is kept explicitly. */
+  pointer-events: all;
 }
 
 .atlas.busy g.n:not(.on):not(.near) .bub { opacity: 0.16; }
@@ -108,6 +121,11 @@ svg.atlas.panning { cursor: grabbing; }
   vector-effect: non-scaling-stroke;
   opacity: 1;
 }
+
+/* Going inside a tangle marks it .on, which would put the ring straight back
+ * round it. Opacity already carries that state, so the tangle goes without.
+ * Ordinary elements keep their ring, and so does keyboard focus below. */
+.atlas g.n.tangle.on:not(:focus-visible) .bub { stroke: none; }
 
 /* The browser's own focus ring is a rectangle round a circle; the ring goes on
  * the circle instead. */
@@ -153,6 +171,14 @@ svg.atlas.panning { cursor: grabbing; }
   pointer-events: none;
   transition: opacity var(--dur-base) ease;
 }
+
+/* Strands overlap, and translucent alpha ACCUMULATES: four dimmed strands
+ * crossing at one point composite back up to more than a 0.55 rim box, in the
+ * same hue — which is exactly where a tangle's entry and exit boxes sit. So
+ * once the wheel is big enough to read, a rim box stops being translucent and
+ * simply wins, however many strands pile up behind it. The .picked rules below
+ * are more specific and keep their say. */
+.atlas.zoomed .nd { opacity: 1; }
 
 .atlas g.n.focus .nd { pointer-events: auto; cursor: pointer; }
 .atlas g.n.focus .nd:hover { fill: var(--text-primary); opacity: 1; }
@@ -380,3 +406,98 @@ body.sim-mode .atlas-legend .sim-only { display: inline; }
 }
 
 .atlas-box:hover { background: var(--act-tint); color: var(--text-primary); }
+
+/* === The loops inside a tangle, one diagram each ==========================
+ * The wheel says how the tangle is wired; these say what its loops actually
+ * ARE, one causal loop diagram apiece — which is the form people already read
+ * feedback in. The panel lives outside the svg, so it carries its own copy of
+ * the polarity hues the picture uses. */
+.loopcards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.loopcard {
+  --c1: var(--accent-amber);   /* reinforcing */
+  --c2: var(--act);            /* balancing */
+  border: 1px solid var(--border-subtle);
+  border-left: 4px solid var(--c2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-deep);
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  cursor: pointer;
+  transition: background var(--dur-fast) ease, border-color var(--dur-fast) ease;
+}
+.loopcard.r { border-left-color: var(--c1); }
+.loopcard:hover { background: var(--bg-mid); }
+
+/* The one being drawn on the wheel right now. */
+.loopcard.sel { background: var(--bg-mid); border-color: var(--text-tertiary); }
+/* Pointed at a box on the rim: the loops that pass through it. */
+.loopcard.rel { border-color: var(--border-strong); }
+
+.loopcard:focus-visible {
+  outline: 2px solid var(--act-hi);
+  outline-offset: 2px;
+}
+
+.loopcard header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1_5);
+  align-items: baseline;
+  margin-bottom: var(--space-0_5);
+}
+.loopcard .pol {
+  font-size: var(--fs-cap);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--c2);
+}
+.loopcard .pol.r { color: var(--c1); }
+.loopcard .m {
+  font-family: var(--font-mono);
+  font-size: var(--fs-cap);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+svg.ring { display: block; }
+svg.ring .lk { stroke: var(--border-strong); stroke-width: 1.6; fill: none; }
+svg.ring .ah { fill: var(--border-strong); }
+svg.ring .bx { fill: var(--bg-deepest); stroke: var(--text-secondary); stroke-width: 1.6; }
+svg.ring .bl { font-family: var(--font-ui); font-size: 9.5px; fill: var(--text-secondary); }
+svg.ring .sg {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: var(--fw-semibold);
+  fill: var(--text-primary);
+  text-anchor: middle;
+}
+svg.ring .rb {
+  font-family: var(--font-ui);
+  font-size: 26px;
+  font-weight: var(--fw-bold);
+  fill: var(--c2);
+  opacity: 0.85;
+}
+svg.ring .rb.r { fill: var(--c1); }
+
+/* A loop with more boxes than a ring can name, written as a line instead. */
+.flatloop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  margin: var(--space-2) 0 var(--space-0_5);
+  font-size: var(--fs-body);
+}
+.flatloop .el { color: var(--text-secondary); }
+.flatloop .arrow, .flatloop .back {
+  font-family: var(--font-mono);
+  font-size: var(--fs-cap);
+  color: var(--text-tertiary);
+}
