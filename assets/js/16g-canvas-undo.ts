@@ -271,7 +271,7 @@ export function _restoreSnapshot(csv: string): boolean {
   }
 
   _suspendUndoCapture = true;
-  let ok = false;
+  let ok: boolean;
   try {
     ok = loadDataFromCsv(csv);
     // loadDataFromCsv resets state.lastCsvSnapshot via the save path; keep it

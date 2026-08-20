@@ -379,7 +379,7 @@ export function applyFocusAfterRender(): void {
   if (!overlay) return;
 
   requestAnimationFrame(() => {
-    let el: HTMLElement | null = null;
+    let el: HTMLElement | null;
     if (target.field) {
       const sel = '[data-section="' + target.section + '"]' +
                   '[data-field="'   + target.field   + '"]' +
