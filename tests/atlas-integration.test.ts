@@ -729,8 +729,8 @@ describe("rows open and close on their own", () => {
     dest.click();
     const atDest = forks();
 
-    const fork = rows().find(r => r.classList.contains("strandrow") && r.dataset.forkpath
-      && (r.dataset.forkpath.split("\u0001").length > 1));
+    const fork = rows().find(r => r.classList.contains("strandrow")
+      && Number(r.dataset.forkdepth) >= 1);
     if (!fork || !fork.textContent!.includes("×")) return;
     fork.click();
     if (forks() <= atDest) return;              // that fork had nothing under it
@@ -738,6 +738,142 @@ describe("rows open and close on their own", () => {
     // Click it again. Its own contents go; the destination above it does not.
     (panel().querySelector(".strandrow.cur") as HTMLButtonElement).click();
     expect(forks()).toBe(atDest);
+  });
+});
+
+// A map that repeats itself along a dimension, so the atlas folds boxes that
+// share a core phrase into one circle: four Seizure boxes behind "◇ Seizure".
+// None of the shipped samples fold, so the case has to be built.
+//
+// Ketamine deliberately has no Testing box. That is what makes the folding
+// worth opening: three of the four go on to Testing and one does not, and until
+// the row could be opened there was nothing on screen that said so.
+const lanesCsv = (): string => {
+  const nodes: string[] = [], edges: string[] = [];
+  const box = (id: string, label: string, stage: string) =>
+    nodes.push(`${id},${label},,main,${stage},work,1,,false,,3`);
+  const link = (from: string, to: string) =>
+    edges.push(`${from},${to},increases,0.4,`);
+
+  box("policy", "Enforcement Policy", "st0");
+  box("harm", "Harm Reduction", "st3");
+  for (const d of ["Cannabis", "Cocaine", "Heroin", "Ketamine"]) {
+    const k = d.toLowerCase();
+    box(k + "_s", d + " Seizure", "st1");
+    box(k + "_c", d + " Casework", "st2");
+    link("policy", k + "_s"); link(k + "_s", k + "_c"); link(k + "_c", "harm");
+    if (d === "Ketamine") continue;
+    box(k + "_q", d + " Testing", "st2");
+    link(k + "_s", k + "_q"); link(k + "_q", "harm");
+  }
+  for (const c of ["Cat A", "Cat B", "Cat C", "Cat D"]) {
+    const k = c.replace(" ", "").toLowerCase();
+    box(k + "_t", c + " Targets", "st1");
+    box(k + "_r", c + " Referrals", "st2");
+    link("policy", k + "_t"); link(k + "_t", k + "_r"); link(k + "_r", "harm");
+  }
+  // One ordinary box that forks two ways, sharing no core phrase with anything.
+  // A row for it opens the same way and has no boxes to name, which is what
+  // says the strip belongs to folding rather than to rows in general.
+  box("audit", "Border Audit", "st1");
+  box("warning", "Warning Letter", "st2");
+  box("licence", "Licence Review", "st2");
+  link("policy", "audit"); link("audit", "warning"); link("audit", "licence");
+  link("warning", "harm"); link("licence", "harm");
+  return [
+    "# SECTION: streams", "id,label,short,color", "main,Main,MAIN,#60a5fa", "",
+    "# SECTION: stages", "id,label",
+    "st0,Policy", "st1,Seizure", "st2,Follow-up", "st3,Outcome", "",
+    "# SECTION: categories", "id,label,color,text_color,class",
+    "work,Work,#a3a3a3,#1c1917,primary", "",
+    "# SECTION: nodes",
+    "id,label,description,stream,stage,category,baseline,unit,controllable,direction,slider_max",
+    ...nodes, "",
+    "# SECTION: edges", "from,to,effect,elasticity,description", ...edges,
+  ].join("\n");
+};
+
+// A folded row could not be opened at all. The row carried its whole way down
+// as element ids joined by a separator, and a folded element's id has that very
+// separator inside it — so the click decoded into a longer, different path,
+// nothing matched it, and clicking did nothing whatever. What the row opens
+// into is the second half: the boxes it stands for, one of them pickable.
+describe("a row that stands for several boxes", () => {
+  const forkRows = () => [...panel().querySelectorAll(".strandrow")] as HTMLButtonElement[];
+  const foldedRow = () => forkRows().find(r => r.textContent!.includes("◇"));
+  const chips = () => [...panel().querySelectorAll(".lane")] as HTMLButtonElement[];
+  const quiet = () => forkRows().filter(r => r.classList.contains("quiet"));
+
+  beforeEach(() => {
+    loadDataFromCsv(lanesCsv());
+    openAtlas("policy");
+    renderDetailPanel();
+    const dest = [...panel().querySelectorAll(".dhead")]
+      .find(d => d.querySelector(".m")) as HTMLButtonElement;
+    dest.click();
+  });
+
+  it("is there to be clicked in the first place", () => {
+    const row = foldedRow();
+    expect(row).toBeDefined();
+    expect(row!.textContent).toContain("×");
+  });
+
+  it("opens, where it used to do nothing at all", () => {
+    const before = forkRows().length;
+    foldedRow()!.click();
+    expect(forkRows().length).toBeGreaterThan(before);
+  });
+
+  it("names the boxes it stands for", () => {
+    foldedRow()!.click();
+    const named = chips().map(c => c.textContent);
+    expect(named).toContain("Cannabis");
+    expect(named).toContain("Ketamine");
+  });
+
+  it("offers no boxes on a row that stands for one", () => {
+    const plain = forkRows().find(r => r.textContent!.includes("Border Audit"));
+    expect(plain).toBeDefined();
+    const before = forkRows().length;
+    plain!.click();
+    expect(forkRows().length).toBeGreaterThan(before);   // it opened
+    expect(panel().querySelectorAll(".lane").length).toBe(0);
+  });
+
+  it("leaves rows outside the one picked under alone", () => {
+    foldedRow()!.click();
+    chips().find(c => c.textContent === "Ketamine")!.click();
+    // The picked box speaks for its own row's forks and no others: the ordinary
+    // row beside it, and the second family, are untouched.
+    expect(quiet().some(r => r.textContent!.includes("Border Audit"))).toBe(false);
+    expect(quiet().some(r => r.textContent!.includes("Targets"))).toBe(false);
+  });
+
+  it("quietens the forks a picked box does not take, and keeps them", () => {
+    foldedRow()!.click();
+    const all = forkRows().length;
+    chips().find(c => c.textContent === "Ketamine")!.click();
+
+    // Ketamine has no Testing box, so the fork through Testing goes quiet —
+    // and stays on screen, because the column above it still counts it.
+    expect(forkRows().length).toBe(all);
+    expect(quiet().length).toBeGreaterThan(0);
+    expect(quiet().every(r => r.textContent!.includes("Testing"))).toBe(true);
+  });
+
+  it("keeps every fork lit for a box that takes them all", () => {
+    foldedRow()!.click();
+    chips().find(c => c.textContent === "Cannabis")!.click();
+    expect(quiet().length).toBe(0);
+  });
+
+  it("lets go when the same box is picked again", () => {
+    foldedRow()!.click();
+    chips().find(c => c.textContent === "Ketamine")!.click();
+    expect(quiet().length).toBeGreaterThan(0);
+    chips().find(c => c.textContent === "Ketamine")!.click();
+    expect(quiet().length).toBe(0);
   });
 });
 

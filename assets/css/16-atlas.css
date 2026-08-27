@@ -882,6 +882,54 @@ body.atlas-open .ins { display: flex; flex-direction: column; height: 100%; }
  * it — indented like any other level, because that is what it is. */
 .pathaside { padding-left: 11px; }
 
+/* The boxes a FOLDED row stands for — four Seizure boxes behind one "◇ Seizure".
+ * Chips rather than rows: they are alternatives to choose between, not steps to
+ * read down, and a row of four short names says that at a glance where four
+ * full-width rows would read as four more pathways. */
+.lanestrip {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 2px 0 5px;
+}
+/* Its own line, so the boxes start in the same place however many there are and
+ * whatever the panel's width — a name that moved when you clicked it would move
+ * out from under the pointer that clicked it. */
+.lanestrip .ln {
+  flex: 0 0 100%;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--tracking-cap);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-bottom: 1px;
+}
+.lane {
+  border: 0;
+  background: var(--bg-mid);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-body);
+  line-height: 1.35;
+  padding: 1px 7px;
+  border-radius: 9999px;
+  cursor: pointer;
+}
+.lane:hover { background: var(--act-tint); color: var(--text-primary); }
+.lane:focus-visible { outline: 2px solid var(--act-hi); outline-offset: 2px; }
+/* The picked one is the only lit thing in the strip, so what the quiet rows
+ * below are quiet ABOUT is never in doubt. */
+.lane.on {
+  background: var(--act-on);
+  color: var(--text-primary);
+  box-shadow: inset 0 0 0 1px var(--act);
+}
+
+/* A fork the picked box does not take. Still there, still counted, plainly not
+ * part of this — the same treatment, for the same reason, as an output a picked
+ * circle never reaches. */
+.ins .strandrow.quiet { opacity: 0.42; }
+
 /* A box inside a circle, and the way back out of the atlas to it on the map.
  * The only row in this panel that LEAVES, so it says so at its right edge. */
 .atlas-boxrow {

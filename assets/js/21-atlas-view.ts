@@ -95,12 +95,19 @@ interface Reading {
   roots: any[];             // circles clicked on the picture, in the order clicked
   open: any[][];            // row-paths the reader has opened, each destination-first
   current: any[];           // the row last taken hold of: what is drawn, and marked
+  lanes: LanePick[];        // a box picked out from under a folded row
   trace: any | null;        // an element traced back to the sliders that moved it
   traceKey: string | null;  // which control asked for that trace, so it can be un-asked
   inside: any | null;       // the tangle being looked inside
 }
 
-const R: Reading = { roots: [], open: [], current: [], trace: null, traceKey: null, inside: null };
+// Which of the boxes a folded row stands for the reader has picked out, per row.
+// Per row rather than one at a time, for the same reason rows open independently:
+// picking Cannabis under ◇ Seizure says nothing about ◇ Targets three rows down,
+// and moving that row's forks about would be answering a question nobody asked.
+interface LanePick { path: any[]; value: string }
+
+const R: Reading = { roots: [], open: [], current: [], lanes: [], trace: null, traceKey: null, inside: null };
 
 // Pointed at, not chosen. Deliberately NOT part of the reading: it changes what
 // is drawn and nothing else, and it is gone the moment the pointer moves on.
@@ -229,7 +236,8 @@ export function openAtlas(startId: string): void {
   PATHS_THROUGH.clear();
   WHEEL_PICK = null; WHEEL_LOOP = 0; WHEEL_TANGLE = null; PICK_FROM_WHEEL = false;
   MOVES_OPEN = {};
-  R.roots = []; R.open = []; R.current = []; R.trace = null; R.traceKey = null; R.inside = null;
+  R.roots = []; R.open = []; R.current = []; R.lanes = [];
+  R.trace = null; R.traceKey = null; R.inside = null;
   POINTED = null; TRACE_OF = null; TRACE_CACHE = null;
   STRAND_CACHE = null; VB = null; WORLD = null;
   stopTour();
@@ -244,7 +252,7 @@ export function closeAtlas(): void {
   cancelAnimationFrame(traceRAF);
   state.atlas = null;
   START = null; ATLAS = null; GRAPH = null; WORLD = null; VB = null;
-  R.inside = null; R.roots = []; R.open = []; R.current = []; POINTED = null;
+  R.inside = null; R.roots = []; R.open = []; R.current = []; R.lanes = []; POINTED = null;
   WHEELS.clear();
   document.body.classList.remove("atlas-open");
   const stage = stageEl();
@@ -912,10 +920,44 @@ const holds = (f: Fork, els: any[]): boolean =>
 let TREE_OF: any = null;
 let TREE: Fork[] = [];
 
+// ── The handle a row carries ──────────────────────────────────────────────
+// A row used to carry its whole way down as element ids joined by a separator,
+// and an element id is not safe to join. A folded family's id is built by the
+// engine as "L:" + prefix + SEP + suffix, and SEP was the very character the
+// join used — so every folded row encoded to a path that decoded into a longer,
+// different one, nothing matched it, and a row standing for a family could not
+// be opened at all. Clicking it did nothing, and nothing it could ever do.
+//
+// The way down never becomes a string now. The row carries an opaque handle
+// and the path is looked up, so no character in a label can break it.
+const FORK_KEY = new Map<Fork, string>();     // fork → the handle its row carries
+const KEY_PATH = new Map<string, any[]>();    // handle → the way down to that fork
+const KEY_FORK = new Map<string, Fork>();     // handle → the fork itself
+
 function forkTree(): Fork[] {
   const res = strandList();
-  if (TREE_OF !== res) { TREE_OF = res; TREE = destinationForks(res.list); }
+  if (TREE_OF !== res) {
+    TREE_OF = res;
+    TREE = destinationForks(res.list);
+    indexForks(TREE);
+  }
   return TREE;
+}
+
+// Handed out once per tree, alongside the tree, so a handle and the fork it
+// names cannot come apart.
+function indexForks(tree: Fork[]): void {
+  FORK_KEY.clear(); KEY_PATH.clear(); KEY_FORK.clear();
+  let n = 0;
+  const walk = (level: Fork[], trail: any[]): void => {
+    for (const f of level) {
+      const mine = trail.concat([f.via]);
+      const key = "f" + (n++);
+      FORK_KEY.set(f, key); KEY_PATH.set(key, mine); KEY_FORK.set(key, f);
+      walk(f.kids, mine);
+    }
+  };
+  walk(tree, []);
 }
 
 // The destinations, in the order the walk found them — which, because it is
@@ -981,6 +1023,67 @@ const startsWith = (path: any[], prefix: any[]) =>
 // Does this row show its forks? Because it was opened, or because something
 // opened below it has to be reached through it.
 const isOpen = (path: any[]) => R.open.some(o => startsWith(o, path));
+
+// ── The boxes a folded row stands for ─────────────────────────────────────
+// A folded circle is several boxes that share a core phrase — four Seizure
+// boxes, one per drug — so a row named after it reads "via ◇ Seizure" for all
+// four at once, and the forks beneath it are the union of what the four do.
+// Naming them under the row, and letting one be picked, is the map saying which
+// of the four actually takes each step onward. The engine worked that out on
+// the way past and has been handing it back unused ever since (stepLanes);
+// nothing here recomputes it.
+const laneAt = (path: any[]): string | null => {
+  const hit = R.lanes.find(l => samePath(l.path, path));
+  return hit ? hit.value : null;
+};
+
+// Picking the one already picked lets go of it, which is the rule every other
+// control in this panel follows.
+function pickLane(path: any[], value: string): void {
+  const had = laneAt(path);
+  R.lanes = R.lanes.filter(l => !samePath(l.path, path));
+  if (had !== value) R.lanes.push({ path, value });
+  // No reframe: which of four boxes is being asked about does not change where
+  // the picture is looking.
+  syncStrandToOpen(false);
+}
+
+// What a folded element stands for, or nothing when it is not a family. A
+// tangle is folded too, and what it holds is loops rather than alternatives —
+// the aside already draws those as diagrams.
+function lanesOf(via: any): string[] {
+  if (!ATLAS || via === null) return [];
+  const node = ATLAS.nodes.get(via);
+  if (!node || node.loop || !node.lanes || node.boxes.length < 2) return [];
+  const out = [...node.lanes].map(String).sort();
+  return out.length > 1 ? out : [];
+}
+
+// The forks under a folded row that this box does NOT take. They stay on screen
+// and stay in the arithmetic: going quiet is the map saying "not this one",
+// which is a different thing from the map not saying anything, and a column
+// that silently dropped rows would stop adding up to the number above it.
+//
+// A row's forks split at the first element they disagree on, which is not
+// always the very next one — so the step to ask about is read off the pathway
+// rather than assumed to be the fork's own name. A step the engine recorded no
+// boxes for is KEPT: the list may not narrow as far as it could, but it can
+// never quieten a route that this box really does take.
+function offLane(f: Fork, lane: string): Set<Fork> {
+  const out = new Set<Fork>();
+  const steps = ATLAS && ATLAS.stepLanes;
+  if (!steps) return out;
+  for (const k of f.kids) {
+    const takes = k.paths.some(p => {
+      const at = p.indexOf(f.via);
+      if (at < 0 || at + 1 >= p.length) return true;
+      const took = steps.get(f.via + ">" + p[at + 1]);
+      return !took || took.has(lane);
+    });
+    if (!takes) out.add(k);
+  }
+  return out;
+}
 
 // Light everything under where you are, and frame it. At the top there is
 // nothing to light, so the picture goes back to being whole.
@@ -1150,7 +1253,7 @@ const forkLabel = (f: Fork): string =>
 // it here as text would say the same thing twice in the same glance.
 function forkRow(
   f: Fork, chosen: boolean, share: number | null, direction: string | undefined,
-  isEl: boolean, trail: any[],
+  isEl: boolean, quiet: boolean,
 ): string {
   // While the sliders are out, the right-hand number stops being how LONG the
   // route is and becomes how much of the destination's change came THIS way.
@@ -1159,11 +1262,36 @@ function forkRow(
     ? (share === null ? "—" : signed(share))
     : steps(f);
   return `<button type="button" class="strandrow${chosen ? " cur" : ""}${
-      isEl ? " isel" : ""}" ${rowAttrs(f, trail)}>
+      isEl ? " isel" : ""}${quiet ? " quiet" : ""}" ${rowAttrs(f)}>
     <span class="line"><span class="dest">${escapeHtml(forkLabel(f))}${
       f.paths.length > 1 ? `<em>×${f.paths.length}</em>` : ""}</span><span
       class="m${state.simulationMode && share !== null
         ? " " + shareMerit(share, direction) : ""}">${escapeHtml(right)}</span></span></button>`;
+}
+
+// The boxes a folded row stands for, named, with one pickable. Under the row
+// rather than beside it, because it IS the row's next level: the row says "via
+// ◇ Seizure" for four boxes at once, and this is the four.
+//
+// Nothing here is a filter over the list. Picking one quietens the forks that
+// box does not take and leaves them where they are, so the count above still
+// covers what is under it and letting go costs one click.
+function laneStrip(f: Fork, path: any[]): string {
+  const lanes = lanesOf(f.via);
+  if (!lanes.length || !f.kids.length) return "";
+  const on = laneAt(path);
+  const key = FORK_KEY.get(f) || "";
+  // The line above the boxes says the same thing whether one is picked or not.
+  // It used to drop its hint on picking, which reflowed the boxes under it —
+  // so the box you had just clicked moved out from under the pointer.
+  return `<div class="lanestrip" role="group" aria-label="The ${lanes.length} boxes ${
+      escapeHtml(labelOf(f.via))} stands for">` +
+    `<span class="ln">${lanes.length} ${plural(lanes.length, "box", "boxes")} — ` +
+    `pick one to see which way it goes</span>` +
+    lanes.map(l => `<button type="button" class="lane${l === on ? " on" : ""}"` +
+      ` data-lane="${escapeHtml(l)}" data-lanerow="${escapeHtml(key)}"` +
+      ` aria-pressed="${l === on ? "true" : "false"}">${escapeHtml(l)}</button>`).join("") +
+    `</div>`;
 }
 
 // The destination's change, split down the chain you have opened, so the rows
@@ -1226,32 +1354,25 @@ function forkAtElement(el: any): Fork | null {
   return forkToElement(rootsAfterClicking(el));
 }
 
-// The fork a row stands for. A row at depth d is one of the forks under
-// whatever is chosen at d-1, which is what makes a row at an ancestor's level
-// still clickable: it is a sibling of that ancestor, not of where you are.
-function forkAtPath(path: any[]): Fork | null {
-  let level = forkTree(), found: Fork | null = null;
-  for (const via of path) {
-    found = level.find(f => f.via === via) || null;
-    if (!found) return null;
-    level = found.kids;
-  }
-  return found;
+// The fork a row stands for, from the handle the row carries. A row at depth d
+// is one of the forks under whatever is chosen at d-1, which is what makes a
+// row at an ancestor's level still clickable: it is a sibling of that ancestor,
+// not of where you are.
+function forkOfKey(raw: string | undefined): Fork | null {
+  if (!raw) return null;
+  forkTree();                    // the index is handed out with the tree
+  return KEY_FORK.get(raw) || null;
 }
 
-// The way down to a fork, found by walking the tree for it. The rows carry this
-// in an attribute; the keyboard has no row to read it off, so it works it out.
+// The way down to a fork. The rows carry a handle to it; the keyboard has no
+// row to read one off, so it asks for the fork's own.
 function pathOfFork(target: Fork): any[] {
-  const walk = (level: Fork[], trail: any[]): any[] | null => {
-    for (const f of level) {
-      const mine = trail.concat([f.via]);
-      if (f === target) return mine;
-      const deeper = walk(f.kids, mine);
-      if (deeper) return deeper;
-    }
-    return null;
-  };
-  return walk(forkTree(), []) || [];
+  forkTree();
+  const key = FORK_KEY.get(target);
+  // A circle's fork is made up on the spot rather than taken from the tree
+  // (see forkToElement), so it has no handle and no way down — which is what
+  // stops Enter on one from opening a row that does not exist.
+  return (key ? KEY_PATH.get(key) : null) || [];
 }
 
 function stepPreview(delta: number): void {
@@ -1263,12 +1384,12 @@ function stepPreview(delta: number): void {
   previewFork(VISIBLE[next]);
   // Keep the row that is now being pointed at in view — with the whole chain
   // listed, the fork you are sweeping towards can be below the fold.
-  // By its whole trail, not its name and depth: the same fork name can appear
-  // at the same depth under two different outputs, and the first match is not
+  // By its own handle, not its name and depth: the same fork name can appear at
+  // the same depth under two different outputs, and the first match is not
   // necessarily the one being pointed at.
-  const path = pathOfFork(VISIBLE[next]).map(v => (v === null ? "" : String(v))).join(PATH_SEP);
+  const key = FORK_KEY.get(VISIBLE[next]) || "";
   const row = document.querySelector(
-    `#detail-content [data-forkpath="${CSS.escape(path)}"]`);
+    `#detail-content [data-forkpath="${CSS.escape(key)}"]`);
   if (row && typeof row.scrollIntoView === "function") {
     row.scrollIntoView({ block: "nearest" });
   }
@@ -1286,13 +1407,14 @@ function stepPreview(delta: number): void {
 // when the list was opened by a circle rather than drilled by hand: the click
 // wrote a chain whose first entry was a fork where a destination belonged, the
 // chain failed to resolve, and the entire list unwound.
-const PATH_SEP = "\u0001";
-const rowAttrs = (f: Fork, trail: any[]): string =>
+const rowAttrs = (f: Fork): string =>
   `data-fork="${f.via === null ? "" : escapeHtml(String(f.via))}" data-forkdepth="${f.depth}"` +
-  ` data-forkpath="${escapeHtml(trail.map(v => (v === null ? "" : String(v))).join(PATH_SEP))}"`;
+  ` data-forkpath="${escapeHtml(FORK_KEY.get(f) || "")}"`;
 
+// The row hands its handle straight back. Nothing is parsed, so nothing can be
+// mis-parsed.
 const decodePath = (raw: string | undefined): any[] =>
-  !raw ? [] : raw.split(PATH_SEP).map(v => (v === "" ? null : v));
+  (raw ? KEY_PATH.get(raw) : null) || [];
 
 // A destination row: the output, how far it moved against the biggest mover on
 // the map, and by how much. There is no separate "final outputs" list because
@@ -1307,7 +1429,7 @@ function destRow(
     : "";
   const bar = effect && effect.moved ? moveBar(effect.pct, effect.merit, outputScale) : "";
   return `<button type="button" class="dhead${chosen ? " cur" : ""}${
-    quiet ? " quiet" : ""}" ${rowAttrs(f, [f.via])}><span class="dname">${
+    quiet ? " quiet" : ""}" ${rowAttrs(f)}><span class="dname">${
     marked ? `<span class="hitdot" aria-hidden="true"></span>` : ""}${
     escapeHtml(clip(labelOf(f.via), 26))}</span>${
     f.paths.length > 1 ? `<span class="m">×${f.paths.length}</span>` : ""}${bar}${move}</button>`;
@@ -1395,15 +1517,23 @@ function strandsHtml(): string {
     const share = depth > 0 ? shareAtOpen(above) : null;
     const shares = depth > 0 && share !== null ? apportion(share, level.map(forkGain)) : null;
 
+    // A box picked out from under the row above quietens the forks it does not
+    // take. `trail` IS that row's way down, so this is the row's own pick and
+    // not whichever branch happens to be current.
+    const parent = above.length ? above[above.length - 1] : null;
+    const picked = parent ? laneAt(trail) : null;
+    const hushed = parent && picked ? offLane(parent, picked) : null;
+
     return level.map((f, i) => {
       VISIBLE.push(f);
       const mine = trail.concat([f.via]);
       // The row the circle is ON, rather than a row on the way down to it.
       const isEl = els.includes(f.via);
       const current = samePath(R.current, mine);
-      const row = forkRow(f, current || isEl, shares ? shares[i] : null, direction, isEl, mine);
+      const row = forkRow(f, current || isEl, shares ? shares[i] : null, direction, isEl,
+        !!hushed && hushed.has(f));
       if (!f.kids.length || !isOpen(mine)) return row;
-      return row + `<div class="pathlvl">${
+      return row + `<div class="pathlvl">${laneStrip(f, mine)}${
         levelHtml(f.kids, depth + 1, mine, above.concat([f]))}</div>`;
     }).join("");
   };
@@ -1421,7 +1551,7 @@ function strandsHtml(): string {
       !!els.length && !hit, hit);
     if (!d.kids.length || !isOpen(mine)) return row;
     const aside = hit && !asideDone ? (asideDone = true, asideHtml()) : "";
-    return row + `<div class="pathlvl">${aside}${
+    return row + `<div class="pathlvl">${aside}${laneStrip(d, mine)}${
       levelHtml(d.kids, 1, mine, [d])}</div>`;
   }).join("");
 
@@ -2588,7 +2718,7 @@ function litFor(key: string, el: any) {
     return;
   }
   // Whatever was being read before, this replaces it.
-  R.roots = []; R.open = []; R.current = [];
+  R.roots = []; R.open = []; R.current = []; R.lanes = [];
   R.traceKey = key; R.trace = el;
   paintAtlas();
   // A trace is a shape, so the frame fits the shape. With nothing moved to
@@ -3014,7 +3144,7 @@ export function initAtlasStage(): void {
     content.addEventListener("pointerover", event => {
       if (!atlasIsOpen()) return;
       const row = (event.target as Element)?.closest?.("[data-fork]") as HTMLElement | null;
-      previewFork(row ? forkAtPath(decodePath(row.dataset.forkpath)) : null);
+      previewFork(row ? forkOfKey(row.dataset.forkpath) : null);
     });
     content.addEventListener("pointerleave", () => {
       if (atlasIsOpen()) previewFork(null);
@@ -3044,6 +3174,15 @@ export function initAtlasStage(): void {
             R.roots = []; syncStrandToOpen(true); return;
           }
           closeToDepth(to);
+          return;
+        }
+        // Before the row it sits under, because a box picked out from under a
+        // folded row is a narrowing of that row rather than a second click on
+        // it — opening the row again would shut what was just asked about.
+        const lane = t.closest("[data-lane]") as HTMLElement | null;
+        if (lane) {
+          const at = KEY_PATH.get(lane.dataset.lanerow || "");
+          if (at) pickLane(at, lane.dataset.lane!);
           return;
         }
         const fork = t.closest("[data-fork]") as HTMLElement | null;
