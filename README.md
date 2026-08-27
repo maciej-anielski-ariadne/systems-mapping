@@ -41,7 +41,7 @@ The app opens in **reading mode**: the map has the screen to itself. There is no
 docked left panel (**Filters** slides it over the map when you want it), the
 right-hand detail panel stays closed until you select a box, and the header
 carries only what a reader reaches for — **Filters · Import · Export · Simulate ·
-Edit**, plus the theme switch.
+Review · Edit**, plus the theme switch.
 
 **Edit** switches modes. Both side panels dock, the authoring buttons appear
 (**New map**, **Bulk edit**), and the sidebar grows its rename / recolour /
@@ -60,15 +60,21 @@ the same happens in **simulation**: the sliders *are* the left panel, and you wo
 them against the map, so entering simulation docks the panel rather than leaving
 it as a drawer that would close the moment you clicked the map.
 
-The header buttons:
+The header holds four groups — **Filters** · **File** · the reading tools
+(**Simulate · Review · Atlas**) · the mode switch and the theme — spaced tight
+inside a group and wide between them, so the row reads as four things rather
+than as eight equals.
+
 - **Filters** opens the left panel as a drawer — rows, columns and tags, with the link-type / line-style / highlighting filters folded away under **Link and highlight options**. Esc or a click on the map closes it. Hidden while editing, where the panel is docked.
-- **New map** (editing only) clears the map and starts a fresh empty grid, asking for confirmation if a map is loaded.
-- **Bulk edit** (editing only) opens the seven-step wizard (dimmed until a map exists).
-- **Import** loads a spreadsheet from disk — same as dragging one onto the window.
-- **Export** opens a menu of the three ways out. **Spreadsheet** downloads the current map as a `.csv` (re-importable). With a box selected, saves only its highlighted boxes and links.
-- **Image** copies the map to your clipboard as a high-resolution PNG (rendered vector-sharp at up to 3× pixel density, backed off automatically to stay inside what browsers can allocate — one side at most 16384px, at most 64 megapixels total) and shows a "copied" toast — paste it straight into a doc, slide, or chat. It captures what's on screen, so zoom / pan to frame the part you want (only boxes overlapping the visible area are included, along with the links whose two ends are both on screen; if the whole map already fits, you get all of it). If a box is selected, only its highlighted boxes and links (out to the current **highlight depth**) are copied — rendered in the map's normal, un-highlighted style (the highlight only selects what to include). Either way the export is reflowed: empty columns and rows are dropped and the surviving rows reordered so connected boxes sit closer together. A map so large that even 1× exceeds those canvas limits still exports, but the toast tells you the percentage it came out at and suggests selecting a box to get that part at full quality; if the browser refuses the image outright, the toast says so rather than failing silently. (Clipboard image copy needs a secure context — works over http/localhost or https.)
-- **Web page** downloads `systems-map.html` — a self-contained, view-only page of the same framed map (same viewport / selection framing as **Image**) with pan / zoom / hover-for-details (no editing, importing, or simulating).
+- **File** opens a menu holding every way the map comes in and goes out — the map as a *document*:
+  - **New map** (editing only) clears the map and starts a fresh empty grid, asking for confirmation if a map is loaded.
+  - **Import…** loads a spreadsheet from disk — same as dragging one onto the window.
+  - **Bulk edit** (editing only) opens the seven-step wizard (dimmed until a map exists).
+  - **Spreadsheet** downloads the current map as a `.csv` (re-importable). With a box selected, saves only its highlighted boxes and links.
+  - **Image** copies the map to your clipboard as a high-resolution PNG (rendered vector-sharp at up to 3× pixel density, backed off automatically to stay inside what browsers can allocate — one side at most 16384px, at most 64 megapixels total) and shows a "copied" toast — paste it straight into a doc, slide, or chat. It captures what's on screen, so zoom / pan to frame the part you want (only boxes overlapping the visible area are included, along with the links whose two ends are both on screen; if the whole map already fits, you get all of it). If a box is selected, only its highlighted boxes and links (out to the current **highlight depth**) are copied — rendered in the map's normal, un-highlighted style (the highlight only selects what to include). Either way the export is reflowed: empty columns and rows are dropped and the surviving rows reordered so connected boxes sit closer together. A map so large that even 1× exceeds those canvas limits still exports, but the toast tells you the percentage it came out at and suggests selecting a box to get that part at full quality; if the browser refuses the image outright, the toast says so rather than failing silently. (Clipboard image copy needs a secure context — works over http/localhost or https.)
+  - **Web page** downloads `systems-map.html` — a self-contained, view-only page of the same framed map (same viewport / selection framing as **Image**) with pan / zoom / hover-for-details (no editing, importing, or simulating).
 - **Simulate** toggles simulation mode (sliders on adjustable inputs).
+- **Review** opens the [review panel](#review--checking-a-map-you-cannot-read-in-one-go) — everything the loader flagged, grouped by cause, beside what each adjustable input actually moves. It carries a count badge whenever there is something to fix, so a map with problems never looks clean.
 - **Theme** (the ☀ / ☾ icon) switches between the light (Linen) and dark (Twilight) theme; your choice is remembered.
 
 ## What you get
@@ -124,6 +130,70 @@ A 296-box map builds in about 15 ms, with no sampling, budget or cap.
 - **A new map closes it.** An atlas is a picture of everything downstream of one box in *this* map; a different map makes it a picture of something that is no longer there.
 
 [`tools/pathway-atlas.html`](tools/PATHWAY-ATLAS.md) is the same engine as a standalone page — drop a CSV on it, no app needed. [`tools/strand-condenser.html`](tools/README.md) works the other way: give it two boxes and it walks every route between them, folding together the ones that differ only in which parallel lane they ran through.
+
+## Review — checking a map you cannot read in one go
+
+A map of a dozen boxes is verified by looking at it. A map of ninety is not. **Review** (in
+the header, beside **Simulate**) answers the two questions that do not get easier by
+staring harder, in two columns side by side.
+
+### What the loader noticed
+
+Every check in [Validation](#validation) reports here, **one card per thing to fix** — not
+one row per finding. The difference matters more than it sounds: a single broken formula
+knocks every box downstream of it off its starting value, so one mistake can produce a
+dozen findings. Listed flat, the mistake and its shadows look equally like work.
+
+So a box that does not rest at its starting value is asked one question: *does it read
+another box that is also drifting?* If it does, its number is wrong because its input's
+number is wrong — it is folded under the box actually at fault, counted but not presented
+as a job. If every box feeding it rests where it should, the problem starts there and it
+gets a card. On the map this was built against, **three authoring mistakes produced
+seventeen findings and six cards**.
+
+Each card names the box, says what is wrong in plain language, and says what to do about
+it. Clicking one closes the panel and selects that box on the map.
+
+Findings carry one of three severities:
+
+| | Meaning |
+|---|---|
+| **Ignored** | The engine threw away something you typed — a formula it could not read, a slider max that made no sense. What is on the map is not what is in the file. |
+| **Wrong** | The number is not the one you declared — a box that does not rest at its starting value, a limit that bit. It computes, but every % change on it is read against the wrong anchor. |
+| **Mismatch** | The picture and the maths disagree while the number is fine — a link the formula never reads. Often deliberate. |
+
+### What each adjustable input does
+
+The other column runs a **sensitivity sweep**: each adjustable input in turn, nudged up 10%
+on its own with every other slider at 100%, and a note of everything that moved. Changes
+are measured against where the map sits when nothing has been asked of it, so a map with
+standing drift still gives honest figures.
+
+Nothing this finds is *invalid* — it all computes perfectly and passes every check in the
+left-hand column. It is just not what anyone intended:
+
+- **An input that moves nothing.** Usually because the box it feeds is a gate (a `min`, or
+  a `min()` at the top of a formula) and this input is not the arm that binds. The card
+  spells out every arm with its value and marks the binding one, so "this slider is dead"
+  arrives together with "and here is what is actually short".
+- **An input that reaches exactly one box**, or **only ever pushes down**.
+- **Boxes no input can reach at all.**
+- **A single point of leverage** — one input that carries much further than any other.
+
+Below the exceptions, the full sweep folds open: every input, ordered by how far it
+carries, with its biggest movers. Nothing is hidden by the exceptions; it is reordered by
+whether it needs a decision.
+
+The sweep is a fact about the shape of the map, so it is computed once and kept until the
+map changes — dragging sliders never re-runs it. On a map with more than 60 adjustable
+inputs it waits to be asked rather than running on open.
+
+> **Deliberately not included:** a flag for "this input moves a box the wrong way for its
+> own direction". It was built and measured — on a healthy 88-box map it fired **59 times**,
+> nearly all of them trade-offs the author meant (more inspection, longer queues; more
+> arrivals, a thinner coverage share). A flag that is wrong 55 times in 59 buries the
+> findings above. It becomes worth having when it can tell a sign error from a modelled
+> cost, or when a finding can be acknowledged once and stop asking.
 
 ## Spreadsheet format
 
@@ -322,7 +392,8 @@ systems_mapping/
     │   │                            (there is no 12-*.css — the number is retired, not missing)
     │   ├── 13-search.css            Search dropdown + map-match halo
     │   ├── 14-typeable-dropdown.css Typable / filterable <select> replacement
-    │   └── 16-atlas.css             Pathway atlas: the picture, the wheel inside a tangle, the panel
+    │   ├── 16-atlas.css             Pathway atlas: the picture, the wheel inside a tangle, the panel
+    │   └── 17-review.css            Review panel: cause cards, gate arms, the sweep list
     │                                (flat look = `border: 0` in 02-base.css;
     │                                 state shown via drop-shadow / box-shadow rings)
     ├── js/
@@ -365,6 +436,8 @@ systems_mapping/
     │   ├── 19-export.ts             Export canvas → image (PNG + SVG) + view-only HTML
     │   ├── 20-atlas-engine.ts       Pathway atlas: scope → contract loops → group → count (exact)
     │   ├── 21-atlas-view.ts         Pathway atlas: the picture, the wheel, the tour, the panel
+    │   ├── 22-review.ts             Review logic: findings grouped by cause + the input sweep
+    │   ├── 23-review-panel.ts       Review UI: the overlay, the cards, the header count badge
     │   └── types.ts                 Shared TypeScript types every module imports (the data model)
     └── data/
         ├── sample.csv               Small neutral example (3 rows, 12 boxes, 12 links).
@@ -422,6 +495,10 @@ features are split across multiple files:
 | How links reroute across hidden rows / columns | `assets/js/10a-collapsed-edges.ts` |
 | The atlas — scoping, loop contraction, grouping, exact counts | `assets/js/20-atlas-engine.ts` |
 | The atlas UI — the picture, the wheel, the loop tour, the panel | `assets/js/21-atlas-view.ts`, `assets/css/16-atlas.css` |
+| What the loader checks, and the words it says | `assets/js/06-data-loader.ts` (the `finding(...)` calls) |
+| How a finding is blamed on a cause rather than listed as its own problem | `assets/js/22-review.ts` (`attributeFindings`) |
+| The input sweep — what each adjustable box actually moves | `assets/js/22-review.ts` (`runSweep`, `sweepExceptions`) |
+| The Review panel UI + its header count badge | `assets/js/23-review-panel.ts`, `assets/css/17-review.css` |
 | Search behaviour / fuzzy matching | `assets/js/17a-search.ts`, `assets/css/13-search.css` |
 | Button behaviour | `assets/js/17-events.ts` |
 | Sample data dataset | `assets/data/sample.csv` (starter) · `assets/data/advanced_sample.csv` (calculation rules) |

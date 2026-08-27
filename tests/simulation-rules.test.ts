@@ -15,6 +15,7 @@ import {
   DELAY_ACYCLIC_CSV,
   FORMULA_INVALID_CSV,
 } from "./fixtures/graphs";
+import { findings, kinds, text } from "./helpers/findings";
 
 // Run the solver with a set of slider positions (multipliers on baseline).
 function simulate(overrides: Record<string, number>): void {
@@ -303,40 +304,42 @@ describe("formula validation warnings", () => {
     expect(loadDataFromCsv(FORMULA_INVALID_CSV)).toBe(true); // warnings, never fatal
   });
 
-  const joined = (): string => state.loadErrors.join(" | ");
+  const joined = (): string => text();
 
   it("names a formula whose text can't be read, and falls back to the links", () => {
-    expect(joined()).toMatch(/Box `oops` has a formula that can't be read: Unexpected '\)'/);
+    expect(kinds("oops")).toContain("formula-unreadable");
+    expect(joined()).toMatch(/Unexpected '\)'/);
     // Fallen back to the classic rule over a → oops.
     expect(state.explanations.oops.rule).toBe("multiplicative");
   });
 
   it("names an identifier that is neither a box nor a param", () => {
-    expect(joined()).toMatch(/Box `unknown_ref` has a formula that mentions `mystery`/);
+    expect(kinds("unknown_ref")).toContain("name-unknown");
+    expect(joined()).toMatch(/`mystery`/);
   });
 
-  it("insists the map draws an arrow for every box a formula reads", () => {
-    expect(joined()).toMatch(/Box `no_edge` has a formula that uses `a`, but no arrow joins them/);
-    expect(joined()).toMatch(/add a link from `a` to `no_edge` or remove it from the formula/);
+  it("insists the map draws a link for every box a formula reads", () => {
+    expect(kinds("no_edge")).toContain("name-has-no-link");
+    expect(joined()).toMatch(/Draw the link from `a`/);
   });
 
-  it("points out an incoming arrow the formula never reads", () => {
-    expect(joined()).toMatch(/Box `extra_edge` has an arrow from `b` that its formula never uses/);
-    expect(joined()).not.toMatch(/Box `extra_edge` has an arrow from `a`/);
+  it("points out an incoming link the formula never reads", () => {
+    const unused = findings("extra_edge").filter((f) => f.kind === "link-unused");
+    expect(unused).toHaveLength(1);
+    expect(unused[0].message).toMatch(/`b`/);
+    expect(unused[0].message).not.toMatch(/`a`/);
   });
 
   it("warns about a referenced box with no starting value", () => {
-    expect(joined()).toMatch(
-      /Box `reads_nb` has a formula that uses `nb`, which has no starting value/,
-    );
+    expect(kinds("reads_nb")).toContain("name-has-no-value");
+    expect(joined()).toMatch(/`nb`/);
   });
 
   it("says the formula beats a combine rule, and a slider beats the formula", () => {
-    expect(joined()).toMatch(
-      /Box `both_rules` has both a combine rule \(`additive`\) and a formula/,
-    );
+    expect(kinds("both_rules")).toContain("combine-beats-formula");
+    expect(joined()).toMatch(/`additive`/);
     expect(state.explanations.both_rules.rule).toBe("formula");
-    expect(joined()).toMatch(/Box `pinned_formula` is a slider input and also has a formula/);
+    expect(kinds("pinned_formula")).toContain("slider-beats-formula");
     expect(state.explanations.pinned_formula.rule).toBe("pinned");
   });
 
@@ -345,7 +348,7 @@ describe("formula validation warnings", () => {
     expect(joined()).toMatch(/`c1`/);
     expect(joined()).toMatch(/`c2`/);
     // Reported once, not once per box on the loop.
-    expect(state.loadErrors.filter((line) => line.includes("calculation loop"))).toHaveLength(1);
+    expect(kinds().filter((k) => k === "loop-without-delay")).toHaveLength(1);
   });
 
   it("stays silent about loops that are properly delayed or purely link-based", () => {

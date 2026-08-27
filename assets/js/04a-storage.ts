@@ -207,7 +207,21 @@ export function applyRestoredUiState(ui: any): void {
   state.hiddenEffects    = new Set(Array.isArray(ui.hiddenEffects)    ? ui.hiddenEffects    : []);
   state.hiddenStyles     = new Set(Array.isArray(ui.hiddenStyles)     ? ui.hiddenStyles     : []);
   state.hiddenTrace      = new Set(Array.isArray(ui.hiddenTrace)      ? ui.hiddenTrace      : []);
-  state.userOverrides    = (ui.userOverrides && typeof ui.userOverrides === "object") ? ui.userOverrides : {};
+  // Sliders come back only for boxes that still exist AND still have a slider —
+  // the same "does this id still mean anything on this map?" check the selected
+  // box gets below. A stale multiplier is worse than a stale selection: it does
+  // not just point at nothing, it silently holds a box away from its starting
+  // value, so the map opens showing a change nobody made on this map.
+  state.userOverrides = {};
+  if (ui.userOverrides && typeof ui.userOverrides === "object") {
+    for (const id of Object.keys(ui.userOverrides)) {
+      const node = nodeById[id];
+      if (!node || !node.controllable) continue;
+      const multiplier = ui.userOverrides[id];
+      if (typeof multiplier !== "number" || !isFinite(multiplier)) continue;
+      state.userOverrides[id] = multiplier;
+    }
+  }
 
   // Hidden streams change row heights and hidden stages change column widths —
   // recompute layout so the map renders with collapsed rows/columns.

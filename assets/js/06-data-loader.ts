@@ -23,8 +23,9 @@ import type {
   Edge,
   ElasticityDefaults,
   Param,
+  Finding,
 } from "./types";
-import { nodeCategoryIds, splitCategoriesByClass } from "./04-utils";
+import { nodeCategoryIds, splitCategoriesByClass, formatScalar } from "./04-utils";
 import { ELASTICITY_KEYS, EFFECT_OPTIONS, COMBINE_OPTIONS } from "./02-config";
 import {
   parseCsvDocument,
@@ -82,13 +83,20 @@ import {
   getParsedFormula,
   getFormulaParseFailures,
   usesFormula,
+  explainNode,
+  DELTA_DISPLAY_THRESHOLD_PCT,
 } from "./07-simulation-engine";
 import { renderSidebar } from "./13-sidebar";
 import { render } from "./11-rendering";
 import { renderDetailPanel } from "./15-detail-panel";
 import { showLoadFeedback, hideDropZone } from "./16-file-io";
-import { saveCsvToStorage } from "./04a-storage";
+import { saveCsvToStorage, saveUiStateToStorage } from "./04a-storage";
 import { isUndoCaptureSuspended, clearHistory } from "./16g-canvas-undo";
+// Findings are built here and read by the Review panel. `finding()` keeps the
+// twenty-eight call sites below to one line each; attributeFindings() is what
+// separates a mistake from its downstream shadows (see 22-review.ts).
+import { finding, attributeFindings, groupFindings, REST_DRIFT, invalidateSweep } from "./22-review";
+import { refreshReview } from "./23-review-panel";
 
 // The three ways a box can aggregate the arrows pointing into it. Blank in the
 // CSV means "multiplicative", which is exactly what the app did before the
@@ -340,16 +348,16 @@ export function detectCycles(): void {
 // what feeds what, even when the arithmetic moved into a formula.
 // (See docs/CALCULATION-ENGINE-DESIGN.md §5.)
 // =============================================================================
-function validateCalculationRules(errors: string[]): void {
+function validateCalculationRules(errors: Finding[]): void {
   // 1. Formulas whose TEXT couldn't be read. The box falls back to its arrows
   //    (i.e. behaves as if it had no formula), so we say so.
   const failedToParse = new Set<string>();
   for (const failure of getFormulaParseFailures()) {
     failedToParse.add(failure.nodeId);
-    errors.push(
-      "Box `" + failure.nodeId + "` has a formula that can't be read: " + failure.message +
-      ". The formula is ignored.",
-    );
+    errors.push(finding("formula-unreadable", "ignored",
+      "Its formula can't be read: " + failure.message + ". The formula is ignored, so the box " +
+      "falls back to its links.",
+      { boxId: failure.nodeId, fix: "Fix the expression, or clear the formula cell." }));
   }
 
   for (const node of NODES) {
@@ -358,19 +366,19 @@ function validateCalculationRules(errors: string[]): void {
     // 2. A slider always wins: a controllable box is pinned, never recomputed,
     //    so its formula is dead text. Nothing further to check about it.
     if (node.controllable) {
-      errors.push(
-        "Box `" + node.id + "` is a slider input and also has a formula. " +
-        "The slider pins the box, so the formula is ignored.",
-      );
+      errors.push(finding("slider-beats-formula", "ignored",
+        "It is ticked adjustable and also has a formula. The slider pins the box, so the " +
+        "formula is dead text.",
+        { boxId: node.id, fix: "Untick adjustable, or delete the formula." }));
       continue;
     }
 
     // 3. `combine` describes how ARROWS aggregate; a formula replaces them.
     if (node.combine) {
-      errors.push(
-        "Box `" + node.id + "` has both a combine rule (`" + node.combine + "`) and a formula. " +
-        "The formula wins; the combine rule is ignored.",
-      );
+      errors.push(finding("combine-beats-formula", "ignored",
+        "It has both a combine rule (`" + node.combine + "`) and a formula. The combine rule " +
+        "describes how links add up; the formula replaces them, so the combine rule is ignored.",
+        { boxId: node.id, fix: "Clear the combine cell." }));
     }
 
     const parsed = getParsedFormula(node.id);
@@ -389,29 +397,27 @@ function validateCalculationRules(errors: string[]): void {
 
       if (paramById[id]) continue;              // a hidden constant — nothing to draw
       if (!nodeById[id]) {
-        errors.push(
-          "Box `" + node.id + "` has a formula that mentions `" + id +
-          "`, which is not a box or a parameter. It will be read as 0.",
-        );
+        errors.push(finding("name-unknown", "wrong",
+          "Its formula mentions `" + id + "`, which is neither a box nor a constant. " +
+          "It will be read as 0.",
+          { boxId: node.id, fix: "Check the spelling, or add the constant." }));
         continue;
       }
 
       // 5. Referencing a BOX means there is a causal link, so the map has to
       //    show one. This is the rule that keeps the picture honest.
       if (!linkedSources.has(id)) {
-        errors.push(
-          "Box `" + node.id + "` has a formula that uses `" + id +
-          "`, but no arrow joins them — the map's arrows must show every causal input — " +
-          "add a link from `" + id + "` to `" + node.id + "` or remove it from the formula.",
-        );
+        errors.push(finding("name-has-no-link", "mismatch",
+          "Its formula uses `" + id + "`, but no link joins the two — the map's links must " +
+          "show every causal input.",
+          { boxId: node.id, fix: "Draw the link from `" + id + "`, or drop the term." }));
       }
 
       // 6. A box with no starting value has no number to give.
       if (nodeById[id].baseline === undefined || nodeById[id].baseline === null) {
-        errors.push(
-          "Box `" + node.id + "` has a formula that uses `" + id +
-          "`, which has no starting value — it will be read as missing (0).",
-        );
+        errors.push(finding("name-has-no-value", "wrong",
+          "Its formula uses `" + id + "`, which has no starting value — it will be read as 0.",
+          { boxId: node.id, fix: "Give `" + id + "` a starting value, or drop the term." }));
       }
     }
 
@@ -419,15 +425,75 @@ function validateCalculationRules(errors: string[]): void {
     //    map but changes nothing. Worth saying out loud.
     for (const sourceId of linkedSources) {
       if (referenced.has(sourceId)) continue;
-      errors.push(
-        "Box `" + node.id + "` has an arrow from `" + sourceId +
-        "` that its formula never uses — that link is descriptive only and does not " +
-        "change the number.",
-      );
+      errors.push(finding("link-unused", "mismatch",
+        "A link from `" + sourceId + "` points at it that its formula never reads — that link " +
+        "draws on the map but changes nothing.",
+        { boxId: node.id, fix: "Deliberate? Leave it. Otherwise read it, or remove it." }));
     }
   }
 
   reportFormulaCyclesWithoutDelay(errors);
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// DOES THE MAP AGREE WITH ITSELF AT REST?
+// -----------------------------------------------------------------------------
+// With every slider at 100% nothing has been asked of the map yet, so every box
+// should be sitting on exactly the starting value it declares. When one isn't,
+// the map opens already showing a change against a number nobody moved — and
+// since the % change on every box is measured against that same starting value,
+// every figure downstream is being read against the wrong anchor.
+//
+// The arrows can never cause this: at rest every source sits on its own starting
+// value, so every ratio is 1 and all three combine rules return the starting
+// value untouched. What can:
+//
+//   • A FORMULA that disagrees with the starting value typed beside it. A
+//     formula box ignores its arrows and computes in absolute terms, so its
+//     starting value is only a seed and a denominator — nothing forced the two
+//     to agree. (A formula naming a box with no starting value reads it as 0,
+//     which is the usual way this happens.)
+//   • A MIN/MAX that excludes the starting value. The limits are applied after
+//     every rule, so a box declared at 50 with a max of 40 opens at 40.
+//
+// Rather than a rule per cause, this asks the question the reader actually cares
+// about — "is this box where it says it is?" — which catches both, and catches
+// whatever the next rule to land here does too. The threshold is the map's OWN
+// display threshold (formatNodeDelta), so it warns if and only if the map would
+// visibly show a change at rest: a difference too small to draw is too small to
+// mention. Named, not corrected — which of the two numbers is wrong is the
+// author's call, and both are things they typed.
+// ═════════════════════════════════════════════════════════════════════════════
+function validateRestState(errors: Finding[]): void {
+  for (const node of NODES) {
+    const baseline = node.baseline;
+    if (baseline === undefined || baseline === null) continue;
+    const value = state.computedValues[node.id];
+    if (value === undefined) continue;
+    const pct = ((value - baseline) / baseline) * 100;
+    if (Math.abs(pct) < DELTA_DISPLAY_THRESHOLD_PCT) continue;
+
+    // explainNode() has already worked out which rule produced the number and
+    // whether a limit moved it, so the reason costs nothing to add.
+    const explanation = explainNode(node.id);
+    let because = "";
+    if (explanation && explanation.clamp) {
+      const limit = explanation.clamp.max !== undefined && !(explanation.clamp.from < explanation.clamp.max)
+        ? "max " + explanation.clamp.max
+        : "min " + explanation.clamp.min;
+      because = " Its " + limit + " excludes its starting value.";
+    } else if (explanation && explanation.rule === "formula") {
+      because = " Its formula (`" + (node.formula || "") + "`) works out to " +
+        formatScalar(value) + " when every box is at its starting value.";
+    }
+
+    errors.push(finding(REST_DRIFT, "wrong",
+      "It does not rest at its starting value: it says " + formatScalar(baseline) +
+      " but opens at " + formatScalar(value) + " (" + (pct > 0 ? "+" : "") + pct.toFixed(1) +
+      "%) with every slider at 100%." + because + " Every % change on this box is measured " +
+      "against " + formatScalar(baseline) + ".",
+      { boxId: node.id, fix: "One of the two numbers is wrong — decide which." }));
+  }
 }
 
 // The SAME-SWEEP dependencies of one box: what its value needs to already know
@@ -457,7 +523,7 @@ function sameSweepDependencies(node: GraphNode): string[] {
 // The walk is the same depth-first colouring as detectCycles() above (white =
 // unvisited, gray = on the path we're walking, black = done), with an explicit
 // stack so a deep map can't overflow the JS call stack.
-function reportFormulaCyclesWithoutDelay(errors: string[]): void {
+function reportFormulaCyclesWithoutDelay(errors: Finding[]): void {
   // Only a loop passing through a formula box is ever reported, so a map with
   // no formulas at all can skip the whole-graph DFS (and its per-node
   // dependency arrays) — on large formula-free maps this was a third full
@@ -500,11 +566,11 @@ function reportFormulaCyclesWithoutDelay(errors: string[]): void {
             reported.add(key);
             const causalChain = needsChain.slice().reverse();
             const drawn = causalChain.concat([causalChain[0]]).map((id) => "`" + id + "`").join(" → ");
-            errors.push(
+            errors.push(finding("loop-without-delay", "wrong",
               "Boxes " + drawn + " form a calculation loop through a formula with no delay(), " +
-              "so each one needs the others' value before it exists. Wrap one of the inputs " +
-              "in delay(...) to make the loop well-defined.",
-            );
+              "so each one needs the others' value before it exists.",
+              { boxId: causalChain[0],
+                fix: "Wrap one of the inputs in delay(...) to make the loop well-defined." }));
           }
         } else if (color[dep] === WHITE) {
           color[dep] = GRAY;
@@ -527,17 +593,20 @@ export function loadDataFromCsv(csvText: string): boolean {
   // edge ids stay stable across rebuilds.
   _edgeIdSeq = 0;
   const sections = parseCsvDocument(csvText);
-  const errors: string[] = [];
+  const errors: Finding[] = [];
 
   // ───── Fatal-error checks (we can't proceed without these) ─────────────
-  if (!sections.streams    || sections.streams.length === 0)    errors.push("Missing or empty `streams` section.");
-  if (!sections.stages     || sections.stages.length === 0)     errors.push("Missing or empty `stages` section.");
-  if (!sections.categories || sections.categories.length === 0) errors.push("Missing or empty `categories` section.");
-  if (!sections.nodes      || sections.nodes.length === 0)      errors.push("Missing or empty `nodes` section.");
+  const missingSection = (name: string) => finding("section-missing", "ignored",
+    "The spreadsheet has no `" + name + "` section, or it is empty. Nothing can load without it.",
+    { fix: "Add a `# SECTION: " + name + "` block with at least one row." });
+  if (!sections.streams    || sections.streams.length === 0)    errors.push(missingSection("streams"));
+  if (!sections.stages     || sections.stages.length === 0)     errors.push(missingSection("stages"));
+  if (!sections.categories || sections.categories.length === 0) errors.push(missingSection("categories"));
+  if (!sections.nodes      || sections.nodes.length === 0)      errors.push(missingSection("nodes"));
 
   if (errors.length > 0) {
     state.loadErrors = errors;
-    showLoadFeedback("Load failed: " + errors.join(" "), true);
+    showLoadFeedback("Load failed: " + errors.map(e => e.message).join(" "), true);
     return false;
   }
 
@@ -592,7 +661,9 @@ export function loadDataFromCsv(csvText: string): boolean {
   for (const row of sections.nodes!) {
     if (!row.id) continue;
     if (seenNodeIds.has(row.id)) {
-      errors.push("Duplicate box id: " + row.id);
+      errors.push(finding("duplicate-id", "ignored",
+        "A second box also has the id `" + row.id + "`. The later one is dropped.",
+        { boxId: row.id, fix: "Give one of them a different id." }));
       continue;
     }
     seenNodeIds.add(row.id);
@@ -601,8 +672,18 @@ export function loadDataFromCsv(csvText: string): boolean {
     // them would crash the renderer when it dereferences streamById[…]
     // or CATEGORIES[…]. We still log a warning so the user can fix the CSV.
     let hasInvalidRefs = false;
-    if (!streamIdSet.has(row.stream))     { errors.push("Box `" + row.id + "` refers to a row that does not exist: `"   + row.stream   + "`. Skipped."); hasInvalidRefs = true; }
-    if (!stageIdSet.has(row.stage))       { errors.push("Box `" + row.id + "` refers to a column that does not exist: `"    + row.stage    + "`. Skipped."); hasInvalidRefs = true; }
+    if (!streamIdSet.has(row.stream)) {
+      errors.push(finding("unknown-row", "ignored",
+        "It sits in row `" + row.stream + "`, which does not exist. The box is dropped.",
+        { boxId: row.id, fix: "Point it at a row from the `streams` section." }));
+      hasInvalidRefs = true;
+    }
+    if (!stageIdSet.has(row.stage)) {
+      errors.push(finding("unknown-column", "ignored",
+        "It sits in column `" + row.stage + "`, which does not exist. The box is dropped.",
+        { boxId: row.id, fix: "Point it at a column from the `stages` section." }));
+      hasInvalidRefs = true;
+    }
 
     // `category` is a pipe-separated list of category ids. Each id's class
     // (primary/secondary) decides how it renders. Unknown ids are dropped with
@@ -610,8 +691,17 @@ export function loadDataFromCsv(csvText: string): boolean {
     const rawCatIds = String(row.category == null ? "" : row.category).split("|").map(s => s.trim()).filter(Boolean);
     const seenCat = new Set<string>();
     const validCatIds = rawCatIds.filter(id => categoryIdSet.has(id) && !seenCat.has(id) && seenCat.add(id));
-    for (const u of new Set(rawCatIds.filter(id => !categoryIdSet.has(id)))) errors.push("Box `" + row.id + "` refers to a category that does not exist: `" + u + "` (ignored).");
-    if (validCatIds.length === 0) { errors.push("Box `" + row.id + "` has no valid category. Skipped."); hasInvalidRefs = true; }
+    for (const u of new Set(rawCatIds.filter(id => !categoryIdSet.has(id)))) {
+      errors.push(finding("unknown-category", "ignored",
+        "It carries the tag `" + u + "`, which does not exist. That tag is ignored.",
+        { boxId: row.id, fix: "Add the tag to the `categories` section, or fix the spelling." }));
+    }
+    if (validCatIds.length === 0) {
+      errors.push(finding("no-category", "ignored",
+        "It has no tag that exists, so the box is dropped.",
+        { boxId: row.id, fix: "Give it a tag from the `categories` section." }));
+      hasInvalidRefs = true;
+    }
     if (hasInvalidRefs) continue;
 
     const catSplit = splitCategoriesByClass(validCatIds, parsedCategories);
@@ -641,7 +731,10 @@ export function loadDataFromCsv(csvText: string): boolean {
     const baselineValue = parseNumericCell(row.baseline);
     if (baselineValue !== undefined) {
       if (baselineValue === 0) {
-        errors.push("Box `" + row.id + "` has starting value 0 — must be positive (the what-if maths divides by the starting value). Starting value ignored.");
+        errors.push(finding("baseline-zero", "ignored",
+          "Its starting value is 0. The what-if maths divides by the starting value, so it " +
+          "must be positive or blank. The starting value is ignored.",
+          { boxId: row.id, fix: "Use a positive number, or leave it blank." }));
       } else {
         node.baseline = baselineValue;
       }
@@ -649,8 +742,23 @@ export function loadDataFromCsv(csvText: string): boolean {
     if (row.unit && row.unit !== "")  node.unit = row.unit;
     if (parseBooleanCell(row.controllable)) node.controllable = true;
     if (row.direction && row.direction !== "") node.direction = row.direction as GraphNode["direction"];
+    // `slider_max` is a MULTIPLE of the starting value (2 = "up to twice it"),
+    // unlike `min`/`max` beside it, which are absolute. Below 1 it would be a
+    // ceiling under the box's own starting value — the slider could then never
+    // be put back to 100%, so touching it once stuck the box (and everything
+    // downstream) below where it started with no way back but Reset. Named and
+    // ignored rather than silently trapping the box.
     const sliderMaxValue = parseNumericCell(row.slider_max);
-    if (sliderMaxValue !== undefined) node.sliderMax = sliderMaxValue;
+    if (sliderMaxValue !== undefined) {
+      if (sliderMaxValue < 1) {
+        errors.push(finding("slider-max-below-one", "ignored",
+          "Its slider max is " + sliderMaxValue + ". That figure is a MULTIPLE of the starting " +
+          "value, so below 1 the box could never be put back to where it started. It is ignored.",
+          { boxId: row.id, fix: "2 means \"up to twice the starting value\"." }));
+      } else {
+        node.sliderMax = sliderMaxValue;
+      }
+    }
 
     // ── Optional per-box calculation rules (all blank in an older CSV) ──────
     // `combine` picks how the arrows pointing INTO this box are aggregated.
@@ -661,7 +769,10 @@ export function loadDataFromCsv(csvText: string): boolean {
       if (COMBINE_MODES.includes(combineValue as CombineMode)) {
         node.combine = combineValue as CombineMode;
       } else {
-        errors.push("Box `" + row.id + "` has an unknown combine rule `" + row.combine + "` (expected " + COMBINE_MODES.join(" / ") + "). Ignored.");
+        errors.push(finding("unknown-combine", "ignored",
+          "Its combine rule `" + row.combine + "` is not one the engine knows. It is ignored, " +
+          "so the box uses the default rule.",
+          { boxId: row.id, fix: "Use one of " + COMBINE_MODES.join(" / ") + "." }));
       }
     }
 
@@ -678,7 +789,10 @@ export function loadDataFromCsv(csvText: string): boolean {
     const minValue = parseNumericCell(row.min);
     const maxValue = parseNumericCell(row.max);
     if (minValue !== undefined && maxValue !== undefined && minValue > maxValue) {
-      errors.push("Box `" + row.id + "` has min " + minValue + " greater than max " + maxValue + ". Both limits ignored.");
+      errors.push(finding("limits-crossed", "ignored",
+        "Its lowest allowed value (" + minValue + ") is above its highest (" + maxValue +
+        "), which no number can satisfy. Both limits are ignored.",
+        { boxId: row.id, fix: "Swap them, or clear one." }));
     } else {
       if (minValue !== undefined) node.minValue = minValue;
       if (maxValue !== undefined) node.maxValue = maxValue;
@@ -694,12 +808,25 @@ export function loadDataFromCsv(csvText: string): boolean {
   if (sections.edges) {
     for (const row of sections.edges) {
       if (!row.from || !row.to) continue;
-      if (!nodeIdSet.has(row.from)) { errors.push("Link from a box that does not exist: " + row.from); continue; }
-      if (!nodeIdSet.has(row.to))   { errors.push("Link to a box that does not exist: "   + row.to);   continue; }
+      if (!nodeIdSet.has(row.from)) {
+        errors.push(finding("link-dangling", "ignored",
+          "A link starts at `" + row.from + "`, which is not a box on this map. The link is dropped.",
+          { fix: "Fix the id, or add the box." }));
+        continue;
+      }
+      if (!nodeIdSet.has(row.to)) {
+        errors.push(finding("link-dangling", "ignored",
+          "A link ends at `" + row.to + "`, which is not a box on this map. The link is dropped.",
+          { fix: "Fix the id, or add the box." }));
+        continue;
+      }
 
       const effect = (row.effect || "enables").toLowerCase();
       if (!EFFECT_OPTIONS.includes(effect)) {
-        errors.push("Link " + row.from + "→" + row.to + " has invalid effect `" + row.effect + "`.");
+        errors.push(finding("link-bad-effect", "ignored",
+          "The link " + row.from + " → " + row.to + " has effect `" + row.effect +
+          "`, which the engine does not know. The link is dropped.",
+          { boxId: row.to, fix: "Use enables / increases / decreases." }));
         continue;
       }
 
@@ -732,17 +859,25 @@ export function loadDataFromCsv(csvText: string): boolean {
     for (const row of sections.params) {
       if (!row.id) continue;
       if (seenParamIds.has(row.id)) {
-        errors.push("Duplicate parameter id: " + row.id);
+        errors.push(finding("duplicate-constant", "ignored",
+          "A second constant also has the id `" + row.id + "`. The later one is dropped.",
+          { fix: "Give one of them a different id." }));
         continue;
       }
       seenParamIds.add(row.id);
       if (nodeIdSet.has(row.id)) {
-        errors.push("Parameter `" + row.id + "` has the same id as a box. Skipped.");
+        errors.push(finding("constant-clashes-with-box", "ignored",
+          "The constant `" + row.id + "` has the same id as a box, so a formula naming it could " +
+          "mean either. The constant is dropped.",
+          { boxId: row.id, fix: "Rename the constant." }));
         continue;
       }
       const paramValue = parseNumericCell(row.value);
       if (paramValue === undefined) {
-        errors.push("Parameter `" + row.id + "` has a value that is not a number: `" + (row.value || "") + "`. Skipped.");
+        errors.push(finding("constant-not-a-number", "ignored",
+          "The constant `" + row.id + "` has the value `" + (row.value || "") + "`, which is not " +
+          "a number. It is dropped.",
+          { fix: "Give it a plain number." }));
         continue;
       }
       parsedParams.push({
@@ -777,7 +912,14 @@ export function loadDataFromCsv(csvText: string): boolean {
   state.ancestorSet = new Set();
   state.descendantSet = new Set();
   state.highlightedEdgeIds = new Set();
+  // A multiplier belongs to the map it was set on, so a new map starts at 100%
+  // everywhere. Cleared in memory AND in storage: leaving the old map's sliders
+  // in the UI slot meant a refresh restored them onto whichever map was loaded
+  // next, silently showing a change against every starting value the user had
+  // not touched. (18-main reads the UI slot before this runs, so the write here
+  // can't clobber the restore that follows it.)
   state.userOverrides = {};
+  saveUiStateToStorage();
   state.dataLoaded = true;
   // Same array object that validateCalculationRules() pushes into below, so the
   // formula warnings it adds after the indexes are built land here too.
@@ -794,10 +936,23 @@ export function loadDataFromCsv(csvText: string): boolean {
   setLayout(computeLayout());
 
   recomputeValues();
+  // Every slider is at 100% on a fresh load, so every box should be sitting on
+  // its own starting value. Any that isn't gets named here — see the function.
+  validateRestState(errors);
+  // Which of those findings are causes and which are the same mistake arriving
+  // from upstream. Runs last because it needs every finding in hand, and the
+  // rest-state check above is the one that produces the shadows.
+  attributeFindings(errors);
+  // A sweep is a fact about the shape of the map, and this is a different map.
+  invalidateSweep();
   hideDropZone();
   renderSidebar();
   render();
   renderDetailPanel();
+  // The count badge is part of the map's own presentation: a map with problems
+  // must never LOOK clean. Repaints the panel too, if it happens to be open —
+  // undo / redo route back through here.
+  refreshReview();
 
   // A map that doesn't fit the frame opens zoomed out far enough to see, down
   // to a floor (FIT_MIN_ZOOM) past which "all of it at once" would be
@@ -818,8 +973,18 @@ export function loadDataFromCsv(csvText: string): boolean {
     const loopNote = state.solverStatus.feedbackLoopCount > 0
       ? " " + state.solverStatus.feedbackLoopCount + " feedback loop(s)."
       : "";
-    showLoadFeedback("Loaded with " + errors.length + " warning(s). " + summary + "." + loopNote + " See console for details.", false);
-    console.warn("Load warnings:", errors);
+    // The toast is now a POINTER, not the report. It says how many and where to
+    // look; the Review panel holds the findings themselves, grouped by cause and
+    // still there in ten minutes when the reader gets to them. The console line
+    // stays for anyone debugging with devtools already open.
+    const causes = groupFindings(errors).groups.length;
+    showLoadFeedback(
+      "Loaded with " + errors.length + " finding" + (errors.length === 1 ? "" : "s") +
+      (causes < errors.length ? " (" + causes + " to fix)" : "") + ". " + summary + "." +
+      loopNote + " Open Review to see them.",
+      false,
+    );
+    console.warn("Load findings:", errors);
   }
 
   // A feedback loop that fails to settle means runaway positive feedback

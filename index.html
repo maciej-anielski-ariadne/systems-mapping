@@ -84,6 +84,7 @@
   <link rel="stylesheet" href="assets/css/13-search.css">
   <link rel="stylesheet" href="assets/css/14-typeable-dropdown.css">
   <link rel="stylesheet" href="assets/css/16-atlas.css">
+  <link rel="stylesheet" href="assets/css/17-review.css">
 </head>
 <body>
 
@@ -123,57 +124,90 @@
       <div id="search-results" class="search-results" hidden></div>
     </div>
 
-    <!-- Header actions. The app opens in READING mode, where the header holds
-         only what a reader reaches for: Filters (opens the left drawer),
-         Import, Export (a menu over the three ways out), Simulate, and the
-         switch into editing. Authoring actions — New map, Bulk edit — are
-         .edit-only and appear when you switch. Trigger classes / ids are
-         unchanged so the handlers in 17-events.ts still bind. -->
-    <button id="filters-button" class="header-button" aria-expanded="false"
-            data-tooltip="Rows, columns, tags and link styles — what the map is showing.">Filters</button>
+    <!-- Header actions, in FOUR GROUPS. The grouping is the spacing and nothing
+         else: 4px inside a group, 24px between them (.header-group in
+         03-app-shell.css). The two hairline dividers that used to fence these
+         are gone — they were trying to group against a gap that said every
+         button was equally unrelated to every other, and they lost.
+           1. Filters      — what the map is showing
+           2. File         — the map as a document, in and out
+           3. the reading tools — Simulate / Review / Atlas
+           4. the mode switch + the theme
+         Trigger classes / ids are unchanged, and every handler in 17-events.ts
+         binds by class at load, so moving a button into a menu changes nothing
+         about how it works. -->
+    <div class="header-group" id="filters-group">
+      <button id="filters-button" class="header-button" aria-expanded="false"
+              data-tooltip="Rows, columns, tags and link styles — what the map is showing.">Filters</button>
+    </div>
 
-    <span class="header-divider" aria-hidden="true"></span>
-    <button class="header-button import-data-trigger" data-tooltip="Open a map spreadsheet — same as dragging one onto the window.">Import</button>
-
-    <!-- Export menu. The three exports differ only in the file they hand you,
-         so they read as one action with three answers rather than three
-         buttons competing for the same glance. -->
-    <div class="menu-wrap">
-      <button id="export-button" class="header-button" aria-haspopup="true" aria-expanded="false"
-              data-tooltip="Take the map with you — spreadsheet, image, or a web page.">Export</button>
-      <div id="export-menu" class="menu" role="menu" hidden>
-        <button class="menu-item save-data-trigger" role="menuitem">
-          <b>Spreadsheet</b><span>A .csv you can edit in Excel or Sheets and load back in.</span>
-        </button>
-        <button class="menu-item export-image-trigger" role="menuitem">
-          <b>Image</b><span>Copies a high-resolution PNG to the clipboard.</span>
-        </button>
-        <button class="menu-item publish-html-trigger" role="menuitem">
-          <b>Web page</b><span>A self-contained, view-only page — pan, zoom, hover.</span>
-        </button>
+    <!-- File. Everything to do with the map as a DOCUMENT: start one, bring one
+         in, edit it as a sheet, take one away. Four header buttons folded into
+         one control, two of which (New map, Bulk edit) were .edit-only — which
+         is most of why the header used to reshuffle on every mode switch. They
+         keep .edit-only in here, one level deeper, and the row now holds still. -->
+    <div class="header-group">
+      <div class="menu-wrap">
+        <button id="file-button" class="header-button" aria-haspopup="true" aria-expanded="false"
+                data-tooltip="The map as a file — start one, bring one in, or take one away.">File<span class="header-caret" aria-hidden="true">▾</span></button>
+        <div id="file-menu" class="menu" role="menu" hidden>
+          <button class="menu-item edit-only create-map-trigger" role="menuitem">
+            <b>New map</b><span>Clear the map and start from an empty 3×3 grid.</span>
+          </button>
+          <button class="menu-item import-data-trigger" role="menuitem">
+            <b>Import…</b><span>Open a map spreadsheet — same as dragging one onto the window.</span>
+          </button>
+          <button class="menu-item edit-only edit-data-trigger" role="menuitem">
+            <b>Bulk edit</b><span>Edit the whole map in a form — handy for many edits at once.</span>
+          </button>
+          <div class="menu-sep" role="separator"></div>
+          <div class="menu-head"><span>Export</span></div>
+          <button class="menu-item save-data-trigger" role="menuitem">
+            <b>Spreadsheet</b><span>A .csv you can edit in Excel or Sheets and load back in.</span>
+          </button>
+          <button class="menu-item export-image-trigger" role="menuitem">
+            <b>Image</b><span>Copies a high-resolution PNG to the clipboard.</span>
+          </button>
+          <button class="menu-item publish-html-trigger" role="menuitem">
+            <b>Web page</b><span>A self-contained, view-only page — pan, zoom, hover.</span>
+          </button>
+        </div>
       </div>
     </div>
 
-    <button id="sim-toggle-button" class="header-button" data-tooltip="Turn on what-if mode — a slider on every adjustable input; its effects update live.">Simulate</button>
+    <!-- The three reading tools. One group because they answer the same kind of
+         question — help me understand this map — and because grouped, the three
+         of them read as a set rather than as three more buttons. -->
+    <div class="header-group">
+      <button id="sim-toggle-button" class="header-button" data-tooltip="Turn on what-if mode — a slider on every adjustable input; its effects update live.">Simulate</button>
+      <!-- Review sits beside Simulate because it answers the question Simulate
+           raises: do I believe these numbers? Carries a count badge of the things
+           the loader flagged, so a map with problems never LOOKS clean — the
+           six-second toast this replaced was missable by design. It stays a named
+           button rather than folding in with Atlas: the badge is the whole reason
+           the panel gets opened, and a count you have to uncover is the toast
+           again. Hidden until a map is loaded (23-review-panel.ts). -->
+      <button id="review-button" class="header-button" aria-expanded="false" hidden
+              data-tooltip="Check the map: what the loader flagged, and what each adjustable input actually does.">Review</button>
 
-    <!-- Atlas. A reading tool, so it goes away while editing (.read-only).
-         Unlike Simulate, an atlas is always OF one box: with a box selected the
-         button opens straight into it, and with nothing selected it drops a
-         short list of the boxes worth starting from. A disabled button would
-         have been the easy answer and the wrong one — grey chrome is chrome
-         people stop seeing, and this control's whole job is to be seen. -->
-    <div class="menu-wrap read-only">
-      <button id="atlas-button" class="header-button" aria-haspopup="true" aria-expanded="false"
-              data-tooltip="Every pathway out of one box, as one picture you zoom into.">Atlas</button>
-      <div id="atlas-menu" class="menu" role="menu" hidden></div>
+      <!-- Atlas. A reading tool, so it goes away while editing (.read-only).
+           Unlike Simulate, an atlas is always OF one box: with a box selected the
+           button opens straight into it, and with nothing selected it drops a
+           short list of the boxes worth starting from. A disabled button would
+           have been the easy answer and the wrong one — grey chrome is chrome
+           people stop seeing, and this control's whole job is to be seen. -->
+      <div class="menu-wrap read-only">
+        <button id="atlas-button" class="header-button" aria-haspopup="true" aria-expanded="false"
+                data-tooltip="Every pathway out of one box, as one picture you zoom into.">Atlas<span class="header-caret" aria-hidden="true">▾</span></button>
+        <div id="atlas-menu" class="menu" role="menu" hidden></div>
+      </div>
     </div>
 
-    <span class="header-divider" aria-hidden="true"></span>
-    <button class="header-button edit-only create-map-trigger" data-tooltip="Clear the map and start from an empty 3×3 grid.">New map</button>
-    <button class="header-button edit-only edit-data-trigger" data-tooltip="Edit the whole map in a form — handy for many edits at once.">Bulk edit</button>
-    <button id="mode-toggle-button" class="header-button header-button--primary"
-            data-tooltip="Switch between reading the map and changing it.">Edit</button>
-    <button id="theme-toggle-button" class="header-button header-button--icon" data-tooltip="Switch between the light and dark theme. Your choice is remembered." aria-label="Switch theme">☀</button>
+    <div class="header-group">
+      <button id="mode-toggle-button" class="header-button header-button--primary"
+              data-tooltip="Switch between reading the map and changing it.">Edit</button>
+      <button id="theme-toggle-button" class="header-button header-button--icon" data-tooltip="Switch between the light and dark theme. Your choice is remembered." aria-label="Switch theme">☀</button>
+    </div>
   </header>
 
   <!-- Hidden file picker. Clicking any .import-data-trigger button triggers it. -->
@@ -292,6 +326,11 @@
          map as one picture you zoom into. Filled by 21-atlas-view.ts when a
          box's Atlas is opened; empty and hidden otherwise. -->
     <div id="atlas-stage" class="atlas-stage" hidden></div>
+
+    <!-- The review panel — what the loader noticed (grouped by cause) beside
+         what a nudge on each adjustable input actually does. Filled by
+         23-review-panel.ts when opened; empty and hidden otherwise. -->
+    <div id="review-stage" class="review-stage" hidden></div>
 
     <!-- Optional CSV-import overlay. No longer shown at startup — the
          canvas boots into an empty 3x3 starter grid instead, and you click

@@ -22,6 +22,7 @@ import {
   PARAMS_CSV,
   PARAMS_INVALID_CSV,
 } from "./fixtures/graphs";
+import { findings, kinds, text } from "./helpers/findings";
 
 describe("loadDataFromCsv — happy path (linear chain)", () => {
   beforeEach(() => {
@@ -86,12 +87,22 @@ describe("loadDataFromCsv — validation", () => {
     expect(EDGES).toHaveLength(0);
   });
 
-  it("records human-readable warnings", () => {
-    const joined = state.loadErrors.join(" | ");
-    expect(joined).toMatch(/Duplicate box id: good/);
+  it("records a finding per problem, each naming its box", () => {
+    expect(kinds()).toContain("duplicate-id");
+    expect(findings("good").map((f) => f.kind)).toContain("duplicate-id");
+    const joined = text();
     expect(joined).toMatch(/badref/);
     expect(joined).toMatch(/zero/);
     expect(joined).toMatch(/ghost/);
+  });
+
+  it("gives every finding a severity, a message and a fix", () => {
+    expect(state.loadErrors.length).toBeGreaterThan(0);
+    for (const f of state.loadErrors) {
+      expect(["ignored", "wrong", "mismatch"]).toContain(f.severity);
+      expect(f.message.length).toBeGreaterThan(0);
+      expect(f.fix).toBeTruthy();
+    }
   });
 });
 
@@ -161,24 +172,32 @@ describe("loadDataFromCsv — params / calculation-column validation", () => {
     expect(paramById.good.value).toBe(0.5);
   });
 
-  it("names the duplicate, non-numeric and box-colliding params", () => {
-    const joined = state.loadErrors.join(" | ");
-    expect(joined).toMatch(/Duplicate parameter id: good/);
-    expect(joined).toMatch(/Parameter `notnum` has a value that is not a number/);
-    expect(joined).toMatch(/Parameter `n1` has the same id as a box/);
+  it("names the duplicate, non-numeric and box-colliding constants", () => {
+    expect(kinds()).toEqual(
+      expect.arrayContaining([
+        "duplicate-constant",
+        "constant-not-a-number",
+        "constant-clashes-with-box",
+      ]),
+    );
+    const joined = text();
+    expect(joined).toMatch(/`good`/);
+    expect(joined).toMatch(/`notnum`/);
+    expect(joined).toMatch(/`n1`/);
   });
 
   it("rejects a combine value outside the enum but keeps the box", () => {
     expect(nodeById.n1).toBeDefined();
     expect(nodeById.n1.combine).toBeUndefined();
-    expect(state.loadErrors.join(" | ")).toMatch(/Box `n1` has an unknown combine rule `sideways`/);
+    expect(kinds("n1")).toContain("unknown-combine");
+    expect(text()).toMatch(/`sideways`/);
   });
 
   it("rejects min > max and drops both limits", () => {
     expect(nodeById.n2).toBeDefined();
     expect(nodeById.n2.minValue).toBeUndefined();
     expect(nodeById.n2.maxValue).toBeUndefined();
-    expect(state.loadErrors.join(" | ")).toMatch(/Box `n2` has min 10 greater than max 5/);
+    expect(kinds("n2")).toContain("limits-crossed");
   });
 });
 

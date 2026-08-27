@@ -288,6 +288,15 @@ interface AffectedSlice {
 }
 const descendantCache = new Map<string, AffectedSlice>();
 
+// The current rebuild generation. Anything cached ACROSS solves — the review
+// panel's sensitivity sweep is the one such consumer — stamps itself with this
+// and recomputes when it changes. A sweep is a fact about the map's shape, not
+// about where the sliders happen to sit, so this is exactly the right clock for
+// it: it ticks when the map changes and not when a slider moves.
+export function solverGeneration(): number {
+  return solveGeneration;
+}
+
 // Rebuild everything above from the current NODES / EDGES / topological order /
 // cycleInfo / parsed formulas. Called at the end of rebuildIndexes().
 export function rebuildSolverIndexes(): void {
@@ -1015,6 +1024,13 @@ export function formatNodeValue(nodeId: string): string {
   return formatScalar(value) + " " + (node.unit || "");
 }
 
+// Below this, a box reads as "—" rather than as a number: half of the first
+// decimal place the label would print, so nothing is shown that would round to
+// +0.0%. Exported because the load-time rest-state check (06-data-loader) asks
+// exactly this question — "would the map draw a change here?" — and the two
+// must not drift apart.
+export const DELTA_DISPLAY_THRESHOLD_PCT = 0.05;
+
 // "+12.5%" relative to baseline, or "—" if change is negligible.
 export function formatNodeDelta(nodeId: string): { text: string; pct: number } {
   const node = nodeById[nodeId];
@@ -1023,7 +1039,7 @@ export function formatNodeDelta(nodeId: string): { text: string; pct: number } {
   if (value === undefined) return { text: "", pct: 0 };
 
   const pct = ((value - node.baseline) / node.baseline) * 100;
-  if (Math.abs(pct) < 0.05) return { text: "—", pct: 0 };
+  if (Math.abs(pct) < DELTA_DISPLAY_THRESHOLD_PCT) return { text: "—", pct: 0 };
 
   const text = (pct > 0 ? "+" : "") + pct.toFixed(1) + "%";
   return { text: text, pct: pct };
@@ -1216,6 +1232,86 @@ function formulaGate(nodeId: string): GatedBy | null {
   if (!movedElsewhere) return null;
 
   return { id: held, label: nodeById[held].label || held };
+}
+
+// ───── The arms of a gate, spelled out ────────────────────────────────────
+// `gatedBy()` above answers "what is holding this box?" with one name, which is
+// what the map has room for. The review report has room for the whole sum, and
+// needs it: told that an input moves nothing, the next question is always "then
+// what IS short, and by how much?" — and that is the list of arms with their
+// values, one of them binding.
+//
+// Works for both spellings of the same statement: the `min` combine rule over
+// the incoming links, and a top-level `min()` in a formula. Anything else
+// returns null, because only a `min` has arms in this sense.
+export interface GateArm {
+  /** The arm as written, with box ids swapped for their labels. */
+  text: string;
+  value: number;
+  /** The smallest arm — the one the box's value was actually taken from. */
+  binding: boolean;
+  /** Boxes named in this arm, so the caller can say what to move. Params are
+   *  left out: naming one answers "what is short?" with a number nobody can
+   *  move. */
+  boxIds: string[];
+}
+
+// The expression, back as text, with every box id replaced by its label. Used
+// only for display — parentheses are added wherever precedence could be read
+// two ways rather than tracked exactly, which is the safe direction to err in.
+function printAst(ast: FormulaAst): string {
+  switch (ast.kind) {
+    case "number":     return formatScalar(ast.value);
+    case "identifier": return (nodeById[ast.id] && nodeById[ast.id].label) || ast.id;
+    case "delay":      return "previous " + ((nodeById[ast.id] && nodeById[ast.id].label) || ast.id);
+    case "negate":     return "−" + printAst(ast.operand);
+    case "call":       return ast.fn + "(" + ast.args.map(printAst).join(", ") + ")";
+    case "binary": {
+      const symbol = ast.op === "*" ? " × " : ast.op === "/" ? " ÷ " : " " + ast.op + " ";
+      const left  = ast.left.kind  === "binary" && (ast.op === "*" || ast.op === "/")
+        ? "(" + printAst(ast.left) + ")"  : printAst(ast.left);
+      const right = ast.right.kind === "binary" ? "(" + printAst(ast.right) + ")" : printAst(ast.right);
+      return left + symbol + right;
+    }
+  }
+}
+
+export function formulaArms(nodeId: string): GateArm[] | null {
+  const node = nodeById[nodeId];
+  if (!node) return null;
+
+  // Spelling one: a formula whose whole answer is a min() of two or more arms.
+  const parsed = parsedFormulaByNodeId[nodeId];
+  if (parsed && parsed.ast.kind === "call" && parsed.ast.fn === "min" && parsed.ast.args.length >= 2) {
+    const ctx = makeEvalContext(explainedValues, null);
+    const arms = parsed.ast.args.map(arm => ({
+      text: printAst(arm),
+      value: evaluateFormulaValue({ ...parsed, ast: arm }, ctx),
+      binding: false,
+      boxIds: armIdentifiers(arm, []).filter(id => !paramById[id] && nodeById[id]),
+    }));
+    return markBinding(arms);
+  }
+
+  // Spelling two: the `min` combine rule over the incoming links. Here an "arm"
+  // is one link, and its value is that link's factor — the same number the
+  // detail panel prints as "×1.20".
+  const explanation = explainNode(nodeId);
+  if (!explanation || explanation.rule !== "min" || explanation.inputs.length < 2) return null;
+  const arms = explanation.inputs.map(input => ({
+    text: (nodeById[input.id] && nodeById[input.id].label) || input.id,
+    value: input.contribution === undefined ? Infinity : input.contribution,
+    binding: false,
+    boxIds: input.kind === "node" && nodeById[input.id] ? [input.id] : [],
+  }));
+  return markBinding(arms);
+}
+
+function markBinding(arms: GateArm[]): GateArm[] {
+  let smallest = Infinity;
+  for (const arm of arms) if (arm.value < smallest) smallest = arm.value;
+  for (const arm of arms) arm.binding = arm.value === smallest;
+  return arms;
 }
 
 export function gatedBy(nodeId: string): GatedBy | null {

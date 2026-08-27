@@ -1,0 +1,352 @@
+/* =============================================================================
+ * REVIEW PANEL — what the loader noticed, and what each input actually does
+ * -----------------------------------------------------------------------------
+ * An overlay over the map, two columns, both of them lists of cards. Structured
+ * like the atlas stage (16-atlas.css) because it does the same thing: takes the
+ * frame, says one thing, and hands you back to the map.
+ *
+ * THE ONE NEW COLOUR RULE. Severity is data, not affordance — like the map's
+ * increase / decrease / enable hues, and unlike everything else in the app,
+ * which reserves colour for what you can act on. Three dots, and only ever as
+ * a 6px dot beside a card's name, so a colour never has to be read as a word:
+ *   ignored  (red)   the engine threw away something you typed
+ *   wrong    (amber) the number is not the one you declared
+ *   mismatch (grey)  the picture and the maths disagree; the number is fine
+ * ========================================================================== */
+
+.review-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-deepest);
+  /* The stage sits inside the MAP column, so how much room it has depends on
+   * whether the two side panels are docked — not on the size of the window.
+   * A viewport media query would stack the columns on a narrow window that had
+   * plenty of room, and keep them side by side on a wide window whose panels
+   * had eaten most of it. The container query below asks the only question
+   * that matters: how wide is this panel, right now. */
+  container-type: inline-size;
+  container-name: review;
+}
+
+.review-stage[hidden] { display: none; }
+
+/* The map underneath is still rendered — it just isn't the thing on screen. */
+body.review-open .viz-controls-cluster { display: none; }
+
+/* ── Header strip ───────────────────────────────────────────────────────── */
+.review-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--gutter);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-deep);
+}
+
+.review-title {
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--tracking-cap);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  font-weight: var(--fw-medium);
+}
+
+/* Truncates rather than wraps: the head is one line high, and Done must never
+ * be pushed off the end of it by a long sentence. */
+.review-sub {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-body);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.review-close {
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: var(--fs-body);
+  color: var(--act);
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-interactive);
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+}
+.review-close:hover { background: var(--act-tint); border-color: var(--act); }
+
+/* ── Two columns, each scrolling on its own ─────────────────────────────── */
+.review-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+}
+
+.review-column {
+  min-width: 0;
+  overflow-y: auto;
+  padding: var(--space-3) var(--gutter) var(--space-6);
+}
+.review-column + .review-column { border-left: 1px solid var(--border-subtle); }
+
+/* One column below the width where two would each be too narrow to read a
+ * formula in. The sections then stack, issues first. */
+@container review (max-width: 900px) {
+  .review-body { grid-template-columns: 1fr; overflow-y: auto; }
+  .review-column { overflow-y: visible; }
+  .review-column + .review-column { border-left: 0; border-top: 1px solid var(--border-subtle); }
+}
+
+/* ── Section headings ───────────────────────────────────────────────────── */
+.review-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding-bottom: var(--space-2);
+  margin-bottom: var(--section-gap);
+  border-bottom: 1px solid var(--border-subtle);
+  position: sticky;
+  top: calc(var(--space-3) * -1);
+  background: var(--bg-deepest);
+  z-index: 1;
+  padding-top: var(--space-3);
+  margin-top: calc(var(--space-3) * -1);
+}
+
+.review-section-title {
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--tracking-cap);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  font-weight: var(--fw-medium);
+}
+
+.review-section-count {
+  font-family: var(--font-mono);
+  font-size: var(--fs-body);
+  color: var(--accent-amber);
+}
+.review-section-count.ok { color: var(--accent-green); }
+
+.review-hint {
+  font-size: var(--fs-body);
+  color: var(--text-tertiary);
+  line-height: 1.5;
+  margin-bottom: var(--section-gap);
+}
+
+.review-empty {
+  font-size: var(--fs-body);
+  color: var(--text-secondary);
+  line-height: 1.55;
+  background: var(--bg-deep);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-surface);
+  padding: var(--space-3);
+}
+.review-empty b { color: var(--text-primary); font-weight: var(--fw-semibold); }
+
+.review-run {
+  display: block;
+  margin-top: var(--space-3);
+  font: inherit;
+  font-size: var(--fs-body);
+  color: var(--bg-deepest);
+  background: var(--act);
+  border: 0;
+  border-radius: var(--radius-interactive);
+  padding: var(--space-1_5) var(--space-3);
+  cursor: pointer;
+}
+.review-run:hover { background: var(--act-hi); }
+
+/* ── A card: one thing to fix, or one input worth a look ────────────────── */
+.review-card {
+  background: var(--bg-deep);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-surface);
+  padding: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+.review-card.is-clickable { cursor: pointer; }
+.review-card.is-clickable:hover { background: var(--bg-mid); border-color: var(--border-strong); }
+
+.review-card-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.review-card-label {
+  font-size: var(--fs-body);
+  color: var(--text-primary);
+  font-weight: var(--fw-medium);
+}
+
+.review-card-id {
+  font-family: var(--font-mono);
+  font-size: var(--fs-eyebrow);
+  color: var(--act);
+}
+
+/* Severity dot — see the header note. Never the only cue: the message says it. */
+.review-sev {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  align-self: center;
+}
+.review-sev.sev-ignored  { background: var(--accent-red); }
+.review-sev.sev-wrong    { background: var(--accent-amber); }
+.review-sev.sev-mismatch { background: var(--text-tertiary); }
+
+.review-what {
+  font-size: var(--fs-body);
+  color: var(--text-secondary);
+  line-height: 1.55;
+  margin-top: var(--space-1_5);
+}
+.review-what code,
+.review-fix code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-eyebrow);
+  background: var(--bg-mid);
+  border-radius: var(--radius-interactive);
+  padding: 1px var(--space-1);
+  color: var(--accent-amber);
+}
+
+.review-fix {
+  font-size: var(--fs-body);
+  color: var(--accent-green);
+  line-height: 1.5;
+  margin-top: var(--space-1_5);
+}
+.review-fix::before { content: "→ "; }
+
+/* The consequences, folded. Present so nobody thinks they were suppressed —
+ * quiet so nobody reads them as work. */
+.review-fold {
+  font-size: var(--fs-body);
+  color: var(--text-tertiary);
+  line-height: 1.5;
+  margin-top: var(--space-2);
+  padding-left: var(--space-2);
+  border-left: 2px solid var(--bg-lighter);
+}
+.review-fold b { color: var(--text-secondary); font-weight: var(--fw-medium); }
+
+/* ── The arms of a gate ─────────────────────────────────────────────────── */
+/* Monospace and right-aligned numbers, because the whole point is comparing
+ * three values down a column to see which is smallest. */
+.review-arms {
+  margin-top: var(--space-2);
+  padding-left: var(--space-2);
+  border-left: 2px solid var(--bg-lighter);
+}
+
+.review-arm {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-eyebrow);
+  color: var(--text-tertiary);
+  line-height: 1.8;
+}
+
+.review-arm-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.review-arm-value { flex: 0 0 auto; color: var(--text-secondary); }
+.review-arm-tag { flex: 0 0 auto; width: 52px; text-align: right; color: var(--text-tertiary); }
+
+.review-arm.is-binding .review-arm-text,
+.review-arm.is-binding .review-arm-value,
+.review-arm.is-binding .review-arm-tag { color: var(--accent-red); }
+
+/* ── The full sweep, folded ─────────────────────────────────────────────── */
+.review-fold-toggle {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  font-size: var(--fs-body);
+  color: var(--text-tertiary);
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  padding: var(--space-2) 0;
+  margin-top: var(--space-3);
+  cursor: pointer;
+}
+.review-fold-toggle:hover { color: var(--act); }
+
+.review-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1_5) var(--space-1);
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: pointer;
+}
+.review-row:hover { background: var(--act-tint); }
+
+.review-row-body { flex: 1; min-width: 0; }
+.review-row-name { display: block; font-size: var(--fs-body); color: var(--text-primary); }
+.review-row-top {
+  display: block;
+  font-size: var(--fs-eyebrow);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+.review-row-top b { color: var(--text-secondary); font-weight: var(--fw-regular); }
+.review-row-top .up { color: var(--accent-green); }
+.review-row-top .dn { color: var(--accent-red); }
+
+.review-row-bar {
+  flex: 0 0 74px;
+  height: 5px;
+  background: var(--bg-mid);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.review-row-bar i { display: block; height: 100%; background: var(--act); }
+
+.review-row-count {
+  flex: 0 0 22px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--fs-eyebrow);
+  color: var(--text-secondary);
+}
+
+.review-row.is-dead .review-row-name { color: var(--accent-red); }
+.review-row.is-dead .review-row-bar i { background: var(--accent-red); }
+
+/* ── The header button's count badge ────────────────────────────────────── */
+.review-badge {
+  display: inline-block;
+  margin-left: var(--space-1_5);
+  min-width: 16px;
+  padding: 0 var(--space-1);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-eyebrow);
+  line-height: 16px;
+  text-align: center;
+  color: var(--bg-deepest);
+}
+.review-badge.sev-ignored  { background: var(--accent-red); }
+.review-badge.sev-wrong    { background: var(--accent-amber); }
+.review-badge.sev-mismatch { background: var(--text-tertiary); }

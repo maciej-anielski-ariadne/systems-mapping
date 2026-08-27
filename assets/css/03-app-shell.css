@@ -126,6 +126,14 @@ body.no-data .panel-pin {
  * 30. The header itself doesn't actually overlap the strips visually —
  * they sit below it — but stacking-context lifts the whole header layer
  * (and its descendants) above the strips. */
+/* The gap here is the gap BETWEEN GROUPS, not between buttons — the buttons sit
+ * inside .header-group below at a quarter of it. Uniform 24px spacing was
+ * costing this row 264px of pure air on an 907px header (against 420px of
+ * actual controls) and, worse, saying that every button was equally unrelated
+ * to every other: eight equals in a row, with two hairline dividers trying and
+ * failing to fence them into three groups. Grouped, the dividers are redundant
+ * and gone, and the search field goes from 153px to something you can read a
+ * query in. */
 .app-header {
   grid-column: 1 / -1;     /* span from column 1 to the last column */
   background: var(--bg-deep);
@@ -136,6 +144,19 @@ body.no-data .panel-pin {
   position: relative;
   z-index: var(--z-header);
 }
+
+/* One run of related controls. Tight inside, so the run reads as one thing. */
+.header-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 0 0 auto;
+}
+
+/* A group whose only member is hidden still takes its 24px of gap, and the row
+ * ends up with a hole in it. `:empty` does not catch this — the child is still
+ * there, just not displayed — so the one group this can happen to is hidden by
+ * name below, alongside the rule that hides the button. */
 
 /* === Brand lockup ===
  * Mark + wordmark pinned to the left of the header. The mark uses the purple
@@ -229,14 +250,11 @@ body.no-data .panel-pin {
   color: var(--bg-deepest);
 }
 
-/* Thin separator that fences off a header section (the CSV / PNG / HTML export
-   group, and the Simulate / Theme toggles). */
-.header-divider {
-  width: 1px;
-  height: 22px;
-  flex: 0 0 1px;
-  background: var(--border-subtle);
-  margin: 0 var(--space-1);
+/* The "there is more behind this" mark on a menu button (File, Atlas). Quiet
+   enough not to read as a second thing to look at. */
+.header-caret {
+  margin-left: 3px;
+  opacity: 0.55;
 }
 
 /* "Edit", "Save", "Export", and "Publish" all need an existing map to act on;
@@ -370,8 +388,8 @@ body.reading .app:not(.has-selection) .detail-panel {
 /* The drawer button belongs to reading mode only — while editing (or
  * simulating) that panel is docked, and a button that opens what is already
  * open is noise. */
-body.editing #filters-button,
-body.reading.sim-mode #filters-button { display: none; }
+body.editing #filters-group,
+body.reading.sim-mode #filters-group { display: none; }
 
 /* The mirror of .edit-only: chrome that belongs to reading and steps out of
  * the way while editing. Reading tools do not follow you into edit mode, and
@@ -430,6 +448,14 @@ body.editing #mode-toggle-button:hover { background: var(--act-tint); color: var
 }
 
 .menu[hidden] { display: none; }
+
+/* Divides the two halves of the File menu — the map coming in from the map
+   going out. */
+.menu-sep {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 3px var(--space-2);
+}
 
 .menu-item {
   display: flex;

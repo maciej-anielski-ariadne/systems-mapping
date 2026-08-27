@@ -83,13 +83,21 @@ export function renderSimulationPanel(): void {
       // BOTH are editable and both mean the same thing — type 13230 or type
       // 147, whichever you happen to know. Dragging sideways on either scrubs
       // it, so the panel has not lost its drag, only the furniture around it.
+      // Both fields carry the box's ceiling as a real `max`. It was already
+      // being enforced on the way in — type 300 into a box that stops at 200
+      // and the field simply came back 200 — but with nothing declaring the
+      // limit, that read as the field refusing what you typed rather than as a
+      // limit you had reached. `min` is 0 for the same reason.
+      const ceiling = sliderCeiling(node);
+      const maxValue = node.baseline! * ceiling;
+      const maxPct = Math.round(ceiling * 100);
       const moved = Math.abs(userMultiplier - 1) > 0.0005;
       html += '<div class="sim-slider-row' + (moved ? " moved" : "") + '" data-node-id="' + node.id + '">';
       html +=   '<span class="sim-slider-name" title="' + escapeHtml(node.label) + '">' + escapeHtml(node.label) + '</span>';
-      html +=   '<input type="number" class="sim-value-input" step="any" value="' + formatScalarInput(currentValue) + '" data-node-id="' + node.id + '" aria-label="Value of ' + escapeHtml(node.label) + ' in ' + escapeHtml(unit || "units") + '. Drag sideways or type." />';
+      html +=   '<input type="number" class="sim-value-input" step="any" min="0" max="' + formatScalarInput(maxValue) + '" value="' + formatScalarInput(currentValue) + '" data-node-id="' + node.id + '" aria-label="Value of ' + escapeHtml(node.label) + ' in ' + escapeHtml(unit || "units") + '. Drag sideways or type. Up to ' + formatScalarInput(maxValue) + '." />';
       html +=   '<span class="sim-slider-unit">' + escapeHtml(unit) + '</span>';
       html +=   '<span class="sim-pct-field">';
-      html +=     '<input type="number" class="sim-pct-input" step="1" value="' + sliderPct + '" data-node-id="' + node.id + '" aria-label="' + escapeHtml(node.label) + ' as a percentage of its starting value. Drag sideways or type." />';
+      html +=     '<input type="number" class="sim-pct-input" step="1" min="0" max="' + maxPct + '" value="' + sliderPct + '" data-node-id="' + node.id + '" aria-label="' + escapeHtml(node.label) + ' as a percentage of its starting value. Drag sideways or type. Up to ' + maxPct + '%." />';
       html +=     '<span class="sim-pct-sign">%</span>';
       html +=   '</span>';
       html += '</div>';
@@ -111,11 +119,17 @@ export function renderSimulationPanel(): void {
 // per adjustable box) and a fresh closure each time. The panel element itself is
 // stable, so one listener set on it handles every row, for every rebuild, and
 // dispatches on the target's class.
-let simPanelHandlersBound = false;
+//
+// The guard remembers the ELEMENT rather than a bare "done" flag. Both say
+// "bind once" for the panel we have, but a boolean also says it about a panel
+// we have never seen: if anything ever replaces #simulation-panel, a flag would
+// leave the new element with no listeners at all — every slider and the Reset
+// button dead, silently, with nothing thrown to notice it by.
+let boundSimPanel: HTMLElement | null = null;
 
 function bindSimPanelHandlers(simPanel: HTMLElement): void {
-  if (simPanelHandlersBound) return;
-  simPanelHandlersBound = true;
+  if (boundSimPanel === simPanel) return;
+  boundSimPanel = simPanel;
 
   // Drag / type: write the override now, solve and repaint once per frame.
   simPanel.addEventListener("input", event => {
@@ -299,9 +313,19 @@ function runSimTick(): void {
   scheduleUiStateSave();
 }
 
+// The ceiling can never sit below 100%. `slider_max` is a multiple of the
+// starting value, and one under 1 made the box's own starting value
+// unreachable: nudging the slider clamped it DOWN, and typing 100 back in
+// clamped it down again, so a single touch left the box — and everything
+// downstream of it — stuck below where it started with no way back but Reset.
+// The loader rejects such a value outright; this is the second line of defence,
+// since sliderMax is also editable field-by-field in the detail panel.
+export function sliderCeiling(node: GraphNode): number {
+  return Math.max(1, node.sliderMax || 2.0);
+}
+
 function clampMultiplier(node: GraphNode, newMultiplier: number): number {
-  const sliderMax = node.sliderMax || 2.0;
-  return Math.max(0, Math.min(newMultiplier, sliderMax));
+  return Math.max(0, Math.min(newMultiplier, sliderCeiling(node)));
 }
 
 // ───── Shared multiplier-apply (called by sim panel + detail panel) ──────

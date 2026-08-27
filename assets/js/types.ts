@@ -222,6 +222,42 @@ export interface NodeExplanation {
   value: number;
 }
 
+// ───── Load findings (what the loader noticed, structured) ──────────────────
+// Every check the loader runs reports through here. These used to be plain
+// strings, which was fine while the only reader was console.warn — but a string
+// cannot be grouped, sorted, counted by severity, or clicked through to the box
+// it is about, and on a map of any size those are the four things the reader
+// needs. The message text is unchanged; what is new is that the finding still
+// knows which box it came from and what the engine did about it.
+//
+// SEVERITY is about consequence, not about how cross to be:
+//   "ignored"  — the engine threw away something you typed (a formula it could
+//                not read, a slider max that made no sense). What is on the map
+//                is not what is in the file.
+//   "wrong"    — the number is not the one you declared (a box that does not
+//                rest at its starting value, a limit that bit). It computes,
+//                but every % change on it is read against the wrong anchor.
+//   "mismatch" — the picture and the maths disagree while the number is fine
+//                (a link the formula never reads). Often deliberate.
+export type FindingSeverity = "ignored" | "wrong" | "mismatch";
+
+export interface Finding {
+  /** Short machine name for the check that produced this, e.g. "formula-unreadable".
+   *  Groups identical findings and keys the "acknowledged" set. */
+  kind: string;
+  severity: FindingSeverity;
+  /** The box this is about, when there is one. Makes the finding clickable. */
+  boxId?: string;
+  /** What is wrong, in plain language. The full sentence, as before. */
+  message: string;
+  /** What the reader should do about it. Optional — some findings are FYI. */
+  fix?: string;
+  /** Set by attributeFindings() (22-review.ts) when this finding is only the
+   *  downstream shadow of another box's mistake: the id of the box actually at
+   *  fault. A finding with this set is a consequence, not a job. */
+  causedBy?: string;
+}
+
 // ───── Search (populated by 17a-search.js) ──────────────────────────────────
 export interface SearchMatch {
   node: GraphNode;
@@ -374,7 +410,10 @@ export interface AppState {
   explanations: Record<string, NodeExplanation>;
   solverStatus: SolverStatus;
   dataLoaded: boolean;
-  loadErrors: string[];
+  /** What the most recent load noticed, structured (see Finding above). Read by
+   *  the Review panel (23-review-panel.ts); ordered causes-first by
+   *  attributeFindings(). */
+  loadErrors: Finding[];
   /** "read" (default) = the map with the chrome out of the way; "edit" = the
    *  docked panels and the authoring controls. Persisted with the UI state. */
   uiMode: "read" | "edit";

@@ -270,13 +270,20 @@ document.addEventListener("mousedown", event => {
   setFiltersOpen(false);
 });
 
-// ───── Export menu ───────────────────────────────────────────────────────
-// The three exports differ only in the file they hand back, so they sit behind
-// one control. Each item keeps its original trigger class, so the handlers
-// above bind to them unchanged.
-export function setExportMenuOpen(open: boolean): void {
-  const menu = document.getElementById("export-menu");
-  const button = document.getElementById("export-button");
+// ───── File menu ─────────────────────────────────────────────────────────
+// Everything to do with the map as a DOCUMENT behind one control: New map,
+// Import, Bulk edit, and the three exports. Six items, which sounds like a lot
+// until you notice they were six header buttons competing for the same glance —
+// four of them named, two of the four only present in editing mode, so the row
+// reshuffled every time you switched.
+//
+// Each item keeps its original trigger class and the handlers above bind by
+// class at module load, so nothing about how any of them works changed. The two
+// authoring items keep `.edit-only` too; it is a CSS rule on body.reading, so
+// it works just as well on a menu row as it did on a button.
+export function setFileMenuOpen(open: boolean): void {
+  const menu = document.getElementById("file-menu");
+  const button = document.getElementById("file-button");
   if (!menu || !button) return;
   const show = !!open && state.dataLoaded;
   // The button's own hover tooltip would sit on top of the menu it just
@@ -287,29 +294,29 @@ export function setExportMenuOpen(open: boolean): void {
   button.setAttribute("aria-expanded", show ? "true" : "false");
 }
 
-const exportButton = document.getElementById("export-button");
-if (exportButton) {
-  exportButton.addEventListener("click", event => {
+const fileButton = document.getElementById("file-button");
+if (fileButton) {
+  fileButton.addEventListener("click", event => {
     event.stopPropagation();
-    const menu = document.getElementById("export-menu");
-    setExportMenuOpen(!menu || menu.hidden);
+    const menu = document.getElementById("file-menu");
+    setFileMenuOpen(!menu || menu.hidden);
   });
 }
 
 // Any click elsewhere — including on one of the items, which has done its job
 // by then — closes the menu.
 document.addEventListener("click", event => {
-  const menu = document.getElementById("export-menu");
+  const menu = document.getElementById("file-menu");
   if (!menu || menu.hidden) return;
   const target = event.target as HTMLElement | null;
-  if (target && target.closest && target.closest("#export-button")) return;
-  setExportMenuOpen(false);
+  if (target && target.closest && target.closest("#file-button")) return;
+  setFileMenuOpen(false);
 });
 
 document.addEventListener("keydown", event => {
   if (event.key !== "Escape") return;
-  const menu = document.getElementById("export-menu");
-  if (menu && !menu.hidden) { setExportMenuOpen(false); return; }
+  const menu = document.getElementById("file-menu");
+  if (menu && !menu.hidden) { setFileMenuOpen(false); return; }
   if (state.filtersOpen) setFiltersOpen(false);
 });
 

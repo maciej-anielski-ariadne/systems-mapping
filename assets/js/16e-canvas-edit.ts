@@ -118,6 +118,8 @@ import {
   openCanvasEdgePicker,
 } from "./16i-canvas-keyboard-nav";
 import { renderMultiSelectBar } from "./16j-multi-select-bar";
+import { invalidateSweep } from "./22-review";
+import { refreshReview } from "./23-review-panel";
 
 // ───── Bootstrapping ──────────────────────────────────────────────────────
 
@@ -430,7 +432,10 @@ export function bootEmptyStateGrid(): void {
   setDefaultElasticityByEffect({ enables: 0.30, increases: 0.25, decreases: -0.25 });
 
   state.dataLoaded = true;
+  // A new map has nothing wrong with it yet, and nothing to sweep. Both the
+  // findings and the cached sweep belong to the map that just went away.
   state.loadErrors = [];
+  invalidateSweep();
   state.selectedNodeId = null;
   state.hoveredNodeId = null;
   state.hiddenStreams = new Set();
@@ -456,6 +461,8 @@ export function bootEmptyStateGrid(): void {
   renderSidebar();
   render();
   renderDetailPanel();
+  // Drop the previous map's count off the header button.
+  refreshReview();
   // Seed the undo "previous snapshot" so the first mutation after boot has
   // something to push onto history.past, and start with an empty stack.
   try {

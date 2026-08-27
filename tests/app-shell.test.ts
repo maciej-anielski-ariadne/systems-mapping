@@ -27,7 +27,7 @@ import {
   applyUiMode,
   fitMapToFrame,
   fitZoomLevel,
-  setExportMenuOpen,
+  setFileMenuOpen,
   setFiltersOpen,
   setUiMode,
 } from "../assets/js/17-events";
@@ -111,26 +111,62 @@ describe("the filters drawer", () => {
   });
 });
 
-describe("the export menu", () => {
-  it("holds the three exports and closes on the next click", () => {
+describe("the file menu", () => {
+  it("holds all six ways the map comes in and goes out, and closes on the next click", () => {
     loadDataFromCsv(sampleCsv);
-    const menu = document.getElementById("export-menu") as HTMLElement;
-    expect(menu.querySelectorAll(".menu-item").length).toBe(3);
-    expect(menu.querySelector(".save-data-trigger")).not.toBeNull();
-    expect(menu.querySelector(".export-image-trigger")).not.toBeNull();
-    expect(menu.querySelector(".publish-html-trigger")).not.toBeNull();
+    const menu = document.getElementById("file-menu") as HTMLElement;
+    expect(menu.querySelectorAll(".menu-item").length).toBe(6);
+    for (const trigger of [
+      ".create-map-trigger",     // New map      (editing only)
+      ".import-data-trigger",    // Import
+      ".edit-data-trigger",      // Bulk edit    (editing only)
+      ".save-data-trigger",      // Spreadsheet
+      ".export-image-trigger",   // Image
+      ".publish-html-trigger",   // Web page
+    ]) {
+      expect(menu.querySelector(trigger), trigger + " should live in the File menu").not.toBeNull();
+    }
 
-    setExportMenuOpen(true);
+    setFileMenuOpen(true);
     expect(menu.hidden).toBe(false);
     document.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(menu.hidden).toBe(true);
   });
 
+  it("keeps the two authoring items marked editing-only", () => {
+    const menu = document.getElementById("file-menu") as HTMLElement;
+    expect(menu.querySelector(".create-map-trigger")!.classList.contains("edit-only")).toBe(true);
+    expect(menu.querySelector(".edit-data-trigger")!.classList.contains("edit-only")).toBe(true);
+    expect(menu.querySelector(".import-data-trigger")!.classList.contains("edit-only")).toBe(false);
+  });
+
   it("has nothing to offer before a map is loaded", () => {
     state.dataLoaded = false;
-    setExportMenuOpen(true);
-    expect((document.getElementById("export-menu") as HTMLElement).hidden).toBe(true);
+    setFileMenuOpen(true);
+    expect((document.getElementById("file-menu") as HTMLElement).hidden).toBe(true);
     state.dataLoaded = true;
+  });
+});
+
+describe("the header is grouped, not evenly spaced", () => {
+  it("puts every action inside a group and keeps no dividers", () => {
+    const header = document.querySelector(".app-header") as HTMLElement;
+    expect(header.querySelectorAll(".header-divider").length).toBe(0);
+    // Brand, search, and then only groups — nothing loose in the row.
+    const loose = [...header.children].filter(
+      (el) => !el.classList.contains("header-group") &&
+              !el.classList.contains("app-brand") &&
+              !el.classList.contains("search-wrap"),
+    );
+    expect(loose).toEqual([]);
+  });
+
+  it("hides the whole Filters group while editing, not just its button", () => {
+    // The group carries the id because a group holding one hidden button still
+    // takes its share of the row's gap.
+    expect(document.getElementById("filters-group")).not.toBeNull();
+    expect(document.getElementById("filters-button")!.closest(".header-group")!.id)
+      .toBe("filters-group");
   });
 });
 

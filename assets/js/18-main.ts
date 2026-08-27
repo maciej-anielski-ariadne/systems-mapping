@@ -52,6 +52,8 @@ import "./17a-search";
 import "./19-export";
 import "./20-atlas-engine";
 import "./21-atlas-view";
+import "./22-review";
+import "./23-review-panel";
 
 // ───── Named imports for the boot sequence ──────────────────────────────────
 import { state } from "./03-state";
@@ -67,6 +69,7 @@ import { renderBuilder } from "./16b-builder-render";
 import { initCanvasEdit, bootEmptyStateGrid } from "./16e-canvas-edit";
 import { applyUiMode } from "./17-events";
 import { initAtlasStage } from "./21-atlas-view";
+import { initReviewStage, syncReviewButton } from "./23-review-panel";
 
 console.log("Ariadne Maps — canvas-edit ready");
 console.log(
@@ -81,12 +84,20 @@ console.log(
 // cell tracking, document keydown for Delete / Esc, undo toast element.
 initCanvasEdit();
 initAtlasStage();
+initReviewStage();
 
 // Reading mode until told otherwise — applyRestoredUiState re-applies this
 // with the saved choice a moment later.
 applyUiMode();
 
 // ───── Restore previous session ──────────────────────────────────────────
+// The UI slot is READ FIRST, before any CSV load, and applied last. Loading a
+// map resets the sliders (a multiplier belongs to the map it was set on) and
+// writes that reset through to storage, so a load that happened first would
+// overwrite the very slot we are about to restore from. Reading it into `ui`
+// up here makes the two orders independent.
+const ui = loadUiStateFromStorage();
+
 // loadDataFromCsv handles its own validation + full re-render. If the saved
 // CSV is no longer valid (e.g. someone edited it in DevTools), it returns
 // false and we wipe the stored copy so the next refresh doesn't keep retrying.
@@ -105,9 +116,13 @@ if (!restored) {
 
 // UI state — panel collapse is independent of the CSV; everything else is
 // applied only if a map is actually loaded (applyRestoredUiState handles
-// the data-dependent vs. independent split internally).
-const ui = loadUiStateFromStorage();
+// the data-dependent vs. independent split internally). Read above, before
+// the CSV load could have rewritten it.
 if (ui) applyRestoredUiState(ui);
+
+// The badge last, once the map (and therefore its findings) is settled. A boot
+// into the empty starter grid has nothing to say and the button stays hidden.
+syncReviewButton();
 
 // The wizard's working copy is independent of the CSV. If the user was
 // mid-build when they refreshed, re-open the wizard at the same step with
