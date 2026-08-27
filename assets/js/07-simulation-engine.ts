@@ -1278,7 +1278,13 @@ function printAst(ast: FormulaAst): string {
       ? formulaNumber(paramById[ast.id].value)
       : (nodeById[ast.id] && nodeById[ast.id].label) || ast.id;
     case "delay":      return "previous " + ((nodeById[ast.id] && nodeById[ast.id].label) || ast.id);
-    case "negate":     return "−" + printAst(ast.operand);
+    // The brackets are not decoration. `-(a + b)` without them prints as
+    // "−a + b", which is a DIFFERENT expression — and this line is the one a
+    // reviewer reads to check the rule, so a rendering that quietly restates it
+    // is worse than no rendering at all.
+    case "negate":     return ast.operand.kind === "binary"
+      ? "−(" + printAst(ast.operand) + ")"
+      : "−" + printAst(ast.operand);
     case "call":       return ast.fn + "(" + ast.args.map(printAst).join(", ") + ")";
     case "binary": {
       const symbol = ast.op === "*" ? " × " : ast.op === "/" ? " ÷ " : " " + ast.op + " ";

@@ -20,7 +20,7 @@ import { NODES, state } from "../assets/js/03-state";
 import { deselectAll, refreshTraceForSelection, selectNode } from "../assets/js/09-graph-selection";
 import { initCanvasEdit, setShiftHeld } from "../assets/js/16e-canvas-edit";
 import { toggleSimulationMode } from "../assets/js/14-simulation-panel";
-import { saveUiStateToStorage, loadUiStateFromStorage } from "../assets/js/04a-storage";
+import { applyRestoredUiState, saveUiStateToStorage, loadUiStateFromStorage } from "../assets/js/04a-storage";
 import {
   FIT_MIN_ZOOM,
   applySelectionClass,
@@ -168,6 +168,22 @@ describe("the header is grouped, not evenly spaced", () => {
     expect(document.getElementById("filters-group")).not.toBeNull();
     expect(document.getElementById("filters-button")!.closest(".header-group")!.id)
       .toBe("filters-group");
+  });
+});
+
+describe("who is reviewing survives a refresh", () => {
+  it("goes into the UI slot and comes back out of it", () => {
+    // Not with the map: it is a fact about whoever is at this keyboard, and the
+    // same person whichever file they open. Without it, a refresh mid-pass
+    // emptied the name field — and a pass will not restart until a full name is
+    // back in it, so the reviewer had to type theirs again to carry on.
+    state.reviewer = "Ann Lee";
+    saveUiStateToStorage();
+    expect(loadUiStateFromStorage().reviewer).toBe("Ann Lee");
+
+    state.reviewer = "";
+    applyRestoredUiState(loadUiStateFromStorage());
+    expect(state.reviewer).toBe("Ann Lee");
   });
 });
 

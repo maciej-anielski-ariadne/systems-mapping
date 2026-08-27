@@ -48,7 +48,7 @@ officers,HMRC Customs FTE,,main,s1,c,100,FTE,true,,2,,,,
 arrivals,Container arrivals,,main,s1,c,100,m/yr,true,,2,,,,
 weather,Weather,,main,s1,c,100,index,true,,2,,,,
 gated,Container Examination,,main,s2,c,0.04,m exams/yr,,,,,"min(officers * exams_per_fte_yr, arrivals * referral_rate)",,
-plain,Seizures,,main,s2,c,100,units,,,,,,,
+plain,Seizures,How many we catch,main,s2,c,100,units,,,,,,,
 weakest,Counter-Terrorism,,main,s2,c,100,index,,,,min,,,
 
 # SECTION: edges
@@ -83,6 +83,18 @@ describe("reading the rule off the engine", () => {
       .toBe("min(HMRC Customs FTE × 0.0004, Container arrivals × 0.09)");
   });
 
+  it("brackets a negated group, which is the whole meaning of the line", () => {
+    // `-(a + b)` printed without its brackets reads as "−a + b" — a different
+    // expression, on the one line a reviewer reads to check the rule against.
+    // A rendering that quietly restates the rule is worse than no rendering.
+    loadDataFromCsv(CSV.replace(
+      "min(officers * exams_per_fte_yr, arrivals * referral_rate)",
+      "-(officers + arrivals) + 100",
+    ));
+    expect(formulaInLabels("gated"))
+      .toBe("−(HMRC Customs FTE + Container arrivals) + 100");
+  });
+
   it("names the constants the rule leans on, which are on no map anywhere", () => {
     expect(formulaConstants("gated").map((p) => p.id))
       .toEqual(["exams_per_fte_yr", "referral_rate"]);
@@ -102,6 +114,38 @@ describe("reading the rule off the engine", () => {
 });
 
 describe("what the review card shows on a formula box", () => {
+  it("still names the box it is asking about", () => {
+    // The card is a QUESTION about a box, and it used to drop the identity
+    // block the panel had already built — so the reviewer was asked "is this
+    // everything that drives this box?" with the box's name nowhere on the
+    // panel, and its description, often the definition being judged, off
+    // screen entirely. The only thing naming it was a rectangle on the map.
+    const card = show("gated");
+    expect(card.querySelector(".detail-name")!.textContent).toBe("Container Examination");
+    expect(card.querySelector(".rv-step")).not.toBeNull();       // and still the stepper
+    expect(card.querySelector(".rv-foot")).not.toBeNull();       // and still the verdict
+  });
+
+  it("shows the description too, which is often the thing being judged", () => {
+    expect(show("plain").querySelector(".detail-description")!.textContent)
+      .toBe("How many we catch");
+  });
+
+  it("goes back to describing the box when the map is being simulated", () => {
+    // The rail takes the left column, which simulation docks, so the queue
+    // cannot be shown beside a simulated map. The card used to stay live with
+    // the queue gone: verdict buttons still recording, no progress, and no way
+    // back to the list.
+    state.simulationMode = true;
+    const card = show("gated");
+    expect(card.querySelector(".rv-step")).toBeNull();
+    expect(card.querySelector(".rv-foot")).toBeNull();
+    // …and the expression is back where it lives outside a pass, rather than
+    // being suppressed for a rule block that is no longer rendered.
+    expect(card.querySelector(".calc-formula")).not.toBeNull();
+    state.simulationMode = false;
+  });
+
   it("puts the expression on screen, verbatim", () => {
     const html = show("gated").innerHTML;
     expect(html).toContain("The rule for this box");

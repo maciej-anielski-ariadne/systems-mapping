@@ -34,7 +34,7 @@ import {
 import { solverGeneration } from "./07-simulation-engine";
 import {
   coverage, startReviewPass, endReviewPass, reviewAction, reviewerNamed, needsResponse,
-  reviewLog, openItems, markAddressed, clearVerdict, scheduleReviewSave,
+  reviewLog, openItems, markAddressed, reopenVerdict, scheduleReviewSave,
   onReviewRecordChanged,
 } from "./24-review-record";
 import { downloadReviewLog } from "./25-review-rail";
@@ -55,6 +55,7 @@ const SWEEP_AUTORUN_LIMIT = 60;
 let sweepRequestedFor = -1;
 let fullListOpen = false;
 let logOpen = false;
+let listenersWired = false;
 
 // ───── The element, and the open/closed state ─────────────────────────────
 function stageEl(): HTMLElement | null {
@@ -410,7 +411,11 @@ function renderLogCard(row: LogRow, actionable: boolean): string {
   const stale = row.now === "stale";
   let html = '<div class="review-card is-clickable" data-review-box="' + escapeHtml(row.entry.boxId) + '">';
   html +=   '<div class="review-card-head">';
-  html +=     '<span class="review-sev sev-' + (stale ? "wrong" : "wrong") + '" aria-hidden="true"></span>';
+  // Amber for a concern somebody raised; grey for a sign-off that merely went
+  // stale, where nobody has objected to anything and the box has only changed
+  // since it was checked. This was `stale ? "wrong" : "wrong"` — a conditional
+  // that read as a distinction and made none.
+  html +=     '<span class="review-sev sev-' + (stale ? "mismatch" : "wrong") + '" aria-hidden="true"></span>';
   html +=     '<span class="review-card-label">' + escapeHtml(row.label) + '</span>';
   html +=     '<span class="review-card-id">' + escapeHtml(row.entry.boxId) + '</span>';
   html +=   '</div>';
@@ -456,7 +461,8 @@ function renderLogCard(row: LogRow, actionable: boolean): string {
               (stale && !closingAFlag ? "Still fine" : "Addressed") + '</button>';
     html +=   '<button type="button" class="rv-v" data-log-action="clear" ' +
               'data-log-box="' + escapeHtml(row.entry.boxId) + '" ' +
-              'data-tooltip="Drop the verdict entirely — the box goes back to unreviewed.">Reopen</button>';
+              'data-tooltip="Put this box back in the queue. The comment and who raised ' +
+              'it are kept.">Reopen</button>';
     html += '</div>';
   }
   html += '</div>';
@@ -571,7 +577,13 @@ function renderCoverageSection(): string {
 export function initReviewStage(): void {
   // Whenever a verdict changes — from the panel here, or from the review card in
   // the box panel — the badge and this panel are re-read from the record.
-  onReviewRecordChanged(refreshReview);
+  // Guarded on its own flag rather than on the element checks below: those are
+  // about the DOM, and this listener outlives any element. Registering it twice
+  // would repaint the panel twice per verdict, for good.
+  if (!listenersWired) {
+    listenersWired = true;
+    onReviewRecordChanged(refreshReview);
+  }
 
   const button = document.getElementById("review-button");
   if (button && !button.dataset.wired) {
@@ -620,7 +632,11 @@ export function initReviewStage(): void {
         // the thing that decides, and it says no by writing nothing.
         if (!markAddressed(boxId, field ? field.value : "")) return;
       } else {
-        clearVerdict(boxId);
+        // Reopen, not erase. The note, and the fact that somebody raised a
+        // concern here, are the parts of a review that took effort to produce
+        // and are the whole reason the log exists — dropping the verdict must
+        // not drop them with it.
+        reopenVerdict(boxId);
       }
       scheduleReviewSave();   // notifies, which repaints this panel and the badge
       return;

@@ -293,6 +293,30 @@ describe("working through the queue", () => {
     expect(rail().querySelector(".rail-empty")!.textContent).toContain("Nothing matches");
   });
 
+  it("opens the next pass on the whole list, not on yesterday's chip", () => {
+    // A filter belongs to the sitting. Carried across, a pass opened showing
+    // three boxes and looked exactly like a pass with three boxes in it.
+    (rail().querySelector('[data-rail-filter="flagged"]') as HTMLElement).click();
+    expect(rows().length).toBe(0);
+
+    endReviewPass();
+    startReviewPass();
+    expect(names()).toEqual(["Exam coverage", "Seizures", "Outcome"]);
+  });
+
+  it("keeps the keyboard on the button it was on across a repaint", () => {
+    // Every update rebuilds the rail's markup, so the button somebody just
+    // pressed stops existing. Without putting focus back, "next, next, next"
+    // meant a tab tour of the whole list between each press.
+    const next = rail().querySelector('[data-rail="next"]') as HTMLElement;
+    next.focus();
+    next.click();
+    const now = document.activeElement as HTMLElement;
+    expect(now).not.toBe(document.body);
+    expect(now.getAttribute("data-rail")).toBe("next");
+    expect(now).not.toBe(next);          // a new element, playing the same part
+  });
+
   it("stops the pass from the rail", () => {
     (rail().querySelector('[data-rail="stop"]') as HTMLElement).click();
     expect(state.reviewPass).toBe(false);

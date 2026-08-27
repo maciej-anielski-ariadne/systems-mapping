@@ -40,6 +40,7 @@ type RailFilter = "all" | "open" | "flagged" | "stale";
 
 let filter: RailFilter = "all";
 let trayOpen = false;
+let listenersWired = false;
 
 // One glyph per state, and a word for anything that reads it aloud. The colour
 // is a repeat of the mark, never the only carrier: severity is data here, the
@@ -76,15 +77,63 @@ export function syncReviewRail(): void {
                   state.uiMode === "read" && !state.simulationMode;
   rail.hidden = !showing;
   document.body.classList.toggle("review-rail-open", showing);
-  if (!showing) { rail.innerHTML = ""; trayOpen = false; return; }
+  if (!showing) {
+    rail.innerHTML = "";
+    trayOpen = false;
+    // A filter belongs to the sitting, not to the map. Left set, the next pass
+    // opened showing only the boxes somebody had chipped down to yesterday —
+    // a queue of three, looking exactly like a queue of three.
+    filter = "all";
+    return;
+  }
+
+  // The rebuild below throws away every element in the rail, INCLUDING the one
+  // the keyboard is standing on: press "Next unchecked" and the button that was
+  // just activated stops existing, focus falls back to the body, and pressing it
+  // again does nothing until you have tabbed the length of the list. So note
+  // what had focus, by the attribute that identifies it rather than by the
+  // element, and put it back on whatever now plays that part.
+  const returnTo = focusedControl(rail);
 
   rail.classList.toggle("tray-open", trayOpen);
   rail.innerHTML = railHtml();
+
+  if (returnTo) {
+    const again = rail.querySelector(returnTo) as HTMLElement | null;
+    // preventScroll: the scroll this function wants is the current row's, below.
+    if (again) again.focus({ preventScroll: true });
+  }
 
   // Keep the box you are standing on in view. `nearest` rather than `center`:
   // stepping down the queue should scroll the list by a row, not jump it.
   const current = rail.querySelector(".rail-row.is-current");
   if (current) current.scrollIntoView({ block: "nearest" });
+}
+
+/**
+ * A selector for whichever rail control has focus, or null.
+ *
+ * By attribute rather than by index: the list is re-ordered and re-filtered
+ * between renders, so "the third button" names a different thing afterwards
+ * where `[data-rail="next"]` names the same one.
+ */
+function focusedControl(rail: HTMLElement): string | null {
+  const active = document.activeElement as HTMLElement | null;
+  if (!active || !rail.contains(active)) return null;
+  for (const attribute of ["data-rail", "data-rail-filter", "data-rail-box"]) {
+    const value = active.getAttribute(attribute);
+    if (value !== null) return "[" + attribute + '="' + quoteForSelector(value) + '"]';
+  }
+  return null;
+}
+
+// Box ids come from a spreadsheet, so they are not guaranteed to be safe inside
+// a selector. Within a QUOTED attribute value those are the only two characters
+// that need it, which is the whole of the job here — and doing it by hand rather
+// than through CSS.escape keeps this working in the test environment, where the
+// function cannot be called off the object it belongs to.
+function quoteForSelector(value: string): string {
+  return value.replace(/["\\]/g, "\\$&");
 }
 
 function railHtml(): string {
@@ -162,14 +211,36 @@ function passes(now: ReviewState): boolean {
 // columns already run cause to effect left to right, the two barely differ.
 function rowsHtml(): string {
   const queue = queueOrder();
-  const shown = queue.filter(id => passes(reviewStateOf(id)));
+
+  // Every box's state, and every column's tally, in ONE pass over the queue.
+  // Both used to be worked out where they were needed — the state per row and
+  // again inside a per-column `queue.filter(...)` — which asked reviewStateOf,
+  // and so re-hashed a fingerprint over the box's whole set of incoming links,
+  // (2 + columns) times per box. This render runs on every keystroke in the note
+  // field, so on the map this was built against that was some four hundred
+  // hashes per character typed.
+  const stateOf = new Map<string, ReviewState>();
+  const columnOf = new Map<string, string>();
+  const tally = new Map<string, { agreed: number; total: number }>();
+  for (const id of queue) {
+    const now = reviewStateOf(id);
+    const columnId = (nodeById[id] && nodeById[id].stage) || "";
+    stateOf.set(id, now);
+    columnOf.set(id, columnId);
+    const count = tally.get(columnId) || { agreed: 0, total: 0 };
+    count.total++;
+    if (now === "agreed") count.agreed++;
+    tally.set(columnId, count);
+  }
+
+  const shown = queue.filter(id => passes(stateOf.get(id)!));
   if (!shown.length) {
     return '<div class="rail-empty">Nothing matches that filter.</div>';
   }
 
   const buckets = new Map<string, string[]>();
   for (const id of shown) {
-    const columnId = (nodeById[id] && nodeById[id].stage) || "";
+    const columnId = columnOf.get(id)!;
     const list = buckets.get(columnId) || [];
     list.push(id);
     buckets.set(columnId, list);
@@ -186,16 +257,15 @@ function rowsHtml(): string {
     // Counted over the whole queue, not over what the filter is showing: "3/14
     // checked" is about the column, and would be a different and much less
     // useful number if it moved every time a chip was pressed.
-    const all = queue.filter(other => ((nodeById[other] || {} as any).stage || "") === columnId);
-    const agreed = all.filter(other => reviewStateOf(other) === "agreed").length;
+    const all = tally.get(columnId) || { agreed: 0, total: 0 };
     const label = (stageById[columnId] && stageById[columnId].label) || columnId || "Elsewhere";
     html += '<div class="rail-group">' + escapeHtml(label) +
-            " <b>" + agreed + "/" + all.length + "</b></div>";
+            " <b>" + all.agreed + "/" + all.total + "</b></div>";
 
     for (const id of buckets.get(columnId)!) {
     const node = nodeById[id];
     if (!node) continue;
-    const now = reviewStateOf(id);
+    const now = stateOf.get(id)!;
     const links = (incomingEdges[id] || []).length;
     // A comment on a box nobody has judged yet would otherwise be invisible
     // here: the box reads as "not checked" like any other, and the note only
@@ -245,8 +315,16 @@ export function initReviewRail(): void {
   // through 11-rendering's. Wiring to the funnels rather than to the call sites
   // is deliberate — a rail that updates on three paths out of four is worse than
   // no rail, because it is wrong rather than absent.
-  onReviewRecordChanged(syncReviewRail);
-  onSelectionChanged(syncReviewRail);
+  // Registered once, and guarded here rather than by the element check below:
+  // that one is about the DOM, and these listeners outlive any element. A second
+  // call used to append them again — the listener arrays have no removal — so
+  // every verdict after it rendered the rail twice, and the count grew with each
+  // init.
+  if (!listenersWired) {
+    listenersWired = true;
+    onReviewRecordChanged(syncReviewRail);
+    onSelectionChanged(syncReviewRail);
+  }
 
   const rail = railEl();
   if (!rail || rail.dataset.wired) return;

@@ -204,13 +204,17 @@ export function recordVerdict(
   const previous = state.reviews[boxId];
   const when = (options && options.date) || today();
   const who = (options && options.reviewer) || state.reviewer || "";
-  const raised = raisedAndClosed(previous, verdict, when, who);
+  // Worked out before the dates are, because whether a concern still stands
+  // turns on whether its reason is still written down — see raisedAndClosed.
+  const note = options && options.note !== undefined ? options.note
+             : (previous ? previous.note : "");
+  const raised = raisedAndClosed(previous, verdict, when, who, note);
   state.reviews[boxId] = {
     boxId: boxId,
     verdict: verdict,
     reviewer: who,
     date: when,
-    note: options && options.note !== undefined ? options.note : (previous ? previous.note : ""),
+    note: note,
     fingerprint: fingerprintOf(node),
     flaggedSources: (options && options.flaggedSources) ||
                     (previous ? previous.flaggedSources.slice() : []),
@@ -246,29 +250,43 @@ function raisedAndClosed(
   verdict: Verdict,
   when: string,
   who: string,
+  note: string,
 ): { flaggedOn: string; flaggedBy: string; addressedOn: string; addressedBy: string } {
-  const wasFlagged = !!previous && previous.verdict === "flagged";
+  // AN UNANSWERED CONCERN IS A FLAG *OR* A NOTE — the same two things
+  // needsResponse counts, and for the same reason: writing down what is wrong
+  // with a box is saying something is wrong with it. Reading only the flag here
+  // meant a concern raised in the note field, or one whose flag had been taken
+  // back with the words left standing, closed with an account of what was done
+  // and NOBODY'S NAME OR DATE against it — "addressed on" and "addressed by"
+  // blank in the exported log, and the panel's "raised by … closed by …" line
+  // missing altogether, on exactly the concern the log exists to trace.
+  const wasOpen = !!previous && previous.verdict !== "agreed" &&
+                  (previous.verdict === "flagged" || !!previous.note.trim());
   let flaggedOn   = previous ? previous.flaggedOn   : "";
   let flaggedBy   = previous ? previous.flaggedBy   : "";
   let addressedOn = previous ? previous.addressedOn : "";
   let addressedBy = previous ? previous.addressedBy : "";
 
   if (verdict === "flagged") {
-    // Raising a NEW concern starts a new cycle. Re-pressing Flag on a box that
-    // is already flagged is not a new concern, and must not move the date.
-    if (!wasFlagged) { flaggedOn = when; flaggedBy = who; }
+    // Raising a NEW concern starts a new cycle. Pressing Flag on a box that is
+    // already carrying an unanswered one is not a new concern, and must not move
+    // the date. The second test is for a row written before these columns
+    // existed: the concern is open and has no date on it, so this is the first
+    // chance to give it one.
+    if (!wasOpen || !flaggedOn) { flaggedOn = when; flaggedBy = who; }
     // An open concern has not been addressed, whatever happened last time round.
     addressedOn = "";
     addressedBy = "";
   } else if (verdict === "none") {
-    // The flag was taken back. Not raised, not closed — so neither date stands,
-    // or the log would carry a concern that was never answered and never
-    // withdrawn. The note stays; only the claim about it goes.
-    flaggedOn = "";
-    flaggedBy = "";
+    // The judgement was taken back. If the REASON is still written down the
+    // concern still stands — needsResponse says so — so the raise stands with
+    // it, and clearing it here would have the log carry a closure with nothing
+    // to close. With nothing written, nothing was raised and nothing was
+    // closed, and neither date may stand.
+    if (!note.trim()) { flaggedOn = ""; flaggedBy = ""; }
     addressedOn = "";
     addressedBy = "";
-  } else if (verdict === "agreed" && wasFlagged) {
+  } else if (verdict === "agreed" && wasOpen) {
     addressedOn = when;
     addressedBy = who;
   }
@@ -280,6 +298,33 @@ function raisedAndClosed(
 
 export function clearVerdict(boxId: string): void {
   delete state.reviews[boxId];
+}
+
+/**
+ * Put a box back in the queue without taking the record of it away.
+ *
+ * The difference from clearVerdict() is the whole point. Reopening says "this
+ * is not settled after all" — it does not say "nobody ever looked at this",
+ * and it certainly does not say "throw away what they wrote". Deleting the
+ * entry did all three: press Reopen on a box somebody had flagged with two
+ * paragraphs of objection and the objection, the name against it and the date
+ * were gone, from memory and from the next save, with verdicts deliberately
+ * kept off the undo stack so there was no way back.
+ *
+ * So: the judgement comes off and the record stays. The note stands, and so
+ * does the fact that a concern was raised and by whom — that is history, and
+ * reopening does not un-happen it. The CLOSE goes, because a box being reopened
+ * is by definition not closed out any more.
+ */
+export function reopenVerdict(boxId: string): void {
+  const entry = state.reviews[boxId];
+  if (!entry) return;
+  entry.verdict = "none";
+  entry.addressedOn = "";
+  entry.addressedBy = "";
+  entry.addressedNote = "";
+  entry.reviewer = state.reviewer || entry.reviewer;
+  entry.date = today();
 }
 
 /** Toggle the flag on one input of a box, without giving the box a verdict. */

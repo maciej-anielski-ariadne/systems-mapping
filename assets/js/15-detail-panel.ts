@@ -213,7 +213,7 @@ export function renderNodeSkeleton(node: GraphNode, editMode: boolean): string {
   // of what drives the box is already exactly the thing a reviewer has to judge,
   // so the card adds the question, the marks and the verdict rather than a
   // second copy of the box.
-  const inPass = reading && state.reviewPass && queuePosition(node.id) > 0;
+  const inPass = reviewingBox(node);
   // On a formula box the strengths on the arrows are ignored outright, so the
   // rows must not invite a judgement on them.
   const reviewMarks = inPass
@@ -221,7 +221,15 @@ export function renderNodeSkeleton(node: GraphNode, editMode: boolean): string {
     : undefined;
   if (inPass) {
     // Re-render the incoming list with the review affordances on it.
+    //
+    // `html` carries the identity block built above — the tags, the name, the
+    // description — and it goes in here rather than being dropped. It was
+    // dropped, and the card asked "is this everything that drives this box?"
+    // about a box whose NAME was nowhere on the panel: the only thing naming it
+    // was the rectangle highlighted on the map, and the description, which is
+    // often the definition being judged, was off screen entirely.
     return renderReviewStepper(node)
+      + html
       + renderReviewAsk(node)
       + renderReviewRule(node)
       + (directImpacts.length
@@ -279,6 +287,26 @@ export function renderNodeSkeleton(node: GraphNode, editMode: boolean): string {
 // available is guaranteeing that the question and the verdict are always reachable
 // and only the middle of the list scrolls.
 // ═════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Is THIS panel, right now, a review card for THIS box?
+ *
+ * One predicate, asked everywhere, because the card does not merely add things
+ * to the panel — it also takes one away (the breakdown's verbatim copy of the
+ * formula, which the rule block above it is already showing). Two spellings of
+ * "we are reviewing" meant the taking-away happened in cases the adding did
+ * not: a box outside the queue during a pass had its expression suppressed with
+ * nothing put in its place, so the rule was on screen nowhere.
+ *
+ * Simulation mode is in here because the rail is: it takes the left column,
+ * which simulation docks, so the queue cannot be shown beside a simulated map.
+ * Without this the card stayed live with the queue gone — the verdict buttons
+ * still recording, no progress, and no way back to the list.
+ */
+function reviewingBox(node: GraphNode): boolean {
+  return state.uiMode !== "edit" && state.reviewPass && !state.simulationMode &&
+         queuePosition(node.id) > 0;
+}
 
 function renderReviewStepper(node: GraphNode): string {
   const at = queuePosition(node.id);
@@ -868,10 +896,11 @@ export function renderCalculationBreakdown(node: GraphNode): string {
   html +=   '<div class="calc-rule">' + escapeHtml(CALC_RULE_SENTENCE[rule]) + '</div>';
 
   // The expression itself, verbatim, in a monospace block — it IS the rule for
-  // a formula box, so it reads before the inputs it names. Skipped inside a
-  // review pass: the rule block a few rows above is already showing it, and a
-  // second copy of a 160-character expression is a third of a 340px panel.
-  if (rule === "formula" && explanation.formula && !(state.uiMode !== "edit" && state.reviewPass)) {
+  // a formula box, so it reads before the inputs it names. Skipped exactly when
+  // the rule block a few rows above is showing it — reviewingBox(), the same
+  // question that decides whether that block exists — because a second copy of a
+  // 160-character expression is a third of a 340px panel.
+  if (rule === "formula" && explanation.formula && !reviewingBox(node)) {
     html += '<div class="calc-formula">' + paintFormula(explanation.formula) + '</div>';
   }
 
@@ -1342,6 +1371,10 @@ function wireReviewCardHandlers(node: GraphNode, contentState: HTMLElement): voi
       toggleSourceFlag(node.id, sourceId);
       renderDetailPanel();
       scheduleReviewSave();
+      // Flagging one link can turn an agreement into a concern, and the box's
+      // coverage mark on the map is drawn off the verdict — so the map has to be
+      // told, exactly as it is for the verdict buttons above.
+      renderSelectionChange();
     });
   });
 
@@ -1365,12 +1398,23 @@ function wireReviewCardHandlers(node: GraphNode, contentState: HTMLElement): voi
       agree.classList.toggle("on", reviewStateOf(node.id) === "agreed");
     }
     if (flag) flag.classList.toggle("on", reviewStateOf(node.id) === "flagged");
-    if (close) close.hidden = !(wanted || (entry && entry.addressedNote.trim()));
+    // Never taken away from under the caret. This runs on every keystroke, and
+    // on a box that no longer needs a response — one already agreed — clearing
+    // the field to rewrite it made the field itself disappear mid-edit, taking
+    // the focus with it. A field somebody is standing in stays.
+    if (close && document.activeElement !== close) {
+      close.hidden = !(wanted || (entry && entry.addressedNote.trim()));
+    }
   }
 
   if (note) {
     note.addEventListener("input", () => {
       const entry = entryFor(node.id);
+      // Whether this keystroke moved the VERDICT, as against the words. The map
+      // draws a coverage mark off the verdict, so it has to repaint when one
+      // changes — and must not repaint when one has not, since that would be a
+      // pass over every box on the map per character typed.
+      let verdictMoved = false;
       if (entry) {
         entry.note = note.value;
         // Writing a concern IS raising one, whatever the box stood at before.
@@ -1381,6 +1425,7 @@ function wireReviewCardHandlers(node: GraphNode, contentState: HTMLElement): voi
         // the thing typing here would make it.
         if (entry.verdict !== "flagged" && note.value.trim()) {
           recordVerdict(node.id, "flagged", { note: note.value });
+          verdictMoved = true;
         }
       } else {
         // Typing a note before pressing anything is a real thing to do — it is
@@ -1388,9 +1433,11 @@ function wireReviewCardHandlers(node: GraphNode, contentState: HTMLElement): voi
         // unexplained note is closer to a doubt than to an agreement, and a
         // doubt nobody records is the thing this whole record exists to catch.
         recordVerdict(node.id, "flagged", { note: note.value });
+        verdictMoved = true;
       }
       syncVerdictControls();
       scheduleReviewSave();
+      if (verdictMoved) renderSelectionChange();
     });
   }
 

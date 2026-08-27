@@ -9,7 +9,7 @@ import {
   recordVerdict, clearVerdict, reviewStateOf, coverage, queueOrder, queuePosition,
   nextOutstanding, stepQueue, toggleSourceFlag, isSourceFlagged, inputFamily,
   fingerprintOf, reviewAction, startReviewPass, endReviewPass,
-  reviewLog, openItems, markAddressed,
+  reviewLog, openItems, markAddressed, reopenVerdict,
   reviewReport, reviewReportCsv, reviewReportFilename,
   isFullName, reviewerNamed, commentOn, needsResponse,
 } from "../assets/js/24-review-record";
@@ -540,29 +540,49 @@ describe("taking a flag back keeps what was written", () => {
     expect(isSourceFlagged("c", "a")).toBe(true);
   });
 
-  it("stops claiming a concern was ever raised", () => {
-    // Not raised and not closed: a log saying "flagged on the 20th" with no
-    // answer would read as an open concern that quietly vanished.
+  it("keeps the raise standing while the reason is still written down", () => {
+    // The judgement comes off; the concern does not. needsResponse still counts
+    // this box as carrying an unanswered one — it cannot be agreed without an
+    // account of what was done — so a log that blanked the raise would be
+    // claiming nobody had ever objected to a box the app itself will not let
+    // anyone sign off.
     recordVerdict("c", "flagged", { note: "Check with ops", date: "2026-08-20" });
     expect(state.reviews.c.flaggedOn).toBe("2026-08-20");
     reviewAction("c", "flag");
+    expect(needsResponse("c")).toBe(true);
+    expect(state.reviews.c.flaggedOn).toBe("2026-08-20");
+    expect(state.reviews.c.flaggedBy).toBe("Maciej Anielski");
+    expect(state.reviews.c.addressedOn).toBe("");   // not closed either
+
+    const row = reviewReport().find((r) => r.boxId === "c")!;
+    expect(row.state).toBe("not checked");          // back in the queue
+    expect(row.note).toBe("Check with ops");        // still in the exported log
+    expect(row.flaggedOn).toBe("2026-08-20");
+  });
+
+  it("stops claiming a concern was ever raised once the reason goes", () => {
+    // Nothing written and no flag: not raised, not closed. A log saying
+    // "flagged on the 20th" with no answer and no words would read as an open
+    // concern that quietly vanished.
+    recordVerdict("c", "flagged", { date: "2026-08-20" });
+    expect(state.reviews.c.flaggedOn).toBe("2026-08-20");
+    reviewAction("c", "flag");
+    expect(needsResponse("c")).toBe(false);
     expect(state.reviews.c.flaggedOn).toBe("");
     expect(state.reviews.c.flaggedBy).toBe("");
     expect(state.reviews.c.addressedOn).toBe("");
-
-    const row = reviewReport().find((r) => r.boxId === "c")!;
-    expect(row.state).toBe("not checked");
-    expect(row.note).toBe("Check with ops");       // still in the exported log
-    expect(row.flaggedOn).toBe("");
+    expect(reviewReport().find((r) => r.boxId === "c")!.flaggedOn).toBe("");
   });
 
-  it("flags it again, note intact, with a fresh date", () => {
+  it("flags it again, note intact, without moving the date it was first raised", () => {
+    // One concern, pressed twice — not two concerns. The date belongs to the
+    // objection, and the objection has been standing in the note the whole time.
     recordVerdict("c", "flagged", { note: "Check with ops", date: "2026-08-20" });
     reviewAction("c", "flag");
     reviewAction("c", "flag");
     expect(reviewStateOf("c")).toBe("flagged");
     expect(state.reviews.c.note).toBe("Check with ops");
-    expect(state.reviews.c.flaggedOn).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(state.reviews.c.flaggedOn).toBe("2026-08-20");
   });
 
   it("still toggles on a box whose links have been edited since", () => {
@@ -701,6 +721,30 @@ describe("who closed the concern, as against who last touched the box", () => {
     expect(entry.reviewer).toBe("Maciej Anielski");
   });
 
+  it("names the closer when the concern was raised in the note field", () => {
+    // A concern is raised two ways and they mean the same thing: pressing Flag,
+    // and writing what is wrong. Closing one raised the second way was recording
+    // WHAT was done with nobody's name or date against it — "addressed on" and
+    // "addressed by" blank in the exported log on exactly the concern the log
+    // exists to trace.
+    recordVerdict("c", "flagged", { reviewer: "Ann Lee", date: "2026-08-20", note: "No rail share" });
+    reviewAction("c", "flag");                        // judgement withdrawn, words kept
+    expect(needsResponse("c")).toBe(true);
+
+    state.reviewer = "Maciej Anielski";
+    expect(reviewAction("c", "agree", { addressedNote: "Added it at 0.3" }).refused).toBeUndefined();
+
+    const entry = state.reviews.c;
+    expect(entry.addressedNote).toBe("Added it at 0.3");
+    expect(entry.addressedBy).toBe("Maciej Anielski");
+    expect(entry.addressedOn).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(entry.flaggedBy).toBe("Ann Lee");          // the raise survived the withdrawal
+
+    const row = reviewReport().find((r) => r.boxId === "c")!;
+    expect(row.addressedBy).toBe("Maciej Anielski");
+    expect(row.addressedOn).toBe(entry.addressedOn);
+  });
+
   it("keeps the closer once somebody else touches the box again", () => {
     // `reviewer` moves to whoever gave the latest verdict, so on its own it
     // stops naming the closer after one more edit. This is why addressedBy is
@@ -756,6 +800,50 @@ describe("who closed the concern, as against who last touched the box", () => {
 // The record now keeps it. The app's own surfaces stay about the map in front of
 // you; the EXPORTED log is where it is noted, which is where a QA trail belongs.
 // =============================================================================
+describe("reopening a box puts it back in the queue without erasing it", () => {
+  beforeEach(() => {
+    loadDataFromCsv(CHAIN); state.reviews = {}; state.reviewer = "Ann Lee";
+  });
+
+  it("keeps the comment and who raised it", () => {
+    // This used to delete the entry outright, so pressing Reopen on a box
+    // somebody had flagged took the objection, the name against it and the date
+    // with it — and verdicts are deliberately off the undo stack, so there was
+    // no way back.
+    recordVerdict("c", "flagged", { reviewer: "Ann Lee", date: "2026-08-20", note: "No rail share" });
+    state.reviewer = "Maciej Anielski";
+
+    reopenVerdict("c");
+
+    expect(reviewStateOf("c")).toBe("unreviewed");    // back in the queue
+    const entry = state.reviews.c;
+    expect(entry.note).toBe("No rail share");
+    expect(entry.flaggedBy).toBe("Ann Lee");
+    expect(entry.flaggedOn).toBe("2026-08-20");
+    expect(needsResponse("c")).toBe(true);            // still wants an answer
+    expect(reviewReport().find((r) => r.boxId === "c")!.note).toBe("No rail share");
+  });
+
+  it("takes the close off, since a reopened box is not closed out", () => {
+    recordVerdict("c", "flagged", { note: "No rail share", date: "2026-08-20" });
+    markAddressed("c", "Added it at 0.3");
+    expect(state.reviews.c.addressedBy).toBe("Ann Lee");
+
+    reopenVerdict("c");
+
+    const entry = state.reviews.c;
+    expect(entry.addressedNote).toBe("");
+    expect(entry.addressedOn).toBe("");
+    expect(entry.addressedBy).toBe("");
+    expect(entry.note).toBe("No rail share");         // the concern itself stands
+  });
+
+  it("does nothing to a box nobody has judged", () => {
+    reopenVerdict("c");
+    expect(state.reviews.c).toBeUndefined();
+  });
+});
+
 describe("when a reviewed box is deleted", () => {
   const remove = (id: string) => {
     setNodes(NODES.filter((n) => n.id !== id));

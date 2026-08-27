@@ -299,32 +299,39 @@ export function runSweep(step: number = SWEEP_STEP): Sweep {
   const rows: SweepRow[] = [];
   const everMoved = new Set<string>();
 
-  for (const input of inputs) {
-    // One input held above its starting value, every other slider at 100% —
-    // NOT wherever the user happens to have left it. The question the sweep
-    // answers is about the map, so it has to be asked from the map's own
-    // resting state or two runs of it would not be comparable.
-    state.userOverrides = { [input.id]: 1 + step };
-    const values = computeNodeValues();
+  // try/finally, because the restore below is a PROMISE this function makes to
+  // the rest of the app: the live sliders are exactly as they were when it
+  // returns. Without it, a solve that threw anywhere in the loop left the map
+  // holding the last nudge — one box silently pinned 10% above its starting
+  // value, and every number downstream of it read against that.
+  try {
+    for (const input of inputs) {
+      // One input held above its starting value, every other slider at 100% —
+      // NOT wherever the user happens to have left it. The question the sweep
+      // answers is about the map, so it has to be asked from the map's own
+      // resting state or two runs of it would not be comparable.
+      state.userOverrides = { [input.id]: 1 + step };
+      const values = computeNodeValues();
 
-    const moves: SweepMove[] = [];
-    for (const target of targets) {
-      const from = rest[target.id];
-      const value = values[target.id];
-      if (value === undefined || from === undefined || from === 0) continue;
-      const pct = ((value - from) / from) * 100;
-      // The map's own "is this worth drawing?" threshold, so the sweep counts a
-      // box as moved if and only if the map would show it moving.
-      if (!Number.isFinite(pct) || Math.abs(pct) < DELTA_DISPLAY_THRESHOLD_PCT) continue;
-      moves.push({ id: target.id, label: target.label, pct: pct });
-      everMoved.add(target.id);
+      const moves: SweepMove[] = [];
+      for (const target of targets) {
+        const from = rest[target.id];
+        const value = values[target.id];
+        if (value === undefined || from === undefined || from === 0) continue;
+        const pct = ((value - from) / from) * 100;
+        // The map's own "is this worth drawing?" threshold, so the sweep counts a
+        // box as moved if and only if the map would show it moving.
+        if (!Number.isFinite(pct) || Math.abs(pct) < DELTA_DISPLAY_THRESHOLD_PCT) continue;
+        moves.push({ id: target.id, label: target.label, pct: pct });
+        everMoved.add(target.id);
+      }
+      moves.sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct));
+      rows.push({ id: input.id, label: input.label, reach: moves.length, moves: moves });
     }
-    moves.sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct));
-    rows.push({ id: input.id, label: input.label, reach: moves.length, moves: moves });
+  } finally {
+    state.userOverrides = saved;
+    recomputeValues();
   }
-
-  state.userOverrides = saved;
-  recomputeValues();
 
   rows.sort((a, b) => b.reach - a.reach || a.label.localeCompare(b.label));
   return {

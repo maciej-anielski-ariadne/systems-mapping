@@ -132,6 +132,11 @@ export function saveUiStateToStorage(): void {
       detailPanelWidth:     typeof state.detailPanelWidth  === "number" ? state.detailPanelWidth  : 340,
       zoomLevel:            typeof state.zoomLevel === "number" ? state.zoomLevel : 1.0,
       highlightDepth:       typeof state.highlightDepth === "number" ? state.highlightDepth : 1,
+      // Who is reviewing. Kept with the UI rather than with the map — it is a
+      // fact about whoever is at this keyboard, not about the file — and kept
+      // at all because without it a refresh mid-pass emptied the name field,
+      // and the pass will not restart until a full name is back in it.
+      reviewer:             typeof state.reviewer === "string" ? state.reviewer : "",
     };
     localStorage.setItem(STORAGE_KEY_UI, JSON.stringify(payload));
   } catch (_) {}
@@ -170,6 +175,10 @@ export function applyRestoredUiState(ui: any): void {
   // Reading vs editing comes back first — the pin classes below are applied
   // through it.
   if (ui.uiMode === "edit" || ui.uiMode === "read") state.uiMode = ui.uiMode;
+
+  // The reviewer's name, back as they typed it. Independent of the CSV: it is
+  // who is at the keyboard, and it is the same person whichever map they open.
+  if (typeof ui.reviewer === "string") state.reviewer = ui.reviewer;
 
   if (typeof ui.sidebarPinned === "boolean") {
     state.sidebarPinned = ui.sidebarPinned;
