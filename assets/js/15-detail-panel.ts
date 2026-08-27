@@ -38,9 +38,21 @@ import {
 } from "./03-state";
 import { upgradeSelectsIn } from "./04b-typeable-dropdown";
 import { escapeHtml, formatScalar, formatScalarInput, splitCategoriesByClass, nodeCategoryIds } from "./04-utils";
-import { explainNode, formatNodeDelta, resolveEdgeElasticity } from "./07-simulation-engine";
+import {
+  explainNode, formatNodeDelta, resolveEdgeElasticity,
+  formulaInLabels, formulaConstants, formulaReads, formulaInLabelsFailed,
+} from "./07-simulation-engine";
+import {
+  isSourceFlagged, entryFor, reviewStateOf, queueOrder, queuePosition,
+  coverage, inputFamily, fingerprintOf, toggleSourceFlag, recordVerdict,
+  reviewAction, scheduleReviewSave, needsResponse,
+} from "./24-review-record";
+import {
+  isFormulaFunction, FORMULA_NUMBER_PATTERN_SOURCE, FORMULA_IDENTIFIER_PATTERN_SOURCE,
+} from "./07a-formula";
 import { EFFECT_OPTIONS } from "./02-config";
-import { selectNode, scrollNodeIntoView } from "./09-graph-selection";
+import { selectNode, focusNode, scrollNodeIntoView } from "./09-graph-selection";
+import { render, renderSelectionChange } from "./11-rendering";
 import { applySimMultiplier, updateDetailPanelDeltaInline } from "./14-simulation-panel";
 import { applySelectionClass } from "./17-events";
 import { atlasIsOpen, atlasPanelHtml, openAtlas, putScroll, takeScroll } from "./21-atlas-view";
@@ -175,10 +187,15 @@ export function renderNodeSkeleton(node: GraphNode, editMode: boolean): string {
 
   // The pieces below the identity block, named so the two modes can order
   // them differently without either one growing its own copy.
-  const causes  = renderEdgeList("Causes", directInputs, "from", "No causes — this is a starting input.");
+  // "Driven by" / "Drives" rather than "Causes" / "Effects". Both old labels
+  // were ambiguous in the same direction: read as verbs, "causes" and "effects"
+  // describe what this box does TO other boxes, which is the opposite of what
+  // the first list holds. Grammar now carries the direction — a passive and an
+  // active form of one verb cannot be read the wrong way round.
+  const causes  = renderEdgeList("Driven by", directInputs, "from", "Nothing drives this — it is a starting box.");
   const effects = editMode
     ? renderOutgoingEdgesBlock(node)
-    : renderEdgeList("Effects", directImpacts, "to", "No effects — this is a final result.");
+    : renderEdgeList("Drives", directImpacts, "to", "This drives nothing — it is a final result.");
   const causesHint = (editMode && directInputs.length)
     ? '<div class="detail-edge-hint">Edit a link from the box it starts at →</div>'
     : "";
@@ -189,6 +206,35 @@ export function renderNodeSkeleton(node: GraphNode, editMode: boolean): string {
   // because outside it there are no computed numbers to explain.
   const numbers = renderQuantFrame(node, editMode) +
     (!editMode && state.simulationMode ? renderCalculationBreakdown(node) : "");
+
+  // ── The review card ────────────────────────────────────────────────
+  // While a pass is running, this panel stops being a description of a box and
+  // becomes a question about it. The content underneath is UNCHANGED — the list
+  // of what drives the box is already exactly the thing a reviewer has to judge,
+  // so the card adds the question, the marks and the verdict rather than a
+  // second copy of the box.
+  const inPass = reading && state.reviewPass && queuePosition(node.id) > 0;
+  // On a formula box the strengths on the arrows are ignored outright, so the
+  // rows must not invite a judgement on them.
+  const reviewMarks = inPass
+    ? { boxId: node.id, strengthsIgnored: !!node.formula && !formulaInLabelsFailed(node.id) }
+    : undefined;
+  if (inPass) {
+    // Re-render the incoming list with the review affordances on it.
+    return renderReviewStepper(node)
+      + renderReviewAsk(node)
+      + renderReviewRule(node)
+      + (directImpacts.length
+        ? '<div class="detail-atlas"><button class="detail-atlas-button" data-action="open-atlas">' +
+          '<b>ATLAS →</b><span>Every pathway out of this box, as one picture.</span></button></div>'
+        : "")
+      + renderEdgeList("Driven by", directInputs, "from",
+          "Nothing drives this — it is a starting box.", reviewMarks)
+      + renderReviewFamily(node)
+      + effects
+      + numbers
+      + renderReviewFooter(node);
+  }
 
   if (reading) {
     // The way into the atlas, first thing under the box's name — "what does
@@ -220,6 +266,344 @@ export function renderNodeSkeleton(node: GraphNode, editMode: boolean): string {
     html += '</div>';
   }
 
+  return html;
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// THE REVIEW CARD
+// -----------------------------------------------------------------------------
+// Four pieces around the panel's existing content. Two of them stick — the
+// stepper to the top and the verdict to the bottom — because on the busiest box
+// of the map this was built against the panel already overflows a laptop-height
+// frame BEFORE any of this is added. Fitting was never available; what is
+// available is guaranteeing that the question and the verdict are always reachable
+// and only the middle of the list scrolls.
+// ═════════════════════════════════════════════════════════════════════════════
+
+function renderReviewStepper(node: GraphNode): string {
+  const at = queuePosition(node.id);
+  const total = queueOrder().length;
+  const done = coverage();
+  const settled = done.agreed + done.flagged;
+  let html = '<div class="rv-step">';
+  html +=   '<span class="rv-step-count">box ' + at + ' of ' + total + '</span>';
+  html +=   '<span class="rv-step-bar" role="progressbar" aria-valuenow="' + settled +
+            '" aria-valuemin="0" aria-valuemax="' + total + '"><i style="width:' +
+            (total ? Math.round(settled / total * 100) : 0) + '%"></i></span>';
+  html +=   '<button type="button" class="rv-step-btn" data-review="prev" ' +
+            'data-tooltip="Previous box in the pass" aria-label="Previous box">[</button>';
+  html +=   '<button type="button" class="rv-step-btn" data-review="next" ' +
+            'data-tooltip="Next box still wanting a verdict" aria-label="Next box">]</button>';
+  html +=   '<button type="button" class="rv-step-btn rv-step-end" data-review="end" ' +
+            'data-tooltip="Stop the review pass">Done</button>';
+  html += '</div>';
+  return html;
+}
+
+// The question, stated. This is the whole mechanism by which a MISSING link gets
+// found: a list you are merely shown invites you to check the rows that are
+// there, and a list you are asked about invites you to notice the row that is
+// not. One band of copy, and it is the difference between the two.
+function renderReviewAsk(node: GraphNode): string {
+  const count = (incomingEdges[node.id] || []).length;
+  const state_ = reviewStateOf(node.id);
+  // "Wrong strengths" is false on a formula box — the engine never reads them.
+  // Telling a third of the queue to check something that cannot be wrong is
+  // worse than saying nothing, because it looks like the whole question.
+  let sub = node.formula
+    ? "This box is computed from the rule below, and the " + count + " link" +
+      (count === 1 ? "" : "s") + " under it are what the rule draws on. Is the rule " +
+      "right, and does it use everything it should?"
+    : count === 1
+    ? "One link below. Is it right — and is it the only one?"
+    : count + " links below. Wrong ones, wrong strengths — and anything that should be here and is not.";
+  if (state_ === "stale") {
+    sub = "This box was signed off before, and something about what drives it has changed since. " + sub;
+  }
+  return '<div class="rv-ask' + (state_ === "stale" ? " is-stale" : "") + '">' +
+         '<b>Is this everything that drives this box?</b>' +
+         '<span>' + escapeHtml(sub) + '</span></div>';
+}
+
+// The one prompt aimed at what is NOT there. When several of a box's inputs are
+// the same shape, that is a pattern the author built on purpose — and a pattern
+// with a member missing is the commonest way a large map goes wrong. The app can
+// see the pattern; a reader looking at seven rows usually cannot.
+function renderReviewFamily(node: GraphNode): string {
+  const family = inputFamily(node.id);
+  if (!family) return "";
+  const shape = [family.prefix, "…", family.suffix].filter(Boolean).join(" ").trim();
+  const names = family.members.map(m => m.varies).filter(Boolean);
+  return '<div class="rv-family">' +
+    '<b>' + family.members.length + ' of these are the same shape</b> — ' +
+    escapeHtml(names.join(", ")) +
+    (shape ? ', all of them "' + escapeHtml(shape) + '"' : "") +
+    '. Is one of that set missing?</div>';
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// THE RULE, FOR A BOX WHOSE RULE IS NOT ITS ARROWS
+// -----------------------------------------------------------------------------
+// A formula box is computed from its expression ALONE: the arrows into it go
+// descriptive and their strengths are ignored outright. Eighteen of the
+// fifty-five boxes in the queue on the map this was built against are formula
+// boxes — a third of the pass — and until this block existed the card asked
+// "is this everything that drives this box?", showed the arrows, and left the
+// thing that actually decides the box off screen entirely. On those boxes the
+// list was the wrong list and the right one was nowhere.
+//
+// So: the expression verbatim, because that is the rule and a sign-off on a rule
+// nobody has seen is the theatre the fingerprint exists to prevent. The same
+// expression in the map's own labels underneath, because formulas name boxes by
+// ID — `hgv_arrivals` in the expression is "Lorry arrivals" in the list, and
+// nothing else on screen connects the two. Then the constants, which appear on
+// no map anywhere. Then, folded, the working.
+//
+// The five non-default combine boxes get a line of their own for the same
+// reason, though a smaller one: their arrows still do the work, they just add
+// up differently.
+// ═════════════════════════════════════════════════════════════════════════════
+
+// ───── Reading a formula ──────────────────────────────────────────────────
+// Four kinds of name appear in an expression and they are not interchangeable:
+// a box on the map, a hidden constant, one of the four functions, or a name that
+// resolves to NOTHING. Telling them apart is most of what reading a formula is,
+// and at 11px in a 308px column a wall of one-colour monospace does not.
+//
+// NO NEW HUES. This app's grammar is that colour means "you can act on this",
+// with the map's increase / decrease / enable hues as the one sanctioned
+// exception — and those three sit inches away on the link rows, so borrowing
+// them here would make a formula look like it was full of link kinds. So the
+// kinds are told apart by weight, by dimming, and by the same inset chip the
+// calculation breakdown already uses for a constant. The single exception is a
+// name that resolves to nothing: that is an error the loader flags, and it is
+// worth the red.
+//
+// Tokenised with the parser's OWN patterns (07a-formula exports them), so what
+// this colours as a name is exactly what the engine reads as one. Unlike the
+// parser, it never throws: a formula that will not parse is precisely when a
+// reviewer most needs to be able to read it.
+const FORMULA_NUMBER = new RegExp("^" + FORMULA_NUMBER_PATTERN_SOURCE);
+const FORMULA_IDENTIFIER = new RegExp("^" + FORMULA_IDENTIFIER_PATTERN_SOURCE);
+
+function formulaToken(cls: string, text: string, tip?: string): string {
+  return '<span class="' + cls + '"' +
+    (tip ? ' data-tooltip="' + escapeHtml(tip) + '"' : "") +
+    ">" + escapeHtml(text) + "</span>";
+}
+
+export function paintFormula(text: string): string {
+  const source = String(text || "");
+  let html = "";
+  let at = 0;
+  while (at < source.length) {
+    const rest = source.slice(at);
+
+    const space = /^\s+/.exec(rest);
+    if (space) { html += escapeHtml(space[0]); at += space[0].length; continue; }
+
+    const number = FORMULA_NUMBER.exec(rest);
+    if (number) { html += formulaToken("fx-num", number[0]); at += number[0].length; continue; }
+
+    const name = FORMULA_IDENTIFIER.exec(rest);
+    if (name) {
+      const word = name[0];
+      // The tooltip is half the point: formulas name boxes by ID, so hovering
+      // `hgv_arrivals` and being told "Lorry arrivals" is the connection
+      // nothing else on screen makes.
+      if (isFormulaFunction(word)) {
+        html += formulaToken("fx-fn", word, FORMULA_FN_TIP[word] || "");
+      } else if (nodeById[word]) {
+        html += formulaToken("fx-box", word, nodeById[word].label);
+      } else if (paramById[word]) {
+        const param = paramById[word];
+        html += formulaToken("fx-const", word,
+          (param.description ? param.description + " — " : "") + constantText(param.value));
+      } else {
+        html += formulaToken("fx-unknown", word,
+          "This is neither a box on this map nor a constant, so the engine cannot read it.");
+      }
+      at += word.length;
+      continue;
+    }
+
+    html += formulaToken("fx-op", source[at]);
+    at += 1;
+  }
+  return html;
+}
+
+const FORMULA_FN_TIP: Record<string, string> = {
+  min:   "The smallest of the values inside — a gate: whichever is short decides.",
+  max:   "The largest of the values inside.",
+  clamp: "Hold the first value between the two that follow it.",
+  delay: "Read this box as it stood one solver step ago — how a feedback loop is made well-defined.",
+};
+
+/** Which box's working is folded open. One at a time; not persisted. */
+let workingOpenFor: string | null = null;
+
+export function setReviewWorkingOpen(boxId: string | null): void {
+  workingOpenFor = boxId;
+}
+
+// The value as the author wrote it. formatScalar would round 0.0004 to "0.000",
+// which on a rail is a rounding and here is a different constant.
+function constantText(value: number): string {
+  const shown = formatScalar(value).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
+  return Number(shown.replace(/,/g, "")) === value ? shown : String(value);
+}
+
+const COMBINE_SENTENCE: Record<string, string> = {
+  additive: "The arrows into this box ADD UP rather than compounding, so two related " +
+            "inputs do not overstate the total between them.",
+  min:      "The WEAKEST arrow into this box gates it — the smallest input decides the " +
+            "result, rather than any one of them carrying it.",
+};
+
+function renderReviewRule(node: GraphNode): string {
+  const combine = node.combine && node.combine !== "multiplicative" ? node.combine : "";
+  if (!node.formula && !combine) return "";      // its rule IS the arrows below
+
+  let html = '<div class="rv-rule">';
+  html +=   '<div class="rv-rule-head">The rule for this box</div>';
+
+  if (node.formula) {
+    // Verbatim first. Everything under it is a rendering of this, and a reader
+    // has to be able to see what is being rendered.
+    html += '<div class="rv-expr">' + paintFormula(node.formula) + '</div>';
+
+    if (formulaInLabelsFailed(node.id)) {
+      // The loader already says so on the Review panel; it belongs here too,
+      // because it changes what the reader is being asked to judge.
+      html += '<div class="rv-rule-note rv-rule-warn"><b>The engine could not read this.</b> ' +
+              'It fell back to the arrows below, so what the box actually does is not what ' +
+              'this expression says.</div>';
+    } else {
+      const labelled = formulaInLabels(node.id);
+      if (labelled && labelled !== node.formula) {
+        html += '<div class="rv-plain">' + escapeHtml(labelled) + '</div>';
+      }
+      const consts = formulaConstants(node.id);
+      if (consts.length) {
+        html += '<div class="rv-consts">';
+        for (const param of consts) {
+          html += '<div class="rv-const">' +
+            '<span class="rv-const-k" data-tooltip="' + escapeHtml(param.description || param.id) + '">' +
+              escapeHtml(param.description || param.id) + '</span>' +
+            '<span class="rv-const-v">' + escapeHtml(constantText(param.value)) + '</span>' +
+          '</div>';
+        }
+        html += '<div class="rv-rule-note">' + consts.length + ' constant' +
+                (consts.length === 1 ? "" : "s") + ' — on no map anywhere, so this is the ' +
+                'only place they can be checked.</div>';
+        html += '</div>';
+      }
+      // An arrow the expression never reads is drawn and used by nothing. Not an
+      // error (the loader checks the other direction — a name with no arrow), and
+      // exactly the sort of thing a review is for.
+      const reads = formulaReads(node.id);
+      const unread = (incomingEdges[node.id] || [])
+        .filter(edge => !reads.has(edge.from))
+        .map(edge => (nodeById[edge.from] && nodeById[edge.from].label) || edge.from);
+      if (unread.length) {
+        html += '<div class="rv-rule-note rv-rule-warn"><b>' + unread.length + ' link' +
+                (unread.length === 1 ? " is" : "s are") + ' drawn but never read</b> — ' +
+                escapeHtml(unread.join(", ")) + '. The rule above does not mention ' +
+                (unread.length === 1 ? "it" : "them") + '.</div>';
+      }
+    }
+    html += '<div class="rv-rule-note"><b>The arrows below are descriptive here.</b> The ' +
+            'engine reads the rule and nothing else, so a strength on one of them changes ' +
+            'nothing.</div>';
+  } else {
+    html += '<div class="rv-plain">' + escapeHtml(COMBINE_SENTENCE[combine] || combine) + '</div>';
+  }
+
+  html += '</div>';
+
+  // The working, folded. It needs the computed numbers and it is long — but it
+  // is the difference between "here is a formula" and "here is why this number
+  // is what it is", which is the question a reviewer actually has.
+  const open = workingOpenFor === node.id;
+  html += '<button type="button" class="rv-working-toggle" data-review-working="' +
+          escapeHtml(node.id) + '" aria-expanded="' + (open ? "true" : "false") + '">' +
+          (open ? "▾" : "▸") + " How this number is calculated</button>";
+  if (open) html += renderCalculationBreakdown(node);
+  return html;
+}
+
+function renderReviewFooter(node: GraphNode): string {
+  const entry = entryFor(node.id);
+  const now = reviewStateOf(node.id);
+  const agreed = now === "agreed";
+  const flagged = now === "flagged";
+
+  // An unanswered concern — a flag, or words in the note field — blocks Agreed
+  // until somebody says what was done about it. Both fields are live-edited
+  // without a re-render (the textarea would lose focus mid-word), so the button
+  // states below are the ones this card OPENED with; wireReviewCardHandlers
+  // keeps them right from the first keystroke.
+  const wanted = needsResponse(node.id);
+  const answered = !!entry && !!entry.addressedNote.trim();
+
+  let html = '<div class="rv-foot">';
+  html +=   '<div class="rv-verdicts">';
+  html +=     '<button type="button" class="rv-v' + (agreed ? " on" : "") + '" data-review="agree"' +
+              (wanted ? " disabled" : "") +
+              '>Agreed</button>';
+  html +=     '<button type="button" class="rv-v flag' + (flagged ? " on" : "") + '" data-review="flag">Flag</button>';
+  html +=     '<button type="button" class="rv-v" data-review="skip">Skip</button>';
+  html +=   '</div>';
+  // The note field is where a concern is RAISED — writing in it flags the box,
+  // because saying what is wrong with something is not a different act from
+  // saying something is wrong with it. The placeholder says so, since a field
+  // that changes a verdict had better admit to it.
+  html +=   '<textarea class="rv-note" rows="2" data-review-note="' + escapeHtml(node.id) + '" ' +
+            'placeholder="What is wrong? — writing here flags the box">' +
+            escapeHtml(entry ? entry.note : "") + '</textarea>';
+  // Always rendered, hidden until there is something to answer: it has to be
+  // able to appear on a keystroke, and the card cannot re-render to add it
+  // without throwing away the half-typed word that summoned it.
+  html +=   '<textarea class="rv-note rv-close" rows="2" data-review-close="' + escapeHtml(node.id) + '" ' +
+            'placeholder="What was done about it? — needed to agree"' +
+            (wanted || answered ? "" : " hidden") + '>' +
+            escapeHtml(entry ? entry.addressedNote : "") + '</textarea>';
+  // The fingerprint is shown, not hidden: it is what makes the sign-off expire
+  // when the box changes, and a reader who can see it can tell that the record
+  // is about a specific version of this box rather than about its name.
+  if (entry && entry.verdict === "none") {
+    // A fingerprint here would claim a version of the box had been signed off.
+    // Nothing has been: this is a note somebody left themselves.
+    html += '<div class="rv-by">' + escapeHtml(entry.reviewer || "unsigned") +
+            " · " + escapeHtml(entry.date) + " · note kept, not yet judged</div>";
+  } else if (entry) {
+    // Who raised the concern and who closed it, when there has been one. The
+    // line above names whoever gave the LATEST verdict, which after a close is
+    // the closer and after one more edit is neither of them — so the two ends
+    // of a concern are stated outright rather than inferred from it.
+    if (entry.flaggedBy || entry.addressedBy) {
+      html += '<div class="rv-by">' +
+        (entry.flaggedBy
+          ? "Raised by " + escapeHtml(entry.flaggedBy) + " on " + escapeHtml(entry.flaggedOn)
+          : "Raised on " + escapeHtml(entry.flaggedOn)) +
+        (entry.addressedOn
+          ? " · closed by " + escapeHtml(entry.addressedBy || "someone") +
+            " on " + escapeHtml(entry.addressedOn)
+          : " · open") +
+        '</div>';
+    }
+    html += '<div class="rv-by">' +
+      escapeHtml(entry.reviewer || "unsigned") + " · " + escapeHtml(entry.date) +
+      (now === "stale"
+        ? ' · <span class="rv-stale">changed since — was ' + escapeHtml(entry.fingerprint) + '</span>'
+        : " · " + escapeHtml(fingerprintOf(node))) +
+      '</div>';
+  } else {
+    html += '<div class="rv-by">' + escapeHtml(state.reviewer || "set your name in Review") +
+            ' · not yet judged</div>';
+  }
+  html += '</div>';
   return html;
 }
 
@@ -375,7 +759,7 @@ const CALC_RULE_SENTENCE: Record<CalcRule, string> = {
   pinned:         "Pinned by your slider — you are holding this box at this value.",
   baseline:       "No quantified inputs — stays at its starting value.",
   multiplicative: "Independent % effects, which compound (standard).",
-  additive:       "Effects add up instead of compounding (additive).",
+  additive:       "What drives this adds up instead of compounding (additive).",
   min:            "Weakest input gates this box (min).",
   formula:        "Formula — the arrows' maths is overridden by the expression below.",
 };
@@ -384,6 +768,11 @@ const CALC_RULE_SENTENCE: Record<CalcRule, string> = {
 function calcInputValueText(input: TraceInput): string {
   const sourceNode = nodeById[input.id];
   const unit = sourceNode && sourceNode.unit ? " " + sourceNode.unit : "";
+  // A constant is written exactly as its author wrote it. formatScalar rounds
+  // 0.0004 to "0.000", which on a box's value rail is a rounding and on a
+  // constant is a different number — and a constant shown wrong is worse than a
+  // constant not shown, because somebody will check it and pass it.
+  if (input.kind === "param") return constantText(input.value) + unit;
   return formatScalar(input.value) + unit;
 }
 
@@ -479,9 +868,11 @@ export function renderCalculationBreakdown(node: GraphNode): string {
   html +=   '<div class="calc-rule">' + escapeHtml(CALC_RULE_SENTENCE[rule]) + '</div>';
 
   // The expression itself, verbatim, in a monospace block — it IS the rule for
-  // a formula box, so it reads before the inputs it names.
-  if (rule === "formula" && explanation.formula) {
-    html += '<div class="calc-formula">' + escapeHtml(explanation.formula) + '</div>';
+  // a formula box, so it reads before the inputs it names. Skipped inside a
+  // review pass: the rule block a few rows above is already showing it, and a
+  // second copy of a 160-character expression is a third of a 340px panel.
+  if (rule === "formula" && explanation.formula && !(state.uiMode !== "edit" && state.reviewPass)) {
+    html += '<div class="calc-formula">' + paintFormula(explanation.formula) + '</div>';
   }
 
   for (let i = 0; i < inputs.length; i++) {
@@ -737,12 +1128,12 @@ export function renderOutgoingEdgesBlock(node: GraphNode): string {
   const openId = (state.canvasEdit && state.canvasEdit.openEdgeId) || null;
 
   let html = '<div class="outgoing-edges-block">';
-  html +=   '<div class="detail-list-title"><span>Effects</span><span class="count">' + outgoing.length + '</span></div>';
+  html +=   '<div class="detail-list-title"><span>Drives</span><span class="count">' + outgoing.length + '</span></div>';
 
   if (outgoing.length === 0) {
     html += '<div class="outgoing-edges-empty">No links out yet. Drag from the right edge of this box on the map, or add one below.</div>';
   } else {
-    // One line per link, reading the same way the Causes list above it does:
+    // One line per link, reading the same way the "Driven by" list above it does:
     // direction, name, strength. Click one and its controls unfold underneath.
     //
     // Every link used to be a 121px block — a header, a row of three controls
@@ -834,7 +1225,7 @@ export function renderOutgoingEdgesBlock(node: GraphNode): string {
     }
     html += '</div>';
   } else {
-    // The last row of the Effects list, not a button parked under it: adding a
+    // The last row of the "Drives" list, not a button parked under it: adding a
     // link is the same kind of act as editing one, and it reads as belonging to
     // the list when it sits in it.
     html += '<button type="button" class="drow drow--edit drow--add" data-action="show-add-edge">' +
@@ -890,6 +1281,128 @@ export function wireViewModeHandlers(node: GraphNode, contentState: HTMLElement)
       }
     });
   });
+
+  wireReviewCardHandlers(node, contentState);
+}
+
+// ───── The review card's controls ─────────────────────────────────────────
+// Every one of these ends in a re-render, because a verdict changes the card
+// (the button lights, the byline gains a name and a fingerprint) and the map
+// (the box's coverage mark). The note is the exception: it is saved as you type
+// and must NOT re-render, or the field would lose focus mid-word.
+function wireReviewCardHandlers(node: GraphNode, contentState: HTMLElement): void {
+  contentState.querySelectorAll("[data-review]").forEach(button => {
+    button.addEventListener("click", event => {
+      event.stopPropagation();
+      const what = (event.currentTarget as HTMLElement).getAttribute("data-review");
+      const close = contentState.querySelector("[data-review-close]") as HTMLTextAreaElement | null;
+      const result = reviewAction(node.id, what || "", { addressedNote: close ? close.value : undefined });
+      // Refused: nothing was written, so nothing should move either. The button
+      // is disabled until the account is there, so this is the second line.
+      if (result.refused) { if (close) close.focus(); return; }
+      scheduleReviewSave();
+      // A verdict changes the box's coverage mark on the map as well as the
+      // card. focusNode() repaints on its way to the next box; when the pass
+      // stays put (Flag, or the end of the queue) the repaint has to be asked
+      // for.
+      if (result.goTo) {
+        focusNode(result.goTo);
+        scrollNodeIntoView(result.goTo);
+      } else if (result.ended) {
+        // Ending from the card: the panel goes back to describing the box, and
+        // every coverage mark comes off the map.
+        renderDetailPanel();
+        render();
+      } else {
+        renderDetailPanel();
+        renderSelectionChange();
+      }
+    });
+  });
+
+  // The working, folded. A re-render is safe here in a way it is not for the
+  // text fields: the click landed on a button, so there is no half-typed word
+  // to lose.
+  contentState.querySelectorAll("[data-review-working]").forEach(button => {
+    button.addEventListener("click", event => {
+      event.stopPropagation();
+      const boxId = (event.currentTarget as HTMLElement).getAttribute("data-review-working")!;
+      setReviewWorkingOpen(workingOpenFor === boxId ? null : boxId);
+      renderDetailPanel();
+    });
+  });
+
+  contentState.querySelectorAll("[data-flag-source]").forEach(button => {
+    button.addEventListener("click", event => {
+      event.stopPropagation();
+      // The row behind this is a jump-to-box button; flagging must not also
+      // navigate away from the box being reviewed.
+      event.preventDefault();
+      const sourceId = (event.currentTarget as HTMLElement).getAttribute("data-flag-source")!;
+      toggleSourceFlag(node.id, sourceId);
+      renderDetailPanel();
+      scheduleReviewSave();
+    });
+  });
+
+  // ── The two text fields, and the buttons that follow them ──────────────
+  // Neither field re-renders the card as it is typed in — the textarea would
+  // lose focus after the first character. So everything that depends on their
+  // contents is updated by hand here, on every keystroke: whether the box is
+  // flagged, whether Agreed is available, and whether the response field is
+  // even on screen. This is the price of not re-rendering, and the alternative
+  // (a card that repaints mid-word) is worse.
+  const note = contentState.querySelector("[data-review-note]") as HTMLTextAreaElement | null;
+  const close = contentState.querySelector("[data-review-close]") as HTMLTextAreaElement | null;
+
+  function syncVerdictControls(): void {
+    const agree = contentState.querySelector('[data-review="agree"]') as HTMLButtonElement | null;
+    const flag = contentState.querySelector('[data-review="flag"]') as HTMLButtonElement | null;
+    const wanted = needsResponse(node.id);
+    const entry = entryFor(node.id);
+    if (agree) {
+      agree.disabled = wanted;
+      agree.classList.toggle("on", reviewStateOf(node.id) === "agreed");
+    }
+    if (flag) flag.classList.toggle("on", reviewStateOf(node.id) === "flagged");
+    if (close) close.hidden = !(wanted || (entry && entry.addressedNote.trim()));
+  }
+
+  if (note) {
+    note.addEventListener("input", () => {
+      const entry = entryFor(node.id);
+      if (entry) {
+        entry.note = note.value;
+        // Writing a concern IS raising one, whatever the box stood at before.
+        // That includes a box already AGREED: this field says "what is wrong",
+        // so writing in it is a new concern, and leaving the agreement standing
+        // would let somebody type an objection into a box that still reads as
+        // signed off. Only a box already flagged is left alone — it is already
+        // the thing typing here would make it.
+        if (entry.verdict !== "flagged" && note.value.trim()) {
+          recordVerdict(node.id, "flagged", { note: note.value });
+        }
+      } else {
+        // Typing a note before pressing anything is a real thing to do — it is
+        // often what you write while deciding. It flags the box, because an
+        // unexplained note is closer to a doubt than to an agreement, and a
+        // doubt nobody records is the thing this whole record exists to catch.
+        recordVerdict(node.id, "flagged", { note: note.value });
+      }
+      syncVerdictControls();
+      scheduleReviewSave();
+    });
+  }
+
+  if (close) {
+    close.addEventListener("input", () => {
+      const entry = entryFor(node.id);
+      // Held on the entry as it is typed, exactly as the note is, so switching
+      // box and coming back does not lose it.
+      if (entry) { entry.addressedNote = close.value; scheduleReviewSave(); }
+      syncVerdictControls();
+    });
+  }
 }
 
 export function wireEditModeHandlers(node: GraphNode, contentState: HTMLElement): void {
@@ -1140,7 +1653,13 @@ export function applyEdgeFieldEdit(edgeId: string, field: string, input: HTMLInp
 // SHARED — edge-list rendering used by view mode
 // =============================================================================
 
-export function renderEdgeList(title: string, items: Array<{ edge: Edge; otherNode: GraphNode }>, direction: string, emptyText: string): string {
+export function renderEdgeList(
+  title: string,
+  items: Array<{ edge: Edge; otherNode: GraphNode }>,
+  direction: string,
+  emptyText: string,
+  review?: { boxId: string; strengthsIgnored?: boolean },
+): string {
   let html = '<div class="detail-list-title">';
   html +=     '<span>' + escapeHtml(title) + '</span>';
   html +=     '<span class="count">' + items.length + '</span>';
@@ -1149,7 +1668,7 @@ export function renderEdgeList(title: string, items: Array<{ edge: Edge; otherNo
     html += '<div class="drow-empty">' + escapeHtml(emptyText) + '</div>';
   } else {
     for (const item of items) {
-      html += renderEdgeItem(item.otherNode, item.edge, direction);
+      html += renderEdgeItem(item.otherNode, item.edge, direction, review);
     }
   }
   return html;
@@ -1167,7 +1686,12 @@ export function renderEdgeList(title: string, items: Array<{ edge: Edge; otherNo
 // has an "increases" link carrying −0.50 — so the number is what the row shows
 // and the word is a hover away, rather than the two competing for the same
 // glance.
-export function renderEdgeItem(otherNode: GraphNode, edge: Edge, direction: string): string {
+export function renderEdgeItem(
+  otherNode: GraphNode,
+  edge: Edge,
+  direction: string,
+  review?: { boxId: string; strengthsIgnored?: boolean },
+): string {
   const arrow = direction === "from" ? "←" : "→";
   const elasticity = resolveEdgeElasticity(edge);
   const strength = (elasticity > 0 ? "+" : elasticity < 0 ? "−" : "")
@@ -1177,17 +1701,43 @@ export function renderEdgeItem(otherNode: GraphNode, edge: Edge, direction: stri
   // Kind first, then the sentence: the tooltip is the row's long form, and the
   // word is the part of it a reader is most likely to be checking.
   const tip = edge.effect + (edge.description ? " — " + edge.description : "");
-  const jumpDir = direction === "from" ? "(a cause)" : "(an effect)";
+  const jumpDir = direction === "from" ? "(drives this box)" : "(driven by this box)";
+  // A strength nobody set. Worth saying HERE, on the row, while the reader is
+  // judging it — on the border map every one of Detection & Seizure Rate's seven
+  // links is riding on the per-effect default and nothing in the app said so.
+  const defaulted = edge.elasticity === undefined || edge.elasticity === null;
+  // Where the strengths are ignored — a formula box — "nobody set this one" is
+  // beside the point, and pointing at it invites a fix that would change
+  // nothing. The number itself is struck through instead, once, and the rule
+  // block above says why.
+  const moot = !!(review && review.strengthsIgnored);
+  const defaultMark = (review && defaulted && !moot)
+    ? ' <span class="drow-default" data-tooltip="No strength was set on this link — it is using the default for its effect type.">default</span>'
+    : "";
 
   // Still a real <button>, still carrying data-target-node: Tab reaches it,
   // Enter follows it, and the click handler in wireViewModeHandlers is untouched.
-  return '<button type="button" class="drow"'
+  const row = '<button type="button" class="drow"'
     + ' data-target-node="' + escapeHtml(otherNode.id) + '"'
     + ' data-tooltip="' + escapeHtml(tip) + '"'
     + ' aria-label="' + escapeHtml(otherNode.label) + ', strength ' + strength + ', '
     + escapeHtml(edge.effect) + ' ' + jumpDir + '. Jump to it.">'
     + '<span class="drow-dir">' + arrow + '</span>'
     + '<span class="drow-name">' + escapeHtml(otherNode.label) + '</span>'
-    + '<span class="drow-num' + weight + '">' + strength + '</span>'
+    + defaultMark
+    + '<span class="drow-num' + weight + (moot ? " is-moot" : "") + '"'
+    + (moot ? ' data-tooltip="This box is computed from its rule, not from its arrows — this strength is not read."' : "")
+    + '>' + strength + '</span>'
     + '</button>';
+  if (!review) return row;
+
+  // The row is itself a <button>, so the flag cannot live inside it — a button
+  // in a button is invalid, and the click would reach the wrong handler. Sibling
+  // in a flex wrapper instead, which also keeps the row's own hit area intact.
+  const flagged = isSourceFlagged(review.boxId, otherNode.id);
+  return '<div class="drow-review' + (flagged ? " is-flagged" : "") + '">' + row
+    + '<button type="button" class="drow-flag" data-flag-source="' + escapeHtml(otherNode.id) + '"'
+    + ' data-tooltip="' + (flagged ? "Flagged. Click to clear." : "Flag just this link — a note about one input, not the whole list.") + '"'
+    + ' aria-pressed="' + (flagged ? "true" : "false") + '">' + (flagged ? "flagged" : "flag") + '</button>'
+    + '</div>';
 }

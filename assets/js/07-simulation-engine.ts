@@ -62,6 +62,7 @@ import type {
   CalcRule,
   TraceInput,
   NodeExplanation,
+  Param,
 } from "./types";
 import {
   DEFAULT_ELASTICITY_BY_EFFECT,
@@ -1259,10 +1260,23 @@ export interface GateArm {
 // The expression, back as text, with every box id replaced by its label. Used
 // only for display — parentheses are added wherever precedence could be read
 // two ways rather than tracked exactly, which is the safe direction to err in.
+// formatScalar is a DISPLAY formatter — it rounds 0.0004 to "0.000", which is
+// fine on a value rail and wrong inside a rule, where the number IS the thing
+// being checked. So: the pretty form only when it is still the same number.
+function formulaNumber(value: number): string {
+  const trimmed = formatScalar(value).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
+  return Number(trimmed.replace(/,/g, "")) === value ? trimmed : String(value);
+}
+
 function printAst(ast: FormulaAst): string {
   switch (ast.kind) {
-    case "number":     return formatScalar(ast.value);
-    case "identifier": return (nodeById[ast.id] && nodeById[ast.id].label) || ast.id;
+    case "number":     return formulaNumber(ast.value);
+    // A constant reads as its value. Printing `teu_exams_per_fte_yr` in a line
+    // whose whole job is to be readable puts back the id this line exists to
+    // resolve — and the constants are listed by name underneath it anyway.
+    case "identifier": return paramById[ast.id]
+      ? formulaNumber(paramById[ast.id].value)
+      : (nodeById[ast.id] && nodeById[ast.id].label) || ast.id;
     case "delay":      return "previous " + ((nodeById[ast.id] && nodeById[ast.id].label) || ast.id);
     case "negate":     return "−" + printAst(ast.operand);
     case "call":       return ast.fn + "(" + ast.args.map(printAst).join(", ") + ")";
@@ -1274,6 +1288,60 @@ function printAst(ast: FormulaAst): string {
       return left + symbol + right;
     }
   }
+}
+
+// ───── Reading a formula, for a reviewer ──────────────────────────────────
+// A box with a formula is computed from that expression ALONE — its arrows go
+// descriptive and their strengths are ignored. So a reviewer asked "is this
+// everything that drives this box?" is being asked about the expression, and
+// these three are what it takes to put it in front of them: the rule in the
+// map's own words, the constants it leans on (which are on no map anywhere),
+// and which of the drawn arrows it actually reads.
+
+/** The expression with every box id swapped for its label. Display only. */
+export function formulaInLabels(nodeId: string): string | null {
+  const parsed = parsedFormulaByNodeId[nodeId];
+  return parsed ? printAst(parsed.ast) : null;
+}
+
+/**
+ * The constants a formula names, with their values.
+ *
+ * Params never render as boxes — that is the point of them — so on a formula
+ * box they are the one part of the rule a reader cannot reach from the map at
+ * all. Thirteen of the eighteen formula boxes on the map this was built against
+ * lean on at least one.
+ */
+export function formulaConstants(nodeId: string): Param[] {
+  const parsed = parsedFormulaByNodeId[nodeId];
+  if (!parsed) return [];
+  const seen = new Set<string>();
+  const out: Param[] = [];
+  for (const id of armIdentifiers(parsed.ast, [])) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    if (paramById[id]) out.push(paramById[id]);
+  }
+  return out;
+}
+
+/**
+ * The box ids the expression actually reads.
+ *
+ * The loader already refuses a formula that names a box with no arrow into
+ * this one. The reverse is not an error and is not checked: an arrow the
+ * expression never mentions is drawn on the map and read by nothing, which is
+ * exactly the sort of thing a review is for.
+ */
+export function formulaReads(nodeId: string): Set<string> {
+  const parsed = parsedFormulaByNodeId[nodeId];
+  if (!parsed) return new Set();
+  return new Set(armIdentifiers(parsed.ast, []).filter(id => nodeById[id]));
+}
+
+export function formulaInLabelsFailed(nodeId: string): boolean {
+  const node = nodeById[nodeId];
+  return !!node && !!node.formula && !parsedFormulaByNodeId[nodeId];
 }
 
 export function formulaArms(nodeId: string): GateArm[] | null {

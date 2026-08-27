@@ -598,6 +598,48 @@
 /* A hidden constant (a param): part of the maths, never a box on the map, so
  * it reads as a chip with its description on hover rather than as a name the
  * user could click through to. */
+/* ── Reading a formula: the four kinds of name, told apart ──────────────
+ * Shared by the review card's rule block (.rv-expr, 17-review.css) and the
+ * calculation breakdown's verbatim copy (.calc-formula above). Both are painted
+ * by paintFormula() in 15-detail-panel.ts, which tokenises with the parser's own
+ * patterns so what is coloured as a name is what the engine reads as one.
+ *
+ * NO NEW HUES. Colour in this app means "you can act on this", with the map's
+ * increase / decrease / enable hues as the one sanctioned exception — and those
+ * three are on the link rows a few pixels below, so borrowing them would make a
+ * formula look like a list of link kinds. The kinds are separated by weight, by
+ * dimming, and by the same inset chip a constant already wears in the breakdown.
+ * The one exception is a name that resolves to nothing: that is an error the
+ * loader flags, and it earns the red. */
+.fx-box {
+  color: var(--text-primary);
+  font-weight: var(--fw-medium);
+}
+.fx-num { color: var(--text-primary); }
+.fx-fn {
+  color: var(--text-secondary);
+  font-weight: var(--fw-medium);
+  cursor: help;
+}
+/* The same treatment the breakdown gives a hidden constant, shrunk to fit
+ * inline — one visual idea for "this is a constant", in both places. */
+.fx-const {
+  color: var(--text-secondary);
+  background: var(--bg-light);
+  border-radius: 3px;
+  padding: 0 3px;
+  cursor: help;
+}
+/* Structure recedes: brackets and operators are how the expression is shaped,
+ * not what it says. */
+.fx-op { color: var(--text-tertiary); }
+.fx-unknown {
+  color: var(--accent-red);
+  text-decoration: underline wavy;
+  text-underline-offset: 2px;
+  cursor: help;
+}
+
 .calc-input-param {
   font-family: var(--font-mono);
   font-size: var(--fs-cap);

@@ -31,6 +31,7 @@ import { closeBuilder, openBuilder } from "./16a-builder-state";
 import { bootEmptyStateGrid } from "./16e-canvas-edit";
 import { addCategory, addStage, addStream } from "./16f-canvas-mutations";
 import { exportCanvasImage, getExportSelection, publishCanvasHtml } from "./19-export";
+import { downloadReviewLog, syncReviewRail } from "./25-review-rail";
 import {
   EDGES,
   NODES,
@@ -84,6 +85,18 @@ document.querySelectorAll(".save-data-trigger").forEach(button => {
       ? { nodeIds: sel.nodeIds, edgeIds: new Set(sel.edges.map(e => e.id).filter((id): id is string => !!id)) }
       : undefined;
     downloadCsvBlob(serializeLiveStateToCsv(subset), "systems_map.csv");
+  });
+});
+
+// "Review log" — the review record as its own spreadsheet: every box, whether it
+// has been checked, by whom and when, the comments, and whether a flag has since
+// been closed out. A separate document from the map's own .csv because it
+// answers a different question — that file is for loading back, this one is for
+// showing somebody where the review has got to.
+document.querySelectorAll(".export-review-log-trigger").forEach(button => {
+  button.addEventListener("click", () => {
+    if (!state.dataLoaded) return;
+    downloadReviewLog();
   });
 });
 
@@ -205,6 +218,12 @@ export function applyUiMode(): void {
     if (typeof renderSidebar === "function") renderSidebar();
     if (typeof renderDetailPanel === "function") renderDetailPanel();
   }
+
+  // The review rail is shown only while reading, so it has to move with the
+  // mode. Nothing else was telling it: a pass survived a trip into editing and
+  // back with the flag still set and the rail still hidden — the pass running
+  // with no sign of it, which is the state it exists to prevent.
+  syncReviewRail();
 }
 
 export function setUiMode(mode: string): void {

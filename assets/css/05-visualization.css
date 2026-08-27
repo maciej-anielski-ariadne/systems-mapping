@@ -136,6 +136,33 @@ body.panning * {
   opacity: 0.18;
 }
 
+/* === A WIDE focus: grey the outside instead of fading it ==================
+ * `.dimmed` above is tuned for one selected box and its direct links — a bright
+ * island in a faint field, which is exactly right while the trace is small.
+ * Past roughly a quarter of the map (body.focus-wide, set in 09-graph-selection)
+ * it stops working: the lit boxes no longer form a shape you can point at, they
+ * are scattered through the grid, and at 0.05 the links that would let you read
+ * them have gone too.
+ *
+ * So above the threshold, brightness stops carrying membership and COLOUR takes
+ * over. Every box outside the focus keeps its position, its size and its label
+ * and loses only its hue; the boxes inside it are the only coloured things on
+ * screen. Colour holds forty items where brightness does not — and the map stays
+ * a map rather than becoming a scatter of bright dots.
+ *
+ * The highlight-depth control already reaches this: on an 88-box map the biggest
+ * trace is 13 boxes at depth 1 but 45 at depth 3. */
+body.focus-wide .node-group.dimmed {
+  opacity: 0.62;
+  filter: grayscale(1) brightness(0.62);
+}
+
+/* The stripe carries the row's colour, which is the one hue that must go with
+ * the rest — otherwise a greyed box still advertises its row. */
+body.focus-wide .node-group.dimmed .node-stripe {
+  filter: grayscale(1);
+}
+
 /* === Simulation mode: the body says what the run did ===
  * The fill is emitted by 11-rendering from simEffectFill (04-utils) — already
  * the exact colour it should be, so the resting saturate() is switched off the
@@ -303,6 +330,14 @@ body.panning * {
   opacity: 0.05;
 }
 
+/* Links need their own step, and a much bigger one. 0.05 is right when the
+ * highlighted links ARE the story (one box, its trace, everything else out of
+ * the way). With a wide focus most links are outside it — 91 of 141 on the map
+ * this was measured against — so at 0.05 the map loses its shape entirely. */
+body.focus-wide .edge-path.dimmed {
+  opacity: 0.16;
+}
+
 /* Background-coloured stroke drawn UNDER each edge (in 11-rendering.js). Where
  * two edges cross or one runs under another, the upper edge's casing knocks out
  * a clean gap so it reads as passing over — transit-map style. Width is set
@@ -311,6 +346,10 @@ body.panning * {
   fill: none;
   stroke: var(--edge-casing);
   pointer-events: none;
+}
+
+body.focus-wide .edge-casing.dimmed {
+  opacity: 0.16;
 }
 
 .edge-casing.dimmed {

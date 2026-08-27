@@ -350,3 +350,756 @@ body.review-open .viz-controls-cluster { display: none; }
 .review-badge.sev-ignored  { background: var(--accent-red); }
 .review-badge.sev-wrong    { background: var(--accent-amber); }
 .review-badge.sev-mismatch { background: var(--text-tertiary); }
+
+/* =============================================================================
+ * THE REVIEW CARD — the box panel while a pass is running
+ * -----------------------------------------------------------------------------
+ * Two of these stick, and that is the whole layout argument. On the busiest box
+ * of the map this was designed against the panel ALREADY overflows a laptop-
+ * height frame before any of this is added (659px of content in 620px), so
+ * fitting was never on offer. What is on offer is a guarantee: the question and
+ * the verdict are always reachable, and only the middle of the list scrolls.
+ * ========================================================================== */
+
+.rv-step {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--gutter);
+  background: var(--bg-mid);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.rv-step-count {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-eyebrow);
+  color: var(--text-tertiary);
+}
+
+.rv-step-bar {
+  flex: 1;
+  min-width: 20px;
+  height: 3px;
+  background: var(--bg-deepest);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.rv-step-bar i { display: block; height: 100%; background: var(--act); }
+
+.rv-step-btn {
+  flex: 0 0 auto;
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--fs-eyebrow);
+  color: var(--text-tertiary);
+  background: var(--bg-deepest);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-interactive);
+  padding: 2px var(--space-1_5);
+  cursor: pointer;
+}
+.rv-step-btn:hover { color: var(--act); border-color: var(--act); }
+.rv-step-end { font-family: var(--font-ui); }
+
+/* The question. This band is the mechanism by which a MISSING link gets found:
+ * a list you are shown invites you to check the rows in it; a list you are ASKED
+ * about invites you to notice the row that is not. */
+.rv-ask {
+  padding: var(--space-3) var(--gutter) var(--space-2);
+  background: color-mix(in srgb, var(--accent-blue) 8%, transparent);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.rv-ask.is-stale { background: color-mix(in srgb, var(--accent-amber) 10%, transparent); }
+.rv-ask b {
+  display: block;
+  font-size: var(--fs-body);
+  color: var(--text-primary);
+  font-weight: var(--fw-semibold);
+}
+.rv-ask span {
+  display: block;
+  font-size: var(--fs-body);
+  color: var(--text-secondary);
+  margin-top: 3px;
+  line-height: 1.45;
+}
+
+/* One input row, plus its own flag. The row itself is a <button> that jumps to
+ * the box, so the flag has to sit beside it rather than inside it. */
+.drow-review { display: flex; align-items: stretch; gap: var(--space-1); }
+.drow-review .drow { flex: 1; min-width: 0; }
+
+.drow-flag {
+  flex: 0 0 auto;
+  align-self: center;
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--fs-eyebrow);
+  color: var(--text-tertiary);
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-interactive);
+  padding: 1px var(--space-1);
+  cursor: pointer;
+}
+.drow-flag:hover { color: var(--accent-amber); border-color: var(--accent-amber); }
+.drow-review.is-flagged .drow-flag {
+  color: var(--bg-deepest);
+  background: var(--accent-amber);
+  border-color: var(--accent-amber);
+}
+
+/* A strength nobody set, marked where the reader is judging it. */
+.drow-default {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-eyebrow);
+  color: var(--accent-amber);
+  opacity: 0.85;
+  margin-left: var(--space-1);
+}
+
+/* The family prompt — the one line aimed at what is NOT in the list. */
+.rv-family {
+  margin: var(--space-2) var(--gutter) 0;
+  padding-left: var(--space-2);
+  border-left: 2px solid var(--bg-lighter);
+  font-size: var(--fs-body);
+  color: var(--text-tertiary);
+  line-height: 1.45;
+}
+.rv-family b { color: var(--text-secondary); font-weight: var(--fw-medium); }
+
+/* The verdict. Pinned, for the reason in the header note. */
+.rv-foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  background: var(--bg-mid);
+  border-top: 1px solid var(--border-subtle);
+  padding: var(--space-2) var(--gutter) var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.rv-verdicts { display: flex; gap: var(--space-1); }
+
+.rv-v {
+  flex: 1;
+  font: inherit;
+  font-size: var(--fs-body);
+  padding: var(--space-1_5) 0;
+  border-radius: var(--radius-interactive);
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-align: center;
+}
+.rv-v:hover { background: var(--act-tint); border-color: var(--act); color: var(--text-primary); }
+.rv-v.on {
+  background: var(--act);
+  border-color: var(--act);
+  color: var(--bg-deepest);
+  font-weight: var(--fw-semibold);
+}
+.rv-v.flag.on { background: var(--accent-amber); border-color: var(--accent-amber); }
+
+.rv-note {
+  width: 100%;
+  margin-top: var(--space-2);
+  background: var(--bg-deepest);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-interactive);
+  color: var(--text-secondary);
+  font: 400 var(--fs-body)/1.4 var(--font-ui);
+  padding: var(--space-1_5) var(--space-2);
+  resize: none;
+}
+
+.rv-by {
+  margin-top: var(--space-1_5);
+  font-family: var(--font-mono);
+  font-size: var(--fs-eyebrow);
+  color: var(--text-tertiary);
+}
+.rv-stale { color: var(--accent-amber); }
+
+/* =============================================================================
+ * COVERAGE ON THE MAP
+ * -----------------------------------------------------------------------------
+ * The question a list cannot answer: WHERE HAVE WE NOT BEEN? A mark per box,
+ * only while a pass is running, so one glance says which part of a ninety-box
+ * map nobody has looked at yet.
+ * ========================================================================== */
+body.review-pass .node-group.rv-agreed .node-rect  { stroke: var(--accent-green); stroke-width: 2px; }
+body.review-pass .node-group.rv-flagged .node-rect { stroke: var(--accent-amber); stroke-width: 2px; }
+body.review-pass .node-group.rv-stale .node-rect   { stroke: var(--accent-amber); stroke-width: 2px; stroke-dasharray: 3 3; }
+
+/* Unreviewed is the DEFAULT state at the start of a pass — 88 of 88 — so it
+ * cannot be the loud one. It reads as "not got to yet" by having no mark, and
+ * the marks accumulate as the pass goes: the map fills in rather than emptying. */
+body.review-pass .node-group.rv-unreviewed .node-rect { stroke: transparent; }
+
+/* ── Coverage, in the panel ─────────────────────────────────────────────── */
+.review-cov { margin-bottom: var(--space-3); }
+
+.review-cov-bar {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--bg-mid);
+}
+.review-cov-bar i { display: block; height: 100%; }
+
+.cov-agreed  { background: var(--accent-green); }
+.cov-flagged { background: var(--accent-amber); }
+.cov-stale   { background: color-mix(in srgb, var(--accent-amber) 45%, var(--bg-mid)); }
+.cov-none    { background: var(--bg-mid); }
+
+.review-cov-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin-top: var(--space-1_5);
+  font-family: var(--font-mono);
+  font-size: var(--fs-eyebrow);
+  color: var(--text-tertiary);
+}
+.review-cov-key span { display: flex; align-items: center; gap: var(--space-1); }
+.review-cov-key i { width: 8px; height: 8px; border-radius: 2px; display: block; }
+
+.review-who {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  font-size: var(--fs-body);
+  color: var(--text-secondary);
+}
+.review-who-input {
+  width: 90px;
+  background: var(--bg-deepest);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-interactive);
+  color: var(--text-primary);
+  font: 400 var(--fs-body)/1.4 var(--font-ui);
+  padding: var(--space-1) var(--space-2);
+}
+
+/* ── The review log ─────────────────────────────────────────────────────── */
+/* A person's note, quoted rather than paraphrased — it is the most valuable
+ * thing in the record and the only part the app did not write. */
+.review-note {
+  font-size: var(--fs-body);
+  color: var(--text-primary);
+  line-height: 1.5;
+  margin-top: var(--space-1_5);
+  padding-left: var(--space-2);
+  border-left: 2px solid var(--accent-amber);
+}
+.review-note-none { font-style: italic; }
+
+.review-log-by {
+  margin-top: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-eyebrow);
+  color: var(--text-tertiary);
+}
+
+/* The account of what was done, asked for before a flag can be closed. Styled
+ * as the note above it, not as an alarm: it is a normal thing to fill in. */
+.review-close-note {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: var(--space-2);
+  background: var(--bg-deepest);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-interactive);
+  color: var(--text-secondary);
+  font: 400 var(--fs-body)/1.4 var(--font-ui);
+  padding: var(--space-1_5) var(--space-2);
+  resize: vertical;
+}
+.review-close-note:focus { outline: none; box-shadow: var(--focus-ring); }
+
+/* A disabled verdict button is waiting for something, not broken. */
+.rv-v:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+/* The name field, while there is not yet a name worth recording. One cue, on
+ * the field itself — the sentence underneath already says why. */
+.review-who.is-wanted .review-who-input {
+  border-color: color-mix(in srgb, var(--accent-amber) 55%, transparent);
+}
+.review-who-why {
+  margin: var(--space-1) 0 var(--space-2);
+  font-size: var(--fs-body);
+  color: var(--text-tertiary);
+  line-height: 1.45;
+}
+.review-who-why b { color: var(--text-secondary); font-weight: var(--fw-medium); }
+
+.review-run:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+  background: transparent;
+  color: var(--text-tertiary);
+  border-color: var(--border-subtle);
+}
+
+.review-log-actions {
+  display: flex;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+.review-log-actions .rv-v { flex: 1; }
+
+.review-log-state {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-eyebrow);
+  padding: 1px var(--space-1_5);
+  border-radius: var(--radius-interactive);
+  background: var(--bg-mid);
+  color: var(--text-tertiary);
+}
+.review-log-state.rv-agreed  { color: var(--accent-green); }
+.review-log-state.rv-flagged { color: var(--accent-amber); }
+.review-log-state.rv-stale   { color: var(--accent-amber); }
+
+/* =============================================================================
+ * THE REVIEW RAIL — the queue, docked beside the map for the length of a pass
+ * -----------------------------------------------------------------------------
+ * Wide windows: a 260px column on the left, holding every box in the queue.
+ * Narrow ones (below 1100px): the same markup as a dock along the bottom, with
+ * the list in a tray. One component, two layouts — see 25-review-rail.ts for
+ * why the list is here and the verdict is not.
+ * ========================================================================== */
+
+.app { --rail-w: 260px; --dock-h: 52px; }
+
+/* The space the rail sits in. Reading mode collapses this track to 0 and slides
+ * the left panel over the map as a drawer, so the track is free — but that rule
+ * is `body.reading:not(.sim-mode) .app`, and a plainer selector here would lose
+ * to it on specificity. Hence the repetition: this has to say at least as much.
+ *
+ * A pass only turns the box panel into a review card while reading, so the rail
+ * follows the same condition rather than inventing a second one; 25-review-rail
+ * checks the same thing before it renders. */
+body.reading:not(.sim-mode).review-pass .app { --sidebar-w: var(--rail-w); }
+
+.review-rail {
+  /* Out of flow, so the three grid columns place exactly as they did before
+   * this element existed. `.app` is the containing block (it is positioned). */
+  position: absolute;
+  left: 0;
+  top: var(--header-h);
+  bottom: 0;
+  width: var(--rail-w);
+  z-index: var(--z-panel-strip);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-deep);
+  border-right: 1px solid var(--border-subtle);
+}
+
+.review-rail[hidden] { display: none; }
+
+/* ── Head: where the pass has got to ────────────────────────────────────── */
+.rail-head {
+  flex: 0 0 auto;
+  padding: var(--space-2) var(--gutter) var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.rail-eyebrow {
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--tracking-cap);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  font-weight: var(--fw-medium);
+}
+
+.rail-count {
+  margin-top: var(--space-0_5);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+.rail-count span { color: var(--text-tertiary); font-weight: 400; }
+
+.rail-bar {
+  display: flex;
+  height: 4px;
+  margin-top: var(--space-1_5);
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--bg-deepest);
+}
+.rail-bar i { display: block; height: 100%; }
+
+/* ── The list, and the filters over it ──────────────────────────────────── */
+.rail-tray {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.rail-chips {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--gutter);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.rail-chip {
+  font: inherit;
+  font-size: var(--fs-eyebrow);
+  padding: 2px var(--space-1_5);
+  border-radius: var(--radius-interactive);
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.rail-chip:hover { color: var(--text-secondary); border-color: var(--border-strong); }
+.rail-chip.on {
+  background: var(--act-on);
+  border-color: color-mix(in srgb, var(--act) 45%, transparent);
+  color: var(--text-primary);
+}
+
+.rail-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: var(--space-2);
+  scrollbar-width: thin;
+}
+
+.rail-empty {
+  padding: var(--space-3) var(--gutter);
+  font-size: var(--fs-body);
+  color: var(--text-tertiary);
+}
+
+/* Grouped by the map's own columns — a position a reader can already see,
+ * rather than a number. Sticky, so the group you are inside stays named. */
+.rail-group {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--space-2) var(--gutter) var(--space-0_5);
+  background: var(--bg-deep);
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--tracking-cap);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.rail-group b { color: var(--text-secondary); font-weight: var(--fw-medium); }
+
+.rail-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1_5);
+  width: 100%;
+  padding: 3px var(--gutter) 3px calc(var(--gutter) - 2px);
+  border: 0;
+  border-left: 2px solid transparent;
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-body);
+  color: var(--text-secondary);
+  text-align: left;
+  cursor: pointer;
+}
+.rail-row:hover { background: var(--bg-mid); }
+.rail-row.is-current {
+  background: var(--act-on);
+  border-left-color: var(--act);
+  color: var(--text-primary);
+}
+
+/* The mark repeats what the colour says, so neither is doing the work alone.
+ * Severity is DATA here — the same exception the cards' dots make. */
+.rail-mark {
+  flex: 0 0 10px;
+  width: 10px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--fs-eyebrow);
+}
+.rail-row.rv-agreed  .rail-mark { color: var(--accent-green); }
+.rail-row.rv-flagged .rail-mark { color: var(--accent-amber); }
+.rail-row.rv-stale   .rail-mark { color: var(--accent-amber); }
+.rail-row.rv-unreviewed .rail-mark { color: var(--text-tertiary); opacity: .55; }
+
+/* Somebody has written something about this box. Amber because it is data —
+ * a state of the record — not something you click, and small because it is a
+ * pointer to the note rather than the note itself (which the tooltip carries). */
+.rail-note-dot {
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  border-radius: 5px;
+  background: var(--accent-amber);
+  opacity: .8;
+}
+
+.rail-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rail-links {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-eyebrow);
+  color: var(--text-tertiary);
+}
+
+/* ── Foot: where to go next, and how to take the log away ───────────────── */
+.rail-foot {
+  flex: 0 0 auto;
+  padding: var(--space-2) var(--gutter) var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.rail-next {
+  display: block;
+  width: 100%;
+  font: inherit;
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  padding: var(--pad-button);
+  border: 1px solid var(--act);
+  border-radius: var(--radius-interactive);
+  background: var(--act);
+  color: var(--bg-deepest);
+  cursor: pointer;
+}
+.rail-next:hover:not(:disabled) { background: var(--act-hi); border-color: var(--act-hi); }
+.rail-next:disabled {
+  background: transparent;
+  border-color: var(--border-subtle);
+  color: var(--text-tertiary);
+  cursor: default;
+}
+
+.rail-foot-row {
+  display: flex;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+.rail-btn {
+  flex: 1;
+  font: inherit;
+  font-size: var(--fs-eyebrow);
+  padding: var(--space-1) var(--space-1_5);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-interactive);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.rail-btn:hover { border-color: var(--act); color: var(--text-primary); }
+
+/* The list is always on screen in this layout, so a control that reveals it
+ * would be answering a question nobody asked. It comes back in the dock. */
+.rail-tray-toggle { display: none; }
+
+/* ── The dock: the same rail, for a window too narrow to give up a column ──
+ * 260 + map + 340 stops being a sensible split somewhere around here: the map
+ * would be left with under 500px, which is four boxes wide. The app fills the
+ * viewport, so window width IS the app's width — the one place in this file
+ * where a viewport query asks the right question rather than a container one. */
+@media (max-width: 1100px) {
+  /* The map takes its column back; the dock overlays the bottom of it. */
+  body.reading:not(.sim-mode).review-pass .app { --sidebar-w: 0; }
+
+  .review-rail {
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: var(--detail-w);
+    width: auto;
+    height: var(--dock-h);
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-3);
+    padding: 0 var(--gutter);
+    border-right: 0;
+    border-top: 1px solid var(--border-subtle);
+    box-shadow: var(--shadow-panel);
+  }
+
+  .rail-head {
+    flex: 0 0 auto;
+    width: 130px;
+    padding: 0;
+    border-bottom: 0;
+  }
+  .rail-eyebrow { display: none; }
+
+  /* The list becomes a tray over the map, raised by the toggle in the foot. */
+  .rail-tray {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: var(--dock-h);
+    height: 250px;
+    background: var(--bg-deep);
+    border-top: 1px solid var(--border-subtle);
+    box-shadow: 0 -12px 26px rgba(0, 0, 0, .35);
+  }
+  .review-rail:not(.tray-open) .rail-tray { display: none; }
+
+  /* Three across rather than one, since the tray is as wide as the map. A grid
+   * with the group headings spanning it, NOT CSS columns: multicol in a
+   * fixed-height box spills into new columns to the right, so the tray would
+   * have scrolled sideways. */
+  .rail-list {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    align-content: start;
+    overflow-y: auto;
+  }
+  .rail-group { grid-column: 1 / -1; }
+
+  .rail-foot {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    padding: 0;
+    border-top: 0;
+  }
+  .rail-next { width: auto; flex: 0 1 auto; }
+  .rail-foot-row { flex: 0 0 auto; margin-top: 0; }
+  .rail-tray-toggle { display: block; }
+
+  /* The map's zoom cluster is bottom-right of the viz, which is exactly where
+   * the dock now is. Lift it by the dock's height rather than hiding it: the
+   * controls are how you get around a map too big for the window, and a review
+   * pass on a map that size is when you need them most. */
+  body.review-rail-open .viz-controls-cluster { bottom: calc(var(--dock-h) + 12px); }
+}
+
+/* ── The rule, on a box whose rule is not its arrows ─────────────────────
+ * A formula box is computed from its expression alone. Until this block the
+ * card asked about the arrows and never showed the expression — see
+ * 15-detail-panel.ts's renderReviewRule for why that was the wrong list.
+ * Sits in the box panel, between the question and the list it qualifies. */
+.rv-rule {
+  /* No side margin. The panel's own 16px gutter is the column every other item
+   * in it lands in — measured, this block used to start 16px inside that and
+   * run 32px narrower than the link rows above and below it. */
+  margin: var(--space-2) 0 0;
+  padding: var(--pad-card);
+  background: var(--bg-deepest);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-interactive);
+}
+
+.rv-rule-head {
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--tracking-cap);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  font-weight: var(--fw-medium);
+  margin-bottom: var(--space-1_5);
+}
+
+/* Verbatim, in the app's mono face. Wraps rather than scrolls: an expression
+ * you have to scroll sideways to finish reading is one nobody finishes. */
+.rv-expr {
+  font-family: var(--font-mono);
+  font-size: var(--fs-body);
+  line-height: 1.55;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+/* The same rule with the ids resolved to the labels on the map. A rendering of
+ * the line above, so it reads as secondary to it — the reader is checking the
+ * expression, with this as the help. */
+.rv-plain {
+  margin-top: var(--space-1_5);
+  padding-top: var(--space-1_5);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.rv-consts { margin-top: var(--space-1_5); }
+.rv-const {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: 1px 0;
+  font-size: var(--fs-body);
+}
+.rv-const-k {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rv-const-v {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}
+
+.rv-rule-note {
+  margin-top: var(--space-1_5);
+  font-size: var(--fs-body);
+  line-height: 1.45;
+  color: var(--text-tertiary);
+}
+.rv-rule-note b { color: var(--text-secondary); font-weight: var(--fw-medium); }
+/* Data, not affordance: the same amber the review marks use for "somebody
+ * needs to look at this". */
+.rv-rule-warn b { color: var(--accent-amber); }
+
+.rv-working-toggle {
+  display: block;
+  width: 100%;
+  margin: var(--space-2) 0 0;
+  text-align: left;
+  font: inherit;
+  font-size: var(--fs-body);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-interactive);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.rv-working-toggle:hover { border-color: var(--act); color: var(--text-primary); }
+
+/* A strength the engine never reads. Struck through once, with the reason on
+ * the row's tooltip and the whole story in the rule block above it. */
+.drow-num.is-moot {
+  text-decoration: line-through;
+  opacity: .45;
+}

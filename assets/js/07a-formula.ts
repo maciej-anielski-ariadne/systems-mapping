@@ -111,6 +111,17 @@ function isFunctionName(text: string): text is FunctionName {
   return (FUNCTION_NAMES as readonly string[]).includes(text);
 }
 
+// Shared with the panel's formula highlighter (15-detail-panel's paintFormula),
+// so that what it colours as a name is exactly what this parser reads as one. A
+// highlighter that disagreed with the parser about where a token starts would be
+// worse than no highlighter: it would tell a reviewer the wrong thing about the
+// rule they are checking.
+export function isFormulaFunction(text: string): boolean {
+  return isFunctionName(text);
+}
+export const FORMULA_NUMBER_PATTERN_SOURCE = "(?:\\d+(?:\\.\\d*)?|\\.\\d+)";
+export const FORMULA_IDENTIFIER_PATTERN_SOURCE = "[A-Za-z_][A-Za-z0-9_]*";
+
 // How deeply parentheses / function calls may nest. Formulas people write are a
 // handful of levels deep; the cap only exists so a pathological file full of
 // "((((((…" can't exhaust the call stack of the recursive parser.
@@ -132,9 +143,9 @@ interface Token {
 // Matches a decimal literal at the start of a string: `12`, `3.5`, `3.`, `.5`.
 // No exponent form (`1e6`) — nothing in the model needs one, and leaving it out
 // keeps the error messages simple.
-const NUMBER_PATTERN = /^(?:\d+(?:\.\d*)?|\.\d+)/;
+const NUMBER_PATTERN = new RegExp("^" + FORMULA_NUMBER_PATTERN_SOURCE);
 // Identifiers look like CSV ids: a letter or underscore, then letters/digits/underscores.
-const IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*/;
+const IDENTIFIER_PATTERN = new RegExp("^" + FORMULA_IDENTIFIER_PATTERN_SOURCE);
 
 function makeToken(kind: TokenKind, text: string, position: number, value = 0): Token {
   return { kind: kind, text: text, value: value, position: position };

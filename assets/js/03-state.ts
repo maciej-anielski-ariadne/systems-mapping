@@ -69,6 +69,9 @@ export const state: AppState = {
   solverStatus: { converged: true, iterations: 0, feedbackLoopCount: 0 },
   dataLoaded: false, // false until a CSV has been loaded
   loadErrors: [], // validation errors from the most recent load
+  reviews: {},    // boxId → verdict about what feeds it (24-review-record.ts)
+  reviewer: "",   // who is reviewing, stamped on each verdict
+  reviewPass: false, // true while stepping the map box by box (24-review-record)
   // Reading vs editing. The app opens in "read": no docked left panel, the
   // right panel closed until something is selected, and only the reading
   // actions in the header. "edit" docks the panels and reveals the authoring

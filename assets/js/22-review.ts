@@ -14,8 +14,8 @@
 //      attributeFindings() separates the two, so the panel can show seven things
 //      to fix rather than seventeen things to read.
 //
-//   2. WHAT EACH ADJUSTABLE INPUT ACTUALLY DOES (runSweep, below).
-//      Nudge one input, solve, see what moved; repeat for every input. Nothing
+//   2. WHAT EACH ADJUSTABLE BOX ACTUALLY DOES (runSweep, below).
+//      Nudge one box, solve, see what moved; repeat for every one. Nothing
 //      here is invalid — every finding it turns up computes perfectly and would
 //      pass every check in (1). It is just not what anyone intended: an input
 //      that moves nothing at all, one that reaches a single box and stops, one
@@ -222,7 +222,7 @@ export function groupFindings(findings: Finding[]): ReviewSummary {
 // ═════════════════════════════════════════════════════════════════════════════
 // PART 2 — THE SENSITIVITY SWEEP
 // ═════════════════════════════════════════════════════════════════════════════
-// Every adjustable input, one at a time, nudged up by one step with everything
+// Every adjustable box, one at a time, nudged up by one step with everything
 // else left at its starting value. What moves, and by how much.
 //
 // This is cheap in a way that is worth stating, because it looks expensive:
@@ -236,7 +236,7 @@ export function groupFindings(findings: Finding[]): ReviewSummary {
 // recomputeValues() at the end puts the live numbers back; the next drag is
 // simply a fraction slower than it would otherwise have been.
 
-/** How far each input is nudged. A tenth is enough to move anything that moves,
+/** How far each adjustable box is nudged. A tenth is enough to move anything that moves,
  *  and small enough that a box near a limit does not simply slam into it. */
 export const SWEEP_STEP = 0.10;
 
@@ -259,16 +259,16 @@ export interface SweepRow {
 
 export interface Sweep {
   step: number;
-  /** One row per adjustable input, furthest reach first. */
+  /** One row per adjustable box, furthest reach first. */
   rows: SweepRow[];
-  /** Quantified boxes no adjustable input reaches at all. */
+  /** Quantified boxes no adjustable box reaches at all. */
   unreached: SweepMove[];
   /** How many boxes the sweep could move at all — the denominator on a row. */
   reachableCount: number;
 }
 
 /**
- * Solve the map once per adjustable input. Read-only: the live sliders and the
+ * Solve the map once per adjustable box. Read-only: the live sliders and the
  * live values are exactly as they were when this returns.
  */
 export function runSweep(step: number = SWEEP_STEP): Sweep {
@@ -396,11 +396,11 @@ export function sweepExceptions(sweep: Sweep): SweepException[] {
       boxId: single[0].id,
       title: single.length === 1
         ? single[0].label + " reaches exactly one box"
-        : single.length + " inputs reach exactly one box",
+        : single.length + " adjustable boxes reach exactly one box",
       detail: single.map(r => r.label + " → " + r.moves[0].label +
         " (" + signed(r.moves[0].pct) + ")").join(" · ") +
         ". Each moves one box and stops: nothing downstream of that box is quantified.",
-      fix: "Fine if deliberate — worth confirming once per input.",
+      fix: "Fine if deliberate — worth confirming once per box.",
     });
   }
 
@@ -431,7 +431,7 @@ export function sweepExceptions(sweep: Sweep): SweepException[] {
       boxId: top.id,
       title: top.label + " is the map's single point of leverage",
       detail: "It reaches " + top.reach + " of " + sweep.reachableCount + " boxes" +
-        (second ? ", against " + second.reach + " for the next input" : "") + ".",
+        (second ? ", against " + second.reach + " for the next one" : "") + ".",
       fix: "Not a fault — but it is what a result read off this map depends on most.",
     });
   }
@@ -496,7 +496,7 @@ export function invalidateSweep(): void {
 }
 
 // Whether a sweep would say anything at all. Asked before the panel offers the
-// section, so a map with no adjustable inputs gets an explanation rather than an
+// section, so a map with no adjustable boxes gets an explanation rather than an
 // empty list.
 export function sweepIsPossible(): boolean {
   return NODES.some(n => n.controllable && n.baseline) &&

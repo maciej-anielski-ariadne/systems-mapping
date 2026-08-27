@@ -271,7 +271,7 @@ describe("calculation breakdown — link-based rules", () => {
   it("shows additive terms as signed shares, not factors", () => {
     showPanel("add", { overrides: { a: 1.5, b: 0.8 } });
     expect(breakdown()!.getAttribute("data-calc-rule")).toBe("additive");
-    expect(ruleText()).toContain("add up");
+    expect(ruleText()).toContain("adds up");
     expect(inputRows().map(rowCells)).toEqual([
       ["Input A", "150 units", "+50.0%"],
       ["Input B", "80.0 units", "-20.0%"],
@@ -327,11 +327,14 @@ describe("calculation breakdown — formulas", () => {
     expect(
       document.querySelector("#detail-content .calc-formula")!.textContent,
     ).toBe("traffic * exam_coverage * detection_rate");
-    // A formula reads plain values, so no per-input factor column.
+    // A formula reads plain values, so no per-input factor column. The two box
+    // values keep the display formatter; the CONSTANT is written exactly as its
+    // author wrote it — formatScalar turns 0.0004 into "0.000", which on a value
+    // rail is a rounding and on a constant is a different number.
     expect(inputRows().map(rowCells)).toEqual([
       ["Traffic", "1000 items"],
       ["Exam coverage", "0.200 share"],
-      ["◆ detection_rate", "0.600"],
+      ["◆ detection_rate", "0.6"],
     ]);
   });
 

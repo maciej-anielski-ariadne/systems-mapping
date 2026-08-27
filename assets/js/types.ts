@@ -258,6 +258,57 @@ export interface Finding {
   causedBy?: string;
 }
 
+// ───── The review record (24-review-record.ts) ──────────────────────────────
+// One verdict per box, about the set of links feeding it. `fingerprint` is what
+// makes it an audit record rather than theatre: it captures what was actually
+// reviewed, so editing any of it retires the verdict instead of leaving a stale
+// sign-off standing.
+/**
+ * "none" is a record with no judgement in it — a comment somebody left, or a
+ * link they marked, before deciding. It exists so that writing something down
+ * is never the same act as flagging the box, and so that taking a flag back
+ * does not take the reason for it with them.
+ */
+export type Verdict = "agreed" | "flagged" | "none";
+
+export interface ReviewEntry {
+  boxId: string;
+  verdict: Verdict;
+  reviewer: string;
+  /** ISO date, yyyy-mm-dd. */
+  date: string;
+  note: string;
+  fingerprint: string;
+  /** Source box ids flagged individually — "this one input is wrong", which is
+   *  actionable where "something in this list is wrong" is not. */
+  flaggedSources: string[];
+  /** When the concern was RAISED, and by whom — kept even after it is closed
+   *  out, because `reviewer` / `date` then name whoever closed it. Empty on a
+   *  box nobody has ever flagged. Only the latest cycle is kept: flag it, close
+   *  it, flag it again and the first pair is overwritten. */
+  flaggedOn: string;
+  flaggedBy: string;
+  /** When a flag was closed out, and by whom. Empty while one is open, and
+   *  cleared again if the box is re-flagged, so "addressed" never describes an
+   *  open concern. Kept apart from `reviewer` because that names whoever gave
+   *  the LATEST verdict — one more edit and it no longer names the closer. */
+  addressedOn: string;
+  addressedBy: string;
+  /** What was DONE about it — required to close a flag, and kept alongside the
+   *  original note rather than replacing it: `note` says what was wrong,
+   *  this says what happened. Empty on a box that was never flagged. */
+  addressedNote: string;
+  /** The box's name as it stood when this was last written. Display only — the
+   *  fingerprint deliberately ignores the label — but it is what lets the log
+   *  still NAME a box that has since been deleted. */
+  label: string;
+  /** When the box this is about was deleted. Empty while it exists, and cleared
+   *  again if it comes back (an undo, a re-import). A row carrying this is a
+   *  tombstone: the log keeps it and the loader keeps it, where a row naming a
+   *  box this map simply never had is still dropped. */
+  removedOn: string;
+}
+
 // ───── Search (populated by 17a-search.js) ──────────────────────────────────
 export interface SearchMatch {
   node: GraphNode;
@@ -414,6 +465,19 @@ export interface AppState {
    *  the Review panel (23-review-panel.ts); ordered causes-first by
    *  attributeFindings(). */
   loadErrors: Finding[];
+  /** The review record, boxId → verdict. Round-trips through the CSV's optional
+   *  `# SECTION: reviews` block, so a pass survives a refresh, travels to a
+   *  colleague, and can be picked up tomorrow. See 24-review-record.ts. */
+  reviews: Record<string, ReviewEntry>;
+  /** Who is reviewing right now — a full name, set once per session and stamped
+   *  on every verdict. Not initials: the log outlives the session it was made
+   *  in, and "MA" means nothing to whoever reads it next year. Persisted with
+   *  the UI state, not with the map. */
+  reviewer: string;
+  /** True while a review pass is running: the box panel becomes a review card
+   *  and the map marks coverage. Transient — a pass is a way of working, not a
+   *  property of the map, so it is not persisted with either. */
+  reviewPass: boolean;
   /** "read" (default) = the map with the chrome out of the way; "edit" = the
    *  docked panels and the authoring controls. Persisted with the UI state. */
   uiMode: "read" | "edit";

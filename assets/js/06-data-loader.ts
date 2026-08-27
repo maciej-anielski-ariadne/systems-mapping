@@ -97,6 +97,7 @@ import { isUndoCaptureSuspended, clearHistory } from "./16g-canvas-undo";
 // separates a mistake from its downstream shadows (see 22-review.ts).
 import { finding, attributeFindings, groupFindings, REST_DRIFT, invalidateSweep } from "./22-review";
 import { refreshReview } from "./23-review-panel";
+import { endReviewPass, reconcileReviews } from "./24-review-record";
 
 // The three ways a box can aggregate the arrows pointing into it. Blank in the
 // CSV means "multiplicative", which is exactly what the app did before the
@@ -267,6 +268,11 @@ export function rebuildIndexes(): void {
   // Keep the on-screen depth readout / button states in sync with the new map.
   if (typeof applyHighlightDepth === "function") applyHighlightDepth();
 
+  // Boxes come and go through five different delete paths and an undo; this is
+  // the one funnel all of them pass through, so it is where a review learns that
+  // the box it is about has gone (or has come back). Wiring it to the delete
+  // sites instead would mean a reconciler that runs on four of the five.
+  reconcileReviews();
 }
 
 // Find the edges that close feedback loops and the nodes that lie on them.
@@ -920,6 +926,55 @@ export function loadDataFromCsv(csvText: string): boolean {
   // can't clobber the restore that follows it.)
   state.userOverrides = {};
   saveUiStateToStorage();
+  // A pass belongs to the map it was started on: the queue, the marks and the
+  // rail are all about boxes that may not exist in the file just opened. Ending
+  // it here is the same reasoning as closing the atlas below.
+  endReviewPass();
+  // ── The review record, read back from the map's own spreadsheet ──────────
+  // Replaced wholesale, never merged: a verdict belongs to the map it was given
+  // on, and carrying one across a load would attach somebody's sign-off to a
+  // box in a file they never saw. Rows naming a box that is not on this map are
+  // dropped for the same reason.
+  state.reviews = {};
+  if (sections.reviews) {
+    for (const row of sections.reviews as any[]) {
+      if (!row.box) continue;
+      // A row about a box this file does not have is kept ONLY when it carries a
+      // removal date — that is a tombstone, a box this map had and somebody
+      // deleted, and losing it would lose the review with it. Without one, the
+      // row is about a box this map never had: dropped, as before, so opening a
+      // different file can never attach somebody's verdict to a box they never
+      // saw. From the row alone those two cases are indistinguishable, and the
+      // tombstone is what tells them apart.
+      if (!nodeIdSet.has(row.box) && !row.removed_on) continue;
+      // Anything that is not one of the two judgements reads as NO judgement —
+      // never as an agreement. A row this build does not understand must not
+      // become somebody's sign-off, which is the one mistake the whole record
+      // exists to prevent.
+      const verdict = row.verdict === "agreed" ? "agreed"
+                    : row.verdict === "flagged" ? "flagged" : "none";
+      state.reviews[row.box] = {
+        boxId: row.box,
+        verdict: verdict,
+        reviewer: row.reviewer || "",
+        date: row.date || "",
+        note: row.note || "",
+        fingerprint: row.fingerprint || "",
+        flaggedSources: String(row.flagged || "").split("|").map(s => s.trim()).filter(Boolean),
+        // Absent from files written before these columns existed. A flag with no
+        // raised-on date reads as raised on the day of the verdict, which is the
+        // only honest guess available and is right for every file this build
+        // wrote; anything else would invent a date.
+        flaggedOn: row.flagged_on || (verdict === "flagged" ? (row.date || "") : ""),
+        flaggedBy: row.flagged_by || (verdict === "flagged" ? (row.reviewer || "") : ""),
+        addressedOn: row.addressed_on || "",
+        addressedBy: row.addressed_by || "",
+        addressedNote: row.addressed_note || "",
+        label: row.label || row.box,
+        removedOn: row.removed_on || "",
+      };
+    }
+  }
   state.dataLoaded = true;
   // Same array object that validateCalculationRules() pushes into below, so the
   // formula warnings it adds after the indexes are built land here too.

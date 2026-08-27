@@ -24,6 +24,7 @@ import {
   NODES,
   EDGES,
   PARAMS,
+  state,
 } from "./03-state";
 import type {
   BuilderState,
@@ -214,6 +215,63 @@ export function _serializeShape(data: Partial<BuilderState>, options?: { compact
     lines.push("id,value,description");
     for (const param of params) {
       lines.push(csvRow([param.id, param.value, param.description || ""]));
+    }
+    lines.push("");
+  }
+
+  // ───── reviews (only when someone has actually reviewed something) ──────
+  // The review record travels WITH the map, so a pass survives a refresh, goes
+  // to a colleague in the same file, and can be picked up tomorrow. Written from
+  // live state rather than from the builder: a verdict is about the map, and the
+  // wizard never edits one. Omitted entirely for a map nobody has reviewed, so
+  // an untouched CSV is byte-for-byte what it was before the feature existed.
+  const reviewIds = Object.keys(state.reviews || {}).sort();
+  if (reviewIds.length > 0) {
+    lines.push("# SECTION: reviews");
+    lines.push("# Who checked what feeds each box, and whether it still holds.");
+    lines.push("# box         - the box whose incoming links were reviewed.");
+    lines.push("# label       - its name when this was last written. Display only — a rename");
+    lines.push("#               does not retire a verdict — but it is what still NAMES the box");
+    lines.push("#               in the log after somebody deletes it.");
+    lines.push("# removed_on  - set when the box was deleted from the map, cleared if it comes");
+    lines.push("#               back. A row carrying one is kept on load even though the box is");
+    lines.push("#               gone; a row about a box this map never had is still dropped.");
+    lines.push("# verdict     - agreed / flagged / none. \"none\" is a comment somebody left");
+    lines.push("#               before deciding — the box still counts as unchecked.");
+    lines.push("# reviewer    - the full name of whoever gave the latest verdict.");
+    lines.push("# date        - yyyy-mm-dd.");
+    lines.push("# note        - why. Free text.");
+    lines.push("# flagged     - pipe-separated source box ids flagged individually.");
+    lines.push("# fingerprint - what the box looked like when it was judged. Change any of");
+    lines.push("#               its links, strengths, rule or limits and the verdict reads");
+    lines.push("#               as STALE and the box comes back round. Do not hand-edit.");
+    lines.push("# flagged_on / flagged_by - when the concern was raised, and by whom. Kept");
+    lines.push("#               after it is closed out, when reviewer/date name whoever");
+    lines.push("#               closed it. addressed_on / addressed_by are when that happened");
+    lines.push("#               and who did it, and are blank while a flag is open. Only the");
+    lines.push("#               latest round is kept.");
+    lines.push("# addressed_note - what was actually DONE about the flag. Required before one");
+    lines.push("#               can be closed; `note` says what was wrong, this says what");
+    lines.push("#               happened about it.");
+    lines.push("box,label,verdict,reviewer,date,note,flagged,fingerprint,flagged_on,flagged_by,addressed_on,addressed_by,addressed_note,removed_on");
+    for (const id of reviewIds) {
+      const entry = state.reviews[id];
+      lines.push(csvRow([
+        entry.boxId,
+        entry.label || entry.boxId,
+        entry.verdict,
+        entry.reviewer || "",
+        entry.date || "",
+        entry.note || "",
+        (entry.flaggedSources || []).join("|"),
+        entry.fingerprint || "",
+        entry.flaggedOn || "",
+        entry.flaggedBy || "",
+        entry.addressedOn || "",
+        entry.addressedBy || "",
+        entry.addressedNote || "",
+        entry.removedOn || "",
+      ]));
     }
     lines.push("");
   }

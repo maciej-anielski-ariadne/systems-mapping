@@ -15,7 +15,7 @@
 
 import type { Category, GraphNode, NodePosition } from "./types";
 import { CATEGORIES, EDGES, NODES, STAGES, STREAMS, layout, nodeById, setLayout, stageById, state, streamById } from "./03-state";
-import { deselectAll, selectNode } from "./09-graph-selection";
+import { deselectAll, selectNode, notifySelectionChanged } from "./09-graph-selection";
 import { computeEdgeAnchorOffsets, deltaColorFor, edgeBezierPath, effectMarkerName, escapeHtml, getMapTextScale, isBackwardEdge, simEffectFill, wrapLabel, SIM_FLAT_FILL, SIM_INK, type AnchorOffset } from "./04-utils";
 import { COL_GAP, COL_HEADER_HEIGHT, LABEL_INSET, NODE_GAP_Y, NODE_HEIGHT, NODE_WIDTH, ROW_HEADER_WIDTH, ROW_PADDING, SVG_PADDING_TOP } from "./02-config";
 import { computeLayout, layoutGeometryRevision, slotTopY } from "./08-layout";
@@ -25,6 +25,7 @@ import { formatNodeDelta, formatNodeValue, getOutcomeBorderColor, nodeEffect,
   gatedBy,
 } from "./07-simulation-engine";
 import { hideTooltip, moveTooltip, showTooltip } from "./12-tooltip";
+import { reviewStateOf } from "./24-review-record";
 import { attachCanvasEditHandlers } from "./16e-canvas-edit";
 
 // Single grabbed reference to the SVG element we draw into.
@@ -771,6 +772,10 @@ function nodeGroupClasses(nodeId: string, ctx: StyleContext): string {
     else if (state.descendantSet.has(nodeId))  classes += " descendant";
     else                                       classes += " dimmed";
   }
+  // Coverage, while a pass is running: where have we not been yet. Added
+  // alongside the selection classes rather than instead of them — a box can be
+  // both the one you are reviewing and one you agreed ten minutes ago.
+  if (state.reviewPass) classes += " rv-" + reviewStateOf(nodeId);
   if (state.hoveredNodeId === nodeId) classes += " hovered";
   if (ctx.searchMatchIds && ctx.searchMatchIds.has(nodeId)) classes += " search-match";
   if (ctx.undoFlashNodeIds && ctx.undoFlashNodeIds.has(nodeId)) classes += " undo-flash";
@@ -1513,6 +1518,11 @@ export function scheduleSelectionStyling(): void {
 export function renderSelectionChange(): void {
   if (_selectionStyleRAF) { _cancelRaf(_selectionStyleRAF); _selectionStyleRAF = 0; _selectionStyleQueued = false; }
   if (!refreshSelectionStyling()) render();
+  // Every path that changes the selection — in this module, in
+  // 09-graph-selection, in the canvas handlers — comes through here, which makes
+  // it the one place worth telling anything that follows the selection but is
+  // not part of drawing it (09-graph-selection's own doc explains why).
+  notifySelectionChanged();
 }
 
 // The nodes that could fall inside `cull`, in NODES order. Walks the (stream,

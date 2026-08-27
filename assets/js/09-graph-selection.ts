@@ -184,6 +184,44 @@ export function refreshNeighborHighlight(): void {
     state.descendantSet      = new Set();
     state.highlightedEdgeIds = new Set();
   }
+  applyFocusBreadth();
+}
+
+// ───── How much of the map is lit ─────────────────────────────────────────
+// Dimming everything outside the trace is the right answer while the trace is
+// SMALL: a bright island in a faint field, which is what one selected box and
+// its direct links produce. It stops working somewhere around a third of the
+// map, and it stops working in two ways at once — the lit boxes stop forming a
+// shape you can point at and become scattered through the grid, and because
+// links dim to 0.05 the structure that would let you read them goes too.
+//
+// This is not hypothetical, and it is not a new-feature problem: the highlight
+// depth control already reaches it. On the border map (88 boxes) the biggest
+// trace is 13 boxes at depth 1, 29 at depth 2 and 45 at depth 3 — so pressing
+// "+" twice already puts half the map inside the trace.
+//
+// So the treatment switches on breadth rather than on mode: past the threshold
+// the CSS greys the outside instead of fading it (05-visualization.css), which
+// keeps every box's position and label and lets COLOUR alone carry membership.
+// Colour holds forty items where brightness does not.
+//
+// At depth 1 — the default, and much the commonest case — nothing on that map
+// comes close to the threshold, so the behaviour everyone knows is untouched.
+export const FOCUS_WIDE_SHARE = 0.25;
+
+export function applyFocusBreadth(): void {
+  if (typeof document === "undefined" || !document.body) return;
+  let lit = 0;
+  for (const node of NODES) {
+    if (state.selectedNodeIds.has(node.id) ||
+        state.ancestorSet.has(node.id) ||
+        state.descendantSet.has(node.id)) lit++;
+  }
+  // Counted against the boxes actually on the map, so hiding a row with the
+  // filters moves the threshold with it rather than measuring against boxes
+  // nobody can see.
+  const share = NODES.length ? lit / NODES.length : 0;
+  document.body.classList.toggle("focus-wide", share > FOCUS_WIDE_SHARE);
 }
 
 // The ancestor / descendant / highlighted-edge sets for a node's causal trace,
@@ -207,6 +245,26 @@ export function computeTraceFor(nodeId: string): {
 // toggles). Works for a selected node or a selected edge (both set selectedNodeId).
 export function refreshTraceForSelection(): void {
   if (state.selectedNodeId) Object.assign(state, computeTraceFor(state.selectedNodeId));
+  applyFocusBreadth();
+}
+
+// ───── "The selection moved" ──────────────────────────────────────────────
+// Surfaces that follow the selection without being part of drawing it — the
+// review rail's current row, so far — register here. Deliberately NOT fired
+// from the six sites in this file that change the selection: this module and
+// 11-rendering already share one funnel, renderSelectionChange(), and every one
+// of those sites calls it. Firing from the funnel means a seventh site cannot
+// forget. A callback rather than an import so a listener can live in a module
+// that imports this one.
+type SelectionListener = () => void;
+const selectionListeners: SelectionListener[] = [];
+
+export function onSelectionChanged(fn: SelectionListener): void {
+  selectionListeners.push(fn);
+}
+
+export function notifySelectionChanged(): void {
+  for (const fn of selectionListeners) fn();
 }
 
 // Toggle behaviour: clicking the already-selected node deselects it. A plain
@@ -238,6 +296,30 @@ export function selectNode(nodeId: string): void {
   renderDetailPanel();
   if (typeof renderMultiSelectBar === "function") renderMultiSelectBar();
   scheduleUiStateSave();
+}
+
+/**
+ * Go to a box — for navigation, as against clicking one.
+ *
+ * selectNode() is a TOGGLE, which is right for a click on the map: pressing the
+ * box you are on lets it go. It is wrong for everything that takes you
+ * somewhere: a row in the review rail, "next unchecked", a card in the review
+ * panel, the box a verdict moves you on to. All of those, aimed at the box you
+ * already happen to be standing on, deselected it instead — the review panel
+ * opened on a map whose restored selection was the first outstanding box, and
+ * "Start a pass" cleared it and left the box panel empty.
+ *
+ * So: same thing, minus the toggle. Already there is a repaint, not a reversal.
+ */
+export function focusNode(nodeId: string): void {
+  if (state.selectedNodeId === nodeId && state.selectedNodeIds.size <= 1) {
+    // The caller asked to be taken here and here is where we are — but what is
+    // ON the box may have changed (a verdict just landed), so still repaint.
+    renderSelectionChange();
+    renderDetailPanel();
+    return;
+  }
+  selectNode(nodeId);
 }
 
 // Shift+click a node: add it to / remove it from the multi-selection without
@@ -291,6 +373,10 @@ export function deselectNode(): void {
   state.ancestorSet = new Set();
   state.descendantSet = new Set();
   state.highlightedEdgeIds = new Set();
+  // Cleared by hand here rather than via refreshNeighborHighlight(), so the
+  // wide-focus class has to be recomputed explicitly — left set, it would grey
+  // the whole map with nothing selected at all.
+  applyFocusBreadth();
   renderSelectionChange();
   renderDetailPanel();
   if (typeof renderMultiSelectBar === "function") renderMultiSelectBar();
@@ -369,6 +455,10 @@ export function deselectAll(): void {
   state.ancestorSet = new Set();
   state.descendantSet = new Set();
   state.highlightedEdgeIds = new Set();
+  // Cleared by hand here rather than via refreshNeighborHighlight(), so the
+  // wide-focus class has to be recomputed explicitly — left set, it would grey
+  // the whole map with nothing selected at all.
+  applyFocusBreadth();
   if (state.canvasEdit) {
     state.canvasEdit.flashedEdgeId = null;
     state.canvasEdit.openEdgeId = null;

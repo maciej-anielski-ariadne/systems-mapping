@@ -54,6 +54,8 @@ import "./20-atlas-engine";
 import "./21-atlas-view";
 import "./22-review";
 import "./23-review-panel";
+import "./24-review-record";
+import "./25-review-rail";
 
 // ───── Named imports for the boot sequence ──────────────────────────────────
 import { state } from "./03-state";
@@ -70,6 +72,7 @@ import { initCanvasEdit, bootEmptyStateGrid } from "./16e-canvas-edit";
 import { applyUiMode } from "./17-events";
 import { initAtlasStage } from "./21-atlas-view";
 import { initReviewStage, syncReviewButton } from "./23-review-panel";
+import { initReviewRail } from "./25-review-rail";
 
 console.log("Ariadne Maps — canvas-edit ready");
 console.log(
@@ -85,6 +88,7 @@ console.log(
 initCanvasEdit();
 initAtlasStage();
 initReviewStage();
+initReviewRail();
 
 // Reading mode until told otherwise — applyRestoredUiState re-applies this
 // with the saved choice a moment later.

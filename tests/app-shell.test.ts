@@ -17,7 +17,7 @@ import { LINEAR_CSV } from "./fixtures/graphs";
 import { renderSidebar } from "../assets/js/13-sidebar";
 import { renderDetailPanel } from "../assets/js/15-detail-panel";
 import { NODES, state } from "../assets/js/03-state";
-import { selectNode, deselectAll } from "../assets/js/09-graph-selection";
+import { deselectAll, refreshTraceForSelection, selectNode } from "../assets/js/09-graph-selection";
 import { initCanvasEdit, setShiftHeld } from "../assets/js/16e-canvas-edit";
 import { toggleSimulationMode } from "../assets/js/14-simulation-panel";
 import { saveUiStateToStorage, loadUiStateFromStorage } from "../assets/js/04a-storage";
@@ -112,17 +112,18 @@ describe("the filters drawer", () => {
 });
 
 describe("the file menu", () => {
-  it("holds all six ways the map comes in and goes out, and closes on the next click", () => {
+  it("holds all seven ways the map comes in and goes out, and closes on the next click", () => {
     loadDataFromCsv(sampleCsv);
     const menu = document.getElementById("file-menu") as HTMLElement;
-    expect(menu.querySelectorAll(".menu-item").length).toBe(6);
+    expect(menu.querySelectorAll(".menu-item").length).toBe(7);
     for (const trigger of [
-      ".create-map-trigger",     // New map      (editing only)
-      ".import-data-trigger",    // Import
-      ".edit-data-trigger",      // Bulk edit    (editing only)
-      ".save-data-trigger",      // Spreadsheet
-      ".export-image-trigger",   // Image
-      ".publish-html-trigger",   // Web page
+      ".create-map-trigger",         // New map      (editing only)
+      ".import-data-trigger",        // Import
+      ".edit-data-trigger",          // Bulk edit    (editing only)
+      ".save-data-trigger",          // Spreadsheet
+      ".export-review-log-trigger",  // Review log
+      ".export-image-trigger",       // Image
+      ".publish-html-trigger",       // Web page
     ]) {
       expect(menu.querySelector(trigger), trigger + " should live in the File menu").not.toBeNull();
     }
@@ -193,18 +194,21 @@ describe("reading never changes the map", () => {
 describe("what a reader gets when they select a box", () => {
   const panel = (): HTMLElement => document.getElementById("detail-content") as HTMLElement;
 
-  it("answers the question first: causes and effects above the numbers", () => {
+  it("answers the question first: what drives it, and what it drives, above the numbers", () => {
     loadDataFromCsv(sampleCsv);
     selectNode(NODES[0].id);
     renderDetailPanel();
 
     const titles = [...panel().querySelectorAll(".detail-list-title")].map(el => el.textContent || "");
-    expect(titles[0]).toContain("Causes");
-    expect(titles[1]).toContain("Effects");
+    // "Driven by" / "Drives", not "Causes" / "Effects": read as verbs the old
+    // pair described what the box does TO others, which is the opposite of what
+    // the first list holds.
+    expect(titles[0]).toContain("Driven by");
+    expect(titles[1]).toContain("Drives");
 
     const html = panel().innerHTML;
     const quant = html.indexOf("detail-quant-block");
-    expect(quant).toBeGreaterThan(html.indexOf("Effects"));
+    expect(quant).toBeGreaterThan(html.indexOf("Drives"));
   });
 
   it("offers no way to edit the box until you are editing", () => {
@@ -435,5 +439,43 @@ describe("tag filters, by mode", () => {
       expect(title.querySelector(".count")).toBeNull();
       expect(title.textContent).not.toMatch(/\d+\s*\/\s*\d+/);
     }
+  });
+});
+
+describe("how much of the map is lit decides how the rest is treated", () => {
+  // Dimming to 0.18 is right for one box and its direct links, and stops working
+  // once the trace is most of the map. The switch is on breadth, not on mode —
+  // and the highlight-depth control already reaches it, so this is not a case
+  // that only a future feature could produce.
+  const lit = () => document.body.classList.contains("focus-wide");
+
+  beforeEach(() => {
+    loadDataFromCsv(sampleCsv);
+    state.highlightDepth = 1;
+  });
+
+  it("leaves the ordinary case alone — one box and its neighbours stays a fade", () => {
+    selectNode(NODES[0].id);
+    expect(lit()).toBe(false);
+  });
+
+  it("switches once the trace passes a quarter of the map", () => {
+    // Reach far enough that the trace covers most of a 12-box sample.
+    state.highlightDepth = 8;
+    const widest = NODES
+      .map((n) => {
+        refreshTraceForSelection();
+        selectNode(n.id);
+        return { id: n.id, lit: lit() };
+      })
+      .filter((r) => r.lit);
+    expect(widest.length).toBeGreaterThan(0);
+  });
+
+  it("clears when the selection goes away", () => {
+    state.highlightDepth = 8;
+    for (const n of NODES) { selectNode(n.id); if (lit()) break; }
+    deselectAll();
+    expect(lit()).toBe(false);
   });
 });

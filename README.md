@@ -73,8 +73,8 @@ than as eight equals.
   - **Spreadsheet** downloads the current map as a `.csv` (re-importable). With a box selected, saves only its highlighted boxes and links.
   - **Image** copies the map to your clipboard as a high-resolution PNG (rendered vector-sharp at up to 3× pixel density, backed off automatically to stay inside what browsers can allocate — one side at most 16384px, at most 64 megapixels total) and shows a "copied" toast — paste it straight into a doc, slide, or chat. It captures what's on screen, so zoom / pan to frame the part you want (only boxes overlapping the visible area are included, along with the links whose two ends are both on screen; if the whole map already fits, you get all of it). If a box is selected, only its highlighted boxes and links (out to the current **highlight depth**) are copied — rendered in the map's normal, un-highlighted style (the highlight only selects what to include). Either way the export is reflowed: empty columns and rows are dropped and the surviving rows reordered so connected boxes sit closer together. A map so large that even 1× exceeds those canvas limits still exports, but the toast tells you the percentage it came out at and suggests selecting a box to get that part at full quality; if the browser refuses the image outright, the toast says so rather than failing silently. (Clipboard image copy needs a secure context — works over http/localhost or https.)
   - **Web page** downloads `systems-map.html` — a self-contained, view-only page of the same framed map (same viewport / selection framing as **Image**) with pan / zoom / hover-for-details (no editing, importing, or simulating).
-- **Simulate** toggles simulation mode (sliders on adjustable inputs).
-- **Review** opens the [review panel](#review--checking-a-map-you-cannot-read-in-one-go) — everything the loader flagged, grouped by cause, beside what each adjustable input actually moves. It carries a count badge whenever there is something to fix, so a map with problems never looks clean.
+- **Simulate** toggles simulation mode (sliders on adjustable boxes).
+- **Review** opens the [review panel](#review--checking-a-map-you-cannot-read-in-one-go) — everything the loader flagged, grouped by cause, what each adjustable box actually moves, and what nobody has checked yet. It carries a count badge whenever there is something to fix, so a map with problems never looks clean.
 - **Theme** (the ☀ / ☾ icon) switches between the light (Linen) and dark (Twilight) theme; your choice is remembered.
 
 ## What you get
@@ -162,9 +162,152 @@ Findings carry one of three severities:
 | **Wrong** | The number is not the one you declared — a box that does not rest at its starting value, a limit that bit. It computes, but every % change on it is read against the wrong anchor. |
 | **Mismatch** | The picture and the maths disagree while the number is fine — a link the formula never reads. Often deliberate. |
 
-### What each adjustable input does
+### What nobody has checked yet
 
-The other column runs a **sensitivity sweep**: each adjustable input in turn, nudged up 10%
+The third column is the only one on the panel the app cannot work out for itself:
+whether a **person** has looked at each box and said the links feeding it are right.
+All the app does is keep the score and hand you the next one.
+
+**Start a pass** and the box panel becomes a review card, one box at a time, causes
+before effects. It asks a single question — *is this everything that drives this box?* —
+because that one question catches all four ways a large map goes wrong: a link that
+should not be there, a wrong direction or strength, a box that is itself wrong, and —
+since the question is about completeness — the link that is not there at all. Reviewing
+links one at a time cannot find that last one, because a missing link is not an item in
+any queue.
+
+Three things ride along that only the app can contribute:
+
+- **Links with no strength are marked** where you are reading them. On the border map
+  every one of *Detection & Seizure Rate*'s seven links is on the per-effect default and
+  nothing said so before.
+- **Each link can be flagged on its own.** "Something in this list is wrong" is not
+  actionable; "*this* link is wrong" is.
+- **The family line.** When several inputs are the same shape, the app says so —
+  *"5 of these are the same shape — Lorry exam, Container exam, Parcel screen, Mail
+  screen, Passenger exam. Is one of that set missing?"* — which turns "is anything
+  missing" from a memory test into a yes/no.
+
+Verdicts, who gave them and why are written to the map's own spreadsheet, in an optional
+`# SECTION: reviews` block. So a pass survives a refresh, travels with the file to a
+colleague, and can be picked up tomorrow. Older builds ignore the section, exactly as
+they ignore `params`.
+
+**A sign-off expires when the thing it signed off changes.** Each verdict stores a
+fingerprint of what was actually reviewed — the incoming links, their sources, effects
+and strengths, plus the box's own rule and limits. Edit any of it and the verdict reads
+as *changed since* rather than *agreed*, and the box comes back round. Renaming a box
+does **not** invalidate it: a spelling fix is not a change to what drives the box, and
+retiring verdicts for one would teach people to ignore the mark.
+
+While a pass is running the map marks coverage, so one glance answers the question no
+list can: **where have we not been?** `[` and `]` step the pass from the keyboard.
+
+**A box whose rule is not its arrows shows its rule.** A formula box is computed from its
+expression *alone* — the arrows into it go descriptive and their strengths are ignored
+outright (18 of the 55 queue boxes on the border map are formula boxes). So the card shows
+the expression verbatim, the same rule again with the box ids resolved to the labels on the
+map (`hgv_arrivals` in an expression is *Lorry arrivals* in the list, and nothing else
+connects them — hovering a name in the expression says which box it is), and the constants
+it leans on — which appear on no map anywhere, and which
+13 of those 18 boxes depend on. Strengths the engine never reads are struck through rather
+than offered for judgement, and an arrow the rule never mentions is called out: the loader
+checks that every name in a formula has an arrow, but not that every arrow is read.
+Underneath, folded, is the working simulate mode already builds — every input and constant
+with its value, and which arm of a `min` is binding.
+
+The expression is **syntax-highlighted**, tokenised with the parser's own patterns so what
+is coloured as a name is what the engine reads as one — boxes, hidden constants, the four
+functions and a name that resolves to nothing, told apart. No new hues: colour in this app
+means *you can act on this*, and the map's increase / decrease / enable hues sit inches
+away on the link rows, so the kinds are separated by weight, dimming and the same inset
+chip a constant already wears in the breakdown. The one exception is a name resolving to
+nothing, which the loader flags as an error and which earns the red.
+
+The five boxes on that map with a non-default combine rule (4 additive, 1 weakest-link) get
+a line saying how their arrows add up. Their strengths still count, so nothing is struck.
+
+**The queue docks beside the map for the length of the pass.** A 260px rail on the left
+lists every box that has something driving it, grouped by the map's own columns, each
+with a mark for where it stands — agreed, flagged, changed since, not looked at — and
+filter chips over the top. Clicking a row goes to that box; the question and the verdict
+stay in the box panel on the right, so there is only ever one place to answer and one
+list to keep in step. Below 1100px of window the same rail re-lays-out as a dock along
+the bottom with the list in a tray, rather than leaving the map under 500px wide.
+
+**Two things the record insists on**, because it is read by somebody else, later:
+
+- **A full name, not initials.** A pass will not start until there is one. "MA" means
+  nothing to whoever opens the file next year.
+- **An account of what was done, before a concern can be closed.** The note says what was
+  wrong; this says what happened about it. Without it the log becomes a list of concerns
+  somebody decided to stop having.
+
+**Writing what is wrong with a box flags it.** The note field is where a concern is
+raised, so the box is flagged on the first keystroke — saying what is wrong with something
+is not a different act from saying something is wrong with it. From that moment **Agreed
+is unavailable until somebody answers**, in the second field the note summons: *what was
+done about it?* A flag with no note works the same way. The only way past an open concern
+is to answer it.
+
+Flag is still a toggle, but pressing it a second time withdraws the *judgement* and keeps
+the note and any links you marked — previously it deleted the record, so writing two
+sentences about why a box looked wrong and then changing your mind about flagging it threw
+the two sentences away. The concern itself survives the withdrawal: a box carrying an
+unanswered note still cannot be agreed, the rail marks it so the note can be found again,
+and writing another word on it raises the flag afresh.
+
+**A review outlives the box it was about.** Deleting a reviewed box used to remove the
+review from the log, the badge and the export at once — silently, with nothing left to say
+a concern had ever been raised, and the case where that costs most is the one where
+deleting the box *was* the answer to the flag. The record now keeps it, stamped with the
+day the box went and the name it had, and carries it through the spreadsheet. The app's own
+surfaces stay about the map in front of you — there is nothing left to act on — and the
+**exported log** is where it is noted. Bring the box back with an undo and the mark clears:
+the verdict, the note and the fingerprint all return exactly as they were.
+
+A row carrying a removal date is kept on load; a row about a box this map simply never had
+is still dropped, so opening a different file can never attach somebody's verdict to a box
+they never saw. From the row alone those two look identical, and the removal date is what
+tells them apart.
+
+**The log exports.** *File ▸ Export ▸ Review log*, or the button on the rail, writes a
+`.csv` with one row per box — **every box, not only the reviewed ones**, since a list of
+what was checked reads as a clean bill of health for a map nobody has touched. Each row
+carries: whether it is in the review queue, its state, who gave the verdict and when, the
+comment, which links were flagged, when the concern was raised and by whom, when it was
+closed, what was done about it, whether the box has since been deleted, and whether the
+sign-off still applies.
+
+### What people flagged — the review log
+
+Capturing a verdict is half a review; the other half is finding the ones that said *no*
+again afterwards and working through them. **What people flagged** sits directly under
+the loader's findings, because both are things to fix — one noticed by the app, one by a
+person.
+
+Each open item is a card carrying the box, **the note in the reviewer's own words**, who
+wrote it and when, and which individual links they flagged (by name, so the list reads
+without the map). Clicking the card goes to the box. Two actions close it out:
+
+- **Addressed** — agrees the box *as it now stands*, and re-stamps the fingerprint. That
+  is the point: "addressed" has to mean "I looked at the current version", not "I
+  dismissed the old note". The note is kept — why it was flagged outlives the flag.
+- **Reopen** — drops the verdict entirely and puts the box back in the queue.
+
+A box whose sign-off has gone **stale** appears here too: nobody has confirmed it as it
+now stands, which is the same kind of outstanding as a flag.
+
+Underneath, **the whole log** folds open — every box anyone has reviewed, agreements
+included, with reviewer, date, note and current state. An audit trail is not only its
+exceptions.
+
+The header **Review** badge counts both kinds of unfinished business together, so a flag
+is visible without remembering to look for it.
+
+### What each adjustable box does
+
+The other column runs a **sensitivity sweep**: each adjustable box in turn, nudged up 10%
 on its own with every other slider at 100%, and a note of everything that moved. Changes
 are measured against where the map sits when nothing has been asked of it, so a map with
 standing drift still gives honest figures.
@@ -172,23 +315,23 @@ standing drift still gives honest figures.
 Nothing this finds is *invalid* — it all computes perfectly and passes every check in the
 left-hand column. It is just not what anyone intended:
 
-- **An input that moves nothing.** Usually because the box it feeds is a gate (a `min`, or
+- **An adjustable box that moves nothing.** Usually because the box it feeds is a gate (a `min`, or
   a `min()` at the top of a formula) and this input is not the arm that binds. The card
   spells out every arm with its value and marks the binding one, so "this slider is dead"
   arrives together with "and here is what is actually short".
-- **An input that reaches exactly one box**, or **only ever pushes down**.
-- **Boxes no input can reach at all.**
-- **A single point of leverage** — one input that carries much further than any other.
+- **One that reaches exactly one box**, or **only ever pushes down**.
+- **Boxes nothing adjustable can reach at all.**
+- **A single point of leverage** — one box that carries much further than any other.
 
-Below the exceptions, the full sweep folds open: every input, ordered by how far it
+Below the exceptions, the full sweep folds open: every adjustable box, ordered by how far it
 carries, with its biggest movers. Nothing is hidden by the exceptions; it is reordered by
 whether it needs a decision.
 
 The sweep is a fact about the shape of the map, so it is computed once and kept until the
 map changes — dragging sliders never re-runs it. On a map with more than 60 adjustable
-inputs it waits to be asked rather than running on open.
+boxes it waits to be asked rather than running on open.
 
-> **Deliberately not included:** a flag for "this input moves a box the wrong way for its
+> **Deliberately not included:** a flag for "this box moves another the wrong way for its
 > own direction". It was built and measured — on a healthy 88-box map it fired **59 times**,
 > nearly all of them trade-offs the author meant (more inspection, longer queues; more
 > arrivals, a thinner coverage share). A flag that is wrong 55 times in 59 buries the
@@ -393,7 +536,7 @@ systems_mapping/
     │   ├── 13-search.css            Search dropdown + map-match halo
     │   ├── 14-typeable-dropdown.css Typable / filterable <select> replacement
     │   ├── 16-atlas.css             Pathway atlas: the picture, the wheel inside a tangle, the panel
-    │   └── 17-review.css            Review panel: cause cards, gate arms, the sweep list
+    │   └── 17-review.css            Review panel + the review rail / dock: cards, marks, the queue
     │                                (flat look = `border: 0` in 02-base.css;
     │                                 state shown via drop-shadow / box-shadow rings)
     ├── js/
@@ -438,6 +581,8 @@ systems_mapping/
     │   ├── 21-atlas-view.ts         Pathway atlas: the picture, the wheel, the tour, the panel
     │   ├── 22-review.ts             Review logic: findings grouped by cause + the input sweep
     │   ├── 23-review-panel.ts       Review UI: the overlay, the cards, the header count badge
+    │   ├── 24-review-record.ts      The review pass: the queue, verdicts, staleness, families
+    │   ├── 25-review-rail.ts        The review queue docked beside the map, and the log export
     │   └── types.ts                 Shared TypeScript types every module imports (the data model)
     └── data/
         ├── sample.csv               Small neutral example (3 rows, 12 boxes, 12 links).
@@ -499,6 +644,12 @@ features are split across multiple files:
 | How a finding is blamed on a cause rather than listed as its own problem | `assets/js/22-review.ts` (`attributeFindings`) |
 | The input sweep — what each adjustable box actually moves | `assets/js/22-review.ts` (`runSweep`, `sweepExceptions`) |
 | The Review panel UI + its header count badge | `assets/js/23-review-panel.ts`, `assets/css/17-review.css` |
+| The review pass — queue order, verdicts, staleness, the family prompt | `assets/js/24-review-record.ts` |
+| The review queue beside the map (and its dock on narrow windows) | `assets/js/25-review-rail.ts`, `assets/css/17-review.css` |
+| Showing a formula to a reviewer — the rule, its constants, the working | `assets/js/15-detail-panel.ts` (`renderReviewRule`), `assets/js/07-simulation-engine.ts` (`formulaInLabels`, `formulaConstants`, `formulaReads`) |
+| The exported review log — every box, checked or not, with dates | `assets/js/24-review-record.ts` (`reviewReport`, `reviewReportCsv`) |
+| How a verdict is stored and travels (the `reviews` CSV section) | `assets/js/05a-csv-serializer.ts`, `assets/js/06-data-loader.ts` |
+| When the map greys the outside instead of fading it | `assets/js/09-graph-selection.ts` (`applyFocusBreadth`), `assets/css/05-visualization.css` |
 | Search behaviour / fuzzy matching | `assets/js/17a-search.ts`, `assets/css/13-search.css` |
 | Button behaviour | `assets/js/17-events.ts` |
 | Sample data dataset | `assets/data/sample.csv` (starter) · `assets/data/advanced_sample.csv` (calculation rules) |

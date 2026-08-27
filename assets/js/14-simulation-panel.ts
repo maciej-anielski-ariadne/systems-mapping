@@ -23,6 +23,7 @@ import { saveUiStateToStorage, scheduleUiStateSave } from "./04a-storage";
 import { renderSidebar } from "./13-sidebar";
 import { applyPanelPinnedClasses, setFiltersOpen } from "./17-events";
 import { atlasIsOpen, refreshAtlasValues } from "./21-atlas-view";
+import { syncReviewRail } from "./25-review-rail";
 
 export function renderSimulationPanel(): void {
   const simPanel = document.getElementById("simulation-panel");
@@ -45,7 +46,10 @@ export function renderSimulationPanel(): void {
   // ───── Build the HTML ─────────────────────────────────────────────────
   let html = "";
   html += '<div class="sim-header">';
-  html +=   '<div class="sim-title">Adjustable inputs</div>';
+  // "Adjustable boxes", not "adjustable inputs": since the box panel started
+  // saying "Driven by", the word "input" was left meaning only one thing — a box
+  // you can move — and it is clearer to call that what it is.
+  html +=   '<div class="sim-title">Adjustable boxes</div>';
   html +=   '<button class="sim-reset" id="sim-reset-button">Reset</button>';
   html += '</div>';
   // The help line that stood here said what a number field is. The scale note
@@ -513,6 +517,9 @@ export function toggleSimulationMode(): void {
   if (state.simulationMode && typeof setFiltersOpen === "function") setFiltersOpen(false);
 
   document.body.classList.toggle("sim-mode", state.simulationMode);
+  // Same reason as the mode switch in 17-events' applyUiMode: the rail is a
+  // reading-mode surface, and simulation docks the left panel where it lives.
+  syncReviewRail();
   if (typeof atlasIsOpen === "function" && atlasIsOpen()) refreshAtlasValues();
   renderSidebar();
   render();

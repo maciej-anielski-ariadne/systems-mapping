@@ -165,6 +165,9 @@
           <button class="menu-item save-data-trigger" role="menuitem">
             <b>Spreadsheet</b><span>A .csv you can edit in Excel or Sheets and load back in.</span>
           </button>
+          <button class="menu-item export-review-log-trigger" role="menuitem">
+            <b>Review log</b><span>A .csv of every box: checked or not, by whom, when, the comments, and whether they have been dealt with.</span>
+          </button>
           <button class="menu-item export-image-trigger" role="menuitem">
             <b>Image</b><span>Copies a high-resolution PNG to the clipboard.</span>
           </button>
@@ -272,6 +275,21 @@
     <div class="sidebar-section"><div id="edge-style-filters"></div></div>
     <div class="sidebar-section"><div id="trace-filters"></div></div>
   </aside>
+
+  <!-- ============== REVIEW RAIL ==============
+       The review queue, docked in the left column for the length of a pass:
+       every box that has something driving it, grouped by the map's columns,
+       each with a mark for whether anybody has checked it. Clicking a row goes
+       to that box; the question and the verdict stay in the box panel on the
+       right. Filled by JS in 25-review-rail.ts, styles in 17-review.css.
+
+       Absolutely positioned rather than a fourth grid child: an absolutely
+       positioned grid child is out of flow, so the sidebar / viz / detail
+       columns place exactly as they did before this element existed. The space
+       it sits in is reserved by widening --sidebar-w while a pass runs (the
+       left panel is a slide-over drawer while reading, so that track is
+       otherwise empty). Below 1100px it re-lays-out as a dock. -->
+  <div id="review-rail" class="review-rail" hidden aria-label="Review queue"></div>
 
   <!-- ============== PANEL RESIZE HANDLES ==============
        Slim vertical drag bars between the side panels and the central viz.

@@ -252,8 +252,8 @@ export const EDGE_TYPE_FILTERS = [
   { id: "decreases", label: "Decreases",          color: "var(--edge-decreases)" },
 ];
 export const TRACE_FILTERS = [
-  { id: "ancestors",   label: "Causes",  varName: "--edge-ancestor"   },
-  { id: "descendants", label: "Effects", varName: "--edge-descendant" },
+  { id: "ancestors",   label: "Driven by", varName: "--edge-ancestor"   },
+  { id: "descendants", label: "Drives",    varName: "--edge-descendant" },
 ];
 export const LINE_STYLE_FILTERS = [
   { id: "solid",  label: "Solid",  swatchClass: "legend-line-solid"  },

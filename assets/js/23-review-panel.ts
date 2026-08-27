@@ -24,7 +24,7 @@
 
 import { state, NODES, nodeById } from "./03-state";
 import { escapeHtml, formatScalar } from "./04-utils";
-import { selectNode, scrollNodeIntoView } from "./09-graph-selection";
+import { focusNode, scrollNodeIntoView } from "./09-graph-selection";
 import {
   groupFindings,
   currentSweep,
@@ -32,13 +32,20 @@ import {
   sweepIsPossible,
 } from "./22-review";
 import { solverGeneration } from "./07-simulation-engine";
+import {
+  coverage, startReviewPass, endReviewPass, reviewAction, reviewerNamed, needsResponse,
+  reviewLog, openItems, markAddressed, clearVerdict, scheduleReviewSave,
+  onReviewRecordChanged,
+} from "./24-review-record";
+import { downloadReviewLog } from "./25-review-rail";
+import type { LogRow } from "./24-review-record";
 import type { FindingGroup, ReviewSummary, Sweep, SweepException, SweepRow } from "./22-review";
 import type { Finding, FindingSeverity } from "./types";
 
-// Above this many adjustable inputs the sweep is one solve per input of a map
+// Above this many adjustable boxes the sweep is one solve per box of a map
 // big enough for that to be felt, so it waits to be asked for. Below it, the
 // answer is on screen before the panel has finished opening. (Thirty-three
-// inputs on a ninety-box map came in under a tenth of a second.)
+// boxes on a ninety-box map came in under a tenth of a second.)
 const SWEEP_AUTORUN_LIMIT = 60;
 
 // "The user asked for the sweep on a map this big" — stamped with the map it was
@@ -47,6 +54,7 @@ const SWEEP_AUTORUN_LIMIT = 60;
 // the one thing the limit exists to prevent.
 let sweepRequestedFor = -1;
 let fullListOpen = false;
+let logOpen = false;
 
 // ───── The element, and the open/closed state ─────────────────────────────
 function stageEl(): HTMLElement | null {
@@ -99,7 +107,12 @@ export function syncReviewButton(): void {
   button.hidden = false;
 
   const summary = groupFindings(state.loadErrors);
+  // Two kinds of unfinished business, and the badge counts both: what the app
+  // noticed, and what a person flagged and nobody has closed out. A flag that
+  // only shows up once you remember to look is the six-second toast again.
   const causes = summary.groups.length;
+  const open = openItems().length;
+  const total = causes + open;
   const worst = worstSeverity(summary.groups);
 
   button.textContent = "Review";
@@ -108,18 +121,24 @@ export function syncReviewButton(): void {
 
   const existing = button.querySelector(".review-badge");
   if (existing) existing.remove();
-  if (causes > 0) {
+  if (total > 0) {
     const badge = document.createElement("span");
-    badge.className = "review-badge sev-" + worst;
-    badge.textContent = String(causes);
+    // A person's flag is amber, not red: the map still computes, and somebody
+    // has already looked at it. Only the loader's "the engine threw away what
+    // you typed" earns the red.
+    badge.className = "review-badge sev-" + (causes > 0 ? worst : "wrong");
+    badge.textContent = String(total);
     button.appendChild(badge);
   }
 
+  const parts: string[] = [];
+  if (causes) parts.push(causes + " thing" + (causes === 1 ? "" : "s") + " the loader flagged");
+  if (open)   parts.push(open + " open from a review");
   button.setAttribute(
     "data-tooltip",
-    causes === 0
-      ? "Check the map: nothing the loader flagged, plus what each adjustable input actually does."
-      : causes + " thing" + (causes === 1 ? "" : "s") + " to fix, plus what each adjustable input does.",
+    parts.length
+      ? parts.join(", ") + " — plus what each adjustable box does."
+      : "Check the map: nothing flagged, what each adjustable box does, and what nobody has checked yet.",
   );
 }
 
@@ -157,8 +176,10 @@ export function renderReview(): void {
   html += '</div>';
 
   html += '<div class="review-body">';
-  html +=   '<div class="review-column">' + renderIssuesSection(summary) + '</div>';
-  html +=   '<div class="review-column">' + renderInputsSection() + '</div>';
+  html +=   '<div class="review-column">' + renderIssuesSection(summary) +
+            renderFlaggedSection() + '</div>';
+  html +=   '<div class="review-column">' + renderInputsSection() +
+            renderCoverageSection() + '</div>';
   html += '</div>';
 
   stage.innerHTML = html;
@@ -246,17 +267,17 @@ function markCode(text: string): string {
   return escapeHtml(text).replace(/`([^`]+)`/g, '<code>$1</code>');
 }
 
-// ───── Section 2: what each adjustable input does ─────────────────────────
+// ───── Section 2: what each adjustable box does ───────────────────────────
 function renderInputsSection(): string {
   let html = '<div class="review-section-head">';
-  html +=     '<span class="review-section-title">What each adjustable input does</span>';
+  html +=     '<span class="review-section-title">What each adjustable box does</span>';
   html +=   '</div>';
 
   if (!sweepIsPossible()) {
     html += '<div class="review-empty">' +
-              '<b>Nothing to sweep.</b> This check nudges each adjustable input in turn and reports ' +
-              'what moved, so it needs at least one adjustable input with a starting value, and at ' +
-              'least one box that is not itself an input.' +
+              '<b>Nothing to sweep.</b> This check nudges each adjustable box in turn and reports ' +
+              'what moved, so it needs at least one adjustable box with a starting value, and at ' +
+              'least one box that is not itself adjustable.' +
             '</div>';
     return html;
   }
@@ -264,7 +285,7 @@ function renderInputsSection(): string {
   const inputCount = NODES.filter(n => n.controllable && n.baseline).length;
   if (inputCount > SWEEP_AUTORUN_LIMIT && sweepRequestedFor !== solverGeneration()) {
     html += '<div class="review-empty">' +
-              '<b>' + inputCount + ' adjustable inputs.</b> The check solves the map once per input — ' +
+              '<b>' + inputCount + ' adjustable boxes.</b> The check solves the map once per box — ' +
               'quick, but not instant at this size, so it waits to be asked.' +
               '<button class="review-run" id="review-run-sweep">Run the check</button>' +
             '</div>';
@@ -274,13 +295,13 @@ function renderInputsSection(): string {
   const sweep = currentSweep();
   const exceptions = sweepExceptions(sweep);
 
-  html += '<div class="review-hint">Each input nudged up ' + Math.round(sweep.step * 100) +
+  html += '<div class="review-hint">Each adjustable box nudged up ' + Math.round(sweep.step * 100) +
           '% on its own, every other slider at 100%, measured against where the map sits when ' +
           'nothing has been asked of it. Everything below computes correctly and would pass every ' +
           'check on the left — it is only not what was intended.</div>';
 
   if (exceptions.length === 0) {
-    html += '<div class="review-empty"><b>Nothing odd.</b> Every adjustable input moves something, ' +
+    html += '<div class="review-empty"><b>Nothing odd.</b> Every adjustable box moves something, ' +
             'no box is out of reach, and no single input dominates the map.</div>';
   }
 
@@ -290,7 +311,7 @@ function renderInputsSection(): string {
   // the same sweep, ordered by how far each input carries.
   html += '<button class="review-fold-toggle" id="review-fold-toggle" aria-expanded="' +
           (fullListOpen ? "true" : "false") + '">' +
-          (fullListOpen ? "▾" : "▸") + " All " + sweep.rows.length + " inputs, by reach</button>";
+          (fullListOpen ? "▾" : "▸") + " All " + sweep.rows.length + " adjustable boxes, by reach</button>";
   if (fullListOpen) {
     html += '<div class="review-rows">';
     for (const row of sweep.rows) html += renderSweepRow(row, sweep);
@@ -346,12 +367,212 @@ function renderSweepRow(row: SweepRow, sweep: Sweep): string {
   return html;
 }
 
+// ───── What people flagged ────────────────────────────────────────────────
+// The loader's findings sit above this, and these read the same way on purpose:
+// both are things to fix, one noticed by the app and one by a person. This is
+// the half of a review that makes the other half worth doing — a flag that
+// cannot be found again is a note to nobody.
+function renderFlaggedSection(): string {
+  const open = openItems();
+  const log = reviewLog();
+  if (log.length === 0) return "";
+
+  let html = '<div class="review-section-head">';
+  html +=     '<span class="review-section-title">What people flagged</span>';
+  html +=     '<span class="review-section-count' + (open.length ? "" : " ok") + '">' +
+                (open.length ? open.length + " open" : "all closed") + '</span>';
+  html +=   '</div>';
+
+  if (open.length === 0) {
+    html += '<div class="review-empty"><b>Nothing outstanding.</b> ' + log.length +
+            ' box' + (log.length === 1 ? " has" : "es have") + ' been reviewed and none is ' +
+            'flagged or waiting on a re-check.</div>';
+  }
+
+  for (const row of open) html += renderLogCard(row, true);
+
+  // The whole record, folded. "Review log" in the literal sense: who said what
+  // about which box, including the agreements — an audit trail is not only its
+  // exceptions.
+  html += '<button class="review-fold-toggle" id="review-log-toggle" aria-expanded="' +
+          (logOpen ? "true" : "false") + '">' + (logOpen ? "▾" : "▸") +
+          " The whole log — " + log.length + " box" + (log.length === 1 ? "" : "es") +
+          " reviewed</button>";
+  if (logOpen) {
+    html += '<div class="review-rows">';
+    for (const row of log) html += renderLogRow(row);
+    html += '</div>';
+  }
+  return html;
+}
+
+function renderLogCard(row: LogRow, actionable: boolean): string {
+  const stale = row.now === "stale";
+  let html = '<div class="review-card is-clickable" data-review-box="' + escapeHtml(row.entry.boxId) + '">';
+  html +=   '<div class="review-card-head">';
+  html +=     '<span class="review-sev sev-' + (stale ? "wrong" : "wrong") + '" aria-hidden="true"></span>';
+  html +=     '<span class="review-card-label">' + escapeHtml(row.label) + '</span>';
+  html +=     '<span class="review-card-id">' + escapeHtml(row.entry.boxId) + '</span>';
+  html +=   '</div>';
+
+  if (stale) {
+    html += '<div class="review-what">Signed off by ' +
+      escapeHtml(row.entry.reviewer || "someone") + ' on ' + escapeHtml(row.entry.date) +
+      ', and what drives it has changed since. The sign-off no longer applies.</div>';
+  }
+  if (row.entry.note) {
+    html += '<div class="review-note">' + escapeHtml(row.entry.note) + '</div>';
+  } else if (!stale) {
+    html += '<div class="review-what review-note-none">Flagged with no note.</div>';
+  }
+  if (row.flaggedLabels.length) {
+    html += '<div class="review-fold"><b>' + row.flaggedLabels.length + ' link' +
+      (row.flaggedLabels.length === 1 ? "" : "s") + ' flagged</b> — ' +
+      escapeHtml(row.flaggedLabels.join(", ")) + '.</div>';
+  }
+  html += '<div class="review-log-by">' + escapeHtml(row.entry.reviewer || "unsigned") +
+          ' · ' + escapeHtml(row.entry.date) + '</div>';
+
+  if (actionable) {
+    // Closing a concern needs an account of what was DONE about it — the note
+    // above says what was wrong, which is a different thing. Without one the log
+    // turns into a list of concerns somebody decided to stop having.
+    //
+    // Re-confirming a sign-off that went stale is not closing a concern: nothing
+    // was ever raised, so nothing is asked for. needsResponse draws that line.
+    const closingAFlag = needsResponse(row.entry.boxId);
+    if (closingAFlag) {
+      html += '<textarea class="review-close-note" rows="2" data-close-note="' +
+              escapeHtml(row.entry.boxId) + '" placeholder="What was done about it? — needed to close">' +
+              escapeHtml(row.entry.addressedNote) + '</textarea>';
+    }
+
+    // The buttons stop the card's own click-through, so "go to the box" and
+    // "close this out" are not the same gesture.
+    html += '<div class="review-log-actions">';
+    html +=   '<button type="button" class="rv-v" data-log-action="addressed" ' +
+              'data-log-box="' + escapeHtml(row.entry.boxId) + '"' +
+              (closingAFlag && !row.entry.addressedNote.trim() ? " disabled" : "") + '>' +
+              (stale && !closingAFlag ? "Still fine" : "Addressed") + '</button>';
+    html +=   '<button type="button" class="rv-v" data-log-action="clear" ' +
+              'data-log-box="' + escapeHtml(row.entry.boxId) + '" ' +
+              'data-tooltip="Drop the verdict entirely — the box goes back to unreviewed.">Reopen</button>';
+    html += '</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+function renderLogRow(row: LogRow): string {
+  return '<div class="review-row" data-review-box="' + escapeHtml(row.entry.boxId) + '">' +
+    '<span class="review-row-body">' +
+      '<span class="review-row-name">' + escapeHtml(row.label) + '</span>' +
+      '<span class="review-row-top">' +
+        escapeHtml(row.entry.reviewer || "unsigned") + " · " + escapeHtml(row.entry.date) +
+        (row.entry.note ? " · " + escapeHtml(row.entry.note) : "") +
+      '</span>' +
+    '</span>' +
+    '<span class="review-log-state rv-' + row.now + '">' + row.now + '</span>' +
+  '</div>';
+}
+
+// ───── Section 3: what nobody has checked yet ─────────────────────────────
+// The other two sections are things the app worked out. This one is the only
+// thing on the panel it cannot: whether a person has actually looked at each
+// box and said the links feeding it are right. All the app can do is keep the
+// score and hand you the next one.
+function renderCoverageSection(): string {
+  const done = coverage();
+  if (done.total === 0) {
+    return '<div class="review-section-head">' +
+      '<span class="review-section-title">What nobody has checked yet</span></div>' +
+      '<div class="review-empty"><b>Nothing to check.</b> A review pass asks, box by box, ' +
+      'whether the links feeding it are right and complete — so it needs a map with links ' +
+      'on it.</div>';
+  }
+
+  const settled = done.agreed + done.flagged;
+  const pct = Math.round(settled / done.total * 100);
+  const running = state.reviewPass;
+
+  let html = '<div class="review-section-head">';
+  html +=     '<span class="review-section-title">What nobody has checked yet</span>';
+  html +=     '<span class="review-section-count' + (done.unreviewed + done.stale === 0 ? " ok" : "") + '">' +
+                settled + " of " + done.total + '</span>';
+  html +=   '</div>';
+
+  html += '<div class="review-hint">One box at a time, causes before effects: <i>is this ' +
+          'everything that drives this box?</i> The verdict, who gave it and why are kept in the ' +
+          'map\'s own spreadsheet, so a pass survives a refresh and travels with the file.</div>';
+
+  html += '<div class="review-cov">';
+  html +=   '<div class="review-cov-bar">';
+  if (done.agreed)  html += '<i class="cov-agreed" style="width:' + (done.agreed / done.total * 100) + '%"></i>';
+  if (done.flagged) html += '<i class="cov-flagged" style="width:' + (done.flagged / done.total * 100) + '%"></i>';
+  if (done.stale)   html += '<i class="cov-stale" style="width:' + (done.stale / done.total * 100) + '%"></i>';
+  html +=   '</div>';
+  html +=   '<div class="review-cov-key">' +
+              '<span><i class="cov-agreed"></i>' + done.agreed + ' agreed</span>' +
+              '<span><i class="cov-flagged"></i>' + done.flagged + ' flagged</span>' +
+              (done.stale ? '<span><i class="cov-stale"></i>' + done.stale + ' changed since</span>' : "") +
+              '<span><i class="cov-none"></i>' + done.unreviewed + ' not looked at</span>' +
+            '</div>';
+  html += '</div>';
+
+  // The name goes on every verdict, so it is asked for before the pass rather
+  // than after — a record of who said what is the point, and "unsigned" is a
+  // poor answer to give a month later. A FULL name, not initials: this record
+  // outlives the session, and the pass will not start without one.
+  const named = reviewerNamed();
+  html += '<div class="review-who' + (named ? "" : " is-wanted") + '">';
+  html +=   '<label for="review-reviewer">Your full name</label>';
+  html +=   '<input id="review-reviewer" class="review-who-input" type="text" maxlength="60" ' +
+            'value="' + escapeHtml(state.reviewer) + '" placeholder="Ann Lee" ' +
+            'autocomplete="name" aria-describedby="review-who-why" />';
+  html += '</div>';
+  html += '<div class="review-who-why" id="review-who-why">' +
+          (named
+            ? "Every verdict is signed with this, and it goes in the exported log."
+            : "<b>A full name, not initials.</b> Every verdict is signed with it and it goes in " +
+              "the exported log, which somebody else may be reading a year from now.") +
+          '</div>';
+
+  html += '<button class="review-run" id="review-start-pass"' + (named ? "" : " disabled") + '>' +
+          (!named ? "Your name first"
+                  : running ? "Go to the next box"
+                  : settled ? "Carry on — " + (done.total - settled) + " to go"
+                            : "Start a pass — " + done.total + " boxes") +
+          '</button>';
+  if (running) {
+    html += '<button class="review-fold-toggle" id="review-end-pass">Stop the pass</button>';
+  }
+
+  // Taking the record out of the app. Offered here, beside the coverage it
+  // reports on, as well as in File ▸ Export — a log you can only read on the
+  // screen it was made on is not much of a record, and this is the point in the
+  // panel where somebody is already thinking about how far the review has got.
+  html += '<button class="review-fold-toggle" id="review-export-log" ' +
+          'data-tooltip="A .csv of every box: checked or not, by whom, when, the comments, ' +
+          'and whether they have been dealt with.">Export the log — ' + done.total +
+          ' box' + (done.total === 1 ? "" : "es") + ', reviewed or not</button>';
+  if (done.stale) {
+    html += '<div class="review-hint" style="margin-top:var(--space-2)"><b>' + done.stale +
+            '</b> box' + (done.stale === 1 ? " has" : "es have") + ' changed since being signed off, ' +
+            'so the sign-off no longer applies and they are back in the queue.</div>';
+  }
+  return html;
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 // WIRING
 // ═════════════════════════════════════════════════════════════════════════════
 // One delegated listener on the stage handles every card, row and control, for
 // every rebuild — the stage element is stable, its contents are not.
 export function initReviewStage(): void {
+  // Whenever a verdict changes — from the panel here, or from the review card in
+  // the box panel — the badge and this panel are re-read from the record.
+  onReviewRecordChanged(refreshReview);
+
   const button = document.getElementById("review-button");
   if (button && !button.dataset.wired) {
     button.dataset.wired = "1";
@@ -379,6 +600,50 @@ export function initReviewStage(): void {
       return;
     }
 
+    if (target.closest("#review-log-toggle")) {
+      logOpen = !logOpen;
+      renderReview();
+      return;
+    }
+
+    const logButton = target.closest("[data-log-action]") as HTMLElement | null;
+    if (logButton) {
+      // Acting on a flag must not also navigate away from the list you are
+      // working through — the card behind this is a click-through to the box.
+      event.stopPropagation();
+      const boxId = logButton.getAttribute("data-log-box")!;
+      if (logButton.getAttribute("data-log-action") === "addressed") {
+        const field = stage.querySelector('[data-close-note="' + CSS.escape(boxId) + '"]') as
+                      HTMLTextAreaElement | null;
+        // Refused when there is nothing to record. The button is disabled until
+        // there is, so this is the belt to that braces — but markAddressed is
+        // the thing that decides, and it says no by writing nothing.
+        if (!markAddressed(boxId, field ? field.value : "")) return;
+      } else {
+        clearVerdict(boxId);
+      }
+      scheduleReviewSave();   // notifies, which repaints this panel and the badge
+      return;
+    }
+
+    if (target.closest("#review-start-pass")) {
+      const goTo = startReviewPass();   // sets the body class with the flag
+      closeReview();
+      if (goTo) { focusNode(goTo); scrollNodeIntoView(goTo); }
+      return;
+    }
+
+    if (target.closest("#review-end-pass")) {
+      endReviewPass();                  // clears the body class with the flag
+      renderReview();
+      return;
+    }
+
+    if (target.closest("#review-export-log")) {
+      downloadReviewLog();
+      return;
+    }
+
     // Anything carrying a box id takes you to that box. Closing on the way is
     // the point: the panel has said its piece, and what you want now is the map.
     const holder = target.closest("[data-review-box]") as HTMLElement | null;
@@ -386,9 +651,46 @@ export function initReviewStage(): void {
       const boxId = holder.getAttribute("data-review-box")!;
       if (nodeById[boxId]) {
         closeReview();
-        selectNode(boxId);
+        focusNode(boxId);
         scrollNodeIntoView(boxId);
       }
+    }
+  });
+
+  // The name and the closing notes, kept as you type. NOT re-rendered on input:
+  // the field would lose focus after the first character. So the one control
+  // whose state depends on the text — the button next to it — is updated by
+  // hand instead.
+  stage.addEventListener("input", event => {
+    const target = event.target as HTMLElement;
+
+    if (target && target.id === "review-reviewer") {
+      state.reviewer = (target as HTMLInputElement).value.trim();
+      const named = reviewerNamed();
+      const start = document.getElementById("review-start-pass") as HTMLButtonElement | null;
+      if (start) {
+        start.disabled = !named;
+        if (!named) start.textContent = "Your name first";
+        else if (start.textContent === "Your name first") {
+          const done = coverage();
+          const settled = done.agreed + done.flagged;
+          start.textContent = state.reviewPass ? "Go to the next box"
+            : settled ? "Carry on — " + (done.total - settled) + " to go"
+                      : "Start a pass — " + done.total + " boxes";
+        }
+      }
+      const why = document.getElementById("review-who-why");
+      if (why) why.closest(".review-column")?.querySelector(".review-who")
+        ?.classList.toggle("is-wanted", !named);
+      return;
+    }
+
+    const closeBox = target && target.getAttribute && target.getAttribute("data-close-note");
+    if (closeBox) {
+      const button = stage.querySelector(
+        '[data-log-action="addressed"][data-log-box="' + CSS.escape(closeBox) + '"]',
+      ) as HTMLButtonElement | null;
+      if (button) button.disabled = !(target as HTMLTextAreaElement).value.trim();
     }
   });
 
@@ -396,6 +698,19 @@ export function initReviewStage(): void {
     if (event.key === "Escape" && reviewIsOpen()) {
       event.stopPropagation();
       closeReview();
+      return;
     }
+
+    // [ and ] step the pass. Chosen because nothing else in the app binds them
+    // and neither is reachable by accident while typing a note — and the note
+    // field, like every other input, is excluded outright.
+    if (!state.reviewPass || event.metaKey || event.ctrlKey || event.altKey) return;
+    const el = document.activeElement as HTMLElement | null;
+    if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+    if (event.key !== "[" && event.key !== "]") return;
+    if (!state.selectedNodeId) return;
+    event.preventDefault();
+    const result = reviewAction(state.selectedNodeId, event.key === "]" ? "next" : "prev");
+    if (result.goTo) { focusNode(result.goTo); scrollNodeIntoView(result.goTo); }
   });
 }
