@@ -40,9 +40,9 @@ import {
   setLayout,
 } from "./03-state";
 import { isUndoCaptureSuspended, pushHistorySnapshot, pushUndo, restoreFromUndo, showUndoToast } from "./16g-canvas-undo";
-import { rebuildIndexes } from "./06-data-loader";
+import { markSearchableDataChanged, rebuildIndexes } from "./06-data-loader";
 import { computeLayout } from "./08-layout";
-import { recomputeValues } from "./07-simulation-engine";
+import { rebuildSolverIndexes, recomputeValues } from "./07-simulation-engine";
 import { renderSidebar, focusSidebarInlineLabel } from "./13-sidebar";
 import { render } from "./11-rendering";
 import { renderDetailPanel } from "./15-detail-panel";
@@ -64,26 +64,51 @@ import { refreshLiveReviewFindings } from "./22a-review-model";
 // the input element and break focus / tabbing.
 // `options.skipSidebarRender` — same idea for the sidebar (preserves an
 // in-progress inline edit / colour pick instead of tearing down the row).
-export function applyCanvasMutation(options?: { skipDetailRender?: boolean; skipSidebarRender?: boolean }): void {
+// `options.impact` — the narrowest derived-state contract affected by the
+// change. Topology is the safe default; calculation skips index/layout work;
+// presentation keeps the model and solver untouched.
+// `options.skipHistoryCapture` — used only while coalescing later steps of an
+// already-captured interaction such as repeated edge-effect key presses.
+export interface CanvasMutationOptions {
+  skipDetailRender?: boolean;
+  skipSidebarRender?: boolean;
+  impact?: "topology" | "calculation" | "presentation";
+  skipHistoryCapture?: boolean;
+  searchableDataChanged?: boolean;
+}
+
+export function applyCanvasMutation(options?: CanvasMutationOptions): void {
   // Push the PREVIOUS state's CSV onto undo history before mutating. The
   // "previous" snapshot is whatever applyCanvasMutation produced last time
   // (or what loadDataFromCsv seeded). This makes every mutation undoable
   // without each call-site having to opt in. pushHistorySnapshot (16g) owns the
   // stack bookkeeping — the entry cap AND the total-size budget — so this stays
   // one call rather than an inline copy of the eviction rules.
-  if (state.dataLoaded && !isUndoCaptureSuspended()) {
+  if (state.dataLoaded && !isUndoCaptureSuspended() && !options?.skipHistoryCapture) {
     pushHistorySnapshot(state.lastCsvSnapshot);
   }
 
-  rebuildIndexes();
-  setLayout(computeLayout());
-  recomputeValues();
-  // Review findings describe the current model, not the file as it looked when
-  // it was first opened. Re-run the reproducible checks after every mutation;
-  // import-row findings are preserved by refreshLiveReviewFindings().
-  refreshLiveReviewFindings();
-  attributeFindings(state.loadErrors);
-  invalidateSweep();
+  const impact = options?.impact || "topology";
+  if (impact === "topology") {
+    rebuildIndexes();
+    setLayout(computeLayout());
+  } else if (impact === "calculation") {
+    // Elasticity, baselines, bounds, and similar edits keep the graph shape but
+    // change the solver's precomputed incoming rows and cached generations.
+    rebuildSolverIndexes();
+  }
+  if (impact !== "topology" && options?.searchableDataChanged) {
+    markSearchableDataChanged();
+  }
+  if (impact !== "presentation") {
+    recomputeValues();
+    // Review findings describe the current model, not the file as it looked
+    // when it was first opened. Re-run them for topology and calculation
+    // changes, while presentation-only descriptions/styles leave them intact.
+    refreshLiveReviewFindings();
+    attributeFindings(state.loadErrors);
+    invalidateSweep();
+  }
   if (!options || !options.skipSidebarRender) renderSidebar();
   render();
   if (!options || !options.skipDetailRender) renderDetailPanel();

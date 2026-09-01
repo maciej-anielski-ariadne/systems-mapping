@@ -525,6 +525,15 @@ export function reviewAction(
 // cleared by pressing Flag again or by giving a different one.
 let reviewSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
+// Review saves normally complete or flush through the app lifecycle. Tests
+// discard the whole in-memory map between cases, so they need a cancellation
+// boundary that cannot serialize the previous case into the next one's slot.
+export function cancelPendingReviewSaveWithoutFlushing(): void {
+  if (!reviewSaveTimer) return;
+  clearTimeout(reviewSaveTimer);
+  reviewSaveTimer = null;
+}
+
 // Anything that shows a count off the record — the header badge, the panel —
 // has to move when the record does. Every mutation site already calls
 // scheduleReviewSave(), so that is the one place worth notifying from: a fourth

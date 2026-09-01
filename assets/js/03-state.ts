@@ -29,6 +29,7 @@ import type {
   StageWithIndex,
   Stream,
 } from "./types";
+import { createIdentifierRecord } from "./05b-input-validation";
 
 // ───── Transient UI state ─────────────────────────────────────────────────
 // What's selected / hovered / hidden, plus the cached set of upstream
@@ -198,7 +199,7 @@ export const state: AppState = {
 // Reassignable via the setters below. Importers read the live binding directly.
 export let STREAMS: Stream[] = [];
 export let STAGES: Stage[] = [];
-export let CATEGORIES: CategoryMap = {};
+export let CATEGORIES: CategoryMap = createIdentifierRecord();
 export let NODES: GraphNode[] = [];
 export let EDGES: Edge[] = [];
 // Named constants used by the calculation model but never drawn on the map
@@ -215,13 +216,13 @@ export let DEFAULT_ELASTICITY_BY_EFFECT: ElasticityDefaults = {
 };
 
 // ───── Pre-computed indexes (rebuilt whenever data is reloaded) ───────────
-export let nodeById: Record<string, GraphNode> = {}; // id → node
-export let paramById: Record<string, Param> = {}; // id → param (param ids never collide with node ids — the loader rejects that)
-export let edgeById: Record<string, Edge> = {}; // edge id → edge (rebuilt with the edge ids in rebuildIndexes)
-export let outgoingEdges: Record<string, Edge[]> = {}; // node id → edges leaving the node
-export let incomingEdges: Record<string, Edge[]> = {}; // node id → edges entering the node
-export let streamById: Record<string, Stream> = {}; // id → stream
-export let stageById: Record<string, StageWithIndex> = {}; // id → stage (with extra `index`)
+export let nodeById: Record<string, GraphNode> = createIdentifierRecord(); // id → node
+export let paramById: Record<string, Param> = createIdentifierRecord(); // id → param (param ids never collide with node ids — the loader rejects that)
+export let edgeById: Record<string, Edge> = createIdentifierRecord(); // edge id → edge (rebuilt with the edge ids in rebuildIndexes)
+export let outgoingEdges: Record<string, Edge[]> = createIdentifierRecord(); // node id → edges leaving the node
+export let incomingEdges: Record<string, Edge[]> = createIdentifierRecord(); // node id → edges entering the node
+export let streamById: Record<string, Stream> = createIdentifierRecord(); // id → stream
+export let stageById: Record<string, StageWithIndex> = createIdentifierRecord(); // id → stage (with extra `index`)
 export let topologicalOrder: string[] = []; // node ids sorted so causes come before effects
 // (feedback-loop nodes appended at the end)
 // Feedback-loop membership, rebuilt by detectCycles() in 06-data-loader.ts.
@@ -232,9 +233,9 @@ export let cycleInfo: CycleInfo = {
   backEdgeIds: new Set(),
   loopCount: 0,
 };
-export let streamNodeCount: Record<string, number> = {}; // stream id → count of nodes
-export let categoryNodeCount: Record<string, number> = {}; // category id → count of nodes
-export let stageNodeCount: Record<string, number> = {}; // stage id → count of nodes
+export let streamNodeCount: Record<string, number> = createIdentifierRecord(); // stream id → count of nodes
+export let categoryNodeCount: Record<string, number> = createIdentifierRecord(); // category id → count of nodes
+export let stageNodeCount: Record<string, number> = createIdentifierRecord(); // stage id → count of nodes
 export let maxHighlightDepth = 1; // deepest highlight hop the current map can reach (longest shortest-path distance, up- or downstream). Recomputed by rebuildIndexes; the depth control uses it as a dynamic cap instead of a fixed ceiling.
 
 // Layout result (set by 08-layout.ts → computeLayout).
@@ -247,6 +248,20 @@ export let layout: Layout = {
   totalWidth: 0,
   totalHeight: 0,
 };
+
+// The renderer caches derived edge geometry (including collapsed connectors,
+// line-style fan buckets, and anchor offsets). Some edit paths deliberately
+// mutate an Edge object or append to EDGES in place, so array identity alone
+// cannot tell that those derived values are stale.
+let edgeGeometryRevisionNumber = 0;
+
+export function edgeGeometryRevision(): number {
+  return edgeGeometryRevisionNumber;
+}
+
+export function markEdgeGeometryChanged(): void {
+  edgeGeometryRevisionNumber++;
+}
 
 // ───── Setters — the only sanctioned way to reassign the bindings above ─────
 // (Other modules import these instead of assigning, because an imported binding
@@ -265,6 +280,7 @@ export function setNodes(value: GraphNode[]): void {
 }
 export function setEdges(value: Edge[]): void {
   EDGES = value;
+  markEdgeGeometryChanged();
 }
 export function setParams(value: Param[]): void {
   PARAMS = value;

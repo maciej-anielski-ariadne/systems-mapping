@@ -33,6 +33,13 @@ import {
   parseBooleanCell,
 } from "./05-csv-parser";
 import {
+  canonicalIdentifierGuidance,
+  createIdentifierRecord,
+  isBlankInput,
+  isCanonicalIdentifier,
+  isSafeHexColour,
+} from "./05b-input-validation";
+import {
   state,
   NODES,
   EDGES,
@@ -81,6 +88,7 @@ import {
   rebuildFormulaCache,
   rebuildSolverIndexes,
   getParsedFormula,
+  getParsedFormulaCandidate,
   getFormulaParseFailures,
   usesFormula,
   explainNode,
@@ -108,9 +116,9 @@ import { endReviewPass, reconcileReviews } from "./24-review-record";
 // types.ts and docs/CALCULATION-ENGINE-DESIGN.md §3.2.)
 const COMBINE_MODES = COMBINE_OPTIONS.filter(Boolean) as CombineMode[];
 
-// Session-wide counter for minting edge ids in rebuildIndexes(). Monotonic and
-// never reset, so an id handed out once is never handed out again — which keeps
-// ids stable across rebuilds and collision-free with edges an undo restores.
+// Counter for minting edge ids in rebuildIndexes(). A successful full load
+// restarts it so file-order ids remain deterministic; between successful loads
+// it is monotonic, and rejected loads never touch it or the retained graph.
 let _edgeIdSeq = 0;
 
 // Build all the lookup maps from the freshly-loaded NODES/EDGES/STREAMS/STAGES.
@@ -134,12 +142,19 @@ export function dataRevision(): number {
   return _dataRevision;
 }
 
+// Searchable text can change without changing topology or layout (currently a
+// box description or unit edited in the detail panel). Give the search corpus
+// the same revision clock without paying for a full index/layout rebuild.
+export function markSearchableDataChanged(): void {
+  _dataRevision++;
+}
+
 export function rebuildIndexes(): void {
   _dataRevision++;
-  setNodeById({});
-  setStreamNodeCount({});
-  setCategoryNodeCount({});
-  setStageNodeCount({});
+  setNodeById(createIdentifierRecord());
+  setStreamNodeCount(createIdentifierRecord());
+  setCategoryNodeCount(createIdentifierRecord());
+  setStageNodeCount(createIdentifierRecord());
   for (const node of NODES) {
     nodeById[node.id] = node;
     // Counts cached here (rather than recomputed per render) so the sidebar
@@ -154,12 +169,12 @@ export function rebuildIndexes(): void {
   // Params are hidden constants, not boxes, so they get their own index. Built
   // here (rather than only at load time) so a canvas mutation that rebuilds the
   // indexes leaves paramById in step with PARAMS.
-  setParamById({});
+  setParamById(createIdentifierRecord());
   for (const param of PARAMS) paramById[param.id] = param;
 
-  setOutgoingEdges({});
-  setIncomingEdges({});
-  setEdgeById({});
+  setOutgoingEdges(createIdentifierRecord());
+  setIncomingEdges(createIdentifierRecord());
+  setEdgeById(createIdentifierRecord());
   for (const node of NODES) {
     outgoingEdges[node.id] = [];
     incomingEdges[node.id] = [];
@@ -178,10 +193,10 @@ export function rebuildIndexes(): void {
     if (incomingEdges[edge.to])   incomingEdges[edge.to].push(edge);
   }
 
-  setStreamById({});
+  setStreamById(createIdentifierRecord());
   for (const stream of STREAMS) streamById[stream.id] = stream;
 
-  setStageById({});
+  setStageById(createIdentifierRecord());
   for (let stageIdx = 0; stageIdx < STAGES.length; stageIdx++) {
     stageById[STAGES[stageIdx].id] = { ...STAGES[stageIdx], index: stageIdx };
   }
@@ -200,7 +215,7 @@ export function rebuildIndexes(): void {
   // become ready in turn. (Kahn's algorithm is the standard recipe for this;
   // see "topological sort" in docs/GLOSSARY.md.) "In-degree" below = how many
   // arrows still point into a box.
-  const remainingInDegree: Record<string, number> = {};
+  const remainingInDegree = createIdentifierRecord<number>();
   for (const node of NODES) remainingInDegree[node.id] = 0;
   for (const edge of EDGES) {
     if (remainingInDegree[edge.to] !== undefined) remainingInDegree[edge.to]++;
@@ -290,7 +305,7 @@ export function rebuildIndexes(): void {
 // rebuildIndexes().
 export function detectCycles(): void {
   const WHITE = 0, GRAY = 1, BLACK = 2;
-  const color: Record<string, number> = {};
+  const color = createIdentifierRecord<number>();
   for (const node of NODES) color[node.id] = WHITE;
 
   const backEdgeIds = new Set<string>();
@@ -381,14 +396,14 @@ function validateCalculationRules(errors: Finding[]): void {
     }
 
     // 3. `combine` describes how ARROWS aggregate; a formula replaces them.
-    if (node.combine) {
+    if (node.combine && usesFormula(node)) {
       errors.push(finding("combine-beats-formula", "ignored",
         "It has both a combine rule (`" + node.combine + "`) and a formula. The combine rule " +
         "describes how links add up; the formula replaces them, so the combine rule is ignored.",
         { boxId: node.id, fix: "Clear the combine cell." }));
     }
 
-    const parsed = getParsedFormula(node.id);
+    const parsed = getParsedFormulaCandidate(node.id);
     if (!parsed) continue;
 
     // Which boxes actually point into this one, for the cross-checks below.
@@ -416,7 +431,8 @@ function validateCalculationRules(errors: Finding[]): void {
       if (!linkedSources.has(id)) {
         errors.push(finding("name-has-no-link", "mismatch",
           "Its formula uses `" + id + "`, but no link joins the two — the map's links must " +
-          "show every causal input.",
+          "show every causal input. The formula is ignored until the link is drawn, so the " +
+          "box falls back to its incoming links.",
           { boxId: node.id, fix: "Draw the link from `" + id + "`, or drop the term." }));
       }
 
@@ -431,6 +447,7 @@ function validateCalculationRules(errors: Finding[]): void {
     // 7. The reverse check: an arrow the formula never reads still draws on the
     //    map but changes nothing. Worth saying out loud.
     for (const sourceId of linkedSources) {
+      if (!usesFormula(node)) break;
       if (referenced.has(sourceId)) continue;
       errors.push(finding("link-unused", "mismatch",
         "A link from `" + sourceId + "` points at it that its formula never reads — that link " +
@@ -537,8 +554,8 @@ function reportFormulaCyclesWithoutDelay(errors: Finding[]): void {
   // traversal per load for a guaranteed-empty result.
   if (!NODES.some((node) => usesFormula(node))) return;
   const WHITE = 0, GRAY = 1, BLACK = 2;
-  const color: Record<string, number> = {};
-  const dependencies: Record<string, string[]> = {};
+  const color = createIdentifierRecord<number>();
+  const dependencies = createIdentifierRecord<string[]>();
   for (const node of NODES) {
     color[node.id] = WHITE;
     dependencies[node.id] = sameSweepDependencies(node);
@@ -594,13 +611,14 @@ function reportFormulaCyclesWithoutDelay(errors: Finding[]): void {
 
 // Main entry point. Returns true on success, false on fatal validation errors.
 export function loadDataFromCsv(csvText: string): boolean {
-  // A full load replaces every edge object, so restart the id counter — ids
-  // are then deterministic per load (edge_0… in file order), which tests and
-  // the export model rely on. In-session mutations never reset it, so live
-  // edge ids stay stable across rebuilds.
-  _edgeIdSeq = 0;
   const sections = parseCsvDocument(csvText);
   const errors: Finding[] = [];
+
+  const failLoad = (): false => {
+    state.loadErrors = errors;
+    showLoadFeedback("Load failed: " + errors.map(error => error.message).join(" "), true);
+    return false;
+  };
 
   // ───── Fatal-error checks (we can't proceed without these) ─────────────
   const missingSection = (name: string) => finding("section-missing", "ignored",
@@ -611,34 +629,85 @@ export function loadDataFromCsv(csvText: string): boolean {
   if (!sections.categories || sections.categories.length === 0) errors.push(missingSection("categories"));
   if (!sections.nodes      || sections.nodes.length === 0)      errors.push(missingSection("nodes"));
 
-  if (errors.length > 0) {
-    state.loadErrors = errors;
-    showLoadFeedback("Load failed: " + errors.map(e => e.message).join(" "), true);
-    return false;
-  }
+  if (errors.length > 0) return failLoad();
+
+  // Rows, columns, and categories define the coordinate system for every box.
+  // Dropping or renaming one would silently change the identity of all its
+  // references, so any blank, duplicate, or non-canonical id rejects the load
+  // transaction before live state (including edge allocation) is touched.
+  const validateDimensionIdentifiers = (
+    rows: Array<Record<string, string>>,
+    dimensionName: string,
+  ): void => {
+    const seenIdentifiers = new Set<string>();
+    rows.forEach((row, rowIndex) => {
+      const identifier = row.id;
+      if (!identifier) {
+        errors.push(finding("identifier-missing", "ignored",
+          "The " + dimensionName + " at row " + (rowIndex + 1) +
+          " has no id. The map is not loaded because references cannot be rewritten safely.",
+          { fix: canonicalIdentifierGuidance() }));
+        return;
+      }
+      if (!isCanonicalIdentifier(identifier)) {
+        errors.push(finding("identifier-invalid", "ignored",
+          "The " + dimensionName + " id `" + identifier +
+          "` is not a canonical identifier. The map is not loaded and the id is not rewritten.",
+          { fix: canonicalIdentifierGuidance() }));
+        return;
+      }
+      if (seenIdentifiers.has(identifier)) {
+        errors.push(finding("identifier-duplicate", "ignored",
+          "The " + dimensionName + " id `" + identifier +
+          "` appears more than once. The map is not loaded because those identities are ambiguous.",
+          { fix: "Give each " + dimensionName + " a unique id." }));
+        return;
+      }
+      seenIdentifiers.add(identifier);
+    });
+  };
+
+  validateDimensionIdentifiers(sections.streams!, "row");
+  validateDimensionIdentifiers(sections.stages!, "column");
+  validateDimensionIdentifiers(sections.categories!, "category");
+  if (errors.length > 0) return failLoad();
+
+  const validatedColour = (
+    rawColour: string | undefined,
+    fallbackColour: string,
+    ownerDescription: string,
+  ): string => {
+    if (isBlankInput(rawColour)) return fallbackColour;
+    const colour = String(rawColour).trim();
+    if (isSafeHexColour(colour)) return colour;
+    errors.push(finding("colour-invalid", "ignored",
+      ownerDescription + " has colour `" + rawColour +
+      "`, which is not a literal hexadecimal colour. The safe default " + fallbackColour + " is used.",
+      { fix: "Use #RGB, #RGBA, #RRGGBB, or #RRGGBBAA." }));
+    return fallbackColour;
+  };
 
   // ───── Streams ──────────────────────────────────────────────────────────
   const parsedStreams: Stream[] = sections.streams!.map((row): Stream => ({
     id: row.id,
     label: row.label || row.id,
     short: row.short || (row.id || "").toUpperCase(),
-    color: row.color || "#94a3b8",
-  })).filter(stream => stream.id);
+    color: validatedColour(row.color, "#94a3b8", "Row `" + row.id + "`"),
+  }));
 
   // ───── Stages ───────────────────────────────────────────────────────────
   const parsedStages: Stage[] = sections.stages!.map((row): Stage => ({
     id: row.id,
     label: row.label || row.id,
-  })).filter(stage => stage.id);
+  }));
 
   // ───── Categories ───────────────────────────────────────────────────────
-  const parsedCategories: CategoryMap = {};
+  const parsedCategories: CategoryMap = createIdentifierRecord();
   for (const row of sections.categories!) {
-    if (!row.id) continue;
     parsedCategories[row.id] = {
       label: row.label || row.id,
-      color: row.color || "#a3a3a3",
-      textColor: row.text_color || "#1c1917",
+      color: validatedColour(row.color, "#a3a3a3", "Category `" + row.id + "`"),
+      textColor: validatedColour(row.text_color, "#1c1917", "Category `" + row.id + "` text"),
       // "primary" = fill (default; several primaries blend into a gradient);
       // "secondary" = a small chip in the node's bottom-right corner.
       class: (row.class || "").trim().toLowerCase() === "secondary" ? "secondary" : "primary",
@@ -649,12 +718,21 @@ export function loadDataFromCsv(csvText: string): boolean {
   const parsedDefaults: ElasticityDefaults = { enables: 0.30, increases: 0.25, decreases: -0.25 };
   if (sections.defaults) {
     for (const row of sections.defaults) {
-      if (!row.key) continue;
+      const key = (row.key || "").trim();
+      if (!key) continue;
       const numericValue = parseNumericCell(row.value);
-      if (numericValue === undefined) continue;
-      if (row.key === ELASTICITY_KEYS.enables)   parsedDefaults.enables   = numericValue;
-      if (row.key === ELASTICITY_KEYS.increases) parsedDefaults.increases = numericValue;
-      if (row.key === ELASTICITY_KEYS.decreases) parsedDefaults.decreases = numericValue;
+      if (numericValue === undefined) {
+        if (!isBlankInput(row.value)) {
+          errors.push(finding("default-not-a-number", "ignored",
+            "The default `" + row.key + "` has value `" + row.value +
+            "`, which is not a finite decimal number. The built-in default is retained.",
+            { fix: "Use a plain finite decimal number." }));
+        }
+        continue;
+      }
+      if (key === ELASTICITY_KEYS.enables)   parsedDefaults.enables   = numericValue;
+      if (key === ELASTICITY_KEYS.increases) parsedDefaults.increases = numericValue;
+      if (key === ELASTICITY_KEYS.decreases) parsedDefaults.decreases = numericValue;
     }
   }
 
@@ -666,7 +744,18 @@ export function loadDataFromCsv(csvText: string): boolean {
   const parsedNodes: GraphNode[] = [];
 
   for (const row of sections.nodes!) {
-    if (!row.id) continue;
+    if (!row.id) {
+      errors.push(finding("identifier-missing", "ignored",
+        "A box has no id and is dropped; its identity cannot be rewritten safely.",
+        { fix: canonicalIdentifierGuidance() }));
+      continue;
+    }
+    if (!isCanonicalIdentifier(row.id)) {
+      errors.push(finding("identifier-invalid", "ignored",
+        "The box id `" + row.id + "` is not canonical. The box is dropped and its id is not rewritten.",
+        { fix: canonicalIdentifierGuidance() }));
+      continue;
+    }
     if (seenNodeIds.has(row.id)) {
       errors.push(finding("duplicate-id", "ignored",
         "A second box also has the id `" + row.id + "`. The later one is dropped.",
@@ -695,7 +784,9 @@ export function loadDataFromCsv(csvText: string): boolean {
     // `category` is a pipe-separated list of category ids. Each id's class
     // (primary/secondary) decides how it renders. Unknown ids are dropped with
     // a warning; a node with no valid category at all is skipped.
-    const rawCatIds = String(row.category == null ? "" : row.category).split("|").map(s => s.trim()).filter(Boolean);
+    // Category references are identities too. Keep each authored token exact:
+    // trimming here would turn ` cat` into a different, apparently valid id.
+    const rawCatIds = String(row.category == null ? "" : row.category).split("|").filter(Boolean);
     const seenCat = new Set<string>();
     const validCatIds = rawCatIds.filter(id => categoryIdSet.has(id) && !seenCat.has(id) && seenCat.add(id));
     for (const u of new Set(rawCatIds.filter(id => !categoryIdSet.has(id)))) {
@@ -742,13 +833,23 @@ export function loadDataFromCsv(csvText: string): boolean {
           "Its starting value is 0. The what-if maths divides by the starting value, so it " +
           "must be positive or blank. The starting value is ignored.",
           { boxId: row.id, fix: "Use a positive number, or leave it blank." }));
+      } else if (baselineValue < 0) {
+        errors.push(finding("baseline-negative", "ignored",
+          "Its starting value is " + baselineValue + ". The what-if maths requires a positive " +
+          "starting value, so it is ignored.",
+          { boxId: row.id, fix: "Use a positive number, or leave it blank." }));
       } else {
         node.baseline = baselineValue;
       }
+    } else if (!isBlankInput(row.baseline)) {
+      errors.push(finding("baseline-not-a-number", "ignored",
+        "Its starting value `" + row.baseline + "` is not a finite decimal number and is ignored.",
+        { boxId: row.id, fix: "Use a plain finite decimal number, or leave it blank." }));
     }
     if (row.unit && row.unit !== "")  node.unit = row.unit;
     if (parseBooleanCell(row.controllable)) node.controllable = true;
-    if (row.direction && row.direction !== "") node.direction = row.direction as GraphNode["direction"];
+    const directionValue = (row.direction || "").trim();
+    if (directionValue !== "") node.direction = directionValue as GraphNode["direction"];
     // `slider_max` is a MULTIPLE of the starting value (2 = "up to twice it"),
     // unlike `min`/`max` beside it, which are absolute. Below 1 it would be a
     // ceiling under the box's own starting value — the slider could then never
@@ -765,6 +866,10 @@ export function loadDataFromCsv(csvText: string): boolean {
       } else {
         node.sliderMax = sliderMaxValue;
       }
+    } else if (!isBlankInput(row.slider_max)) {
+      errors.push(finding("slider-max-not-a-number", "ignored",
+        "Its slider max `" + row.slider_max + "` is not a finite decimal number and is ignored.",
+        { boxId: row.id, fix: "Use a finite decimal number of at least 1, or leave it blank." }));
     }
 
     // ── Optional per-box calculation rules (all blank in an older CSV) ──────
@@ -795,6 +900,16 @@ export function loadDataFromCsv(csvText: string): boolean {
     // impossible box, so we name it and drop both bounds.
     const minValue = parseNumericCell(row.min);
     const maxValue = parseNumericCell(row.max);
+    if (minValue === undefined && !isBlankInput(row.min)) {
+      errors.push(finding("minimum-not-a-number", "ignored",
+        "Its minimum `" + row.min + "` is not a finite decimal number and is ignored.",
+        { boxId: row.id, fix: "Use a plain finite decimal number, or leave it blank." }));
+    }
+    if (maxValue === undefined && !isBlankInput(row.max)) {
+      errors.push(finding("maximum-not-a-number", "ignored",
+        "Its maximum `" + row.max + "` is not a finite decimal number and is ignored.",
+        { boxId: row.id, fix: "Use a plain finite decimal number, or leave it blank." }));
+    }
     if (minValue !== undefined && maxValue !== undefined && minValue > maxValue) {
       errors.push(finding("limits-crossed", "ignored",
         "Its lowest allowed value (" + minValue + ") is above its highest (" + maxValue +
@@ -808,6 +923,13 @@ export function loadDataFromCsv(csvText: string): boolean {
     parsedNodes.push(node);
   }
 
+  if (parsedNodes.length === 0) {
+    errors.push(finding("nodes-empty-after-validation", "ignored",
+      "No box has a usable canonical id and valid row, column, and category references. The map is not loaded.",
+      { fix: "Correct at least one box and its references before loading." }));
+    return failLoad();
+  }
+
   // ───── Edges (with foreign-key + effect validation) ─────────────────────
   const nodeIdSet = new Set(parsedNodes.map(n => n.id));
   const parsedEdges: Edge[] = [];
@@ -815,6 +937,13 @@ export function loadDataFromCsv(csvText: string): boolean {
   if (sections.edges) {
     for (const row of sections.edges) {
       if (!row.from || !row.to) continue;
+      if (!isCanonicalIdentifier(row.from) || !isCanonicalIdentifier(row.to)) {
+        errors.push(finding("identifier-invalid", "ignored",
+          "A link has a source or target id with invalid characters or boundary whitespace. " +
+          "The link is dropped and neither identity is rewritten.",
+          { fix: canonicalIdentifierGuidance() }));
+        continue;
+      }
       if (!nodeIdSet.has(row.from)) {
         errors.push(finding("link-dangling", "ignored",
           "A link starts at `" + row.from + "`, which is not a box on this map. The link is dropped.",
@@ -828,7 +957,7 @@ export function loadDataFromCsv(csvText: string): boolean {
         continue;
       }
 
-      const effect = (row.effect || "enables").toLowerCase();
+      const effect = (row.effect || "enables").trim().toLowerCase();
       if (!EFFECT_OPTIONS.includes(effect)) {
         errors.push(finding("link-bad-effect", "ignored",
           "The link " + row.from + " → " + row.to + " has effect `" + row.effect +
@@ -845,6 +974,12 @@ export function loadDataFromCsv(csvText: string): boolean {
       };
       const elasticityValue = parseNumericCell(row.elasticity);
       if (elasticityValue !== undefined) edge.elasticity = elasticityValue;
+      else if (!isBlankInput(row.elasticity)) {
+        errors.push(finding("elasticity-not-a-number", "ignored",
+          "The link " + row.from + " → " + row.to + " has strength `" + row.elasticity +
+          "`, which is not a finite decimal number. Its effect default is used.",
+          { boxId: row.to, fix: "Use a plain finite decimal number, or leave it blank." }));
+      }
       // Line style: "dashed" or (default) solid. Only stored when dashed, so an
       // old CSV with no `style` column loads as solid.
       if ((row.style || "").trim().toLowerCase() === "dashed") edge.style = "dashed";
@@ -864,7 +999,18 @@ export function loadDataFromCsv(csvText: string): boolean {
 
   if (sections.params) {
     for (const row of sections.params) {
-      if (!row.id) continue;
+      if (!row.id) {
+        errors.push(finding("identifier-missing", "ignored",
+          "A constant has no id and is dropped; its identity cannot be rewritten safely.",
+          { fix: canonicalIdentifierGuidance() }));
+        continue;
+      }
+      if (!isCanonicalIdentifier(row.id)) {
+        errors.push(finding("identifier-invalid", "ignored",
+          "The constant id `" + row.id + "` is not canonical. The constant is dropped and its id is not rewritten.",
+          { fix: canonicalIdentifierGuidance() }));
+        continue;
+      }
       if (seenParamIds.has(row.id)) {
         errors.push(finding("duplicate-constant", "ignored",
           "A second constant also has the id `" + row.id + "`. The later one is dropped.",
@@ -896,6 +1042,9 @@ export function loadDataFromCsv(csvText: string): boolean {
   }
 
   // ───── Commit to global state ───────────────────────────────────────────
+  // Only a successful transaction may restart deterministic edge allocation.
+  // Rejected loads retain both the previous graph and its next unused id.
+  _edgeIdSeq = 0;
   setStreams(parsedStreams);
   setStages(parsedStages);
   setCategories(parsedCategories);
@@ -913,6 +1062,12 @@ export function loadDataFromCsv(csvText: string): boolean {
   state.selectedNodeIds = new Set();
   state.selectedEdgeId = null;
   state.hoveredNodeId = null;
+  // Search results retain node object references. A successful replacement
+  // invalidates every one of them, so clear the query and focus before any
+  // keyboard or pointer event can activate a box from the previous map.
+  state.searchQuery = "";
+  state.searchMatches = [];
+  state.searchFocusIndex = 0;
   state.hiddenStreams = new Set();
   state.hiddenCategories = new Set();
   state.hiddenStages = new Set();
@@ -925,7 +1080,7 @@ export function loadDataFromCsv(csvText: string): boolean {
   // next, silently showing a change against every starting value the user had
   // not touched. (18-main reads the UI slot before this runs, so the write here
   // can't clobber the restore that follows it.)
-  state.userOverrides = {};
+  state.userOverrides = createIdentifierRecord();
   saveUiStateToStorage();
   // A pass belongs to the map it was started on: the queue, the marks and the
   // rail are all about boxes that may not exist in the file just opened. Ending
@@ -936,10 +1091,16 @@ export function loadDataFromCsv(csvText: string): boolean {
   // on, and carrying one across a load would attach somebody's sign-off to a
   // box in a file they never saw. Rows naming a box that is not on this map are
   // dropped for the same reason.
-  state.reviews = {};
+  state.reviews = createIdentifierRecord();
   if (sections.reviews) {
     for (const row of sections.reviews as any[]) {
       if (!row.box) continue;
+      if (!isCanonicalIdentifier(row.box)) {
+        errors.push(finding("identifier-invalid", "ignored",
+          "The review box id `" + row.box + "` is not canonical. The review is dropped and its id is not rewritten.",
+          { fix: canonicalIdentifierGuidance() }));
+        continue;
+      }
       // A row about a box this file does not have is kept ONLY when it carries a
       // removal date — that is a tombstone, a box this map had and somebody
       // deleted, and losing it would lose the review with it. Without one, the
@@ -952,8 +1113,20 @@ export function loadDataFromCsv(csvText: string): boolean {
       // never as an agreement. A row this build does not understand must not
       // become somebody's sign-off, which is the one mistake the whole record
       // exists to prevent.
-      const verdict = row.verdict === "agreed" ? "agreed"
-                    : row.verdict === "flagged" ? "flagged" : "none";
+      const verdictValue = (row.verdict || "").trim().toLowerCase();
+      const verdict = verdictValue === "agreed" ? "agreed"
+                    : verdictValue === "flagged" ? "flagged" : "none";
+      const flaggedSources: string[] = [];
+      for (const flaggedSource of String(row.flagged || "").split("|").filter(Boolean)) {
+        if (!isCanonicalIdentifier(flaggedSource)) {
+          errors.push(finding("identifier-invalid", "ignored",
+            "The review for `" + row.box + "` contains an invalid flagged source id `" +
+            flaggedSource + "`. That source is dropped and its identity is not rewritten.",
+            { boxId: row.box, fix: canonicalIdentifierGuidance() }));
+          continue;
+        }
+        flaggedSources.push(flaggedSource);
+      }
       state.reviews[row.box] = {
         boxId: row.box,
         verdict: verdict,
@@ -961,7 +1134,7 @@ export function loadDataFromCsv(csvText: string): boolean {
         date: row.date || "",
         note: row.note || "",
         fingerprint: row.fingerprint || "",
-        flaggedSources: String(row.flagged || "").split("|").map(s => s.trim()).filter(Boolean),
+        flaggedSources: flaggedSources,
         // Absent from files written before these columns existed. A flag with no
         // raised-on date reads as raised on the day of the verdict, which is the
         // only honest guess available and is right for every file this build

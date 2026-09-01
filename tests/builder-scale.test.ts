@@ -470,3 +470,45 @@ describe("wizard validation and sort order are computed once per render pass", (
     expect(sortedBuilderIndices("nodes")).not.toEqual(before);
   });
 });
+
+describe("wizard canonical input validation", () => {
+  beforeEach(() => {
+    seedBuilder(1, 0, 4);
+  });
+
+  it("rejects unsafe identifiers and colours without rewriting them", () => {
+    state.builder.streams[0].id = 'ops" onload="alert(1)';
+    state.builder.streams[0].color = "url(javascript:alert(1))";
+    state.builder.nodes[0].id = "constructor";
+
+    const validation = validateBuilder();
+    expect(validation.invalidIdentifiers).toEqual(new Set([
+      'ops" onload="alert(1)',
+      "constructor",
+    ]));
+    expect(validation.errors.join(" ")).toMatch(/literal hexadecimal colour/);
+    expect(state.builder.streams[0].id).toBe('ops" onload="alert(1)');
+  });
+
+  it("rejects boundary whitespace in builder identities without trimming it", () => {
+    state.builder.streams[0].id = " ops ";
+
+    const validation = validateBuilder();
+
+    expect(validation.invalidIdentifiers).toContain(" ops ");
+    expect(validation.errors.join(" ")).toMatch(/will not be rewritten/i);
+    expect(state.builder.streams[0].id).toBe(" ops ");
+  });
+
+  it("shares strict finite and domain numeric rules with import", () => {
+    state.builder.nodes[0].baseline = "12xyz";
+    state.builder.nodes[0].sliderMax = 0.5;
+    state.builder.nodes[0].minValue = 10;
+    state.builder.nodes[0].maxValue = 5;
+
+    const messages = validateBuilder().errors.join(" ");
+    expect(messages).toMatch(/starting value.*not a finite decimal/i);
+    expect(messages).toMatch(/slider max below 1/i);
+    expect(messages).toMatch(/minimum above its maximum/i);
+  });
+});

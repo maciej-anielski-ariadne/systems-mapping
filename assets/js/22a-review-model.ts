@@ -33,6 +33,13 @@ const SOLVER_CONVERGENCE_EPSILON = 1e-7;
 const SOLVER_LOGARITHM_RATIO_FLOOR = 1e-6;
 const DISPLAY_CHANGE_THRESHOLD_PERCENT = 0.05;
 
+// A snapshot is immutable by contract. WeakMap identity therefore gives every
+// render and proposal preview a revision-safe cache without retaining old maps.
+const solvedValuesBySnapshot = new WeakMap<ReviewModelSnapshot, Record<string, number>>();
+const findingsBySnapshot = new WeakMap<ReviewModelSnapshot, Finding[]>();
+const proposalsBySnapshot = new WeakMap<ReviewModelSnapshot, Map<string, ReviewProposal[]>>();
+const previewsBySnapshot = new WeakMap<ReviewModelSnapshot, Map<string, ReviewProposalPreview>>();
+
 export interface ReviewModelSnapshot {
   nodes: GraphNode[];
   edges: Edge[];
@@ -100,6 +107,9 @@ export function applyOperationsToReviewSnapshot(
 }
 
 export function solveReviewSnapshot(snapshot: ReviewModelSnapshot): Record<string, number> {
+  const cachedValues = solvedValuesBySnapshot.get(snapshot);
+  if (cachedValues) return cachedValues;
+
   const values: Record<string, number> = {};
   const previousValues: Record<string, number> = {};
   const nodeByIdentifier = Object.fromEntries(snapshot.nodes.map(node => [node.id, node]));
@@ -113,7 +123,17 @@ export function solveReviewSnapshot(snapshot: ReviewModelSnapshot): Record<strin
   for (const node of snapshot.nodes) {
     if (node.baseline !== undefined && node.baseline !== null) values[node.id] = node.baseline;
     if (node.formula) {
-      try { parsedFormulaByNodeIdentifier[node.id] = parseFormula(node.formula); }
+      try {
+        const parsedFormula = parseFormula(node.formula);
+        const linkedSourceIdentifiers = new Set(
+          (incomingConnections[node.id] || []).map(connection => connection.from),
+        );
+        const missingDependencyArrow = parsedFormula.references.concat(parsedFormula.delayReferences)
+          .some(identifier => nodeByIdentifier[identifier] && !linkedSourceIdentifiers.has(identifier));
+        if (!missingDependencyArrow || node.controllable) {
+          parsedFormulaByNodeIdentifier[node.id] = parsedFormula;
+        }
+      }
       catch { /* An unreadable formula deliberately falls back to connections. */ }
     }
   }
@@ -158,6 +178,7 @@ export function solveReviewSnapshot(snapshot: ReviewModelSnapshot): Record<strin
 
     if (largestRelativeChange < SOLVER_CONVERGENCE_EPSILON) break;
   }
+  solvedValuesBySnapshot.set(snapshot, values);
   return values;
 }
 
@@ -212,6 +233,9 @@ function makeFinding(
 }
 
 export function validateReviewSnapshot(snapshot: ReviewModelSnapshot): Finding[] {
+  const cachedFindings = findingsBySnapshot.get(snapshot);
+  if (cachedFindings) return cachedFindings;
+
   const findings: Finding[] = [];
   const values = solveReviewSnapshot(snapshot);
   const nodeByIdentifier = Object.fromEntries(snapshot.nodes.map(node => [node.id, node]));
@@ -236,7 +260,14 @@ export function validateReviewSnapshot(snapshot: ReviewModelSnapshot): Finding[]
         "Untick adjustable, or delete the formula.",
         { kind: "node-field", nodeId: node.id, field: "controllable" }));
     }
-    if (parsedFormula && !node.controllable && node.combine) {
+    const linkedSourceIdentifiers = new Set(
+      snapshot.edges.filter(connection => connection.to === node.id).map(connection => connection.from),
+    );
+    const missingDependencyArrow = !!parsedFormula && parsedFormula.references.concat(parsedFormula.delayReferences)
+      .some(identifier => nodeByIdentifier[identifier] && !linkedSourceIdentifiers.has(identifier));
+    const formulaIsActive = !!parsedFormula && !node.controllable && !missingDependencyArrow;
+
+    if (formulaIsActive && node.combine) {
       findings.push(makeFinding("combine-beats-formula", "ignored", node.id, "combine",
         "It has both a combine rule (`" + node.combine + "`) and a formula. The combine rule describes how links add up; the formula replaces them, so the combine rule is ignored.",
         "Clear the combine cell.",
@@ -245,7 +276,6 @@ export function validateReviewSnapshot(snapshot: ReviewModelSnapshot): Finding[]
 
     if (parsedFormula && !node.controllable) {
       const referencedIdentifiers = new Set([...parsedFormula.references, ...parsedFormula.delayReferences]);
-      const linkedSourceIdentifiers = new Set(snapshot.edges.filter(connection => connection.to === node.id).map(connection => connection.from));
       for (const referencedIdentifier of referencedIdentifiers) {
         if (paramIdentifiers.has(referencedIdentifier)) continue;
         if (!nodeByIdentifier[referencedIdentifier]) {
@@ -257,7 +287,7 @@ export function validateReviewSnapshot(snapshot: ReviewModelSnapshot): Finding[]
         }
         if (!linkedSourceIdentifiers.has(referencedIdentifier)) {
           findings.push(makeFinding("name-has-no-link", "mismatch", node.id, referencedIdentifier,
-            "Its formula uses `" + referencedIdentifier + "`, but no link joins the two — the map's links must show every causal input.",
+            "Its formula uses `" + referencedIdentifier + "`, but no link joins the two — the map's links must show every causal input. The formula is ignored until the link is drawn, so the box falls back to its incoming links.",
             "Draw the link from `" + referencedIdentifier + "`, or drop the term.",
             { kind: "connection", sourceId: referencedIdentifier, targetId: node.id }));
         }
@@ -269,6 +299,7 @@ export function validateReviewSnapshot(snapshot: ReviewModelSnapshot): Finding[]
         }
       }
       for (const linkedSourceIdentifier of linkedSourceIdentifiers) {
+        if (!formulaIsActive) break;
         if (referencedIdentifiers.has(linkedSourceIdentifier)) continue;
         findings.push(makeFinding("link-unused", "mismatch", node.id, linkedSourceIdentifier,
           "A link from `" + linkedSourceIdentifier + "` points at it but its formula never reads that link.",
@@ -292,6 +323,7 @@ export function validateReviewSnapshot(snapshot: ReviewModelSnapshot): Finding[]
       }
     }
   }
+  findingsBySnapshot.set(snapshot, findings);
   return findings;
 }
 
@@ -305,11 +337,20 @@ export function refreshLiveReviewFindings(): void {
 }
 
 export function reviewProposalsForFinding(finding: Finding, snapshot: ReviewModelSnapshot): ReviewProposal[] {
+  const issueKey = finding.issueKey || [finding.kind, finding.boxId || "map", finding.message].join(":");
+  let snapshotProposals = proposalsBySnapshot.get(snapshot);
+  if (!snapshotProposals) {
+    snapshotProposals = new Map<string, ReviewProposal[]>();
+    proposalsBySnapshot.set(snapshot, snapshotProposals);
+  }
+  const cachedProposals = snapshotProposals.get(issueKey);
+  if (cachedProposals) return cachedProposals;
+
   const node = finding.boxId ? snapshot.nodes.find(candidate => candidate.id === finding.boxId) : undefined;
   if (!finding.target || !node) return [];
   const proposals: ReviewProposal[] = [];
   const addProposal = (id: string, label: string, explanation: string, operations: ReviewFixOperation[]): void => {
-    proposals.push({ id: finding.issueKey + ":" + id, label, explanation, operations });
+    proposals.push({ id: issueKey + ":" + id, label, explanation, operations });
   };
 
   if (finding.kind === "slider-beats-formula") {
@@ -341,10 +382,6 @@ export function reviewProposalsForFinding(finding: Finding, snapshot: ReviewMode
   } else if (finding.kind === "link-unused" && finding.target.kind === "connection") {
     addProposal("remove-link", "Remove the unused connection", "The formula does not read this connection, so remove it from the picture.",
       [{ kind: "remove-connection", sourceId: finding.target.sourceId, targetId: finding.target.targetId }]);
-    if (node.formula) {
-      addProposal("read-link", "Include it in the formula", "Multiply the existing formula by this input's ratio.",
-        [{ kind: "set-node-field", nodeId: node.id, field: "formula", value: "(" + node.formula + ") * (" + finding.target.sourceId + " / " + finding.target.sourceId + ")" }]);
-    }
   } else if (finding.kind === "name-unknown" && finding.target.kind === "formula-reference" && node.formula) {
     const replacementIdentifier = closestIdentifier(finding.target.referencedId, snapshot);
     if (replacementIdentifier) {
@@ -368,13 +405,36 @@ export function reviewProposalsForFinding(finding: Finding, snapshot: ReviewMode
     }
   }
 
-  return rankReviewProposals(snapshot, proposals).slice(0, 3);
+  const rankedProposals = rankReviewProposals(snapshot, proposals).slice(0, 3);
+  snapshotProposals.set(issueKey, rankedProposals);
+  return rankedProposals;
+}
+
+// Used by the collapsed Review list. This deliberately answers only whether a
+// proposal can exist; generating/ranking proposals performs detached solves and
+// belongs to the one card the reader expands.
+export function reviewFindingCanHaveProposal(finding: Finding, snapshot: ReviewModelSnapshot): boolean {
+  if (!finding.target || !finding.boxId || !snapshot.nodes.some(node => node.id === finding.boxId)) return false;
+  if (finding.kind === "slider-beats-formula" || finding.kind === "combine-beats-formula" ||
+      finding.kind === "formula-unreadable" || finding.kind === "name-has-no-link" ||
+      finding.kind === "link-unused" || finding.kind === "rest-drift") return true;
+  return finding.kind === "name-unknown" && finding.target.kind === "formula-reference" &&
+    closestIdentifier(finding.target.referencedId, snapshot) !== null;
 }
 
 export function previewReviewProposal(
   snapshot: ReviewModelSnapshot,
   proposal: ReviewProposal,
 ): ReviewProposalPreview {
+  let snapshotPreviews = previewsBySnapshot.get(snapshot);
+  if (!snapshotPreviews) {
+    snapshotPreviews = new Map<string, ReviewProposalPreview>();
+    previewsBySnapshot.set(snapshot, snapshotPreviews);
+  }
+  const previewKey = proposal.id + "\u0000" + JSON.stringify(proposal.operations);
+  const cachedPreview = snapshotPreviews.get(previewKey);
+  if (cachedPreview) return cachedPreview;
+
   const beforeFindings = validateReviewSnapshot(snapshot);
   const afterSnapshot = applyOperationsToReviewSnapshot(snapshot, proposal.operations);
   const afterFindings = validateReviewSnapshot(afterSnapshot);
@@ -395,12 +455,14 @@ export function previewReviewProposal(
   }
   valueChanges.sort((left, right) => Math.abs(right.percentChange ?? Infinity) - Math.abs(left.percentChange ?? Infinity));
 
-  return {
+  const preview = {
     issuesCleared: [...beforeKeys].filter(key => !afterKeys.has(key)).length,
     issuesIntroduced: [...afterKeys].filter(key => !beforeKeys.has(key)).length,
     remainingIssueCount: afterFindings.length,
     valueChanges,
   };
+  snapshotPreviews.set(previewKey, preview);
+  return preview;
 }
 
 function rankReviewProposals(

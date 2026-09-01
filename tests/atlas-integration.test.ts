@@ -21,9 +21,25 @@ import {
   atlasIsOpen,
   atlasStartCandidates,
   closeAtlas,
+  cutAtlasLinksAfterBlockedElements,
   initAtlasStage,
   openAtlas,
 } from "../assets/js/21-atlas-view";
+
+describe("blocked-link propagation", () => {
+  it("visits each retained link at most once on a 300-element cut", () => {
+    const links = new Set<string>();
+    for (let index = 0; index < 299; index++) {
+      links.add("element-" + index + "\u0000element-" + (index + 1));
+      if (index + 2 < 300) links.add("element-" + index + "\u0000element-" + (index + 2));
+    }
+
+    const result = cutAtlasLinksAfterBlockedElements(links, new Set(["element-0"]));
+
+    expect(result.links).toEqual(new Set());
+    expect(result.scannedLinkCount).toBeLessThanOrEqual(links.size);
+  });
+});
 
 const here = dirname(fileURLToPath(import.meta.url));
 const sampleCsv = readFileSync(resolve(here, "../assets/data/sample.csv"), "utf-8");
@@ -844,6 +860,21 @@ describe("a row that stands for several boxes", () => {
     expect(forkRows().length).toBeGreaterThan(before);
   });
 
+  it("carries opaque, unique handles instead of serialized element paths", () => {
+    const rows = forkRows();
+    const handles = rows.map(row => row.dataset.forkpath || "");
+
+    expect(handles.every(handle => handle.length > 0)).toBe(true);
+    expect(new Set(handles).size).toBe(handles.length);
+    expect(handles.every(handle => !handle.includes("\u0001"))).toBe(true);
+
+    // The folded element identifier contains the separator that broke the old
+    // serialized-path scheme. Its opaque handle must still resolve correctly.
+    const before = rows.length;
+    foldedRow()!.click();
+    expect(forkRows().length).toBeGreaterThan(before);
+  });
+
   it("names the boxes it stands for", () => {
     foldedRow()!.click();
     const named = chips().map(c => c.textContent);
@@ -922,5 +953,20 @@ describe("feedback", () => {
     // link to another view.
     expect(tangles[0].querySelectorAll(".nd").length).toBeGreaterThan(2);
     expect(tangles[0].querySelectorAll(".ch").length).toBeGreaterThan(0);
+  });
+
+  it("lights the exact wheel chords after a rim box is picked", () => {
+    loadDataFromCsv(advancedCsv);
+    const start = NODES.find(node => node.label === "Website visits") || NODES[0];
+    openAtlas(start.id);
+
+    const tangle = document.querySelector("#atlas-stage g.n[data-loop]")!;
+    tangle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+    const rimBox = document.querySelector("#atlas-stage g.n.focus .nd") as SVGElement;
+    expect(rimBox).not.toBeNull();
+    rimBox.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+
+    const selectedChords = document.querySelectorAll("#atlas-stage g.n.focus .ch.on");
+    expect(selectedChords.length).toBeGreaterThan(0);
   });
 });

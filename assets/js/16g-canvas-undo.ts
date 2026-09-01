@@ -30,11 +30,13 @@
 import { cloneEdgeForUndo, cloneNodeForUndo } from "./04-utils";
 import { loadDataFromCsv } from "./06-data-loader";
 import { serializeLiveStateToCsv } from "./05a-csv-serializer";
-import { scrollNodeIntoView, selectNode } from "./09-graph-selection";
+import { focusNode, scrollNodeIntoView } from "./09-graph-selection";
 import { render } from "./11-rendering";
 import { renderDetailPanel } from "./15-detail-panel";
 import { applyZoom } from "./17-events";
 import { EDGES, NODES, layout, nodeById, edgeById, state } from "./03-state";
+import { scheduleCsvSave } from "./04a-storage";
+import { reconcileReviews } from "./24-review-record";
 
 export const UNDO_TOAST_DURATION_MS = 6000;
 export const HISTORY_CAP = 50;
@@ -256,6 +258,15 @@ export function _restoreSnapshot(csv: string): boolean {
   // below to discover which elements the undo/redo actually changed. Skipped
   // wholesale on a big map (see _shouldDiffUndo).
   const before = _shouldDiffUndo() ? _snapshotSignatures() : null;
+  // Review verdicts are an audit log outside model undo. Preserve the current
+  // record while the model snapshot is restored, then reconcile tombstones
+  // against whichever boxes the undo/redo brought back or removed.
+  const retainedReviews = Object.fromEntries(
+    Object.entries(state.reviews).map(([boxId, entry]) => [boxId, {
+      ...entry,
+      flaggedSources: entry.flaggedSources.slice(),
+    }]),
+  );
   const saved = {
     selectedNodeId: state.selectedNodeId,
     selectedEdgeId: state.selectedEdgeId || null,
@@ -282,14 +293,20 @@ export function _restoreSnapshot(csv: string): boolean {
   }
   if (!ok) return false;
 
+  state.reviews = retainedReviews;
+  reconcileReviews();
+  const restoredCsv = serializeLiveStateToCsv(null, { compact: true });
+  state.lastCsvSnapshot = restoredCsv;
+  scheduleCsvSave(restoredCsv);
+
   // Re-apply transient UI state.
   if (saved.zoomLevel && typeof applyZoom === "function") {
     state.zoomLevel = saved.zoomLevel;
     applyZoom();
   }
   if (state.canvasEdit) state.canvasEdit.editMode = !!saved.editMode;
-  if (saved.selectedNodeId && nodeById[saved.selectedNodeId] && typeof selectNode === "function") {
-    selectNode(saved.selectedNodeId);
+  if (saved.selectedNodeId && nodeById[saved.selectedNodeId] && typeof focusNode === "function") {
+    focusNode(saved.selectedNodeId);
   }
   if (saved.selectedEdgeId && edgeById[saved.selectedEdgeId]) {
     state.selectedEdgeId = saved.selectedEdgeId;

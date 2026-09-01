@@ -7,7 +7,7 @@
 // snapshot and one Undo step, even when a proposal changes several things.
 // =============================================================================
 
-import { EDGES, NODES, setEdges } from "./03-state";
+import { EDGES, NODES, markEdgeGeometryChanged, setEdges } from "./03-state";
 import { applyCanvasMutation } from "./16f-canvas-mutations";
 import type { Edge, ReviewFixOperation, ReviewProposal } from "./types";
 
@@ -47,11 +47,13 @@ function applyOperationToLiveModel(operation: ReviewFixOperation): void {
     };
     if (operation.elasticity !== undefined) connection.elasticity = operation.elasticity;
     EDGES.push(connection);
+    markEdgeGeometryChanged();
     return;
   }
   if (connectionIndex >= 0) {
     EDGES[connectionIndex].effect = operation.effect;
     if (operation.elasticity === undefined) delete EDGES[connectionIndex].elasticity;
     else EDGES[connectionIndex].elasticity = operation.elasticity;
+    markEdgeGeometryChanged();
   }
 }

@@ -90,6 +90,17 @@ export function flushPendingSaves(): void {
   if (_uiSaveTimer) { clearTimeout(_uiSaveTimer); _uiSaveTimer = null; saveUiStateToStorage(); }
 }
 
+// Cancel every delayed storage write without persisting it. Production
+// lifecycle paths normally flush; this cancellation-only boundary is for a
+// discarded lifecycle (notably the isolated state between automated tests),
+// where writing an older map after reset would be strictly wrong.
+export function cancelPendingStorageSavesWithoutFlushing(): void {
+  if (_csvSaveTimer) { clearTimeout(_csvSaveTimer); _csvSaveTimer = null; }
+  _pendingCsv = null;
+  if (_builderSaveTimer) { clearTimeout(_builderSaveTimer); _builderSaveTimer = null; }
+  if (_uiSaveTimer) { clearTimeout(_uiSaveTimer); _uiSaveTimer = null; }
+}
+
 // `pagehide` covers normal closes/navigations; `visibilitychange → hidden`
 // additionally covers mobile tab switches where pagehide may never fire.
 if (typeof window !== "undefined") {
@@ -107,6 +118,14 @@ export function loadCsvFromStorage(): string | null {
 }
 
 export function clearCsvFromStorage(): void {
+  // Clearing the current map is a lifecycle boundary, not just a storage
+  // deletion. A queued write from the previous map must not be allowed to fire
+  // afterwards and resurrect it on the next refresh.
+  if (_csvSaveTimer) {
+    clearTimeout(_csvSaveTimer);
+    _csvSaveTimer = null;
+  }
+  _pendingCsv = null;
   try { localStorage.removeItem(STORAGE_KEY_CSV); } catch (_) {}
 }
 

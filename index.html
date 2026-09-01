@@ -3,9 +3,9 @@
 ================================================================================
  Ariadne Maps — single-page web app
 
- This is the only file you need to open in a browser. Everything else is loaded
- from the `assets/` folder next to it. The app is fully self-contained:
- fonts are bundled locally, no internet connection is needed.
+ This is the development entry point. Run `npm run dev` to serve its TypeScript
+ modules. For the self-contained offline app, run `npm run build` and open
+ `dist/systems-map.html`; it bundles the modules, styles and fonts into one file.
 
  ─── Where to find what ────────────────────────────────────────────────────
    assets/fonts/     Web fonts (Fraunces, IBM Plex Sans, IBM Plex Mono).
@@ -315,7 +315,7 @@
     <!-- Scrollable area containing the rendered SVG. JS in 11-rendering.js
          writes the SVG contents on every render. -->
     <div class="viz-scroll" id="viz-scroll">
-      <svg id="viz-svg" class="viz-svg"></svg>
+      <svg id="viz-svg" class="viz-svg" role="group" aria-label="Causal map. Tab through boxes, rows and columns; press Enter or Space to activate a focused item."></svg>
     </div>
 
     <!-- Map controls cluster (bottom-right): highlight-depth + zoom. Stacked

@@ -23,7 +23,7 @@ import { render } from "./11-rendering";
 import { renderSidebar } from "./13-sidebar";
 import { saveUiStateToStorage } from "./04a-storage";
 import { refreshTraceForSelection } from "./09-graph-selection";
-import { nodeCategoryIds, splitCategoriesByClass } from "./04-utils";
+import { isNodeVisibleWithFilters } from "./04-utils";
 
 // Hide / show a layout-affecting "dimension" — streams collapse their row,
 // stages collapse their column. Flips the id's membership in `hiddenSet`, clears
@@ -109,19 +109,12 @@ export function isCategoryVisible(categoryId: string): boolean {
 // A node is visible only if its stream and its stage are visible and neither
 // class of tag it carries has been filtered away entirely.
 export function isNodeVisible(node: GraphNode): boolean {
-  if (state.hiddenStreams.has(node.stream)) return false;
-  if (state.hiddenStages.has(node.stage)) return false;
-  // Category filters are split by CLASS — fill tags and corner tags are judged
-  // separately. Hiding a tag takes its colour off every box carrying it, and a
-  // box leaves the map when a class it participates in loses ALL of its
-  // colours: a one-fill box whose fill tag is hidden goes even if its corner
-  // tags are still shown, and vice versa. A box carrying no tag of a class is
-  // simply not judged on that class (and one with no tags at all is
-  // unaffected by these filters).
-  const { primary, secondary } = splitCategoriesByClass(nodeCategoryIds(node));
-  if (primary.length   > 0 && primary.every(c   => state.hiddenCategories.has(c))) return false;
-  if (secondary.length > 0 && secondary.every(c => state.hiddenCategories.has(c))) return false;
-  return true;
+  return isNodeVisibleWithFilters(
+    node,
+    state.hiddenStreams,
+    state.hiddenStages,
+    state.hiddenCategories,
+  );
 }
 
 // A (real) edge is drawn only if neither its effect nor its line style is

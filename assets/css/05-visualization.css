@@ -76,6 +76,14 @@ body.panning * {
   cursor: pointer;
 }
 
+.node-group:focus-visible .node-rect,
+.row-label-group:focus-visible .row-label-bg,
+.col-header-group:focus-visible .col-header-hit {
+  stroke: var(--act-hi);
+  stroke-width: 3px;
+  outline: none;
+}
+
 .node-rect {
   transition: filter var(--dur-fast), opacity var(--dur-fast);
   /* The renderer emits an inline stroke on every node rect; the flat look means
@@ -693,4 +701,3 @@ body.marquee-selecting .viz-svg { cursor: crosshair; }
   stroke-dasharray: 5 4;
   pointer-events: none;
 }
-

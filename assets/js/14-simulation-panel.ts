@@ -71,7 +71,7 @@ export function renderSimulationPanel(): void {
     if (!streamNodes || streamNodes.length === 0) continue;
 
     html += '<div class="sim-stream-block">';
-    html +=   '<div class="sim-stream-header" style="--stream-color: ' + stream.color + ';">' + escapeHtml(stream.label) + '</div>';
+    html +=   '<div class="sim-stream-header" style="--stream-color: ' + escapeHtml(stream.color) + ';">' + escapeHtml(stream.label) + '</div>';
 
     for (const node of streamNodes) {
       const userMultiplier = state.userOverrides[node.id] !== undefined ? state.userOverrides[node.id] : 1.0;
@@ -96,12 +96,12 @@ export function renderSimulationPanel(): void {
       const maxValue = node.baseline! * ceiling;
       const maxPct = Math.round(ceiling * 100);
       const moved = Math.abs(userMultiplier - 1) > 0.0005;
-      html += '<div class="sim-slider-row' + (moved ? " moved" : "") + '" data-node-id="' + node.id + '">';
+      html += '<div class="sim-slider-row' + (moved ? " moved" : "") + '" data-node-id="' + escapeHtml(node.id) + '">';
       html +=   '<span class="sim-slider-name" title="' + escapeHtml(node.label) + '">' + escapeHtml(node.label) + '</span>';
-      html +=   '<input type="number" class="sim-value-input" step="any" min="0" max="' + formatScalarInput(maxValue) + '" value="' + formatScalarInput(currentValue) + '" data-node-id="' + node.id + '" aria-label="Value of ' + escapeHtml(node.label) + ' in ' + escapeHtml(unit || "units") + '. Drag sideways or type. Up to ' + formatScalarInput(maxValue) + '." />';
+      html +=   '<input type="number" class="sim-value-input" step="any" min="0" max="' + formatScalarInput(maxValue) + '" value="' + formatScalarInput(currentValue) + '" data-node-id="' + escapeHtml(node.id) + '" aria-label="Value of ' + escapeHtml(node.label) + ' in ' + escapeHtml(unit || "units") + '. Drag sideways or type. Up to ' + formatScalarInput(maxValue) + '." />';
       html +=   '<span class="sim-slider-unit">' + escapeHtml(unit) + '</span>';
       html +=   '<span class="sim-pct-field">';
-      html +=     '<input type="number" class="sim-pct-input" step="1" min="0" max="' + maxPct + '" value="' + sliderPct + '" data-node-id="' + node.id + '" aria-label="' + escapeHtml(node.label) + ' as a percentage of its starting value. Drag sideways or type. Up to ' + maxPct + '%." />';
+      html +=     '<input type="number" class="sim-pct-input" step="1" min="0" max="' + maxPct + '" value="' + sliderPct + '" data-node-id="' + escapeHtml(node.id) + '" aria-label="' + escapeHtml(node.label) + ' as a percentage of its starting value. Drag sideways or type. Up to ' + maxPct + '%." />';
       html +=     '<span class="sim-pct-sign">%</span>';
       html +=   '</span>';
       html += '</div>';

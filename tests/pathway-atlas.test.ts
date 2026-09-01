@@ -14,20 +14,18 @@
 // values of differing length in one family, decoy families that must not be
 // grouped, and feedback loops.
 //
-// These run against assets/js/20-atlas-engine.ts — the copy the app itself
-// uses. tools/pathway-atlas.html keeps a standalone copy for dropping a CSV
-// into without the app; the app's is the one that has to be right.
+// These run against assets/js/20-atlas-engine.ts, the engine the app itself
+// uses.
 // =============================================================================
-import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { buildGraph, buildAtlas, detectLanes, END, familyLabel, strands } from "../assets/js/20-atlas-engine";
-
-// The standalone page still ships, and the last describe block below checks the
-// few things about it that are promises rather than implementation.
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const html = readFileSync(resolve(root, "tools/pathway-atlas.html"), "utf8");
+import type {
+  AtlasGraphEdge,
+  AtlasGraphNode,
+  AtlasResult,
+  AtlasSequence,
+  AtlasStrandResult,
+} from "../assets/js/20-atlas-engine";
 
 const engine = { buildGraph, buildAtlas, detectLanes, END, familyLabel, strands };
 
@@ -35,6 +33,49 @@ const E = (from: string, to: string, elasticity = 0.3) => ({
   from, to, effect: elasticity < 0 ? "decreases" : "increases", elasticity,
 });
 const N = (id: string, label: string) => ({ id, label, stream: "", category: "", controllable: false, direction: "" });
+
+describe("public Atlas type contract", () => {
+  interface AtlasContractNode extends AtlasGraphNode {
+    label: string;
+    sourceReference: string;
+  }
+
+  interface AtlasContractEdge extends AtlasGraphEdge {
+    evidenceReference: string;
+  }
+
+  it("preserves application-specific graph fields through the engine boundary", () => {
+    const contractNodes: AtlasContractNode[] = [
+      { id: "origin", label: "Origin", sourceReference: "source-a" },
+      { id: "outcome", label: "Outcome", sourceReference: "source-b" },
+    ];
+    const contractEdges: AtlasContractEdge[] = [
+      {
+        from: "origin",
+        to: "outcome",
+        elasticity: 0.5,
+        evidenceReference: "evidence-a",
+      },
+    ];
+
+    const graph = buildGraph({ nodes: contractNodes, edges: contractEdges, name: "contract" });
+    const atlas = buildAtlas(graph, "origin");
+    const strandResult = strands(atlas);
+
+    expectTypeOf(graph.byId.get("origin")).toEqualTypeOf<AtlasContractNode | undefined>();
+    expectTypeOf(graph.out.get("origin")).toEqualTypeOf<AtlasContractEdge[] | undefined>();
+    expectTypeOf(atlas).toEqualTypeOf<AtlasResult<AtlasContractEdge>>();
+    expectTypeOf(atlas.tree).toEqualTypeOf<AtlasSequence>();
+    expectTypeOf(strandResult).toEqualTypeOf<AtlasStrandResult>();
+
+    expect(graph.out.get("origin")?.[0].evidenceReference).toBe("evidence-a");
+    expect(atlas.pathways).toBe(1n);
+    expect(strandResult.list).toHaveLength(1);
+    expect(() => buildAtlas(graph, "missing-start")).toThrow(
+      'Cannot build an Atlas from unknown start box "missing-start".',
+    );
+  });
+});
 
 // Multi-word lane values ("Cat A" / "Cat B"), one family whose members' varying
 // parts are one and three words long ("Cannabis" / "Class A Drug"), and two
@@ -91,12 +132,14 @@ function crossLinkedMap() {
 }
 
 // Every reading the atlas stands for, by walking the condensed structure.
-function readings(atlas: any): string[] {
+function readings(atlas: Pick<AtlasResult, "start" | "succ">): string[] {
   const out: string[] = [], path: string[] = [];
   const walk = (n: string) => {
     if (n === engine.END) { out.push(path.join(">")); return; }
     path.push(n);
-    for (const s of atlas.succ.get(n)) walk(s);
+    const successors = atlas.succ.get(n);
+    if (!successors) throw new Error("Reading reached an element without successor data: " + n);
+    for (const s of successors) walk(s);
     path.pop();
   };
   walk(atlas.start);
@@ -105,15 +148,15 @@ function readings(atlas: any): string[] {
 
 // The same thing read off the on-screen tree, following a "joins here" into
 // the stretch it points at. These two agreeing is what "complete" means.
-function fromTree(atlas: any): string[] {
-  const expand = (seq: any[], depth = 0): string[][] => {
+function fromTree(atlas: Pick<AtlasResult, "tails" | "tree">): string[] {
+  const expand = (seq: AtlasSequence, depth = 0): string[][] => {
     if (depth > 60) throw new Error("expansion too deep");
     let acc: string[][] = [[]];
     for (const item of seq) {
       if (item.kind === "box") { acc = acc.map((p) => p.concat(item.id)); continue; }
       const subs = item.kind === "join"
-        ? expand(atlas.tails.get(item.id), depth + 1)
-        : item.alts.flatMap((a: any) => expand(a.seq, depth + 1));
+        ? expand(atlas.tails.get(item.id) || [], depth + 1)
+        : item.alts.flatMap(alternative => expand(alternative.seq, depth + 1));
       const next: string[][] = [];
       for (const p of acc) for (const s of subs) next.push(p.concat(s));
       acc = next;
@@ -123,12 +166,14 @@ function fromTree(atlas: any): string[] {
   return expand(atlas.tree).map((p) => p.join(">")).sort();
 }
 
-function boxesShown(atlas: any): Set<string> {
+function boxesShown(atlas: Pick<AtlasResult, "nodes" | "tree">): Set<string> {
   const seen = new Set<string>();
-  const walk = (seq: any[]) => {
+  const walk = (seq: AtlasSequence) => {
     for (const it of seq) {
       if (it.kind === "choice") { for (const a of it.alts) walk(a.seq); continue; }
-      for (const b of atlas.nodes.get(it.id).boxes) seen.add(b);
+      const node = atlas.nodes.get(it.id);
+      if (!node) throw new Error("Atlas tree references an unknown element: " + it.id);
+      for (const b of node.boxes) seen.add(b);
     }
   };
   walk(atlas.tree);
@@ -144,15 +189,16 @@ describe("name grouping", () => {
   });
 
   it("keeps one family together when the varying parts differ in length", () => {
-    const seizure = lanes.families.find((f: any) => f.key.endsWith("Seizure"));
+    const seizure = lanes.families.find(family => family.key.endsWith("Seizure"));
     expect(seizure?.members).toHaveLength(4);
-    expect(seizure.members.map((m: any) => m.token)).toEqual(
+    if (!seizure) throw new Error("Expected the Seizure lane family");
+    expect(seizure.members.map(member => member.token)).toEqual(
       expect.arrayContaining(["Cannabis", "Class A Drug"]),
     );
   });
 
   it("needs at least three members, and the threshold moves", () => {
-    expect(lanes.families.every((f: any) => f.members.length >= 3)).toBe(true);
+    expect(lanes.families.every(family => family.members.length >= 3)).toBe(true);
     const strict = engine.detectLanes(map.nodes, map.edges, { minMembers: 5 });
     expect(strict.families.length).toBeLessThan(lanes.families.length);
   });
@@ -251,13 +297,13 @@ describe("what is inside a feedback loop", () => {
   });
 
   it("reads polarity off the link signs", () => {
-    const byLen = Object.fromEntries(tangle.loops.map((l: any) => [l.cycle.length, l]));
+    const byLen = Object.fromEntries(tangle.loops.map(loop => [loop.cycle.length, loop]));
     expect(byLen[2].reinforcing).toBe(false);   // one negative link — balancing
     expect(byLen[3].reinforcing).toBe(true);    // none — reinforcing
   });
 
   it("reads gain off the link magnitudes", () => {
-    const byLen = Object.fromEntries(tangle.loops.map((l: any) => [l.cycle.length, l]));
+    const byLen = Object.fromEntries(tangle.loops.map(loop => [loop.cycle.length, loop]));
     expect(byLen[2].gain).toBeCloseTo(0.5 * 0.4, 10);
     expect(byLen[3].gain).toBeCloseTo(0.3 ** 3, 10);
   });
@@ -268,7 +314,7 @@ describe("what is inside a feedback loop", () => {
   });
 
   it("leaves no box in the tangle without a loop", () => {
-    const covered = new Set(tangle.loops.flatMap((l: any) => l.cycle));
+    const covered = new Set(tangle.loops.flatMap(loop => loop.cycle));
     expect([...tangle.boxes].filter((b: string) => !covered.has(b))).toEqual([]);
   });
 
@@ -330,39 +376,6 @@ describe("counting", () => {
     const atlas = engine.buildAtlas(engine.buildGraph({ nodes, edges, name: "chain" }), "n0");
     expect(atlas.pathways).toBeGreaterThan(100000n);
     expect(atlas.ms).toBeLessThan(2000);
-  });
-});
-
-// -----------------------------------------------------------------------------
-// THE PAGE ITSELF
-// -----------------------------------------------------------------------------
-// The settings that used to sit in the rail are fixed, and the demo maps are
-// gone so that nothing on screen can be mistaken for the user's own data.
-// Both are properties of the page rather than the engine, so they are checked
-// against the file's text.
-// -----------------------------------------------------------------------------
-describe("the page", () => {
-  it("ships no demo map and builds nothing until a CSV is loaded", () => {
-    expect(html).not.toMatch(/function demo\w*\s*\(/);
-    // the last statement in the page is the empty state, not a map
-    expect(html.trimEnd()).toMatch(/showEmpty\(\);\s*<\/script>\s*<\/body>\s*<\/html>$/);
-  });
-
-  it("locks the three settings that used to be switches", () => {
-    const settings = /const SETTINGS = (\{[^\n]*\});/.exec(html);
-    expect(settings).not.toBeNull();
-    expect(eval("(" + settings![1] + ")")).toEqual({
-      grouping: "loose",
-      lanes: { minMembers: 3, minTokenFamilies: 2 },
-    });
-    for (const gone of ["min-members", "min-reuse", "stop-outcomes", "map-pick"])
-      expect(html).not.toContain(gone);
-  });
-
-  it("offers the map and the loop index, and nothing else", () => {
-    const tabs = [...html.matchAll(/role="tab" data-v="(\w+)"/g)].map(m => m[1]);
-    expect(tabs).toEqual(["atlas", "loops"]);
-    expect(/const VIEWS = \{ atlas: viewAtlas, loops: viewLoops \};/.test(html)).toBe(true);
   });
 });
 

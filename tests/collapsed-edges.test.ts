@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { loadDataFromCsv } from "../assets/js/06-data-loader";
+import { loadDataFromCsv, rebuildIndexes } from "../assets/js/06-data-loader";
 import { computeRenderEdges } from "../assets/js/10a-collapsed-edges";
-import { state } from "../assets/js/03-state";
+import { setEdges, setNodes, state } from "../assets/js/03-state";
+import type { GraphNode } from "../assets/js/types";
 import { REROUTE_CSV } from "./fixtures/graphs";
 
 // Build a CSV whose middle stage (s2) is a dense hidden region: `mid` nodes,
@@ -96,5 +97,36 @@ describe("computeRenderEdges — A(s1) → B(s2) → C(s3)", () => {
     expect(edges.every((e) => e.from !== "b" && e.to !== "b")).toBe(true);
     expect(synthetic).toHaveLength(1);
     expect(synthetic[0]).toMatchObject({ from: "a", to: "c", effect: "increases" });
+  });
+});
+
+describe("computeRenderEdges — collision-free endpoint identity", () => {
+  it("keeps distinct synthetic pairs even when programmatic ids contain the old delimiter", () => {
+    const node = (id: string, stage: string): GraphNode => ({
+      id, label: id, description: "", stream: "ops", stage, category: "cat",
+      categoryIds: ["cat"], primaryCategories: ["cat"], secondaryCategories: [],
+    });
+    setNodes([
+      node("a->b", "s1"), node("c", "s3"), node("a", "s1"), node("b->c", "s3"),
+      node("hidden_one", "s2"), node("hidden_two", "s2"),
+    ]);
+    setEdges([
+      { from: "a->b", to: "hidden_one", effect: "increases", description: "" },
+      { from: "hidden_one", to: "c", effect: "increases", description: "" },
+      { from: "a", to: "hidden_two", effect: "increases", description: "" },
+      { from: "hidden_two", to: "b->c", effect: "increases", description: "" },
+    ]);
+    rebuildIndexes();
+    state.hiddenStages = new Set(["s2"]);
+
+    const syntheticPairs = computeRenderEdges()
+      .filter(edge => edge.synthetic)
+      .map(edge => [edge.from, edge.to]);
+    expect(syntheticPairs).toEqual(expect.arrayContaining([
+      ["a->b", "c"],
+      ["a", "b->c"],
+    ]));
+    expect(syntheticPairs).toHaveLength(2);
+    state.hiddenStages = new Set();
   });
 });

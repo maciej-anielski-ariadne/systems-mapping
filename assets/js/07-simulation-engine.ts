@@ -64,6 +64,7 @@ import type {
   NodeExplanation,
   Param,
 } from "./types";
+import { createIdentifierRecord } from "./05b-input-validation";
 import {
   DEFAULT_ELASTICITY_BY_EFFECT,
   NODES,
@@ -162,13 +163,19 @@ export interface FormulaParseFailure {
   position: number;
 }
 
-let parsedFormulaByNodeId: Record<string, ParsedFormula> = {};
+let parsedFormulaByNodeId: Record<string, ParsedFormula> = createIdentifierRecord();
+// Validation still needs to inspect a well-formed formula that the solver has
+// deactivated because one of its box dependencies has no matching arrow.
+// Keeping candidates separate from live formulas prevents a warning from
+// quietly becoming a calculation rule.
+let parsedFormulaCandidateByNodeId: Record<string, ParsedFormula> = {};
 let formulaParseFailures: FormulaParseFailure[] = [];
 let anyLiveFormulaUsesDelay = false;
 
 // Re-parse every box formula on the current map. Called by rebuildIndexes().
 export function rebuildFormulaCache(): void {
-  parsedFormulaByNodeId = {};
+  parsedFormulaByNodeId = createIdentifierRecord();
+  parsedFormulaCandidateByNodeId = {};
   formulaParseFailures = [];
   anyLiveFormulaUsesDelay = false;
 
@@ -176,10 +183,21 @@ export function rebuildFormulaCache(): void {
     if (!node.formula) continue;
     try {
       const parsed = parseFormula(node.formula);
-      parsedFormulaByNodeId[node.id] = parsed;
+      parsedFormulaCandidateByNodeId[node.id] = parsed;
+      const linkedSourceIdentifiers = new Set(
+        (incomingEdges[node.id] || []).map(connection => connection.from),
+      );
+      const missingDependencyArrow = parsed.references.concat(parsed.delayReferences)
+        .some(identifier => nodeById[identifier] && !linkedSourceIdentifiers.has(identifier));
+      // A slider already pins the box, so its formula is inactive for a
+      // different explicit reason. Otherwise a missing dependency arrow makes
+      // the formula inactive and the ordinary incoming-link rule takes over.
+      if (!missingDependencyArrow || node.controllable) parsedFormulaByNodeId[node.id] = parsed;
       // A controllable box is pinned by its slider, so its formula never runs —
       // it can't be the reason the solver needs extra sweeps.
-      if (!node.controllable && parsed.delayReferences.length > 0) anyLiveFormulaUsesDelay = true;
+      if (!node.controllable && !missingDependencyArrow && parsed.delayReferences.length > 0) {
+        anyLiveFormulaUsesDelay = true;
+      }
     } catch (error) {
       const failure = error as { message?: string; position?: number };
       formulaParseFailures.push({
@@ -195,6 +213,12 @@ export function rebuildFormulaCache(): void {
 // that didn't parse).
 export function getParsedFormula(nodeId: string): ParsedFormula | undefined {
   return parsedFormulaByNodeId[nodeId];
+}
+
+// The parsed expression whether or not it is live. Loader/Review validation
+// uses this to explain exactly which dependency arrow is missing.
+export function getParsedFormulaCandidate(nodeId: string): ParsedFormula | undefined {
+  return parsedFormulaCandidateByNodeId[nodeId];
 }
 
 // Formulas whose text couldn't be read, for the loader's warning list.
@@ -259,18 +283,18 @@ const EMPTY_ROW: IncomingRow = {
   elasticities: new Float64Array(0),
 };
 
-let incomingRowByNodeId: Record<string, IncomingRow> = {};
+let incomingRowByNodeId: Record<string, IncomingRow> = createIdentifierRecord();
 // Bumped on every rebuild. Any cached per-solve bookkeeping stamped with an
 // older generation is stale and simply ignored.
 let solveGeneration = 0;
 // nodeId → the boxes that read it (arrows out PLUS any formula that names it,
 // even one the map forgot to draw an arrow for — the loader warns about that
 // but still computes it, so the solver must still propagate through it).
-let dependentsByNodeId: Record<string, string[]> = {};
+let dependentsByNodeId: Record<string, string[]> = createIdentifierRecord();
 // The same graph the other way round (nodeId → the boxes it reads), used to work
 // out which boxes sit on a path back INTO the feedback core.
-let dependenciesByNodeId: Record<string, string[]> = {};
-let topoRankById: Record<string, number> = {};
+let dependenciesByNodeId: Record<string, string[]> = createIdentifierRecord();
+let topoRankById: Record<string, number> = createIdentifierRecord();
 // The boxes a second sweep can still move (see above), split into the part that
 // has to be re-swept until it settles and the part that only needs one final
 // pass. Both are slices of the topological order.
@@ -306,7 +330,7 @@ export function rebuildSolverIndexes(): void {
   lastSolve = null;
 
   // ── Incoming links, flattened per box ───────────────────────────────
-  incomingRowByNodeId = {};
+  incomingRowByNodeId = createIdentifierRecord();
   for (const node of NODES) {
     const edges = incomingEdges[node.id] || [];
     const count = edges.length;
@@ -328,9 +352,9 @@ export function rebuildSolverIndexes(): void {
   }
 
   // ── Forward dependencies + topological rank ─────────────────────────
-  dependentsByNodeId = {};
-  dependenciesByNodeId = {};
-  topoRankById = {};
+  dependentsByNodeId = createIdentifierRecord();
+  dependenciesByNodeId = createIdentifierRecord();
+  topoRankById = createIdentifierRecord();
   for (let i = 0; i < topologicalOrder.length; i++) topoRankById[topologicalOrder[i]] = i;
   const addDependent = (fromId: string, toId: string): void => {
     const forward = dependentsByNodeId[fromId];
@@ -1347,7 +1371,7 @@ export function formulaReads(nodeId: string): Set<string> {
 
 export function formulaInLabelsFailed(nodeId: string): boolean {
   const node = nodeById[nodeId];
-  return !!node && !!node.formula && !parsedFormulaByNodeId[nodeId];
+  return !!node && !!node.formula && !parsedFormulaCandidateByNodeId[nodeId];
 }
 
 export function formulaArms(nodeId: string): GateArm[] | null {

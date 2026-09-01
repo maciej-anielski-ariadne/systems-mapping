@@ -38,6 +38,13 @@ import { EFFECT_OPTIONS, ELASTICITY_KEYS } from "./02-config";
 import { escapeHtml, splitCategoriesByClass } from "./04-utils";
 import { clearBuilderFromStorage } from "./04a-storage";
 import { parseCsvDocument, parseNumericCell } from "./05-csv-parser";
+import {
+  canonicalIdentifierGuidance,
+  isBlankInput,
+  isCanonicalIdentifier,
+  isSafeHexColour,
+  parseStrictFiniteNumber,
+} from "./05b-input-validation";
 import { serializeBuilderToCsv } from "./05a-csv-serializer";
 import { loadDataFromCsv } from "./06-data-loader";
 import { downloadCsvBlob, showLoadFeedback } from "./16-file-io";
@@ -414,6 +421,8 @@ export interface BuilderValidation {
   clashParams: Set<string>;
   /** Row indices whose constant value isn't a number the loader could read. */
   badParamValueRows: Set<number>;
+  /** Exact invalid ids, shared across the five identity-bearing tables. */
+  invalidIdentifiers: Set<string>;
 }
 
 // One render of the wizard asks for validation up to three times: the step
@@ -462,12 +471,44 @@ function computeBuilderValidation(): BuilderValidation {
   const dupCategories = findDuplicateIds(b.categories);
   const dupNodes      = findDuplicateIds(b.nodes);
   const dupParams     = findDuplicateIds(b.params || []);
+  const invalidIdentifiers = new Set<string>();
 
   dupStreams.forEach(id    => errors.push("Duplicate row id: " + id));
   dupStages.forEach(id     => errors.push("Duplicate column id: " + id));
   dupCategories.forEach(id => errors.push("Duplicate category id: " + id));
   dupNodes.forEach(id      => errors.push("Duplicate box id: " + id));
   dupParams.forEach(id     => errors.push("Duplicate constant id: " + id));
+
+  const checkCanonicalIdentifiers = (
+    rows: Array<{ id?: string }>,
+    kind: string,
+  ): void => {
+    rows.forEach((row, rowIndex) => {
+      if (!row.id || isCanonicalIdentifier(row.id)) return;
+      invalidIdentifiers.add(row.id);
+      errors.push(kind + " row " + (rowIndex + 1) + " has invalid id `" + row.id + "`. " +
+        canonicalIdentifierGuidance() + " The id will not be rewritten.");
+    });
+  };
+  checkCanonicalIdentifiers(b.streams, "Row");
+  checkCanonicalIdentifiers(b.stages, "Column");
+  checkCanonicalIdentifiers(b.categories, "Category");
+  checkCanonicalIdentifiers(b.nodes, "Box");
+  checkCanonicalIdentifiers(b.params || [], "Constant");
+
+  b.streams.forEach((stream, rowIndex) => {
+    if (!isSafeHexColour(stream.color)) {
+      errors.push("Row `" + (stream.id || (rowIndex + 1)) + "` needs a literal hexadecimal colour.");
+    }
+  });
+  b.categories.forEach((category, rowIndex) => {
+    if (!isSafeHexColour(category.color)) {
+      errors.push("Category `" + (category.id || (rowIndex + 1)) + "` needs a literal hexadecimal colour.");
+    }
+    if (!isSafeHexColour(category.textColor)) {
+      errors.push("Category `" + (category.id || (rowIndex + 1)) + "` needs a literal hexadecimal text colour.");
+    }
+  });
 
   // Coalesced "missing required fields" messages: blank rows just produce
   // one "row N needs id and label" instead of two separate errors, so a
@@ -483,9 +524,9 @@ function computeBuilderValidation(): BuilderValidation {
   checkRequiredIdAndLabel(b.stages,     "Column");
   checkRequiredIdAndLabel(b.categories, "Category");
 
-  const streamIds   = new Set(b.streams.map(s => s.id).filter(Boolean));
-  const stageIds    = new Set(b.stages.map(s => s.id).filter(Boolean));
-  const categoryIds = new Set(b.categories.map(c => c.id).filter(Boolean));
+  const streamIds   = new Set(b.streams.map(stream => stream.id).filter(isCanonicalIdentifier));
+  const stageIds    = new Set(b.stages.map(stage => stage.id).filter(isCanonicalIdentifier));
+  const categoryIds = new Set(b.categories.map(category => category.id).filter(isCanonicalIdentifier));
 
   b.nodes.forEach((n, i) => {
     if (!n.id && !n.label) {
@@ -502,12 +543,33 @@ function computeBuilderValidation(): BuilderValidation {
     ref("column",   n.stage,    stageIds);
     ref("category", n.category, categoryIds);
     // baseline must be either blank or > 0 (simulation divides by it).
-    if (n.baseline !== "" && n.baseline !== undefined && Number(n.baseline) === 0) {
-      errors.push("Box `" + (n.id || n.label || ("row " + (i + 1))) + "` has starting value 0 — must be positive or blank.");
+    const boxName = n.id || n.label || ("row " + (i + 1));
+    const baselineValue = parseStrictFiniteNumber(n.baseline);
+    if (!isBlankInput(n.baseline) && baselineValue === undefined) {
+      errors.push("Box `" + boxName + "` has a starting value that is not a finite decimal number.");
+    } else if (baselineValue !== undefined && baselineValue <= 0) {
+      errors.push("Box `" + boxName + "` has starting value " + baselineValue + " — it must be positive or blank.");
+    }
+    const sliderMaximumValue = parseStrictFiniteNumber(n.sliderMax);
+    if (!isBlankInput(n.sliderMax) && sliderMaximumValue === undefined) {
+      errors.push("Box `" + boxName + "` has a slider max that is not a finite decimal number.");
+    } else if (sliderMaximumValue !== undefined && sliderMaximumValue < 1) {
+      errors.push("Box `" + boxName + "` has a slider max below 1.");
+    }
+    const minimumValue = parseStrictFiniteNumber(n.minValue);
+    const maximumValue = parseStrictFiniteNumber(n.maxValue);
+    if (!isBlankInput(n.minValue) && minimumValue === undefined) {
+      errors.push("Box `" + boxName + "` has a minimum that is not a finite decimal number.");
+    }
+    if (!isBlankInput(n.maxValue) && maximumValue === undefined) {
+      errors.push("Box `" + boxName + "` has a maximum that is not a finite decimal number.");
+    }
+    if (minimumValue !== undefined && maximumValue !== undefined && minimumValue > maximumValue) {
+      errors.push("Box `" + boxName + "` has a minimum above its maximum.");
     }
   });
 
-  const nodeIds = new Set(b.nodes.map(n => n.id).filter(Boolean));
+  const nodeIds = new Set(b.nodes.map(node => node.id).filter(isCanonicalIdentifier));
   b.edges.forEach((e, i) => {
     const tag = "Link row " + (i + 1);
     if (!e.from)                  errors.push(tag + " has no source box.");
@@ -515,6 +577,9 @@ function computeBuilderValidation(): BuilderValidation {
     if (!e.to)                    errors.push(tag + " has no target box.");
     else if (!nodeIds.has(e.to))   errors.push(tag + " references unknown target box `" + e.to + "`.");
     if (!EFFECT_OPTIONS.includes(e.effect)) errors.push(tag + " has invalid effect `" + e.effect + "`.");
+    if (!isBlankInput(e.elasticity) && parseStrictFiniteNumber(e.elasticity) === undefined) {
+      errors.push(tag + " has a strength that is not a finite decimal number.");
+    }
   });
 
   // ───── Constants (step 6) — cheap, local checks only ─────────────────────
@@ -537,7 +602,7 @@ function computeBuilderValidation(): BuilderValidation {
     // Blank is not "carry on with the default" here: a constant with no number
     // has nothing to contribute to a formula, so flag it like a bad one.
     const raw = p.value as unknown;
-    if (raw === "" || raw === undefined || raw === null || isNaN(Number(raw))) {
+    if (parseStrictFiniteNumber(raw) === undefined) {
       badParamValueRows.add(i);
       errors.push(tag + " needs a numeric value.");
     }
@@ -546,6 +611,7 @@ function computeBuilderValidation(): BuilderValidation {
   return {
     errors, dupStreams, dupStages, dupCategories, dupNodes, dupParams,
     streamIds, stageIds, categoryIds, nodeIds, clashParams, badParamValueRows,
+    invalidIdentifiers,
   };
 }
 

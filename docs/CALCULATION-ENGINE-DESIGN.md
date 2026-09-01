@@ -122,11 +122,12 @@ edge from that node, and warns about incoming edges the formula ignores. The arr
 map therefore remain an honest picture of causality; only the *how* moves into the formula
 and the constants move into params.
 
-**Feedback becomes well-defined.** Any cycle passing through a formula node must go
+**Feedback evaluation becomes order-independent.** Any cycle passing through a formula node must go
 through at least one `delay()` — a validation warning names the cycle otherwise. `delay(x)`
 reads x's value from the previous solver sweep, which makes loop results independent of
-sweep order and structurally convergent (a unit delay, the standard trick). Cycles made
-only of classic ratio edges keep today's Gauss-Seidel treatment and status reporting.
+sweep order. A unit delay does **not** guarantee convergence: loop gain and bounds still
+determine whether the values settle. Cycles made only of classic ratio edges keep the
+Gauss-Seidel treatment and status reporting.
 
 > *As implemented:* two rules the proposal left implicit. A **slider beats a formula** — a
 > `controllable` box is pinned by the user, so its formula never runs (the loader says so),
@@ -141,8 +142,8 @@ overflowed to Infinity, fall back to baseline" behaviour into something explaina
 
 ## 4. Traceability
 
-The engine currently returns only `{nodeId → number}`. It will additionally record, per
-node, an **explanation**: which rule ran (default / combine mode / formula), each input's
+Alongside `{nodeId → number}`, the engine records, per node, an **explanation**:
+which rule ran (default / combine mode / formula), each input's
 resolved value, each term's contribution, params read, and whether a clamp or delay was
 applied. The detail panel's simulation view renders this as a "how this number was
 calculated" breakdown, so every result is auditable back to its inputs and rule — the
@@ -165,9 +166,11 @@ formulas) the offending token:
 > *As implemented:* **nothing here is fatal.** Every item above loads as a plain-language
 > warning in the same list as the existing load warnings, saying what the engine did instead
 > ("the formula is ignored", "it will be read as 0", "that link is descriptive only"). The
-> only fatal errors remain the pre-existing ones — a missing or empty required section. The
-> reasoning: a half-valid calculation model is still worth looking at, and refusing to open
-> someone's file teaches them nothing about how to fix it.
+> calculation-rule errors remain non-fatal. Structural identity errors are different: a
+> missing or empty required section, or an invalid or duplicate row, column or category id,
+> prevents the map from loading because its coordinates are ambiguous. The reasoning for
+> calculation warnings remains that a half-valid calculation model is still worth looking
+> at, and opening it with a precise warning teaches the author how to fix it.
 
 ## 6. CSV schema summary
 

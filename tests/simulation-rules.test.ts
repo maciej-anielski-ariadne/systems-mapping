@@ -323,6 +323,14 @@ describe("formula validation warnings", () => {
     expect(joined()).toMatch(/Draw the link from `a`/);
   });
 
+  it("deactivates a formula whose box dependency has no matching arrow", () => {
+    simulate({ a: 2 });
+    expect(state.computedValues.no_edge).toBe(100);
+    expect(state.explanations.no_edge.rule).toBe("baseline");
+    expect(findings("no_edge").find(finding => finding.kind === "name-has-no-link")!.message)
+      .toMatch(/formula is ignored/i);
+  });
+
   it("points out an incoming link the formula never reads", () => {
     const unused = findings("extra_edge").filter((f) => f.kind === "link-unused");
     expect(unused).toHaveLength(1);

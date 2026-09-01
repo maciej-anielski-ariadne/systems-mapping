@@ -46,6 +46,7 @@ import type { ReviewFixOperation, ReviewProposal, ReviewProposalPreview } from "
 import {
   captureReviewModelSnapshot,
   previewReviewProposal,
+  reviewFindingCanHaveProposal,
   reviewProposalsForFinding,
 } from "./22a-review-model";
 import { applyConfirmedReviewProposal } from "./22b-review-apply";
@@ -302,12 +303,11 @@ function renderIssuesSection(summary: ReviewSummary): string {
   const snapshot = captureReviewModelSnapshot();
   const preparedGroups = summary.groups.map(group => {
     const fixableFinding = fixableFindingInGroup(group, snapshot);
-    const proposals = fixableFinding ? reviewProposalsForFinding(fixableFinding, snapshot) : [];
-    return { group, fixableFinding, proposals };
+    return { group, fixableFinding };
   });
   preparedGroups.sort((left, right) => Number(!!right.fixableFinding) - Number(!!left.fixableFinding));
   for (const preparedGroup of preparedGroups) {
-    html += renderCauseCard(preparedGroup.group, snapshot, preparedGroup.fixableFinding, preparedGroup.proposals);
+    html += renderCauseCard(preparedGroup.group, snapshot, preparedGroup.fixableFinding);
   }
   return html;
 }
@@ -316,18 +316,23 @@ function renderCauseCard(
   group: FindingGroup,
   snapshot = captureReviewModelSnapshot(),
   fixableFinding = fixableFindingInGroup(group, snapshot),
-  proposals = fixableFinding ? reviewProposalsForFinding(fixableFinding, snapshot) : [],
 ): string {
   const primaryFinding = fixableFinding || group.causes[0];
   const issueKey = findingIdentity(primaryFinding);
   const isExpanded = expandedIssueKey === issueKey;
+  // Proposal generation ranks alternatives by detached before/after solves.
+  // Collapsed cards need only the cheap capability answer; the one expanded
+  // card pays for its proposals and preview.
+  const proposals = isExpanded && fixableFinding
+    ? reviewProposalsForFinding(fixableFinding, snapshot)
+    : [];
   let html = '<div class="review-card review-issue-card' + (isExpanded ? " is-expanded" : "") + '">';
   html +=   '<button type="button" class="review-card-head review-card-toggle" data-review-issue="' +
             escapeHtml(issueKey) + '" aria-expanded="' + (isExpanded ? "true" : "false") + '">';
   html +=     '<span class="review-sev sev-' + group.severity + '" aria-hidden="true"></span>';
   html +=     '<span class="review-card-label">' + escapeHtml(group.label) + '</span>';
   if (group.boxId) html += '<span class="review-card-id">' + escapeHtml(group.boxId) + '</span>';
-  if (proposals.length) html += '<span class="review-direct-tag">Fix here</span>';
+  if (fixableFinding) html += '<span class="review-direct-tag">Fix here</span>';
   html +=     '<span class="review-disclosure" aria-hidden="true">' + (isExpanded ? "−" : "+") + '</span>';
   html +=   '</button>';
 
@@ -369,7 +374,7 @@ function fixableFindingInGroup(
   group: FindingGroup,
   snapshot = captureReviewModelSnapshot(),
 ): Finding | undefined {
-  return group.causes.find(finding => reviewProposalsForFinding(finding, snapshot).length > 0);
+  return group.causes.find(finding => reviewFindingCanHaveProposal(finding, snapshot));
 }
 
 function proposalForDisplay(issueKey: string, proposals: ReviewProposal[]): ReviewProposal {

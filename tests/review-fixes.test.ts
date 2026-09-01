@@ -12,6 +12,7 @@ import {
 import { applyConfirmedReviewProposal } from "../assets/js/22b-review-apply";
 import { closeReview, initReviewStage, openReview } from "../assets/js/23-review-panel";
 import { setUiMode } from "../assets/js/17-events";
+import { FORMULA_INVALID_CSV } from "./fixtures/graphs";
 
 const REVIEW_FIX_CSV = `# SECTION: streams
 id,label,short,color
@@ -64,9 +65,54 @@ describe("detached proposal evaluation", () => {
   it("uses the same rest values as the live solver for this acyclic model", () => {
     expect(solveReviewSnapshot(captureReviewModelSnapshot())).toEqual(state.computedValues);
   });
+
+  it("reuses solved values and proposal previews for an unchanged snapshot", () => {
+    const snapshot = captureReviewModelSnapshot();
+    expect(solveReviewSnapshot(snapshot)).toBe(solveReviewSnapshot(snapshot));
+
+    const finding = validateReviewSnapshot(snapshot).find(candidate =>
+      candidate.kind === "name-has-no-link" && candidate.boxId === "target",
+    )!;
+    const proposal = reviewProposalsForFinding(finding, snapshot)[0];
+    expect(previewReviewProposal(snapshot, proposal)).toBe(previewReviewProposal(snapshot, proposal));
+  });
+
+  it("offers no inert source-divided-by-itself formula proposal", () => {
+    expect(loadDataFromCsv(FORMULA_INVALID_CSV)).toBe(true);
+    const snapshot = captureReviewModelSnapshot();
+    const finding = validateReviewSnapshot(snapshot).find(candidate =>
+      candidate.kind === "link-unused" && candidate.boxId === "extra_edge",
+    )!;
+    const proposals = reviewProposalsForFinding(finding, snapshot);
+    const unusedSourceIdentifier = finding.target!.kind === "connection"
+      ? finding.target!.sourceId
+      : "";
+
+    expect(proposals.map(proposal => proposal.label)).toEqual(["Remove the unused connection"]);
+    expect(proposals.every(proposal =>
+      proposal.operations.every(operation => operation.kind !== "set-node-field" ||
+        !String(operation.value).includes("/ " + unusedSourceIdentifier)),
+    )).toBe(true);
+  });
 });
 
 describe("confirmed Review fixes", () => {
+  it("activates a dependency formula only after its missing arrow is confirmed", () => {
+    expect(state.computedValues.target).toBe(100);
+    expect(state.explanations.target.rule).toBe("baseline");
+    const finding = state.loadErrors.find(candidate =>
+      candidate.kind === "name-has-no-link" && candidate.boxId === "target",
+    )!;
+    const proposal = reviewProposalsForFinding(finding, captureReviewModelSnapshot())
+      .find(candidate => candidate.id.endsWith(":add-increases"))!;
+
+    expect(applyConfirmedReviewProposal(proposal)).toBe(true);
+
+    expect(state.computedValues.target).toBe(200);
+    expect(state.explanations.target.rule).toBe("formula");
+    expect(state.loadErrors.some(candidate => candidate.issueKey === finding.issueKey)).toBe(false);
+  });
+
   it("applies a proposal as one Undo step and immediately rechecks the issue", () => {
     const finding = state.loadErrors.find(candidate =>
       candidate.kind === "slider-beats-formula" && candidate.boxId === "conflicted",

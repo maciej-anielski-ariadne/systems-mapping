@@ -161,6 +161,22 @@ describe("the record travels in the spreadsheet", () => {
     expect(state.reviews).toEqual({});
   });
 
+  it("round-trips multiline review notes without changing following columns", () => {
+    loadDataFromCsv(CHAIN);
+    state.reviews = {};
+    const note = 'First concern\nSecond concern, including "quoted" evidence';
+    recordVerdict("c", "flagged", { note: note, reviewer: "MA" });
+    toggleSourceFlag("c", "a");
+
+    const csv = serializeLiveStateToCsv(null, {});
+    expect(loadDataFromCsv(csv)).toBe(true);
+
+    expect(state.reviews.c.note).toBe(note);
+    expect(state.reviews.c.reviewer).toBe("MA");
+    expect(state.reviews.c.flaggedSources).toEqual(["a"]);
+    expect(state.reviews.c.verdict).toBe("flagged");
+  });
+
   it("writes no section at all for a map nobody has reviewed", () => {
     loadDataFromCsv(CHAIN);
     state.reviews = {};

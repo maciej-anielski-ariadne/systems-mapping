@@ -578,7 +578,7 @@ export function renderExportSvg(
     for (const streamId of model.streamOrder) {
       const stream = streamById[streamId] || ({ color: "#94a3b8" } as Stream);
       const y = n1(lay.rowY[streamId]), h = n1(lay.rowHeights[streamId]);
-      s += '<rect x="0" y="' + y + '" width="' + W + '" height="' + h + '" fill="' + stream.color + '" opacity="0.04"></rect>';
+      s += '<rect x="0" y="' + y + '" width="' + W + '" height="' + h + '" fill="' + escapeHtml(stream.color) + '" opacity="0.04"></rect>';
       s += '<line x1="0" y1="' + y + '" x2="' + W + '" y2="' + y + '" stroke="' + pal.borderSubtle + '" stroke-width="1"></line>';
     }
   }
@@ -609,9 +609,9 @@ export function renderExportSvg(
     if (!transparent) {
       s += '<rect x="0" y="' + y + '" width="' + ROW_HEADER_WIDTH + '" height="' + h + '" fill="' + pal.bgDeepest + '"></rect>';
     }
-    s += '<rect x="' + (ROW_HEADER_WIDTH - 4) + '" y="' + y + '" width="4" height="' + h + '" fill="' + stream.color + '" opacity="0.7"></rect>';
+    s += '<rect x="' + (ROW_HEADER_WIDTH - 4) + '" y="' + y + '" width="4" height="' + h + '" fill="' + escapeHtml(stream.color) + '" opacity="0.7"></rect>';
     s += '<text class="xr-label" x="' + (ROW_HEADER_WIDTH / 2) + '" y="' + n1(y + h / 2) +
-         '" text-anchor="middle" dominant-baseline="middle" fill="' + stream.color + '">' + escapeHtml(stream.short) + '</text>';
+         '" text-anchor="middle" dominant-baseline="middle" fill="' + escapeHtml(stream.color) + '">' + escapeHtml(stream.short) + '</text>';
   }
 
   // Edges (drawn before nodes). Rendered in the map's normal, un-highlighted
@@ -694,7 +694,7 @@ export function renderExportSvg(
 
     // Background rect (xn-bg lets the interactive viewer paint selection glows).
     s += '<rect class="xn-bg" x="' + xpos.x + '" y="' + xpos.y + '" width="' + xpos.width + '" height="' + xpos.height +
-         '" rx="5" fill="' + fillInfo.fill + '" stroke="' + stroke.color + '" stroke-width="' + stroke.width + '"></rect>';
+         '" rx="5" fill="' + escapeHtml(fillInfo.fill) + '" stroke="' + escapeHtml(stroke.color) + '" stroke-width="' + stroke.width + '"></rect>';
 
     // Left stream-colour stripe (rounded only on the left corners).
     const barRadius = 5, barLeft = xpos.x, barRight = n1(xpos.x + 6), barTop = xpos.y, barBottom = n1(xpos.y + xpos.height);
@@ -706,14 +706,14 @@ export function renderExportSvg(
          ' A ' + barRadius + ',' + barRadius + ' 0 0 1 ' + barLeft + ',' + n1(barBottom - barRadius) +
          ' L ' + barLeft + ',' + n1(barTop + barRadius) +
          ' A ' + barRadius + ',' + barRadius + ' 0 0 1 ' + barInner + ',' + barTop +
-         ' Z" fill="' + stream.color + '"></path>';
+         ' Z" fill="' + escapeHtml(stream.color) + '"></path>';
 
     // Wrapped label — reuse the same grow-to-fit lines the layout sized the box
     // from, so the export matches the live map. Anchored at the symmetric inset.
     const labelLines = pos.labelLines || measureLabelLines(node.label || node.id || "", NODE_WIDTH - LABEL_INSET * 2);
     const lx = n1(xpos.x + LABEL_INSET);
     s += '<text class="xn-label" x="' + lx + '" y="' + n1(xpos.y + 16) +
-         '" fill="' + fillInfo.textColor + '" dominant-baseline="middle">';
+         '" fill="' + escapeHtml(fillInfo.textColor) + '" dominant-baseline="middle">';
     for (let i = 0; i < labelLines.length; i++) {
       s += '<tspan x="' + lx + '" dy="' + (i === 0 ? "0" : "1.083em") + '">' + escapeHtml(labelLines[i]) + '</tspan>';
     }
@@ -724,7 +724,7 @@ export function renderExportSvg(
     if (valueText) {
       const valueY = n1(xpos.y + xpos.height - 12);
       s += '<text class="xn-value" x="' + lx + '" y="' + valueY +
-           '" fill="' + fillInfo.textColor + '" dominant-baseline="middle"' + (transparent ? '' : ' opacity="0.75"') + '>' + escapeHtml(valueText) + '</text>';
+           '" fill="' + escapeHtml(fillInfo.textColor) + '" dominant-baseline="middle"' + (transparent ? '' : ' opacity="0.75"') + '>' + escapeHtml(valueText) + '</text>';
       const deltaInfo = formatNodeDelta(node.id);
       if (deltaInfo.text && deltaInfo.text !== "—") {
         const deltaColor = deltaColorFor(node, deltaInfo);

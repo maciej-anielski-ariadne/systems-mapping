@@ -54,6 +54,54 @@ b,Node B,ops
     const sections = parseCsvDocument(doc);
     expect(sections.nodes).toHaveLength(2);
   });
+
+  it("keeps LF and CRLF line endings inside quoted fields", () => {
+    const multilineDocument = [
+      "# SECTION: nodes",
+      "id,label,description",
+      'a,Alpha,"First line\nSecond line"',
+      'b,Beta,"Windows first\r\nWindows second"',
+    ].join("\r\n");
+
+    const sections = parseCsvDocument(multilineDocument);
+
+    expect(sections.nodes).toEqual([
+      { id: "a", label: "Alpha", description: "First line\nSecond line" },
+      { id: "b", label: "Beta", description: "Windows first\r\nWindows second" },
+    ]);
+  });
+
+  it("does not treat section markers or comments inside a quoted field as records", () => {
+    const multilineDocument = `# SECTION: reviews
+box,note,verdict
+c,"First thought
+# SECTION: nodes
+# this remains part of the note
+Final thought",flagged
+`;
+
+    expect(parseCsvDocument(multilineDocument).reviews).toEqual([
+      {
+        box: "c",
+        note: "First thought\n# SECTION: nodes\n# this remains part of the note\nFinal thought",
+        verdict: "flagged",
+      },
+    ]);
+  });
+
+  it("preserves authored identity and free-text whitespace for boundary validation and round-trips", () => {
+    const sections = parseCsvDocument(`# SECTION: nodes
+id,label,description
+" box ","  Display label  ","  First line
+Second line  "
+`);
+
+    expect(sections.nodes).toEqual([{
+      id: " box ",
+      label: "  Display label  ",
+      description: "  First line\nSecond line  ",
+    }]);
+  });
 });
 
 describe("parseBooleanCell", () => {
@@ -80,5 +128,10 @@ describe("parseNumericCell", () => {
     expect(parseNumericCell("abc")).toBeUndefined();
     expect(parseNumericCell(undefined)).toBeUndefined();
     expect(parseNumericCell(null)).toBeUndefined();
+  });
+  it("rejects numeric prefixes and non-finite values", () => {
+    expect(parseNumericCell("12xyz")).toBeUndefined();
+    expect(parseNumericCell("Infinity")).toBeUndefined();
+    expect(parseNumericCell("0x10")).toBeUndefined();
   });
 });

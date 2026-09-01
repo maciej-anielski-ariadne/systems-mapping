@@ -143,6 +143,7 @@ body.no-data .panel-pin {
   gap: var(--space-6);
   position: relative;
   z-index: var(--z-header);
+  min-width: 0;
 }
 
 /* One run of related controls. Tight inside, so the run reads as one thing. */
@@ -151,6 +152,30 @@ body.no-data .panel-pin {
   align-items: center;
   gap: var(--space-1);
   flex: 0 0 auto;
+}
+
+/* On phone-width screens the action row becomes its own horizontal rail. The
+ * page and map stay pinned to the viewport; supported actions remain reachable
+ * by swiping the header instead of disappearing beyond the body edge. */
+@media (max-width: 600px) {
+  .app {
+    width: 100vw;
+    min-width: 0;
+  }
+
+  .app-header {
+    max-width: 100vw;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: thin;
+    padding-inline: var(--space-2);
+    gap: var(--space-2);
+  }
+
+  .app-brand { display: none; }
+  .search-wrap { flex: 0 0 132px; }
+  .search-input { text-overflow: ellipsis; }
 }
 
 /* A group whose only member is hidden still takes its 24px of gap, and the row

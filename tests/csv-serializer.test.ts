@@ -107,6 +107,29 @@ describe("serializeBuilderToCsv", () => {
       combine: "min", formula: formula, min: "0", max: "250",
     });
   });
+
+  it("round-trips a multiline node description", () => {
+    const description = 'First line\nSecond line with a comma, and "quoted" text';
+    const csv = serializeBuilderToCsv({
+      ...builder,
+      nodes: [
+        {
+          id: "a",
+          label: "A",
+          description: description,
+          stream: "ops",
+          stage: "s1",
+          category: "cat",
+          baseline: 100,
+          controllable: true,
+        },
+      ],
+    } as BuilderState);
+
+    expect(parseCsvDocument(csv).nodes[0].description).toBe(description);
+    expect(loadDataFromCsv(csv)).toBe(true);
+    expect(nodeById.a.description).toBe(description);
+  });
 });
 
 describe("serializeBuilderToCsv — params", () => {

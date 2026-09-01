@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { loadDataFromCsv } from "../assets/js/06-data-loader";
+import { loadDataFromCsv, rebuildIndexes } from "../assets/js/06-data-loader";
 import {
   NODES,
   EDGES,
   PARAMS,
+  STREAMS,
+  CATEGORIES,
   nodeById,
   paramById,
   outgoingEdges,
@@ -12,6 +14,7 @@ import {
   topologicalOrder,
   cycleInfo,
   state,
+  setEdges,
 } from "../assets/js/03-state";
 import { SAMPLE_CSV } from "../assets/js/01-sample-data";
 import {
@@ -215,5 +218,129 @@ describe("loadDataFromCsv — fatal errors", () => {
   it("returns false when a required section is missing", () => {
     expect(loadDataFromCsv("# SECTION: streams\nid\nops")).toBe(false);
     expect(state.loadErrors.length).toBeGreaterThan(0);
+  });
+});
+
+const INPUT_BOUNDARY_CSV = `# SECTION: streams
+id,label,short,color
+ops,Operations,OPS,#60a5fa
+
+# SECTION: stages
+id,label
+first,First
+
+# SECTION: categories
+id,label,color,text_color
+general,General,#a3a3a3,#111111
+
+# SECTION: nodes
+id,label,description,stream,stage,category,baseline,unit,controllable,direction,slider_max,combine,formula,min,max
+a,A,,ops,first,general,100,units,true,,2,,,,
+b,B,,ops,first,general,100,units,false,,2,,,,
+
+# SECTION: edges
+from,to,effect,elasticity,description
+a,b,increases,0.5,
+`;
+
+describe("canonical input boundary", () => {
+  it("does not reset edge allocation when a load is rejected", () => {
+    expect(loadDataFromCsv(INPUT_BOUNDARY_CSV)).toBe(true);
+    expect(EDGES[0].id).toBe("edge_0");
+
+    expect(loadDataFromCsv("# SECTION: streams\nid,label\nops,Operations")).toBe(false);
+    setEdges(EDGES.concat([{ from: "b", to: "a", effect: "decreases", description: "" }]));
+    rebuildIndexes();
+
+    expect(EDGES.map(edge => edge.id)).toEqual(["edge_0", "edge_1"]);
+  });
+
+  it.each([
+    ["row", "ops,Operations,OPS,#60a5fa\nops,Duplicate,OPS,#60a5fa", "identifier-duplicate"],
+    ["row", 'bad-id,Operations,OPS,#60a5fa', "identifier-invalid"],
+    ["row", "constructor,Operations,OPS,#60a5fa", "identifier-invalid"],
+    ["row", '" ops",Operations,OPS,#60a5fa', "identifier-invalid"],
+    ["row", '"ops ",Operations,OPS,#60a5fa', "identifier-invalid"],
+  ])("rejects an unusable %s identity without replacing the current map", (_kind, streamRows, findingKind) => {
+    expect(loadDataFromCsv(INPUT_BOUNDARY_CSV)).toBe(true);
+    const invalidCsv = INPUT_BOUNDARY_CSV.replace("ops,Operations,OPS,#60a5fa", streamRows);
+    expect(loadDataFromCsv(invalidCsv)).toBe(false);
+    expect(NODES.map(node => node.id)).toEqual(["a", "b"]);
+    expect(kinds()).toContain(findingKind);
+  });
+
+  it("drops padded link identities instead of silently trimming them", () => {
+    const paddedLinkCsv = INPUT_BOUNDARY_CSV.replace(
+      "a,b,increases,0.5,",
+      '" a",b,increases,0.5,',
+    );
+
+    expect(loadDataFromCsv(paddedLinkCsv)).toBe(true);
+    expect(EDGES).toEqual([]);
+    expect(kinds()).toContain("identifier-invalid");
+  });
+
+  it("preserves boundary whitespace and line endings in free-text descriptions", () => {
+    const description = "  First line\nSecond line  ";
+    const freeTextCsv = INPUT_BOUNDARY_CSV.replace(
+      "a,A,,ops,first",
+      'a,A,"' + description + '",ops,first',
+    );
+
+    expect(loadDataFromCsv(freeTextCsv)).toBe(true);
+    expect(nodeById.a.description).toBe(description);
+  });
+
+  it("uses safe colour fallbacks and reports every rejected colour", () => {
+    const hostileCsv = INPUT_BOUNDARY_CSV
+      .replace("#60a5fa", 'url(javascript:alert(1))')
+      .replace("#a3a3a3,#111111", "red,expression(alert(1))");
+    expect(loadDataFromCsv(hostileCsv)).toBe(true);
+
+    expect(STREAMS[0].color).toBe("#94a3b8");
+    expect(CATEGORIES.general.color).toBe("#a3a3a3");
+    expect(CATEGORIES.general.textColor).toBe("#1c1917");
+    expect(kinds().filter(kind => kind === "colour-invalid")).toHaveLength(3);
+  });
+
+  it("rejects prototype-key box identifiers without throwing or polluting indexes", () => {
+    const prototypeKeyCsv = INPUT_BOUNDARY_CSV
+      .replace("a,A,", "__proto__,A,")
+      .replace("a,b,increases", "__proto__,b,increases");
+    expect(() => loadDataFromCsv(prototypeKeyCsv)).not.toThrow();
+    expect(loadDataFromCsv(prototypeKeyCsv)).toBe(true);
+    expect(nodeById.__proto__).toBeUndefined();
+    expect(Object.getPrototypeOf(nodeById)).toBeNull();
+    expect(kinds()).toContain("identifier-invalid");
+  });
+
+  it("reports and ignores malformed, non-finite, and domain-invalid numbers", () => {
+    const invalidNumbersCsv = INPUT_BOUNDARY_CSV.replace(
+      "a,A,,ops,first,general,100,units,true,,2,,,,",
+      "a,A,,ops,first,general,-100,units,true,,Infinity,,,12xyz,bad",
+    );
+    expect(loadDataFromCsv(invalidNumbersCsv)).toBe(true);
+
+    expect(nodeById.a.baseline).toBeUndefined();
+    expect(nodeById.a.sliderMax).toBeUndefined();
+    expect(nodeById.a.minValue).toBeUndefined();
+    expect(nodeById.a.maxValue).toBeUndefined();
+    expect(kinds("a")).toEqual(expect.arrayContaining([
+      "baseline-negative",
+      "slider-max-not-a-number",
+      "minimum-not-a-number",
+    ]));
+  });
+
+  it("clears stale search objects on successful replacement", () => {
+    expect(loadDataFromCsv(INPUT_BOUNDARY_CSV)).toBe(true);
+    state.searchQuery = "B";
+    state.searchMatches = [{ node: nodeById.b, score: 1, bestField: "label", bestPositions: [] }];
+    state.searchFocusIndex = 0;
+
+    expect(loadDataFromCsv(INPUT_BOUNDARY_CSV.replace("b,B,", "c,C,"))).toBe(true);
+    expect(state.searchQuery).toBe("");
+    expect(state.searchMatches).toEqual([]);
+    expect(state.searchFocusIndex).toBe(0);
   });
 });

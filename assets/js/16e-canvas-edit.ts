@@ -57,8 +57,10 @@ import {
   setCategories,
   setNodes,
   setEdges,
+  setParams,
   setDefaultElasticityByEffect,
   setLayout,
+  markEdgeGeometryChanged,
 } from "./03-state";
 import {
   COL_HEADER_HEIGHT,
@@ -71,10 +73,9 @@ import {
   SVG_PADDING_TOP,
 } from "./02-config";
 import { cloneEdgeForUndo } from "./04-utils";
-import { scheduleCsvSave, saveUiStateToStorage } from "./04a-storage";
+import { saveUiStateToStorage } from "./04a-storage";
 import { serializeLiveStateToCsv } from "./05a-csv-serializer";
 import { rebuildIndexes } from "./06-data-loader";
-import { recomputeValues } from "./07-simulation-engine";
 import { computeLayout, measureNode } from "./08-layout";
 import {
   deselectAll,
@@ -310,7 +311,8 @@ export function initCanvasEdit(): void {
     // a session pushes the pre-cycle snapshot to history; subsequent presses
     // mutate live without growing history (coalesced undo). Session ends on
     // 1.5s debounce, blur, or selecting a different edge.
-    if (!cmdOrCtrl && !event.altKey && state.dataLoaded && state.selectedEdgeId &&
+    if (!cmdOrCtrl && !event.altKey && state.dataLoaded && state.uiMode === "edit" &&
+        !state.simulationMode && state.selectedEdgeId &&
         (event.key === "ArrowUp" || event.key === "ArrowDown" ||
          event.key === "ArrowLeft" || event.key === "ArrowRight")) {
       const direction = (event.key === "ArrowUp" || event.key === "ArrowLeft") ? -1 : 1;
@@ -429,6 +431,7 @@ export function bootEmptyStateGrid(): void {
   setCategories({});
   setNodes([]);
   setEdges([]);
+  setParams([]);
   setDefaultElasticityByEffect({ enables: 0.30, increases: 0.25, decreases: -0.25 });
 
   state.dataLoaded = true;
@@ -437,19 +440,35 @@ export function bootEmptyStateGrid(): void {
   state.loadErrors = [];
   invalidateSweep();
   state.selectedNodeId = null;
+  state.selectedNodeIds = new Set();
+  state.selectedEdgeId = null;
   state.hoveredNodeId = null;
   state.hiddenStreams = new Set();
   state.hiddenCategories = new Set();
   state.hiddenStages = new Set();
+  state.hiddenEffects = new Set();
+  state.hiddenStyles = new Set();
+  state.hiddenTrace = new Set();
   state.ancestorSet = new Set();
   state.descendantSet = new Set();
   state.highlightedEdgeIds = new Set();
   state.userOverrides = {};
   state.computedValues = {};
+  state.explanations = {};
+  state.reviews = {};
+  state.reviewPass = false;
+  state.searchQuery = "";
+  state.searchMatches = [];
+  state.searchFocusIndex = 0;
+  state.atlas = null;
+  state.simulationMode = false;
+  saveUiStateToStorage();
   if (state.canvasEdit) {
     state.canvasEdit.hoverCell = null;
     state.canvasEdit.draftEdge = null;
     state.canvasEdit.flashedEdgeId = null;
+    state.canvasEdit.flashedNodeIds = null;
+    state.canvasEdit.flashedEdgeIds = null;
     state.canvasEdit.addingEdgeFromNodeId = null;
     state.canvasEdit.cursorCell = null;
     state.canvasEdit.inlineRename = null;
@@ -1554,6 +1573,7 @@ export function commitNewEdge(fromNodeId: string, toNodeId: string, effect: Effe
     description: "",
   };
   EDGES.push(newEdge);
+  markEdgeGeometryChanged();
   state.canvasEdit.lastUsedEdgeEffect = effect;
   applyCanvasMutation();
   // rebuildIndexes() inside applyCanvasMutation mints an id for the new edge,
@@ -1572,6 +1592,7 @@ export function commitNewEdge(fromNodeId: string, toNodeId: string, effect: Effe
 export const EDGE_CYCLE_SESSION_DEBOUNCE_MS = 1500;
 
 export function cycleSelectedEdgeEffect(direction: number): boolean {
+  if (state.uiMode !== "edit" || state.simulationMode) return false;
   const edgeId = state.selectedEdgeId;
   if (!edgeId) return false;
   const edge = edgeById[edgeId];
@@ -1590,6 +1611,7 @@ export function cycleSelectedEdgeEffect(direction: number): boolean {
   }
 
   edge.effect = nextEffect;
+  markEdgeGeometryChanged();
   state.canvasEdit.lastUsedEdgeEffect = nextEffect;
 
   if (!state.canvasEdit.edgeCycleSession) {
@@ -1613,22 +1635,10 @@ export function cycleSelectedEdgeEffect(direction: number): boolean {
 // undo entry. Used for the 2nd…Nth arrow press in a cycle session so the
 // whole burst collapses to one undo step.
 export function applyEdgeCycleSubsequent(): void {
-  // No rebuildIndexes() here: cycling an edge's effect changes neither the
-  // graph topology nor any id — adjacency lists, the topological order and
-  // the formula cache all hold the same edge object and read `effect` live.
-  // The first cycle of a session (via applyCanvasMutation) still does the
-  // full rebuild, so anything effect-derived is at most one burst stale.
-  if (typeof recomputeValues === "function") recomputeValues();
-  render();
-  if (typeof renderDetailPanel === "function") renderDetailPanel();
-  try {
-    if (typeof serializeLiveStateToCsv === "function") {
-      state.lastCsvSnapshot = serializeLiveStateToCsv(null, { compact: true });
-      scheduleCsvSave(state.lastCsvSnapshot);
-    }
-  } catch (err) {
-    console.warn("Persisting edge-cycle mutation failed:", err);
-  }
+  // Effect changes do not alter topology or layout, but they do alter solver,
+  // Review, and sweep results. Reuse the shared mutation transaction so later
+  // key presses cannot leave those surfaces stale; history remains coalesced.
+  applyCanvasMutation({ impact: "calculation", skipHistoryCapture: true });
 }
 
 export function endEdgeCycleSession(): void {

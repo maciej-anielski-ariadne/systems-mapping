@@ -28,7 +28,7 @@ import {
   gatedBy,
   resolveEdgeElasticity,
 } from "./07-simulation-engine";
-import { getDescendants, scrollNodeIntoView, selectNode } from "./09-graph-selection";
+import { focusNode, getDescendants, scrollNodeIntoView } from "./09-graph-selection";
 import { hideTooltip } from "./12-tooltip";
 import { renderDetailPanel } from "./15-detail-panel";
 import {
@@ -41,19 +41,161 @@ import {
   strands,
   wheelOf,
 } from "./20-atlas-engine";
+import type {
+  AtlasElement as EngineAtlasElement,
+  AtlasGraph as EngineAtlasGraph,
+  AtlasGraphEdge as EngineAtlasGraphEdge,
+  AtlasGraphNode as EngineAtlasGraphNode,
+  AtlasIdentifier,
+  AtlasMeasurement,
+  AtlasResult,
+  AtlasStrandResult,
+  AtlasTangle as EngineAtlasTangle,
+  AtlasWheel,
+  AtlasWheelEdge,
+  AtlasWheelLoop,
+} from "./20-atlas-engine";
+
+type AtlasElementIdentifier = AtlasIdentifier;
+type AtlasPath = AtlasElementIdentifier[];
+type ForkIdentifier = AtlasElementIdentifier | null;
+type ForkPath = ForkIdentifier[];
+type AtlasLinkKey = string;
+type AtlasFrame = { x: number; y: number; w: number; h: number };
+
+interface AtlasGraphNode extends EngineAtlasGraphNode {
+  label: string;
+  direction: string;
+}
+
+interface AtlasGraphEdge extends EngineAtlasGraphEdge {
+  id: string | undefined;
+  effect: string;
+}
+
+type AtlasGraph = EngineAtlasGraph<AtlasGraphNode, AtlasGraphEdge>;
+type AtlasTangle = EngineAtlasTangle<AtlasGraphEdge>;
+type AtlasNode = EngineAtlasElement<AtlasGraphEdge>;
+type AtlasData = AtlasResult<AtlasGraphEdge>;
+type AtlasLoop = Pick<AtlasWheelLoop, "links" | "cycle" | "reinforcing" | "gain">;
+
+interface AtlasWorld {
+  W: number;
+  H: number;
+  at: Map<AtlasElementIdentifier, [number, number]>;
+  rOf: Map<AtlasElementIdentifier, number>;
+  A: AtlasData;
+  M: AtlasMeasurement;
+  bounds: AtlasFrame;
+}
+
+type StrandResult = AtlasStrandResult;
+
+interface AtlasTrace {
+  els: Set<AtlasElementIdentifier>;
+  links: Set<AtlasLinkKey>;
+}
 
 // ───── What is open ───────────────────────────────────────────────────────
 // GRAPH is the whole map as the engine wants it; ATLAS is everything downstream
 // of START. Both are rebuilt only when the map or the start box changes — the
 // picture is redrawn far more often than it is recomputed.
-let GRAPH: any = null;
-let ATLAS: any = null;
+let GRAPH: AtlasGraph | null = null;
+let ATLAS: AtlasData | null = null;
 let START: string | null = null;
 
-const WHEELS = new Map<any, any>();   // one wheel layout per tangle, built when first drawn
-let WHEEL_PICK: any = null;           // the box being explained inside a tangle
+type WheelEdgeKey = string & { readonly wheelEdgeKey: unique symbol };
+type WheelEdge = AtlasWheelEdge;
+type WheelLoop = AtlasWheelLoop;
+interface WheelLayout extends AtlasWheel {
+  at?: Map<AtlasElementIdentifier, [number, number, number]>;
+  centre?: [number, number];
+  radius?: number;
+}
+interface PositionedWheelLayout extends WheelLayout {
+  at: Map<AtlasElementIdentifier, [number, number, number]>;
+  centre: [number, number];
+  radius: number;
+}
+
+function wheelIsPositioned(wheel: WheelLayout): wheel is PositionedWheelLayout {
+  return !!wheel.at && !!wheel.centre && wheel.radius !== undefined;
+}
+
+export function wheelEdgeKey(edge: Pick<WheelEdge, "from" | "to">): WheelEdgeKey {
+  // This is the single constructor for the opaque key. Callers cannot create
+  // one from an arbitrary DOM string; parseWheelEdgeKey validates that boundary.
+  return (edge.from + "\u0001" + edge.to) as WheelEdgeKey;
+}
+
+function parseWheelEdgeKey(serializedKey: string | undefined): WheelEdgeKey | null {
+  if (!serializedKey) return null;
+  const separatorIndex = serializedKey.indexOf("\u0001");
+  if (
+    separatorIndex <= 0 ||
+    separatorIndex === serializedKey.length - 1 ||
+    serializedKey.indexOf("\u0001", separatorIndex + 1) !== -1
+  ) return null;
+  return wheelEdgeKey({
+    from: serializedKey.slice(0, separatorIndex),
+    to: serializedKey.slice(separatorIndex + 1),
+  });
+}
+
+function atlasLinkEnds(key: string): [AtlasElementIdentifier, AtlasElementIdentifier] {
+  const separatorIndex = key.indexOf("\u0000");
+  return [key.slice(0, separatorIndex), key.slice(separatorIndex + 1)];
+}
+
+export interface AtlasCutPropagation {
+  links: Set<string>;
+  scannedLinkCount: number;
+}
+
+// Build outgoing adjacency once, then visit each retained link at most once.
+// `scannedLinkCount` is both useful diagnostics and a testable linear-work
+// contract for the 300-box performance boundary.
+export function cutAtlasLinksAfterBlockedElements(
+  retainedLinks: Set<string>,
+  blockedElementIdentifiers: Set<string>,
+): AtlasCutPropagation {
+  const links = new Set(retainedLinks);
+  const incomingCountByElementIdentifier = new Map<string, number>();
+  const outgoingLinksByElementIdentifier = new Map<string, Array<{ key: string; toIdentifier: string }>>();
+  for (const key of retainedLinks) {
+    const [fromIdentifier, toIdentifier] = atlasLinkEnds(key);
+    incomingCountByElementIdentifier.set(
+      toIdentifier,
+      (incomingCountByElementIdentifier.get(toIdentifier) || 0) + 1,
+    );
+    const outgoingLinks = outgoingLinksByElementIdentifier.get(fromIdentifier);
+    const entry = { key, toIdentifier };
+    if (outgoingLinks) outgoingLinks.push(entry);
+    else outgoingLinksByElementIdentifier.set(fromIdentifier, [entry]);
+  }
+
+  const cutQueue = [...blockedElementIdentifiers];
+  const processedElementIdentifiers = new Set<string>();
+  let scannedLinkCount = 0;
+  for (let queueIndex = 0; queueIndex < cutQueue.length; queueIndex++) {
+    const fromIdentifier = cutQueue[queueIndex];
+    if (processedElementIdentifiers.has(fromIdentifier)) continue;
+    processedElementIdentifiers.add(fromIdentifier);
+    for (const outgoingLink of outgoingLinksByElementIdentifier.get(fromIdentifier) || []) {
+      scannedLinkCount++;
+      if (!links.delete(outgoingLink.key)) continue;
+      const remainingIncomingCount = (incomingCountByElementIdentifier.get(outgoingLink.toIdentifier) || 1) - 1;
+      incomingCountByElementIdentifier.set(outgoingLink.toIdentifier, remainingIncomingCount);
+      if (remainingIncomingCount <= 0) cutQueue.push(outgoingLink.toIdentifier);
+    }
+  }
+  return { links, scannedLinkCount };
+}
+
+const WHEELS = new Map<AtlasElementIdentifier, WheelLayout>();
+let WHEEL_PICK: AtlasElementIdentifier | null = null;
 let WHEEL_LOOP = 0;                   // which of its loops, when it has several
-let WHEEL_TANGLE: any = null;         // the tangle that box belongs to
+let WHEEL_TANGLE: AtlasTangle | null = null; // the tangle that box belongs to
 // Whether the current pick came from the wheel or from a row in the list. Only
 // a pick made on the wheel means "show me the loops through this box".
 let PICK_FROM_WHEEL = false;
@@ -75,7 +217,7 @@ const CHAIN_BUDGET = 36;
 // light only the first, so the number in the panel and the run on the picture
 // were about different things. The row is the unit the reader chose; it is the
 // unit that gets lit.
-let STRAND_CACHE: any = null;
+let STRAND_CACHE: { key: string; result: StrandResult } | null = null;
 
 // ───── One reading ────────────────────────────────────────────────────────
 // What is being looked at, in one record, with one way to change it.
@@ -92,20 +234,20 @@ let STRAND_CACHE: any = null;
 // every time it is needed (see `drawn()`), so it cannot drift from it — which
 // is the drift the old drawn() variable kept having.
 interface Reading {
-  roots: any[];             // circles clicked on the picture, in the order clicked
-  open: any[][];            // row-paths the reader has opened, each destination-first
-  current: any[];           // the row last taken hold of: what is drawn, and marked
+  roots: AtlasElementIdentifier[]; // circles clicked on the picture, in the order clicked
+  open: ForkPath[];         // row-paths the reader has opened, each destination-first
+  current: ForkPath;        // the row last taken hold of: what is drawn, and marked
   lanes: LanePick[];        // a box picked out from under a folded row
-  trace: any | null;        // an element traced back to the sliders that moved it
+  trace: AtlasElementIdentifier | null; // an element traced back to the sliders that moved it
   traceKey: string | null;  // which control asked for that trace, so it can be un-asked
-  inside: any | null;       // the tangle being looked inside
+  inside: AtlasElementIdentifier | null; // the tangle being looked inside
 }
 
 // Which of the boxes a folded row stands for the reader has picked out, per row.
 // Per row rather than one at a time, for the same reason rows open independently:
 // picking Cannabis under ◇ Seizure says nothing about ◇ Targets three rows down,
 // and moving that row's forks about would be answering a question nobody asked.
-interface LanePick { path: any[]; value: string }
+interface LanePick { path: ForkPath; value: string }
 
 const R: Reading = { roots: [], open: [], current: [], lanes: [], trace: null, traceKey: null, inside: null };
 
@@ -119,11 +261,11 @@ let POINTED: Fork | null = null;
 // pointing is what the reader is doing right now; a circle picked with nothing
 // narrowed under it draws everything running through it, which is exactly what
 // pointing at it showed — so the click leaves what the pointer promised.
-function drawn(): any[][] | null {
+function drawn(): AtlasPath[] | null {
   // Empty is NONE, not "some". An empty array is truthy, and returning one told
   // every caller downstream that there were pathways to draw — dimming the
   // whole picture in favour of nothing.
-  const some = (list: any[][] | null | undefined) => (list && list.length ? list : null);
+  const some = (list: AtlasPath[] | null | undefined) => (list && list.length ? list : null);
   if (POINTED) return some(POINTED.paths);
   const chain = openChain();
   if (chain.length) return some(chain[chain.length - 1].paths);
@@ -136,16 +278,16 @@ function drawn(): any[][] | null {
 // destination and the routes reaching it are the same set of circles, and
 // holding it is what lets each ribbon carry its own share of the change rather
 // than a plain in-or-out.
-function traceEl(): any {
+function traceEl(): AtlasElementIdentifier | null {
   if (R.trace) return R.trace;
   const chain = openChain();
   return chain.length === 1 ? chain[0].via : null;
 }
 
-let TRACE_OF: any = null;
-let TRACE_CACHE: { els: Set<any>; links: Set<any> } | null = null;
+let TRACE_OF: AtlasElementIdentifier | null = null;
+let TRACE_CACHE: AtlasTrace | null = null;
 
-function trace(): { els: Set<any>; links: Set<any> } | null {
+function trace(): AtlasTrace | null {
   const el = traceEl();
   if (el === null || el === undefined) return null;
   if (TRACE_OF !== el) { TRACE_OF = el; TRACE_CACHE = traceTo(el); }
@@ -157,9 +299,20 @@ const plural = (n: number, one: string, many?: string): string => (n === 1 ? one
 const clip = (s: string, n: number): string => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 const pct = (f: number): string =>
   (f >= 0.1 ? (f * 100).toFixed(0) : f >= 0.001 ? (f * 100).toFixed(1) : "<0.1") + "%";
-const labelOf = (id: any): string => (ATLAS && ATLAS.nodes.get(id) ? ATLAS.nodes.get(id).label : String(id));
-const boxLabel = (id: any): string => (nodeById[id] ? nodeById[id].label : String(id));
+const labelOf = (identifier: ForkIdentifier): string =>
+  identifier === null ? "" : ATLAS?.nodes.get(identifier)?.label || identifier;
+const boxLabel = (identifier: string): string => nodeById[identifier]?.label || identifier;
 const stageEl = (): HTMLElement | null => document.getElementById("atlas-stage");
+const eventTargetElement = (target: EventTarget | null): Element | null =>
+  target instanceof Element ? target : null;
+const closestHtmlElement = (target: EventTarget | null, selector: string): HTMLElement | null => {
+  const match = eventTargetElement(target)?.closest(selector);
+  return match instanceof HTMLElement ? match : null;
+};
+const closestSvgElement = (target: EventTarget | null, selector: string): SVGElement | null => {
+  const match = eventTargetElement(target)?.closest(selector);
+  return match instanceof SVGElement ? match : null;
+};
 
 // The right panel is the inspector, so "re-render the inspector" is "re-render
 // the panel". The tour calls this once per loop, not once per frame.
@@ -177,7 +330,9 @@ const stageEl = (): HTMLElement | null => document.getElementById("atlas-stage")
 const SCROLLERS = ".strands, .mvrows, .loopcards";
 
 function scrollKey(el: Element): string {
-  if (el.classList.contains("mvrows")) return "mv:" + ((el as HTMLElement).dataset.section || "");
+  if (el.classList.contains("mvrows")) {
+    return "mv:" + (el instanceof HTMLElement ? el.dataset.section || "" : "");
+  }
   return el.classList.contains("strands") ? "strands" : "loops";
 }
 
@@ -222,7 +377,7 @@ export function openAtlas(startId: string): void {
   if (!nodeById[startId]) return;
   state.atlas = { startId };
   START = startId;
-  GRAPH = buildGraph({
+  const graph = buildGraph({
     name: "map",
     nodes: NODES.map(n => ({ id: n.id, label: n.label, direction: n.direction || "" })),
     // The engine reads only the sign and the size of a link. resolveEdgeElasticity
@@ -230,7 +385,12 @@ export function openAtlas(startId: string): void {
     edges: EDGES.map(e => ({ from: e.from, to: e.to, id: e.id, effect: e.effect,
                              elasticity: resolveEdgeElasticity(e) })),
   });
-  ATLAS = buildAtlas(GRAPH, startId, { grouping: "loose", lanes: { minMembers: 3, minTokenFamilies: 2 } });
+  GRAPH = graph;
+  const atlas = buildAtlas(graph, startId, {
+    grouping: "loose",
+    lanes: { minMembers: 3, minTokenFamilies: 2 },
+  });
+  ATLAS = atlas;
   WHEELS.clear();
   PAIR_GAIN.clear();
   PATHS_THROUGH.clear();
@@ -377,9 +537,9 @@ export function initAtlasEntry(): void {
   document.addEventListener("click", event => {
     const menu = atlasMenuEl();
     if (!menu || menu.hidden) return;
-    const target = event.target as HTMLElement | null;
-    if (target && target.closest && target.closest("#atlas-button")) return;
-    const pick = target && target.closest ? target.closest("[data-atlas-start]") as HTMLElement | null : null;
+    const target = eventTargetElement(event.target);
+    if (target?.closest("#atlas-button")) return;
+    const pick = closestHtmlElement(target, "[data-atlas-start]");
     setAtlasMenuOpen(false);
     if (pick && pick.dataset.atlasStart) openAtlas(pick.dataset.atlasStart);
   });
@@ -401,9 +561,9 @@ export function initAtlasEntry(): void {
     vizSvg.dataset.atlasWired = "1";
     vizSvg.addEventListener("dblclick", event => {
       if (state.uiMode === "edit" || !state.dataLoaded) return;
-      const target = event.target as Element;
-      if (!target || !target.closest) return;
-      const group = target.closest(".node-group") as HTMLElement | null;
+      const target = eventTargetElement(event.target);
+      if (!target) return;
+      const group = closestSvgElement(target, ".node-group");
       if (!group) return;
       const id = group.getAttribute("data-node-id");
       // Same bar the panel card sets itself: a box with nothing downstream
@@ -444,10 +604,11 @@ export function renderAtlas(): void {
 // sees is the shape arriving rather than a wall of circles already there.
 function revealAtlas(): void {
   const svg = svgEl();
-  if (!svg || reduced()) return;
-  for (const g of svg.querySelectorAll("g.n")) {
-    const at = WORLD.at.get((g as HTMLElement).dataset.el) || [0];
-    (g as HTMLElement).style.animationDelay = Math.min(700, (at[0] / WORLD.W) * 620).toFixed(0) + "ms";
+  const world = WORLD;
+  if (!svg || !world || reduced()) return;
+  for (const group of svg.querySelectorAll<SVGGElement>("g.n")) {
+    const at = world.at.get(group.dataset.el || "") || [0, 0];
+    group.style.animationDelay = Math.min(700, (at[0] / world.W) * 620).toFixed(0) + "ms";
   }
   svg.classList.add("reveal");
   setTimeout(() => svg.classList.remove("reveal"), REVEAL + 800);
@@ -458,26 +619,37 @@ const MAX_R = 62;             // radius of the busiest element
 const TOUR_MAX = 14;          // loops played through on entering a tangle
 const REVEAL = 900;           // how long the picture takes to draw itself in
 
-let WORLD: any = null;             // where everything is, in world coordinates
-let VB: any = null;                // the frame we are looking through
+let WORLD: AtlasWorld | null = null; // where everything is, in world coordinates
+let VB: AtlasFrame | null = null;    // the frame we are looking through
 let vbRAF = 0, tourRAF = 0, tourAt = -1;
 
 const reduced = () =>
   typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-function wheelFor(id: any, t: any) {
-  if (!WHEELS.has(id)) WHEELS.set(id, wheelOf(t));
-  return WHEELS.get(id);
+function wheelFor(id: AtlasElementIdentifier, tangle: AtlasTangle): WheelLayout {
+  if (!WHEELS.has(id)) WHEELS.set(id, wheelOf(tangle));
+  return WHEELS.get(id)!;
 }
 
 // A chord bowed toward the middle, so two links between distant boxes do not
 // lie on top of each other.
-const chordPath = (x1: any, y1: any, x2: any, y2: any, cx: any, cy: any, pull: any) =>
-  `M${x1.toFixed(1)} ${y1.toFixed(1)}Q${(cx + (x1 + x2 - 2 * cx) * pull).toFixed(1)} ${
-    (cy + (y1 + y2 - 2 * cy) * pull).toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`;
+const chordPath = (
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
+  centreX: number,
+  centreY: number,
+  pull: number,
+): string =>
+  `M${startX.toFixed(1)} ${startY.toFixed(1)}Q${(
+    centreX + (startX + endX - 2 * centreX) * pull
+  ).toFixed(1)} ${(
+    centreY + (startY + endY - 2 * centreY) * pull
+  ).toFixed(1)} ${endX.toFixed(1)} ${endY.toFixed(1)}`;
 
-function viewAtlas(A: any, M: any) {
-  const cols: any[] = [];
+function viewAtlas(A: AtlasData, M: AtlasMeasurement): string {
+  const cols: AtlasElementIdentifier[][] = [];
   for (const [id] of A.nodes) {
     if (id === END) continue;
     const d = M.depth.get(id);
@@ -494,59 +666,72 @@ function viewAtlas(A: any, M: any) {
   // Area is the measure, so the radius is its square root. One scale for the
   // whole picture, set by whichever column is fullest — otherwise two circles
   // of the same size in different columns would mean different things.
-  const sq = (id: any) => Math.sqrt(Math.max(M.weight(id), 0.000012));
+  const sq = (id: AtlasElementIdentifier): number => Math.sqrt(Math.max(M.weight(id), 0.000012));
   let k = Infinity;
   for (const col of used) {
-    const sum = col.reduce((a: any, id: any) => a + sq(id), 0);
+    const sum = col.reduce((total, identifier) => total + sq(identifier), 0);
     k = Math.min(k, (H - 2 * PAD - 5 * (col.length - 1)) / (2 * sum));
   }
   k = Math.min(k, MAX_R / Math.max(...used.flat().map(sq)));
-  const rOf = new Map<any, any>(used.flat().map(id => [id, Math.max(2.4, k * sq(id))]));
+  const rOf = new Map<AtlasElementIdentifier, number>(
+    used.flat().map(identifier => [identifier, Math.max(2.4, k * sq(identifier))]),
+  );
 
-  const y = new Map<any, any>();
+  const y = new Map<AtlasElementIdentifier, number>();
   const place = () => {
     for (const col of used) {
-      const need = col.reduce((a: any, id: any) => a + 2 * rOf.get(id), 0);
+      const need = col.reduce((total, identifier) => total + 2 * rOf.get(identifier)!, 0);
       const room = H - 2 * PAD - need;
       // Spread a column across the frame rather than huddling it in the middle —
       // the empty half of the picture was telling the reader nothing.
       const gap = Math.max(4, Math.min(78, room / Math.max(1, col.length - 1)));
       let cur = PAD + Math.max(0, (room - gap * (col.length - 1)) / 2);
-      for (const id of col) { y.set(id, cur + rOf.get(id)); cur += 2 * rOf.get(id) + gap; }
+      for (const identifier of col) {
+        y.set(identifier, cur + rOf.get(identifier)!);
+        cur += 2 * rOf.get(identifier)! + gap;
+      }
     }
   };
   place();
-  const bary = (id: any) => {
-    const ps = [...A.pred.get(id)].filter(q => y.has(q));
-    return ps.length ? ps.reduce((a, q) => a + y.get(q), 0) / ps.length : y.get(id) || 0;
+  const barycentre = (identifier: AtlasElementIdentifier): number => {
+    const predecessors = [...(A.pred.get(identifier) || [])].filter(predecessorIdentifier => y.has(predecessorIdentifier));
+    return predecessors.length
+      ? predecessors.reduce((total, predecessorIdentifier) => total + y.get(predecessorIdentifier)!, 0) / predecessors.length
+      : y.get(identifier) || 0;
   };
   for (let pass = 0; pass < 2; pass++) {
-    for (let c = 1; c < used.length; c++) used[c].sort((a: any, b: any) => bary(a) - bary(b));
+    for (let columnIndex = 1; columnIndex < used.length; columnIndex++) {
+      used[columnIndex].sort((firstIdentifier, secondIdentifier) =>
+        barycentre(firstIdentifier) - barycentre(secondIdentifier));
+    }
     place();
   }
-  const at = new Map<any, any>(used.flat().map(id => [id, [PAD + M.depth.get(id) * COL_W, y.get(id)]]));
+  const at = new Map<AtlasElementIdentifier, [number, number]>(used.flat().map(identifier => [
+    identifier,
+    [PAD + M.depth.get(identifier)! * COL_W, y.get(identifier)!],
+  ]));
   // What is actually drawn, edges of the circles included. Fitting to the
   // nominal width instead clipped whichever element was fat enough to hang past
   // it — usually the start box, the last one you want cut off.
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   for (const [id, p] of at) {
-    const r = rOf.get(id);
+    const r = rOf.get(id)!;
     minX = Math.min(minX, p[0] - r); maxX = Math.max(maxX, p[0] + r);
     minY = Math.min(minY, p[1] - r); maxY = Math.max(maxY, p[1] + r);
   }
   const bounds = { x: minX - 12, y: minY - 22, w: (maxX - minX) + 24, h: (maxY - minY) + 44 };
   WORLD = { W, H, at, rOf, A, M, bounds };
 
-  const parts: any[] = [];
+  const parts: string[] = [];
   for (const [a, outs] of A.succ) {
     if (a === END || !at.has(a)) continue;
     for (const b of outs) {
       if (b === END || !at.has(b)) continue;
-      const [ax, ay] = at.get(a), [bx, by] = at.get(b);
-      const x1 = ax + rOf.get(a), x2 = bx - rOf.get(b), mx = (x1 + x2) / 2;
+      const [ax, ay] = at.get(a)!, [bx, by] = at.get(b)!;
+      const x1 = ax + rOf.get(a)!, x2 = bx - rOf.get(b)!, mx = (x1 + x2) / 2;
       // A line as wide as the circles it joins stops being a line. Thick enough
       // to compare, never thick enough to become the picture.
-      const t = Math.max(0.7, Math.min(24, 0.85 * Math.min(rOf.get(a), rOf.get(b)),
+      const t = Math.max(0.7, Math.min(24, 0.85 * Math.min(rOf.get(a)!, rOf.get(b)!),
         M.linkWeight(a, b) * H * 0.5));
       // data-w is the STRUCTURAL width — the share of readings — kept on the
       // path so the effect-flow mode can borrow the channel and hand it back.
@@ -557,7 +742,7 @@ function viewAtlas(A: any, M: any) {
     }
   }
   for (const id of used.flat()) {
-    const node = A.nodes.get(id), r = rOf.get(id), [cx, cy] = at.get(id);
+    const node = A.nodes.get(id)!, r = rOf.get(id)!, [cx, cy] = at.get(id)!;
     const cls = "bub" + (id === A.start ? " start" : node.loop ? " loop" : "");
     parts.push(`<g class="n${node.loop ? " tangle" : ""}" data-el="${escapeHtml(id)}"${
         node.loop ? ' data-loop="1"' : ""} tabindex="0" role="button"
@@ -632,39 +817,42 @@ const pctNote = () =>
 // makes almost every link run clockwise, and the few that run the other way —
 // the feedback — as chords across the middle. Far away it is a texture; zoomed
 // in it is the whole diagram.
-function tangleWheel(node: any, cx: any, cy: any, r: any) {
+function tangleWheel(node: AtlasNode, centreX: number, centreY: number, radius: number): string {
   const t = node.tangles[0];
   if (!t) return "";
   const w = wheelFor(node.id, t);
   const n = w.order.length;
-  const R = r * 0.8;
-  const at = new Map<any, any>(w.order.map((b: any, i: any) => {
-    const a = (-Math.PI / 2) + (i * 2 * Math.PI) / n;
-    return [b, [cx + R * Math.cos(a), cy + R * Math.sin(a), a]];
+  const wheelRadius = radius * 0.8;
+  const at = new Map<AtlasElementIdentifier, [number, number, number]>(w.order.map((boxIdentifier, index) => {
+    const angle = (-Math.PI / 2) + (index * 2 * Math.PI) / n;
+    return [boxIdentifier, [
+      centreX + wheelRadius * Math.cos(angle),
+      centreY + wheelRadius * Math.sin(angle),
+      angle,
+    ]];
   }));
-  w.at = at; w.centre = [cx, cy]; w.radius = R;
-  const key = (e: any) => e.from + "" + e.to;
-  const polar = new Map<any, any>(w.loops.map((l: any) => [key(l.back), l]));
-  const maxGain = Math.max(...w.loops.map((l: any) => l.gain), 0.0001);
-  const out: any[] = [];
+  w.at = at; w.centre = [centreX, centreY]; w.radius = wheelRadius;
+  const polar = new Map<WheelEdgeKey, WheelLoop>(w.loops.map(loop => [wheelEdgeKey(loop.back), loop]));
+  const maxGain = Math.max(...w.loops.map(loop => loop.gain), 0.0001);
+  const out: string[] = [];
   for (const e of w.forward) {
-    const [x1, y1] = at.get(e.from), [x2, y2] = at.get(e.to);
-    out.push(`<path class="ch fw" data-k="${escapeHtml(key(e))}" d="${chordPath(x1, y1, x2, y2, cx, cy, 0.3)}"></path>`);
+    const [x1, y1] = at.get(e.from)!, [x2, y2] = at.get(e.to)!;
+    out.push(`<path class="ch fw" data-k="${escapeHtml(wheelEdgeKey(e))}" d="${chordPath(x1, y1, x2, y2, centreX, centreY, 0.3)}"></path>`);
   }
   for (const e of w.back) {
-    const l = polar.get(key(e));
-    const [x1, y1] = at.get(e.from), [x2, y2] = at.get(e.to);
-    out.push(`<path class="ch bk" data-k="${escapeHtml(key(e))}" d="${chordPath(x1, y1, x2, y2, cx, cy, 0.22)}"
+    const l = polar.get(wheelEdgeKey(e));
+    const [x1, y1] = at.get(e.from)!, [x2, y2] = at.get(e.to)!;
+    out.push(`<path class="ch bk" data-k="${escapeHtml(wheelEdgeKey(e))}" d="${chordPath(x1, y1, x2, y2, centreX, centreY, 0.22)}"
       stroke="${l && l.reinforcing ? "var(--c1)" : "var(--c2)"}"
       stroke-width="${l ? (0.9 + (l.gain / maxGain) * 1.8).toFixed(2) : 1}"></path>`);
   }
   out.push(`<g class="trace"></g>`);
   const maxShare = Math.max(...w.share.values(), 1);
   for (const b of w.order) {
-    const [x, yy] = at.get(b);
-    const rr = (R / n) * 2.2 * (0.5 + (w.share.get(b) / maxShare) * 0.9);
+    const [x, yy] = at.get(b)!;
+    const rr = (wheelRadius / n) * 2.2 * (0.5 + ((w.share.get(b) || 0) / maxShare) * 0.9);
     out.push(`<circle class="nd" data-box="${escapeHtml(b)}" cx="${x.toFixed(1)}" cy="${yy.toFixed(1)}"
-      r="${Math.max(0.7, Math.min(R / 7, rr)).toFixed(2)}"></circle>`);
+      r="${Math.max(0.7, Math.min(wheelRadius / 7, rr)).toFixed(2)}"></circle>`);
   }
   out.push(`<g class="labs"></g>`);
   return out.join("");
@@ -673,7 +861,7 @@ function tangleWheel(node: any, cx: any, cy: any, r: any) {
 // ---------------------------------------------------------------------------
 // LOOKING AT IT — zoom, pan, and what is lit up
 // ---------------------------------------------------------------------------
-const svgEl = (): any => document.querySelector("#atlas-stage svg.atlas");
+const svgEl = (): SVGSVGElement | null => document.querySelector("#atlas-stage svg.atlas");
 
 // One world unit is this many screen pixels. Text and hairlines divide by it,
 // so they stay the same size on screen however far in the frame has closed.
@@ -693,9 +881,9 @@ function setScale() {
     // The way back is offered whenever there is somewhere to come back FROM —
     // inside a tangle, or simply zoomed in past the whole picture.
     ctl.hidden = !zoomedIn && !R.inside;
-    const out = ctl.querySelector("[data-zoomout]") as HTMLElement | null;
+    const out = ctl.querySelector<HTMLElement>("[data-zoomout]");
     if (out) out.textContent = R.inside ? "Back out" : "Fit to width";
-    const rp = ctl.querySelector("[data-replay]") as HTMLElement | null;
+    const rp = ctl.querySelector<HTMLElement>("[data-replay]");
     if (rp) rp.hidden = !R.inside;
   }
   const readout = document.getElementById("atlas-zoom-readout");
@@ -714,8 +902,9 @@ function frameAspect(): number {
   return w / h;
 }
 
-function wholePicture(): any {
-  const b = WORLD.bounds || { x: 0, y: 0, w: WORLD.W, h: WORLD.H };
+function wholePicture(): AtlasFrame {
+  const world = WORLD!;
+  const b = world.bounds || { x: 0, y: 0, w: world.W, h: world.H };
   const aspect = frameAspect();
   // Fit the width of what is drawn. Where the picture is taller than that
   // leaves room for, the rest is panned to rather than shrunk away: a tall map
@@ -725,24 +914,28 @@ function wholePicture(): any {
   return { x: b.x - (w - b.w) / 2, y: b.y - (h - b.h) / 2, w, h };
 }
 
-function frameOn(id: any) {
-  const [cx, cy] = WORLD.at.get(id), r = WORLD.rOf.get(id);
+function frameOn(identifier: AtlasElementIdentifier): AtlasFrame {
+  const world = WORLD!;
+  const [cx, cy] = world.at.get(identifier)!;
+  const r = world.rOf.get(identifier)!;
   const svg = svgEl();
   const box = svg ? svg.getBoundingClientRect() : { width: 16, height: 9 };
   const aspect = (box.width || 16) / (box.height || 9);
   // Close in until the tangle owns the frame, but never so far that a small
   // one fills the screen with its two neighbours.
-  const h = Math.max(r * 2.9, WORLD.H * 0.12), w = h * aspect;
+  const h = Math.max(r * 2.9, world.H * 0.12), w = h * aspect;
   return { x: cx - w / 2, y: cy - h / 2, w, h };
 }
 
-function zoomTo(target: any, then?: any) {
+function zoomTo(target: AtlasFrame, then?: () => void): void {
   cancelAnimationFrame(vbRAF);
   const from = VB || wholePicture();
   if (reduced()) { VB = target; setScale(); if (then) then(); return; }
   const t0 = performance.now(), MS = 620;
-  const ease = (t: any) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
-  const step = (now: any) => {
+  const ease = (progress: number): number => progress < 0.5
+    ? 4 * progress * progress * progress
+    : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+  const step = (now: number) => {
     const f = Math.min(1, (now - t0) / MS), e = ease(f);
     VB = {
       x: from.x + (target.x - from.x) * e, y: from.y + (target.y - from.y) * e,
@@ -759,16 +952,16 @@ function zoomTo(target: any, then?: any) {
 // pathway that runs THROUGH it and on to whatever it ends up feeding. A circle
 // in the middle of the map is not a place the story stops; asking about one
 // asks what it leads to, and the answer is the outputs on the far side of it.
-const PATHS_THROUGH = new Map<string, any[][]>();
+const PATHS_THROUGH = new Map<string, AtlasPath[]>();
 
 // In ORDER. Two circles picked mean "the pathways that go through this one and
 // then that one" — clicking along a route is how a route gets narrowed down, so
 // a circle upstream of one already picked is not a narrowing, it is a new
 // question. That is what makes stacking safe: the test for "is this one further
 // along" is simply whether any pathway still holds them all in order.
-function holdsInOrder(path: any[], els: any[]): boolean {
+function holdsInOrder(path: AtlasPath, elements: AtlasElementIdentifier[]): boolean {
   let at = -1;
-  for (const el of els) {
+  for (const el of elements) {
     const next = path.indexOf(el, at + 1);
     if (next < 0) return false;
     at = next;
@@ -776,14 +969,14 @@ function holdsInOrder(path: any[], els: any[]): boolean {
   return true;
 }
 
-function pathsThrough(els: any[]): any[][] {
-  if (!els.length || !WORLD) return [];
-  const key = els.join("\u0000");
+function pathsThrough(elements: AtlasElementIdentifier[]): AtlasPath[] {
+  if (!elements.length || !WORLD) return [];
+  const key = elements.join("\u0000");
   if (PATHS_THROUGH.has(key)) return PATHS_THROUGH.get(key)!;
   // The walk is gated on the first, which is the cheapest gate the engine
   // offers; the rest are a filter over what it hands back.
-  const list = strands(WORLD.A, { through: els[0], limit: STRAND_MAX }).list
-    .filter((p: any[]) => holdsInOrder(p, els));
+  const list = strands(WORLD.A, { through: elements[0], limit: STRAND_MAX }).list
+    .filter(path => holdsInOrder(path, elements));
   PATHS_THROUGH.set(key, list);
   return list;
 }
@@ -791,8 +984,8 @@ function pathsThrough(els: any[]): any[][] {
 // Cached against what it depends on, since renderInspector runs on every
 // repaint. The cached OBJECT is also the key the fork tree is built against, so
 // this staying stable is what keeps the list's identities stable.
-function strandList(): any {
-  const empty = { list: [], truncated: false, reachable: true };
+function strandList(): StrandResult {
+  const empty: StrandResult = { list: [], truncated: false, reachable: true };
   if (!WORLD) return empty;
   // Every pathway on the map, whatever is picked. Picking a circle used to
   // re-root this — the eleven outputs became one, and the list you were reading
@@ -810,33 +1003,33 @@ function strandList(): any {
 // A circle, as the list would put it: everything running through it, all the
 // way out to what it feeds. Pointing at a circle draws this, and clicking pins
 // it — so what the pointer showed is exactly what the click leaves.
-function forkToElement(els: any[]): Fork | null {
-  if (!WORLD || !ATLAS || !els.length) return null;
-  const last = els[els.length - 1];
+function forkToElement(elements: AtlasElementIdentifier[]): Fork | null {
+  if (!WORLD || !ATLAS || !elements.length) return null;
+  const last = elements[elements.length - 1];
   if (!ATLAS.nodes.has(last) || last === WORLD.A.start) return null;
-  const list = pathsThrough(els);
+  const list = pathsThrough(elements);
   return list.length ? { via: last, paths: list, kids: [], depth: 0 } : null;
 }
 
 // What clicking a circle would leave you with: added to the trail if any
 // pathway still runs through them all in order, and a fresh start if not. The
 // pointer shows this, so the click can only ever leave what was shown.
-function rootsAfterClicking(el: any): any[] {
-  const at = R.roots.indexOf(el);
+function rootsAfterClicking(elementIdentifier: AtlasElementIdentifier): AtlasElementIdentifier[] {
+  const at = R.roots.indexOf(elementIdentifier);
   if (at >= 0) return R.roots.slice(0, at);        // clicking one again drops it
-  const stacked = R.roots.concat([el]);
-  return pathsThrough(stacked).length ? stacked : [el];
+  const stacked = R.roots.concat([elementIdentifier]);
+  return pathsThrough(stacked).length ? stacked : [elementIdentifier];
 }
 
 // Two picks are the same pick when they cover the same routes.
-const sameStrand = (a: any[][], b: any[][]) =>
+const sameStrand = (a: AtlasPath[], b: AtlasPath[]): boolean =>
   a.length === b.length &&
   new Set(a.map(p => p.join("\u0000"))).size ===
     new Set([...a, ...b].map(p => p.join("\u0000"))).size;
 
 // The frame a strand wants: all of it, with room round it, in the shape of the
 // window so the browser does not letterbox it.
-function frameOnStrand(path: any[]) {
+function frameOnStrand(path: AtlasPath): AtlasFrame | null {
   if (!WORLD || !path.length) return null;
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const id of path) {
@@ -874,16 +1067,16 @@ function frameOnStrand(path: any[]) {
 // what is under it, frames it, and shows the next fork down.
 
 interface Fork {
-  via: any;          // the element this fork is named by
-  paths: any[][];    // every pathway under it
+  via: AtlasElementIdentifier | null; // the element this fork is named by
+  paths: AtlasPath[]; // every pathway under it
   kids: Fork[];      // the next fork down, or none when one pathway is left
   depth: number;     // 0 = a destination, 1 = its first fork, and so on
 }
 
-function forks(paths: any[][], depth: number): Fork[] {
+function forks(paths: AtlasPath[], depth: number): Fork[] {
   let lcp = 0;
   while (paths.every(p => p.length > lcp && p[lcp] === paths[0][lcp])) lcp++;
-  const byNext = new Map<any, any[][]>();
+  const byNext = new Map<AtlasElementIdentifier | null, AtlasPath[]>();
   for (const p of paths) {
     // A pathway that stops exactly where its siblings carry on has no box to be
     // named by. It is a leaf either way, so it keeps the null and is named for
@@ -907,13 +1100,13 @@ function forks(paths: any[][], depth: number): Fork[] {
 // still leads to it — where several do, the circle is on divergent routes and
 // there is no single row to open down to, so it stops there and marks the fork
 // it reached.
-function chainTo(dest: Fork, els: any[]): Fork[] {
-  const last = els[els.length - 1];
+function chainTo(dest: Fork, elements: AtlasElementIdentifier[]): Fork[] {
+  const last = elements[elements.length - 1];
   const out: Fork[] = [];
   let here = dest;
   while (here.kids.length) {
     if (here.via === last) break;                  // this row IS the last circle
-    const on = here.kids.filter(k => holds(k, els));
+    const on = here.kids.filter(k => holds(k, elements));
     if (on.length !== 1) break;
     out.push(on[0]);
     here = on[0];
@@ -921,8 +1114,8 @@ function chainTo(dest: Fork, els: any[]): Fork[] {
   return out;
 }
 
-const holds = (f: Fork, els: any[]): boolean =>
-  f.paths.some(p => holdsInOrder(p, els));
+const holds = (fork: Fork, elements: AtlasElementIdentifier[]): boolean =>
+  fork.paths.some(path => holdsInOrder(path, elements));
 
 // The tree, built once per pathway list rather than per call. Identity is the
 // whole point: the chain you have open, the row marked as chosen, the rows the
@@ -930,7 +1123,7 @@ const holds = (f: Fork, els: any[]): boolean =>
 // IDENTITY, and rebuilding the tree on every call quietly made every one of
 // those comparisons false. strandList() hands back the same object while its
 // own cache stands, so it is the key.
-let TREE_OF: any = null;
+let TREE_OF: StrandResult | null = null;
 let TREE: Fork[] = [];
 
 // ── The handle a row carries ──────────────────────────────────────────────
@@ -944,7 +1137,7 @@ let TREE: Fork[] = [];
 // The way down never becomes a string now. The row carries an opaque handle
 // and the path is looked up, so no character in a label can break it.
 const FORK_KEY = new Map<Fork, string>();     // fork → the handle its row carries
-const KEY_PATH = new Map<string, any[]>();    // handle → the way down to that fork
+const KEY_PATH = new Map<string, ForkPath>(); // handle → the way down to that fork
 const KEY_FORK = new Map<string, Fork>();     // handle → the fork itself
 
 function forkTree(): Fork[] {
@@ -962,7 +1155,7 @@ function forkTree(): Fork[] {
 function indexForks(tree: Fork[]): void {
   FORK_KEY.clear(); KEY_PATH.clear(); KEY_FORK.clear();
   let n = 0;
-  const walk = (level: Fork[], trail: any[]): void => {
+  const walk = (level: Fork[], trail: ForkPath): void => {
     for (const f of level) {
       const mine = trail.concat([f.via]);
       const key = "f" + (n++);
@@ -975,8 +1168,8 @@ function indexForks(tree: Fork[]): void {
 
 // The destinations, in the order the walk found them — which, because it is
 // shortest-pathway-first, is nearest destination first.
-function destinationForks(list: any[][]): Fork[] {
-  const byDest = new Map<any, any[][]>();
+function destinationForks(list: AtlasPath[]): Fork[] {
+  const byDest = new Map<AtlasElementIdentifier, AtlasPath[]>();
   for (const p of list) {
     const dest = p[p.length - 1];
     if (!byDest.has(dest)) byDest.set(dest, []);
@@ -1002,7 +1195,7 @@ const forkGain = (f: Fork): number => f.paths.reduce((a, p) => a + pathGain(p), 
 
 // A path of vias as the forks it names, or as far down it as still exists — the
 // list is rebuilt whenever the map changes, so a path can go stale.
-function forksAlong(path: any[]): Fork[] {
+function forksAlong(path: ForkPath): Fork[] {
   const out: Fork[] = [];
   let kids = forkTree();
   for (const via of path) {
@@ -1028,14 +1221,14 @@ function openChain(): Fork[] {
 // longer where you had just seen it. Rows are independent now: a row opens when
 // you click it and closes when you click it again, and nothing else moves
 // either time.
-const samePath = (a: any[], b: any[]) =>
+const samePath = (a: ForkPath, b: ForkPath): boolean =>
   a.length === b.length && a.every((v, i) => v === b[i]);
-const startsWith = (path: any[], prefix: any[]) =>
+const startsWith = (path: ForkPath, prefix: ForkPath): boolean =>
   path.length >= prefix.length && prefix.every((v, i) => v === path[i]);
 
 // Does this row show its forks? Because it was opened, or because something
 // opened below it has to be reached through it.
-const isOpen = (path: any[]) => R.open.some(o => startsWith(o, path));
+const isOpen = (path: ForkPath): boolean => R.open.some(openPath => startsWith(openPath, path));
 
 // ── The boxes a folded row stands for ─────────────────────────────────────
 // A folded circle is several boxes that share a core phrase — four Seizure
@@ -1045,14 +1238,14 @@ const isOpen = (path: any[]) => R.open.some(o => startsWith(o, path));
 // of the four actually takes each step onward. The engine worked that out on
 // the way past and has been handing it back unused ever since (stepLanes);
 // nothing here recomputes it.
-const laneAt = (path: any[]): string | null => {
+const laneAt = (path: ForkPath): string | null => {
   const hit = R.lanes.find(l => samePath(l.path, path));
   return hit ? hit.value : null;
 };
 
 // Picking the one already picked lets go of it, which is the rule every other
 // control in this panel follows.
-function pickLane(path: any[], value: string): void {
+function pickLane(path: ForkPath, value: string): void {
   const had = laneAt(path);
   R.lanes = R.lanes.filter(l => !samePath(l.path, path));
   if (had !== value) R.lanes.push({ path, value });
@@ -1064,7 +1257,7 @@ function pickLane(path: any[], value: string): void {
 // What a folded element stands for, or nothing when it is not a family. A
 // tangle is folded too, and what it holds is loops rather than alternatives —
 // the aside already draws those as diagrams.
-function lanesOf(via: any): string[] {
+function lanesOf(via: AtlasElementIdentifier | null): string[] {
   if (!ATLAS || via === null) return [];
   const node = ATLAS.nodes.get(via);
   if (!node || node.loop || !node.lanes || node.boxes.length < 2) return [];
@@ -1085,12 +1278,13 @@ function lanesOf(via: any): string[] {
 function offLane(f: Fork, lane: string): Set<Fork> {
   const out = new Set<Fork>();
   const steps = ATLAS && ATLAS.stepLanes;
-  if (!steps) return out;
+  if (!steps || f.via === null) return out;
+  const viaIdentifier = f.via;
   for (const k of f.kids) {
     const takes = k.paths.some(p => {
-      const at = p.indexOf(f.via);
+      const at = p.indexOf(viaIdentifier);
       if (at < 0 || at + 1 >= p.length) return true;
-      const took = steps.get(f.via + ">" + p[at + 1]);
+      const took = steps.get(viaIdentifier + ">" + p[at + 1]);
       return !took || took.has(lane);
     });
     if (!takes) out.add(k);
@@ -1125,7 +1319,7 @@ function syncStrandToOpen(reframe: boolean): void {
 // fork. Because the row carries it, this never has to reconstruct the
 // ancestors from whatever was open — which is what used to fail when the list
 // had been opened by a circle rather than drilled by hand.
-function openFork(path: any[]): void {
+function openFork(path: ForkPath): void {
   if (!path.length) return;
   // Open or shut, and nothing else: a row you click closes if it is open and
   // opens if it is not. Requiring it to be the CURRENT row as well meant the
@@ -1198,18 +1392,27 @@ const PAIR_GAIN = new Map<string, number>();
 // picture drew as stopping dead — "via Vehicle Physical Search −0.3%" against a
 // route carrying nothing — and the share it took came out of the routes that had
 // actually carried something.
-function pairGain(a: any, b: any): number {
-  return heldBy(b) ? 0 : structuralGain(a, b);
+function pairGain(
+  fromIdentifier: AtlasElementIdentifier,
+  toIdentifier: AtlasElementIdentifier,
+  heldByElement?: Map<AtlasElementIdentifier, { label: string }>,
+): number {
+  const held = heldByElement ? heldByElement.has(toIdentifier) : !!heldBy(toIdentifier);
+  return held ? 0 : structuralGain(fromIdentifier, toIdentifier);
 }
 
-function structuralGain(a: any, b: any): number {
-  const key = a + "\u0000" + b;
+function structuralGain(
+  fromIdentifier: AtlasElementIdentifier,
+  toIdentifier: AtlasElementIdentifier,
+): number {
+  const key = fromIdentifier + "\u0000" + toIdentifier;
   const had = PAIR_GAIN.get(key);
   if (had !== undefined) return had;
-  const from = ATLAS && ATLAS.nodes.get(a), to = ATLAS && ATLAS.nodes.get(b);
+  const from = ATLAS?.nodes.get(fromIdentifier);
+  const to = ATLAS?.nodes.get(toIdentifier);
   let best = 0;
   if (from && to && GRAPH) {
-    const targets = new Set<any>(to.boxes);
+    const targets = new Set<string>(to.boxes);
     for (const box of from.boxes) {
       for (const e of GRAPH.out.get(box) || []) {
         if (targets.has(e.to) && Math.abs(e.elasticity || 0) > Math.abs(best)) best = e.elasticity || 0;
@@ -1220,7 +1423,7 @@ function structuralGain(a: any, b: any): number {
   return best;
 }
 
-const pathGain = (path: any[]): number => {
+const pathGain = (path: AtlasPath): number => {
   let gain = 1;
   for (let i = 0; i + 1 < path.length; i++) gain *= pairGain(path[i], path[i + 1]);
   return gain;
@@ -1289,7 +1492,7 @@ function forkRow(
 // Nothing here is a filter over the list. Picking one quietens the forks that
 // box does not take and leaves them where they are, so the count above still
 // covers what is under it and letting go costs one click.
-function laneStrip(f: Fork, path: any[]): string {
+function laneStrip(f: Fork, path: ForkPath): string {
   const lanes = lanesOf(f.via);
   if (!lanes.length || !f.kids.length) return "";
   const on = laneAt(path);
@@ -1313,7 +1516,8 @@ function laneStrip(f: Fork, path: any[]): string {
 // apportioned by its parent.
 function shareAtOpen(chain: Fork[]): number | null {
   if (!state.simulationMode || !chain.length || !ATLAS) return null;
-  const dest = ATLAS.nodes.get(chain[0].via);
+  const destinationIdentifier = chain[0].via;
+  const dest = destinationIdentifier === null ? undefined : ATLAS.nodes.get(destinationIdentifier);
   const effect = dest ? movesOf(dest.boxes) : null;
   if (!effect || !effect.moved) return null;
   let share = effect.pct;
@@ -1359,12 +1563,12 @@ export function previewFork(f: Fork | null): void {
 // is. So the two surfaces are not the same list twice — they are the two halves
 // of the same question, "where to" and "which way", and each shows what
 // clicking it would leave you with.
-function forkAtElement(el: any): Fork | null {
+function forkAtElement(elementIdentifier: AtlasElementIdentifier): Fork | null {
   // Exactly what clicking it would leave: added to the trail if it is further
   // along, a fresh start if it is not. So a circle that would narrow the trail
   // previews the narrowing, and one that would replace it previews the
   // replacement — the pointer never promises something the click will not do.
-  return forkToElement(rootsAfterClicking(el));
+  return forkToElement(rootsAfterClicking(elementIdentifier));
 }
 
 // The fork a row stands for, from the handle the row carries. A row at depth d
@@ -1379,7 +1583,7 @@ function forkOfKey(raw: string | undefined): Fork | null {
 
 // The way down to a fork. The rows carry a handle to it; the keyboard has no
 // row to read one off, so it asks for the fork's own.
-function pathOfFork(target: Fork): any[] {
+function pathOfFork(target: Fork): ForkPath {
   forkTree();
   const key = FORK_KEY.get(target);
   // A circle's fork is made up on the spot rather than taken from the tree
@@ -1426,7 +1630,7 @@ const rowAttrs = (f: Fork): string =>
 
 // The row hands its handle straight back. Nothing is parsed, so nothing can be
 // mis-parsed.
-const decodePath = (raw: string | undefined): any[] =>
+const decodePath = (raw: string | undefined): ForkPath =>
   (raw ? KEY_PATH.get(raw) : null) || [];
 
 // A destination row: the output, how far it moved against the biggest mover on
@@ -1435,7 +1639,7 @@ const decodePath = (raw: string | undefined): any[] =>
 function destRow(
   f: Fork, chosen: boolean, outputScale: number, quiet = false, marked = false,
 ): string {
-  const dest = ATLAS.nodes.get(f.via);
+  const dest = f.via === null ? undefined : ATLAS?.nodes.get(f.via);
   const effect = state.simulationMode && dest ? movesOf(dest.boxes) : null;
   const move = effect && effect.boxes.length
     ? `<span class="dmove ${effect.moved ? effect.merit : "flat"}">${signed(effect.pct)}</span>`
@@ -1449,7 +1653,7 @@ function destRow(
 }
 
 // The loop the wheel is drawing, if any — so the row for it can be marked.
-function isDrawnLoop(loop: any): boolean {
+function isDrawnLoop(loop: AtlasLoop): boolean {
   if (!WHEEL_PICK) return false;
   const through = loopsThrough(WHEEL_PICK);
   if (!through.length) return false;
@@ -1470,8 +1674,8 @@ function strandsHtml(): string {
   let dests = forkTree();
   let outputScale = 0;
   if (state.simulationMode && ATLAS) {
-    const moved = new Map<any, number>(dests.map(g => {
-      const node = ATLAS.nodes.get(g.via);
+    const moved = new Map<AtlasElementIdentifier | null, number>(dests.map(g => {
+      const node = g.via === null ? undefined : ATLAS!.nodes.get(g.via);
       const e = node ? movesOf(node.boxes) : null;
       return [g.via, e && e.moved ? Math.abs(e.pct) : 0];
     }));
@@ -1503,12 +1707,12 @@ function strandsHtml(): string {
     if (!loops.length && !boxes.length) return "";
     return `<div class="pathaside">${
       loops.length
-        ? `<div class="loopcards">${loops.slice(0, CARD_MAX).map((l: any, i: number) =>
-            loopCard(l, i, isDrawnLoop(l), false)).join("")}</div>`
+        ? `<div class="loopcards">${loops.slice(0, CARD_MAX).map((loop, index) =>
+            loopCard(loop, index, isDrawnLoop(loop), false)).join("")}</div>`
         : ""}${
-      boxes.map((b: any) =>
-        `<button type="button" class="atlas-boxrow" data-atlas-box="${escapeHtml(b)}">` +
-        `<span class="bn">${escapeHtml(clip(boxLabel(b), 30))}</span>` +
+      boxes.map(boxIdentifier =>
+        `<button type="button" class="atlas-boxrow" data-atlas-box="${escapeHtml(boxIdentifier)}">` +
+        `<span class="bn">${escapeHtml(clip(boxLabel(boxIdentifier), 30))}</span>` +
         `<span class="go">open ↗</span></button>`).join("")}</div>`;
   };
 
@@ -1518,10 +1722,12 @@ function strandsHtml(): string {
   // ends on: opening reaches the circle and goes no further, because going
   // further would be answering a question nobody asked.
   const levelHtml = (
-    level: Fork[], depth: number, trail: any[], above: Fork[],
+    level: Fork[], depth: number, trail: ForkPath, above: Fork[],
   ): string => {
     const destFork = above[0] || null;
-    const dest = destFork && ATLAS ? ATLAS.nodes.get(destFork.via) : null;
+    const dest = destFork?.via !== null && destFork?.via !== undefined && ATLAS
+      ? ATLAS.nodes.get(destFork.via)
+      : null;
     const direction = dest ? agreedDirection(dest.boxes) : undefined;
     // Each level splits the share of the fork above it — of THIS branch's fork,
     // not of whichever branch happens to be current, now that several can be
@@ -1541,7 +1747,7 @@ function strandsHtml(): string {
       VISIBLE.push(f);
       const mine = trail.concat([f.via]);
       // The row the circle is ON, rather than a row on the way down to it.
-      const isEl = els.includes(f.via);
+      const isEl = f.via !== null && els.includes(f.via);
       const current = samePath(R.current, mine);
       const row = forkRow(f, current || isEl, shares ? shares[i] : null, direction, isEl,
         !!hushed && hushed.has(f));
@@ -1575,8 +1781,8 @@ function strandsHtml(): string {
   const held = openChain();
   const here = held.length ? held[held.length - 1] : null;
   const said = picked && WORLD
-    ? `${els.map((e: any) => clip(labelOf(e), 18)).join(" → ")} · ${
-        pct(WORLD.M.weight(last))} of everything · on ${
+    ? `${els.map(elementIdentifier => clip(labelOf(elementIdentifier), 18)).join(" → ")} · ${
+        pct(WORLD.M.weight(last!))} of everything · on ${
         pathsThrough(els).length} ${plural(pathsThrough(els).length, "pathway")}`
     : here
       ? `${here.paths.length} ${plural(here.paths.length, "pathway")} drawn`
@@ -1588,21 +1794,24 @@ function strandsHtml(): string {
 // The links the thing being read runs along — a pathway's own steps, or every
 // link a trace reaches. paintAtlas lights them; paintFlow has to know about
 // them too, so it is written once here rather than twice there.
-function highlightLinks(): Set<any> | null {
-  if (drawn()) {
-    const out = new Set<any>();
-    for (const path of drawn()!) {
+function highlightLinks(
+  drawnPaths: AtlasPath[] | null = drawn(),
+  activeTrace: AtlasTrace | null = trace(),
+): Set<AtlasLinkKey> | null {
+  if (drawnPaths) {
+    const out = new Set<AtlasLinkKey>();
+    for (const path of drawnPaths) {
       for (let i = 0; i + 1 < path.length; i++) out.add(path[i] + "\u0000" + path[i + 1]);
     }
     return out;
   }
-  const t = trace();
-  return t ? t.links : null;
+  return activeTrace ? activeTrace.links : null;
 }
 
 function paintAtlas(repanel = true) {
   const svg = svgEl();
   if (!svg || !WORLD) return;
+  const paintSnapshot = createAtlasPaintSnapshot();
   // ONE thing lights the picture: what is being read. There used to be a second
   // — the last circle clicked, held on its own — which lit itself, made every
   // link TOUCHING it hot whether or not that link was on any pathway being
@@ -1615,49 +1824,52 @@ function paintAtlas(repanel = true) {
   // What is left of it is one case a pathway cannot cover: a box asked about
   // from the movers list when nothing has moved, so there is no run to trace
   // and no route to draw. That box is still worth picking out where it stands.
-  const lone = R.trace && !trace() ? R.trace : null;
+  const lone = R.trace && !paintSnapshot.activeTrace ? R.trace : null;
   // A strand lights every element along it and every link between them. `.on`
   // already means "full strength, and named", so the strand gets its labels
   // and everything off it recedes, with no new rules to write.
   // A pathway and a trace light the picture the same way — a set of elements
   // and the links between them — so they share the machinery.
-  const t = trace();
-  const onStrand = drawn() ? strandLit() : (t ? t.els : null);
+  const activeTrace = paintSnapshot.activeTrace;
+  const onStrand = paintSnapshot.drawnPaths
+    ? paintSnapshot.litElementIdentifiers
+    : (activeTrace ? activeTrace.els : null);
   // Cut at the same place the ribbons are, so the highlight ENDS where the
   // effect does. Left uncut, a route whose middle was cut still lit its later
   // steps — they carry something, just not anything from here — and a hot
   // segment floating downstream of the stop is a worse read than the gap this
   // all started with.
-  const strandLinks = routeLinks();
+  const strandLinks = paintSnapshot.routeLinkKeys;
   // Where the change came in: the sliders that moved, as circles, and only the
   // ones this run actually reached.
-  const traceStarts = new Set<any>(trace()
-    ? changedInputIds().map(elementOfBox).filter((el: any) => el && trace()!.els.has(el))
+  const traceStarts = new Set<AtlasElementIdentifier>(activeTrace
+    ? changedInputIds().map(elementOfBox).filter((elementIdentifier): elementIdentifier is string =>
+        elementIdentifier !== null && activeTrace.els.has(elementIdentifier))
     : []);
   svg.classList.toggle("busy", !!lone || !!onStrand);
-  svg.classList.toggle("traced", !!trace());
+  svg.classList.toggle("traced", !!activeTrace);
   svg.classList.toggle("inside", !!R.inside);
 
-  for (const g of svg.querySelectorAll("g.n")) {
-    const id = g.dataset.el;
+  for (const g of svg.querySelectorAll<SVGElement>("g.n")) {
+    const id = g.dataset.el || "";
     g.classList.toggle("on", id === lone || (!!onStrand && onStrand.has(id)));
     // The two ENDS of a traced run keep their names while the middle of it goes
     // quiet: the box asked about, and the input the change started at. A run
     // named only at its far end says what arrived without saying what set off,
     // and the whole point of a trace is the pair — this much went in there,
     // this much came out here. See the .traced rule in the stylesheet.
-    g.classList.toggle("ends", !!trace() && (id === traceEl() || traceStarts.has(id)));
+    g.classList.toggle("ends", !!activeTrace && (id === traceEl() || traceStarts.has(id)));
     g.classList.toggle("focus", id === R.inside);
   }
   // Hot means "on the route being read", and nothing else. It used to also mean
   // "touching the circle you last clicked", which is how three links out of a
   // circle nobody was looking at stayed lit while the pointer was somewhere
   // else entirely.
-  for (const p of svg.querySelectorAll(".fl"))
+  for (const p of svg.querySelectorAll<SVGElement>(".fl"))
     p.classList.toggle("hot",
       !!strandLinks && strandLinks.has(p.dataset.a + "\u0000" + p.dataset.b));
   setScale();
-  refreshAtlasValues();
+  refreshAtlasValues(paintSnapshot);
   paintWheel();
   // Pointing repaints the picture and leaves the list alone: the row under the
   // pointer would be replaced mid-hover, and the pointer would come to rest on
@@ -1704,9 +1916,9 @@ function seedOpenForRoots(): void {
   }
 }
 
-function selectEl(id: any) {
-  if (R.inside && id !== R.inside) leaveTangle(true);
-  R.roots = rootsAfterClicking(id);
+function selectEl(identifier: AtlasElementIdentifier): void {
+  if (R.inside && identifier !== R.inside) leaveTangle(true);
+  R.roots = rootsAfterClicking(identifier);
   seedOpenForRoots();
   dropTrace();
   WHEEL_PICK = null; PICK_FROM_WHEEL = false;
@@ -1717,18 +1929,18 @@ function selectEl(id: any) {
 // panel is the same list it was, with the tangle as its top row. It used to
 // swap the panel for a page of loop cards with no way onward, which is what
 // made a tangle feel like somewhere else rather than somewhere on the way.
-function enterTangle(id: any, then?: () => void) {
-  if (R.inside === id) { if (then) then(); return; }
+function enterTangle(identifier: AtlasElementIdentifier, then?: () => void): void {
+  if (R.inside === identifier) { if (then) then(); return; }
   stopTour();
-  R.inside = id; R.roots = [id]; WHEEL_PICK = null; WHEEL_LOOP = 0;
+  R.inside = identifier; R.roots = [identifier]; WHEEL_PICK = null; WHEEL_LOOP = 0;
   PICK_FROM_WHEEL = false;
   seedOpenForRoots();
-  WHEEL_TANGLE = WORLD.A.nodes.get(id).tangles[0];
+  WHEEL_TANGLE = WORLD!.A.nodes.get(identifier)!.tangles[0];
   paintAtlas();
-  zoomTo(frameOn(id), then || playTour);
+  zoomTo(frameOn(identifier), then || playTour);
 }
 
-function leaveTangle(quiet: any) {
+function leaveTangle(quiet: boolean): void {
   if (!R.inside) return;
   stopTour();
   const svg = svgEl();
@@ -1751,8 +1963,8 @@ function stopTour() {
   tourRAF = 0; tourAt = -1;
 }
 
-function tourLoops() {
-  const w = WHEELS.get(R.inside);
+function tourLoops(): AtlasWheelLoop[] {
+  const w = R.inside ? WHEELS.get(R.inside) : undefined;
   if (!w) return [];
   return [...w.loops].sort((a, b) => b.gain - a.gain || a.cycle.length - b.cycle.length)
     .slice(0, TOUR_MAX);
@@ -1764,30 +1976,30 @@ function playTour() {
   const svg = svgEl();
   const g = svg && svg.querySelector("g.n.focus .trace");
   const w = WHEELS.get(R.inside);
-  if (!g || !w) return;
+  if (!g || !w || !wheelIsPositioned(w)) return;
   const loops = tourLoops();
   if (!loops.length) { renderInspector(); return; }
 
   g.innerHTML = loops.map((l, i) => `<g class="tl" data-i="${i}">${
-    l.links.map((e: any) => {
-      const [x1, y1] = w.at.get(e.from), [x2, y2] = w.at.get(e.to);
-      const backwards = w.pos.get(e.to) <= w.pos.get(e.from);
+    l.links.map(edge => {
+      const [x1, y1] = w.at.get(edge.from)!, [x2, y2] = w.at.get(edge.to)!;
+      const backwards = (w.pos.get(edge.to) || 0) <= (w.pos.get(edge.from) || 0);
       return `<path d="${chordPath(x1, y1, x2, y2, w.centre[0], w.centre[1], backwards ? 0.22 : 0.3)}"
         stroke="${l.reinforcing ? "var(--c1)" : "var(--c2)"}"></path>`;
     }).join("")}</g>`).join("");
 
-  const groups = [...g.querySelectorAll("g.tl")];
-  const lens = groups.map(gg => [...gg.querySelectorAll("path")].map(p =>
+  const groups = [...g.querySelectorAll<SVGGElement>("g.tl")];
+  const lens = groups.map(gg => [...gg.querySelectorAll<SVGPathElement>("path")].map(p =>
     typeof p.getTotalLength === "function" ? p.getTotalLength() : 0));
-  groups.forEach((gg, i) => [...gg.querySelectorAll("path")].forEach((p, j) => {
-    p.style.strokeDasharray = lens[i][j];
-    p.style.strokeDashoffset = lens[i][j];
+  groups.forEach((gg, i) => [...gg.querySelectorAll<SVGPathElement>("path")].forEach((p, j) => {
+    p.style.strokeDasharray = String(lens[i][j]);
+    p.style.strokeDashoffset = String(lens[i][j]);
   }));
 
   if (reduced()) {
     groups.forEach(gg => {
       gg.classList.add("done");
-      [...gg.querySelectorAll("path")].forEach(p => { p.style.strokeDashoffset = 0; });
+      [...gg.querySelectorAll<SVGPathElement>("path")].forEach(p => { p.style.strokeDashoffset = "0"; });
     });
     tourAt = loops.length;
     renderInspector();
@@ -1796,7 +2008,7 @@ function playTour() {
 
   const DRAW = 620, HOLD = 260, PER = DRAW + HOLD;
   const t0 = performance.now();
-  const tick = (now: any) => {
+  const tick = (now: number) => {
     const t = now - t0;
     const i = Math.min(loops.length - 1, Math.floor(t / PER));
     if (i !== tourAt) { tourAt = i; renderInspector(); }
@@ -1805,7 +2017,7 @@ function playTour() {
       const f = Math.max(0, Math.min(1, local));
       gg.classList.toggle("done", local >= 1);
       gg.classList.toggle("live", local >= 0 && local < 1);
-      [...gg.querySelectorAll("path")].forEach((p, j) => {
+      [...gg.querySelectorAll<SVGPathElement>("path")].forEach((p, j) => {
         const per = 1 / lens[gi].length;
         const fj = Math.max(0, Math.min(1, (f - j * per) / per));
         p.style.strokeDashoffset = (lens[gi][j] * (1 - fj)).toFixed(2);
@@ -1814,7 +2026,7 @@ function playTour() {
     if (t < loops.length * PER) { tourRAF = requestAnimationFrame(tick); return; }
     groups.forEach((gg, gi) => {
       gg.classList.remove("live"); gg.classList.add("done");
-      [...gg.querySelectorAll("path")].forEach(p => { p.style.strokeDashoffset = 0; });
+      [...gg.querySelectorAll<SVGPathElement>("path")].forEach(p => { p.style.strokeDashoffset = "0"; });
     });
     tourAt = loops.length; tourRAF = 0;
     renderInspector();
@@ -1849,27 +2061,27 @@ export function atlasPanelHtml(): string {
 // The tangle an element contains, if it is one. A circle can stand for a knot
 // of boxes that feed back into each other; that knot is what its loops belong
 // to.
-function tangleOf(el: any): any {
-  if (!el || !ATLAS || !ATLAS.nodes.has(el)) return null;
-  const node = ATLAS.nodes.get(el);
+function tangleOf(elementIdentifier: AtlasElementIdentifier | null): AtlasTangle | null {
+  if (!elementIdentifier || !ATLAS || !ATLAS.nodes.has(elementIdentifier)) return null;
+  const node = ATLAS.nodes.get(elementIdentifier)!;
   return node.tangles && node.tangles.length ? node.tangles[0] : null;
 }
 
 // Every loop in this tangle, once each. The wheel knows one loop per link that
 // runs back; the tangle's own analysis adds the shortest way round each box.
 // A reader wants the union of both, deduped, strongest first.
-function tangleLoops(el: any = R.inside): any[] {
-  const t = tangleOf(el);
-  if (!t) return [];
-  if (!WHEELS.has(el)) WHEELS.set(el, wheelOf(t));
-  const w = WHEELS.get(el);
+function tangleLoops(elementIdentifier: AtlasElementIdentifier | null = R.inside): AtlasLoop[] {
+  const tangle = tangleOf(elementIdentifier);
+  if (!tangle || !elementIdentifier) return [];
+  if (!WHEELS.has(elementIdentifier)) WHEELS.set(elementIdentifier, wheelOf(tangle));
+  const w = WHEELS.get(elementIdentifier);
   if (!w) return [];
-  const all: any[] = [], seen = new Set<any>();
-  for (const l of [...t.loops, ...w.loops]) {
-    const k = canonicalCycle(l.cycle);
+  const all: AtlasLoop[] = [], seen = new Set<string>();
+  for (const loop of [...tangle.loops, ...w.loops]) {
+    const k = canonicalCycle(loop.cycle);
     if (seen.has(k)) continue;
     seen.add(k);
-    all.push(l);
+    all.push(loop);
   }
   return all.sort((a, b) => b.gain - a.gain || a.cycle.length - b.cycle.length);
 }
@@ -1879,8 +2091,8 @@ function tangleLoops(el: any = R.inside): any[] {
 // in the list was saying the same shape twice, and cost five times the height.
 // A real <button> rather than a div with role=button, so Enter and Space work
 // without a keydown handler of our own.
-function loopCard(loop: any, i: number, drawn: boolean, related: boolean): string {
-  const names = loop.cycle.map((id: any) => boxLabel(id));
+function loopCard(loop: AtlasLoop, index: number, drawn: boolean, related: boolean): string {
+  const names = loop.cycle.map(identifier => boxLabel(identifier));
   // Whole names, and one ellipsis at the end of the row rather than one per
   // box. Cutting every name to a fixed width made a run of stumps — "Attempts
   // after … › Goods tha…" — where nothing was readable and the shape of the
@@ -1891,7 +2103,7 @@ function loopCard(loop: any, i: number, drawn: boolean, related: boolean): strin
   const kind = loop.reinforcing ? "Reinforcing" : "Balancing";
   return `<button type="button" class="loopcard ${loop.reinforcing ? "r" : "b"}${
       drawn ? " sel" : ""}${related && !drawn ? " rel" : ""}"
-      data-loopidx="${i}" aria-pressed="${drawn}"
+      data-loopidx="${index}" aria-pressed="${drawn}"
       aria-label="${kind} loop through ${loop.cycle.length} ${
         plural(loop.cycle.length, "box", "boxes")}: ${
         escapeHtml(names.join(", then "))}. Follow it round the wheel.">
@@ -1910,41 +2122,45 @@ function selectLoopCard(i: number) {
   WHEEL_PICK = box;
   PICK_FROM_WHEEL = false;
   const k = canonicalCycle(loop.cycle);
-  const at = loopsThrough(box).findIndex((l: any) => canonicalCycle(l.cycle) === k);
+  const at = loopsThrough(box).findIndex(loopThroughBox => canonicalCycle(loopThroughBox.cycle) === k);
   WHEEL_LOOP = at >= 0 ? at : 0;
   paintAtlas();
 }
 
 function paintWheel() {
   const svg = svgEl();
-  if (!svg) return;
-  const g = R.inside && svg.querySelector("g.n.focus");
+  const insideIdentifier = R.inside;
+  if (!svg || !insideIdentifier) return;
+  const g = svg.querySelector<SVGGElement>("g.n.focus");
   if (!g) return;
-  const w = WHEELS.get(R.inside);
-  if (!w) return;
+  const w = WHEELS.get(insideIdentifier);
+  if (!w || !wheelIsPositioned(w)) return;
   const picked = WHEEL_PICK && w.pos.has(WHEEL_PICK) ? WHEEL_PICK : null;
   g.classList.toggle("picked", !!picked);
 
   const through = picked ? loopsThrough(picked) : [];
-  const loop = through.length ? rotateTo(through[WHEEL_LOOP % through.length], picked) : null;
-  const onCycle = new Set<any>(loop ? loop.cycle : picked ? [picked] : []);
-  const key = (e: any) => e.from + "" + e.to;
-  const onLink = new Set<any>((loop ? loop.links : []).map(key));
-  if (picked) for (const e of w.touching.get(picked) || []) onLink.add(key(e));
+  const loop = through.length ? rotateTo(through[WHEEL_LOOP % through.length], picked!) : null;
+  const onCycle = new Set<AtlasElementIdentifier>(loop ? loop.cycle : picked ? [picked] : []);
+  const onLink = new Set<WheelEdgeKey>((loop ? loop.links : []).map(wheelEdgeKey));
+  if (picked) for (const edge of w.touching.get(picked) || []) onLink.add(wheelEdgeKey(edge));
 
-  for (const el of g.querySelectorAll(".ch")) el.classList.toggle("on", onLink.has(el.dataset.k));
-  for (const el of g.querySelectorAll(".nd")) {
+  for (const el of g.querySelectorAll<SVGElement>(".ch")) {
+    const edgeKey = parseWheelEdgeKey(el.dataset.k);
+    el.classList.toggle("on", edgeKey !== null && onLink.has(edgeKey));
+  }
+  for (const el of g.querySelectorAll<SVGElement>(".nd")) {
     const mine = el.dataset.box === picked;
-    el.classList.toggle("on", onCycle.has(el.dataset.box));
+    el.classList.toggle("on", onCycle.has(el.dataset.box || ""));
     el.classList.toggle("sel", mine);
   }
-  g.querySelector(".labs").innerHTML = picked ? wheelLabels(picked, [...onCycle]) : "";
+  g.querySelector<SVGGElement>(".labs")!.innerHTML = picked ? wheelLabels(picked, [...onCycle]) : "";
 
-  const trace = g.querySelector(".trace");
+  const trace = g.querySelector<SVGGElement>(".trace");
+  if (!trace) return;
   if (picked) {
-    trace.innerHTML = `<g class="tl live">${(loop ? loop.links : []).map((e: any) => {
-      const [x1, y1] = w.at.get(e.from), [x2, y2] = w.at.get(e.to);
-      const backwards = w.pos.get(e.to) <= w.pos.get(e.from);
+    trace.innerHTML = `<g class="tl live">${(loop ? loop.links : []).map(edge => {
+      const [x1, y1] = w.at.get(edge.from)!, [x2, y2] = w.at.get(edge.to)!;
+      const backwards = (w.pos.get(edge.to) || 0) <= (w.pos.get(edge.from) || 0);
       return `<path d="${chordPath(x1, y1, x2, y2, w.centre[0], w.centre[1], backwards ? 0.22 : 0.3)}"
         stroke="${loop && loop.reinforcing ? "var(--c1)" : "var(--c2)"}"></path>`;
     }).join("")}</g>`;
@@ -1956,14 +2172,14 @@ function paintWheel() {
 
 // Names on adjacent rim positions overprint, so they are spaced — and the box
 // being explained is always one of them.
-function wheelLabels(picked: any, cycle: any) {
-  const w = WHEELS.get(R.inside);
-  if (!w || !w.at) return "";
+function wheelLabels(picked: AtlasElementIdentifier, cycle: AtlasElementIdentifier[]): string {
+  const w = R.inside ? WHEELS.get(R.inside) : undefined;
+  if (!w || !wheelIsPositioned(w)) return "";
   const n = w.order.length, apart = Math.max(2, Math.round(n / 30));
   const out = [picked];
   for (const b of cycle) {
     if (out.length >= 9) break;
-    if (out.some(o => Math.abs(w.pos.get(o) - w.pos.get(b)) < apart)) continue;
+    if (out.some(o => Math.abs((w.pos.get(o) || 0) - (w.pos.get(b) || 0)) < apart)) continue;
     out.push(b);
   }
   return out.map(b => {
@@ -1978,10 +2194,10 @@ function wheelLabels(picked: any, cycle: any) {
   }).join("");
 }
 
-function loopsThrough(box: any) {
-  const w = WHEELS.get(R.inside);
+function loopsThrough(box: AtlasElementIdentifier): AtlasLoop[] {
+  const w = R.inside ? WHEELS.get(R.inside) : undefined;
   if (!w) return [];
-  const all: any[] = [], seen = new Set<any>();
+  const all: AtlasLoop[] = [], seen = new Set<string>();
   // Two sets of loops, both worth having: the one each back link closes, which
   // is what the chords ARE, and the shortest loop through each box, which is
   // what a reader asking "how does this come round" actually wants.
@@ -1996,7 +2212,7 @@ function loopsThrough(box: any) {
 
 // A loop has no beginning, but an explanation does: the reader asked about THIS
 // box, so the story starts and ends there.
-function rotateTo(loop: any, box: any) {
+function rotateTo(loop: AtlasLoop, box: AtlasElementIdentifier): AtlasLoop {
   const i = loop.cycle.indexOf(box);
   if (i <= 0) return loop;
   return { ...loop,
@@ -2007,19 +2223,19 @@ function rotateTo(loop: any, box: any) {
 // The loop draws itself, link by link, and starts again. Watching the line come
 // back round is the part a still picture cannot do — so if the reader has asked
 // for less motion, the whole loop is simply drawn at once instead.
-function runTrace(g: any) {
+function runTrace(group: SVGGElement): void {
   cancelAnimationFrame(traceRAF);
-  const paths = [...g.querySelectorAll("path")];
+  const paths = [...group.querySelectorAll<SVGPathElement>("path")];
   if (!paths.length || typeof paths[0].getTotalLength !== "function") return;
   const lens = paths.map(p => p.getTotalLength());
-  paths.forEach((p, i) => { p.style.strokeDasharray = lens[i]; });
+  paths.forEach((p, i) => { p.style.strokeDasharray = String(lens[i]); });
   if (reduced()) {
-    paths.forEach(p => { p.style.strokeDashoffset = 0; });
+    paths.forEach(p => { p.style.strokeDashoffset = "0"; });
     return;
   }
   const STEP = 340, HOLD = 900, total = paths.length * STEP + HOLD;
   const t0 = performance.now();
-  const tick = (now: any) => {
+  const tick = (now: number) => {
     const t = (now - t0) % total;
     paths.forEach((p, i) => {
       const f = Math.max(0, Math.min(1, (t - i * STEP) / STEP));
@@ -2030,7 +2246,7 @@ function runTrace(g: any) {
   traceRAF = requestAnimationFrame(tick);
 }
 
-function pickWheelBox(box: any) {
+function pickWheelBox(box: AtlasElementIdentifier | null | undefined): void {
   stopTour();
   WHEEL_PICK = box && box !== WHEEL_PICK ? box : null;
   WHEEL_LOOP = 0;
@@ -2104,8 +2320,12 @@ function movesOf(boxIds: string[]): ElementEffect {
 // colour cannot honestly answer for both — so a direction is only used when
 // they agree on it.
 function agreedDirection(boxIds: string[]): string | undefined {
-  const dirs = new Set(boxIds.map(b => nodeById[b] && nodeById[b].direction).filter(Boolean));
-  return dirs.size === 1 ? ([...dirs][0] as string) : undefined;
+  const directions = new Set(
+    boxIds
+      .map(boxIdentifier => nodeById[boxIdentifier]?.direction)
+      .filter((direction): direction is NonNullable<typeof direction> => !!direction),
+  );
+  return directions.size === 1 ? [...directions][0] : undefined;
 }
 
 // The colour a number takes: the merit its box would carry if it had moved by
@@ -2122,55 +2342,54 @@ function shareMerit(share: number, direction: string | undefined): Merit {
   return "none";
 }
 
-function elementEffect(id: any): ElementEffect {
-  const node = ATLAS && ATLAS.nodes.get(id);
+function elementEffect(identifier: AtlasElementIdentifier): ElementEffect {
+  const node = ATLAS?.nodes.get(identifier);
   return node ? movesOf(node.boxes) : EMPTY_EFFECT;
 }
 
 // The circles are chrome on a themed picture rather than chips carrying their
 // own text, so unlike the map's box fills these follow the theme.
-const MERIT_HUE: Record<string, string> = {
+const MERIT_HUE: Record<Merit, string> = {
   good: "var(--status-good)",
   bad:  "var(--status-bad)",
   none: "var(--accent-amber)",
+  flat: "var(--accent-amber)",
 };
 
-const effectFill = (merit: string, strength: number): string =>
-  `color-mix(in srgb, ${MERIT_HUE[merit] || MERIT_HUE.none} ${
+const effectFill = (merit: Merit, strength: number): string =>
+  `color-mix(in srgb, ${MERIT_HUE[merit]} ${
     Math.round(22 + 78 * Math.max(0, Math.min(1, strength)))}%, var(--border-strong))`;
 
 // Recolour without rebuilding: a slider drag calls this many times a second.
 // Every circle is repainted, not just the ones that moved — the ramp is
 // measured against the biggest mover, so one box running away restates the
 // colour of everything else.
-export function refreshAtlasValues(): void {
+export function refreshAtlasValues(paintSnapshot = createAtlasPaintSnapshot()): void {
   const svg = svgEl();
   if (!svg || !ATLAS) return;
   const simulating = !!state.simulationMode;
   svg.classList.toggle("simulating", simulating);
   // Worked out once for the frame, not once per circle — it is one pass over
   // the whole picture.
-  const shares = simulating ? strandShares() : null;
+  const shares = simulating ? paintSnapshot.sharesByElementIdentifier : null;
 
-  for (const g of svg.querySelectorAll("g.n")) {
-    const el = g as HTMLElement;
+  for (const el of svg.querySelectorAll<SVGGElement>("g.n")) {
     if (!simulating) {
       el.classList.remove("flat");
       el.style.removeProperty("--simfill");
       setMag(el, EMPTY_EFFECT);
       continue;
     }
-    const effect = elementEffect(el.dataset.el);
+    const effect = paintSnapshot.effectsByElementIdentifier.get(el.dataset.el || "") || EMPTY_EFFECT;
     el.classList.toggle("flat", !effect.moved);
     if (effect.moved) el.style.setProperty("--simfill", effectFill(effect.merit, effect.strength));
     else el.style.removeProperty("--simfill");
-    setMag(el, effect, shares);
+    setMag(el, effect, shares, paintSnapshot.heldByElement);
   }
 
   // Inside a tangle the rim dots are the boxes themselves, so they carry their
   // own move rather than the wheel's average.
-  for (const c of svg.querySelectorAll("circle.nd")) {
-    const dot = c as unknown as SVGElement & { dataset: DOMStringMap; style: CSSStyleDeclaration };
+  for (const dot of svg.querySelectorAll<SVGCircleElement>("circle.nd")) {
     if (!simulating) { dot.style.removeProperty("--simfill"); continue; }
     const effect = nodeEffect(dot.dataset.box || "");
     if (effect.moved) dot.style.setProperty("--simfill", effectFill(effect.merit, effect.strength));
@@ -2180,7 +2399,7 @@ export function refreshAtlasValues(): void {
   // Which links are carrying anything changes with every solve, so this belongs
   // on the per-frame path rather than on the rebuild — a slider drag reaches
   // here and never touches paintAtlas.
-  paintFlow(svg);
+  paintFlow(svg, paintSnapshot);
 }
 
 // The number beside the name. Written on every circle whether it is lit or not
@@ -2189,17 +2408,22 @@ export function refreshAtlasValues(): void {
 // many times a second while a slider is dragged, which ones are about to be
 // looked at. An element standing for several boxes reads as the average of
 // them, the same figure its tooltip and its row in the list report.
-function setMag(g: HTMLElement, effect: ElementEffect,
-                shares?: Map<any, StrandShare> | null): void {
-  const t = g.querySelector("tspan.mag") as SVGElement | null;
+function setMag(
+  g: SVGGElement,
+  effect: ElementEffect,
+  shares?: Map<AtlasElementIdentifier, StrandShare> | null,
+  heldByElement?: Map<AtlasElementIdentifier, { label: string }>,
+): void {
+  const t = g.querySelector<SVGTSpanElement>("tspan.mag");
   if (!t) return;
   // Reading one pathway, a circle on it says what THAT pathway carried — the
   // same figure the row in the panel prints. Off it, or with none picked, it
   // says what the whole run did.
-  const share = shares ? shares.get(g.dataset.el) : null;
+  const elementIdentifier = g.dataset.el || "";
+  const share = shares ? shares.get(elementIdentifier) : null;
   if (carries(share)) {
     t.textContent = (share!.exact ? "" : "~") + signed(share!.pct);
-    t.setAttribute("class", "mag " + meritOfElement(g.dataset.el, share!.pct));
+    t.setAttribute("class", "mag " + meritOfElement(elementIdentifier, share!.pct));
     g.classList.remove("held");
     return;
   }
@@ -2211,7 +2435,9 @@ function setMag(g: HTMLElement, effect: ElementEffect,
   }
   // Where a mover prints its size, a held box prints what is holding it. The
   // number would be "0.0%", which is true and says nothing.
-  const gate = heldBy(g.dataset.el);
+  const gate = heldByElement
+    ? heldByElement.get(g.dataset.el || "") || null
+    : heldBy(elementIdentifier);
   g.classList.toggle("held", !!gate);
   t.textContent = gate ? "held by " + clip(gate.label, 22) : "";
   t.setAttribute("class", "mag" + (gate ? " hold" : ""));
@@ -2222,11 +2448,15 @@ function setMag(g: HTMLElement, effect: ElementEffect,
 // one of its boxes is being gated by something that did not move either — see
 // gatedBy() in the engine. What holds it is named, because "this one is stuck"
 // is only half an answer; the other half is what to move instead.
-function heldBy(id: any): { label: string } | null {
-  const node = ATLAS && ATLAS.nodes.get(id);
+function heldBy(identifier: AtlasElementIdentifier): { label: string } | null {
+  const node = ATLAS?.nodes.get(identifier);
   if (!node || !state.simulationMode) return null;
-  if (elementEffect(id).moved) return null;
-  for (const boxId of node.boxes) {
+  if (elementEffect(identifier).moved) return null;
+  return heldByBoxes(node.boxes);
+}
+
+function heldByBoxes(boxIdentifiers: string[]): { label: string } | null {
+  for (const boxId of boxIdentifiers) {
     const gate = gatedBy(boxId);
     if (gate) return { label: gate.label };
   }
@@ -2243,11 +2473,14 @@ function heldBy(id: any): { label: string } | null {
 // path from the first to the last that does not exist.
 //
 // Recomputed per frame — a slider drag can free one or catch another.
-function blockedElements(): Set<any> {
-  const out = new Set<any>();
+function blockedElements(
+  effectsByElementIdentifier?: Map<AtlasElementIdentifier, ElementEffect>,
+): Set<AtlasElementIdentifier> {
+  const out = new Set<AtlasElementIdentifier>();
   if (!ATLAS || !state.simulationMode) return out;
   for (const id of ATLAS.nodes.keys()) {
-    if (id !== END && !elementEffect(id).moved) out.add(id);
+    const effect = effectsByElementIdentifier?.get(String(id)) || elementEffect(id);
+    if (id !== END && !effect.moved) out.add(id);
   }
   return out;
 }
@@ -2261,30 +2494,16 @@ function blockedElements(): Set<any> {
 //
 // An element is only cut once EVERY route-link into it has been cut. On a
 // trace, a box fed by a blocked route and a live one is still fed.
-function cutAfterBlocks(keep: Set<any> | null): Set<any> | null {
+function cutAfterBlocks(
+  keep: Set<AtlasLinkKey> | null,
+  blocked = blockedElements(),
+): Set<AtlasLinkKey> | null {
   if (!keep || !keep.size) return keep;
-  const blocked = blockedElements();
   if (!blocked.size) return keep;
-
-  const out = new Set<any>(keep);
-  const feeds = new Map<any, number>();
-  for (const key of out) {
-    const b = String(key).split("\u0000")[1];
-    feeds.set(b, (feeds.get(b) || 0) + 1);
-  }
-  const cut = [...blocked];
-  while (cut.length) {
-    const from = cut.pop();
-    for (const key of [...out]) {
-      const [a, b] = String(key).split("\u0000");
-      if (a !== String(from)) continue;
-      out.delete(key);
-      const left = (feeds.get(b) || 1) - 1;
-      feeds.set(b, left);
-      if (left <= 0) cut.push(b);
-    }
-  }
-  return out;
+  return cutAtlasLinksAfterBlockedElements(
+    new Set([...keep].map(String)),
+    new Set([...blocked].map(String)),
+  ).links;
 }
 
 
@@ -2313,8 +2532,8 @@ function cutAfterBlocks(keep: Set<any> | null): Set<any> | null {
 // leading ~ when any box on the route so far is one of those — this map is
 // formula-heavy, and a figure on a picture reads as exact unless it says
 // otherwise.
-function splitIsExact(el: any): boolean {
-  const node = ATLAS && ATLAS.nodes.get(el);
+function splitIsExact(elementIdentifier: AtlasElementIdentifier): boolean {
+  const node = ATLAS?.nodes.get(elementIdentifier);
   if (!node) return false;
   // A tangle is a contracted cycle: its "gain" is the strongest link across a
   // knot of them, which is a summary and never an identity.
@@ -2327,19 +2546,24 @@ function splitIsExact(el: any): boolean {
 
 // Σ, over every route from something the reader moved to n, of the route's gain.
 // The denominator each contribution is a share OF.
-function upWeights(): Map<any, number> {
-  const up = new Map<any, number>();
+function upWeights(
+  heldByElement?: Map<AtlasElementIdentifier, { label: string }>,
+): Map<AtlasElementIdentifier, number> {
+  const up = new Map<AtlasElementIdentifier, number>();
   if (!ATLAS || !WORLD) return up;
   const depth = WORLD.M.depth;
-  const sources = new Set<any>(changedInputIds().map(elementOfBox).filter(Boolean));
+  const sources = new Set<AtlasElementIdentifier>(changedInputIds().map(elementOfBox).filter(
+    (elementIdentifier): elementIdentifier is string => elementIdentifier !== null,
+  ));
   const els = [...ATLAS.nodes.keys()]
-    .filter((id: any) => id !== END)
-    .sort((a: any, b: any) => (depth.get(a) || 0) - (depth.get(b) || 0));
+    .filter(identifier => identifier !== END)
+    .sort((firstIdentifier, secondIdentifier) =>
+      (depth.get(firstIdentifier) || 0) - (depth.get(secondIdentifier) || 0));
   for (const n of els) {
     let v = sources.has(n) ? 1 : 0;
     for (const p of ATLAS.pred.get(n) || []) {
       if (p === END) continue;
-      v += (up.get(p) || 0) * pairGain(p, n);
+      v += (up.get(p) || 0) * pairGain(p, n, heldByElement);
     }
     up.set(n, v);
   }
@@ -2368,20 +2592,29 @@ const carries = (share: StrandShare | null | undefined): boolean =>
 // Written once and read by both painters. They used to decide separately, and
 // a ribbon drawn to a circle the other one had stopped lighting is exactly the
 // kind of disagreement neither of them can see.
-function strandLit(): Set<any> | null {
-  if (!drawn()) return null;
-  const shares = strandShares();
-  return new Set<any>(drawn()!.flat().filter((id: any) =>
-    !shares || carries(shares.get(id)) || !!heldBy(id)));
+function strandLit(
+  drawnPaths: AtlasPath[] | null = drawn(),
+  shares: Map<AtlasElementIdentifier, StrandShare> | null = strandShares(drawnPaths),
+  heldByElement?: Map<AtlasElementIdentifier, { label: string }>,
+): Set<AtlasElementIdentifier> | null {
+  if (!drawnPaths) return null;
+  return new Set<AtlasElementIdentifier>(drawnPaths.flat().filter(identifier =>
+    !shares || carries(shares.get(identifier)) ||
+      (heldByElement ? heldByElement.has(identifier) : !!heldBy(identifier))));
 }
 
 // The links of the route being read, after both cuts: at whatever stopped the
 // change, and at whatever it never reached.
-function routeLinks(): Set<any> | null {
-  const links = cutAfterBlocks(highlightLinks());
-  const lit = strandLit();
+function routeLinks(
+  drawnPaths: AtlasPath[] | null = drawn(),
+  activeTrace: AtlasTrace | null = trace(),
+  blockedElementIdentifiers = blockedElements(),
+  litElements: Set<AtlasElementIdentifier> | null = strandLit(drawnPaths),
+): Set<AtlasLinkKey> | null {
+  const links = cutAfterBlocks(highlightLinks(drawnPaths, activeTrace), blockedElementIdentifiers);
+  const lit = litElements;
   if (!links || !lit) return links;
-  return new Set<any>([...links].filter((key: any) => {
+  return new Set<AtlasLinkKey>([...links].filter(key => {
     const [a, b] = String(key).split("\u0000");
     return lit.has(a) && lit.has(b);
   }));
@@ -2389,19 +2622,23 @@ function routeLinks(): Set<any> | null {
 
 // Good or bad is a property of the BOX, not of the share — a route pulling a
 // "lower is better" box down is good news however small its part in it was.
-function meritOfElement(el: any, pct: number): string {
-  const node = ATLAS && ATLAS.nodes.get(el);
+function meritOfElement(elementIdentifier: AtlasElementIdentifier, pct: number): Merit {
+  const node = ATLAS?.nodes.get(elementIdentifier);
   return node ? meritOf(pct, agreedDirection(node.boxes)) : "none";
 }
 
-function strandShares(): Map<any, StrandShare> | null {
-  if (!drawn() || !state.simulationMode || !ATLAS || !WORLD) return null;
-  const paths = drawn()!;
+function strandShares(
+  drawnPaths: AtlasPath[] | null = drawn(),
+  effectsByElementIdentifier?: Map<AtlasElementIdentifier, ElementEffect>,
+  heldByElement?: Map<AtlasElementIdentifier, { label: string }>,
+): Map<AtlasElementIdentifier, StrandShare> | null {
+  if (!drawnPaths || !state.simulationMode || !ATLAS || !WORLD) return null;
+  const paths = drawnPaths;
   const start = paths[0] && paths[0][0];
   if (!start) return null;
 
   // The picked row's own routes: which circles they touch, and which links.
-  const els = new Set<any>(paths.flat());
+  const els = new Set<AtlasElementIdentifier>(paths.flat());
   const links = new Set<string>();
   for (const path of paths) {
     for (let i = 0; i + 1 < path.length; i++) links.add(path[i] + "\u0000" + path[i + 1]);
@@ -2412,48 +2649,111 @@ function strandShares(): Map<any, StrandShare> | null {
   // all four, which is what its percentage in the panel counts.
   const depth = WORLD.M.depth;
   const order = [...els].filter(id => id !== END)
-    .sort((a: any, b: any) => (depth.get(a) || 0) - (depth.get(b) || 0));
-  const mine = new Map<any, number>();
-  const exact = new Map<any, boolean>();
+    .sort((firstIdentifier, secondIdentifier) =>
+      (depth.get(firstIdentifier) || 0) - (depth.get(secondIdentifier) || 0));
+  const mine = new Map<AtlasElementIdentifier, number>();
+  const exact = new Map<AtlasElementIdentifier, boolean>();
   for (const n of order) {
     let v = n === start ? 1 : 0;
     let ex = n === start ? true : splitIsExact(n);
     for (const p of ATLAS.pred.get(n) || []) {
       if (!links.has(p + "\u0000" + n)) continue;
-      v += (mine.get(p) || 0) * pairGain(p, n);
+      v += (mine.get(p) || 0) * pairGain(p, n, heldByElement);
       if (!exact.get(p)) ex = false;
     }
     mine.set(n, v);
     exact.set(n, ex);
   }
 
-  const up = upWeights();
-  const out = new Map<any, StrandShare>();
+  const up = upWeights(heldByElement);
+  const out = new Map<AtlasElementIdentifier, StrandShare>();
   for (const n of order) {
     const total = up.get(n) || 0;
     const share = total !== 0 ? (mine.get(n) || 0) / total : (n === start ? 1 : 0);
-    out.set(n, { pct: elementEffect(n).pct * share, exact: !!exact.get(n) });
+    const effect = effectsByElementIdentifier?.get(String(n)) || elementEffect(n);
+    out.set(n, { pct: effect.pct * share, exact: !!exact.get(n) });
   }
 
   // The destination is the one circle whose figure is ALSO printed in the panel,
   // and the panel's is rounded so that a column of contributions adds up to the
   // total above it. Taking that exact figure rather than re-deriving it keeps
   // the two from ever differing by the last decimal place.
-  const picked = drawn()!;
-  const dest = picked[0][picked[0].length - 1];
-  const printed = printedShare(dest);
-  if (printed !== null && out.has(dest)) {
-    out.set(dest, { pct: printed, exact: !!exact.get(dest) });
+  const destinationIdentifier = paths[0][paths[0].length - 1];
+  const printed = printedShare(destinationIdentifier);
+  if (printed !== null && out.has(destinationIdentifier)) {
+    out.set(destinationIdentifier, { pct: printed, exact: !!exact.get(destinationIdentifier) });
   }
   return out;
+}
+
+interface AtlasPaintSnapshot {
+  drawnPaths: AtlasPath[] | null;
+  activeTrace: AtlasTrace | null;
+  effectsByElementIdentifier: Map<AtlasElementIdentifier, ElementEffect>;
+  heldByElement: Map<AtlasElementIdentifier, { label: string }>;
+  blockedElementIdentifiers: Set<AtlasElementIdentifier>;
+  sharesByElementIdentifier: Map<AtlasElementIdentifier, StrandShare> | null;
+  litElementIdentifiers: Set<AtlasElementIdentifier> | null;
+  routeLinkKeys: Set<AtlasLinkKey> | null;
+  traceSharesByLinkKey: Map<string, number> | null;
+  liveLinkKeys: Set<string> | null;
+}
+
+// One coherent answer for one paint. Slider drags and pointer changes may
+// invalidate it immediately, but every consumer within this paint shares the
+// same derived paths, effects, gates, shares and cuts.
+function createAtlasPaintSnapshot(): AtlasPaintSnapshot {
+  const drawnPaths = drawn();
+  const activeTrace = trace();
+  const effectsByElementIdentifier = new Map<AtlasElementIdentifier, ElementEffect>();
+  const heldByElement = new Map<AtlasElementIdentifier, { label: string }>();
+  if (ATLAS && state.simulationMode) {
+    for (const [rawIdentifier, atlasNode] of ATLAS.nodes) {
+      const elementIdentifier = String(rawIdentifier);
+      if (elementIdentifier === END) continue;
+      const effect = elementEffect(elementIdentifier);
+      effectsByElementIdentifier.set(elementIdentifier, effect);
+      if (!effect.moved) {
+        const gate = heldByBoxes(atlasNode.boxes);
+        if (gate) heldByElement.set(elementIdentifier, gate);
+      }
+    }
+  }
+  const blockedElementIdentifiers = blockedElements(effectsByElementIdentifier);
+  const sharesByElementIdentifier = state.simulationMode
+    ? strandShares(drawnPaths, effectsByElementIdentifier, heldByElement)
+    : null;
+  const litElementIdentifiers = strandLit(drawnPaths, sharesByElementIdentifier, heldByElement);
+  const routeLinkKeys = routeLinks(
+    drawnPaths,
+    activeTrace,
+    blockedElementIdentifiers,
+    litElementIdentifiers,
+  );
+  const traceSharesByLinkKey = traceLinkShares(activeTrace, heldByElement);
+  const liveLinkKeys = traceSharesByLinkKey
+    ? null
+    : liveLinks(effectsByElementIdentifier, heldByElement);
+  return {
+    drawnPaths,
+    activeTrace,
+    effectsByElementIdentifier,
+    heldByElement,
+    blockedElementIdentifiers,
+    sharesByElementIdentifier,
+    litElementIdentifiers,
+    routeLinkKeys,
+    traceSharesByLinkKey,
+    liveLinkKeys,
+  };
 }
 
 // What the panel prints for where you are in the list, if it prints anything.
 // Taken from the same walk the list itself prints from, so the picture and the
 // panel can never disagree by the last decimal place.
-function printedShare(dest: any): number | null {
+function printedShare(destinationIdentifier: AtlasElementIdentifier): number | null {
   const chain = openChain();
-  if (!chain.length || chain[0].via !== dest) return null;
+  if (!chain.length || chain[0].via !== destinationIdentifier) return null;
   return shareAtOpen(chain);
 }
 
@@ -2477,31 +2777,36 @@ function printedShare(dest: any): number | null {
 //   flow(a→b) = up(a) × gain(a,b) × down(b),  as a share of up(target)
 // The shares across any cut of the subgraph sum to 1, which is what makes the
 // picture add up the way the list does.
-export function traceLinkShares(): Map<string, number> | null {
+export function traceLinkShares(
+  activeTrace: AtlasTrace | null = trace(),
+  heldByElement?: Map<AtlasElementIdentifier, { label: string }>,
+): Map<string, number> | null {
   const at = traceEl();
-  if (!trace() || !at || !WORLD || !ATLAS) return null;
+  if (!activeTrace || !at || !WORLD || !ATLAS) return null;
   const depth = WORLD.M.depth;
-  const T = trace()!;
-  const els = [...T.els].sort(
-    (a: any, b: any) => (depth.get(a) || 0) - (depth.get(b) || 0));
-  const sources = new Set<any>(
-    changedInputIds().map(elementOfBox).filter((el: any) => el && trace()!.els.has(el)));
+  const T = activeTrace;
+  const els = [...T.els].sort((firstIdentifier, secondIdentifier) =>
+    (depth.get(firstIdentifier) || 0) - (depth.get(secondIdentifier) || 0));
+  const sources = new Set<AtlasElementIdentifier>(changedInputIds()
+    .map(elementOfBox)
+    .filter((elementIdentifier): elementIdentifier is string =>
+      elementIdentifier !== null && T.els.has(elementIdentifier)));
 
-  const up = new Map<any, number>();
+  const up = new Map<AtlasElementIdentifier, number>();
   for (const n of els) {
     let v = sources.has(n) ? 1 : 0;
     for (const p of ATLAS.pred.get(n) || []) {
-      if (T.els.has(p)) v += (up.get(p) || 0) * pairGain(p, n);
+      if (T.els.has(p)) v += (up.get(p) || 0) * pairGain(p, n, heldByElement);
     }
     up.set(n, v);
   }
 
-  const down = new Map<any, number>();
+  const down = new Map<AtlasElementIdentifier, number>();
   for (let i = els.length - 1; i >= 0; i--) {
     const n = els[i];
     let v = n === at ? 1 : 0;
     for (const c of ATLAS.succ.get(n) || []) {
-      if (T.els.has(c)) v += pairGain(n, c) * (down.get(c) || 0);
+      if (T.els.has(c)) v += pairGain(n, c, heldByElement) * (down.get(c) || 0);
     }
     down.set(n, v);
   }
@@ -2527,29 +2832,37 @@ export function traceLinkShares(): Map<string, number> | null {
 // Returns null when not simulating (draw everything, as before) and an empty
 // set when nothing has moved (draw nothing — the same blank slate the map shows
 // on entering simulation, filling in as the sliders move).
-function liveLinks(): Set<string> | null {
+function liveLinks(
+  effectsByElementIdentifier?: Map<AtlasElementIdentifier, ElementEffect>,
+  heldByElement?: Map<AtlasElementIdentifier, { label: string }>,
+): Set<string> | null {
   if (!state.simulationMode || !ATLAS || !WORLD) return null;
+  const atlas = ATLAS;
   const sources = changedInputIds()
     .map(elementOfBox)
-    .filter((el): el is string => el !== null && ATLAS.nodes.has(el));
+    .filter((elementIdentifier): elementIdentifier is string =>
+      elementIdentifier !== null && atlas.nodes.has(elementIdentifier));
   const live = new Set<string>();
   if (!sources.length) return live;
 
   // Reachable from something the user moved.
-  const down = new Set<any>(sources), stack = [...sources];
+  const down = new Set<AtlasElementIdentifier>(sources), stack = [...sources];
   while (stack.length) {
-    const id = stack.pop();
-    for (const n of ATLAS.succ.get(id) || []) {
+    const id = stack.pop()!;
+    for (const n of atlas.succ.get(id) || []) {
       if (n === END || down.has(n)) continue;
       down.add(n);
       stack.push(n);
     }
   }
   // One pass for "did this element move", not one per link.
-  const moved = new Map<any, boolean>();
-  const didMove = (id: any): boolean => {
-    let had = moved.get(id);
-    if (had === undefined) { had = elementEffect(id).moved; moved.set(id, had); }
+  const moved = new Map<AtlasElementIdentifier, boolean>();
+  const didMove = (identifier: AtlasElementIdentifier): boolean => {
+    let had = moved.get(identifier);
+    if (had === undefined) {
+      had = (effectsByElementIdentifier?.get(identifier) || elementEffect(identifier)).moved;
+      moved.set(identifier, had);
+    }
     return had;
   };
   // A link is drawn when the change travelled it: its start moved, and so did
@@ -2562,7 +2875,7 @@ function liveLinks(): Set<string> | null {
     if (!didMove(a)) continue;
     for (const b of ATLAS.succ.get(a) || []) {
       if (b === END || !down.has(b)) continue;
-      if (!didMove(b) && !heldBy(b)) continue;
+      if (!didMove(b) && !(heldByElement ? heldByElement.has(String(b)) : heldBy(b))) continue;
       live.add(a + "\u0000" + b);
     }
   }
@@ -2570,11 +2883,11 @@ function liveLinks(): Set<string> | null {
 }
 
 // Widths, applied to the live paths — the picture is not rebuilt for this.
-function paintFlow(svg: any): void {
+function paintFlow(svg: SVGSVGElement, paintSnapshot: AtlasPaintSnapshot): void {
   // A picked box gives per-link shares, which are the finer answer; without one
   // the yes/no from liveLinks still keeps the dead structure off the picture.
-  const shares = traceLinkShares();
-  const live = shares ? null : liveLinks();
+  const shares = paintSnapshot.traceSharesByLinkKey;
+  const live = paintSnapshot.liveLinkKeys;
   // A route being read is drawn WHOLE. Some of its steps carry no measurable
   // magnitude of their own — a link into a box that barely moved, or one whose
   // part in the run is to hold a condition open rather than to push a number
@@ -2582,10 +2895,10 @@ function paintFlow(svg: any): void {
   // it, which reads as "the route stops here" when the route does no such
   // thing. They are drawn at a hairline instead: still there, still lit, and
   // visibly carrying next to nothing.
-  const keep = routeLinks();
+  const keep = paintSnapshot.routeLinkKeys;
   const HAIRLINE = 1.2;
-  for (const p of svg.querySelectorAll(".fl")) {
-    const path = p as unknown as SVGElement & { dataset: DOMStringMap };
+  const world = WORLD!;
+  for (const path of svg.querySelectorAll<SVGPathElement>(".fl")) {
     const key = path.dataset.a + "\u0000" + path.dataset.b;
     const structural = Number(path.dataset.w) || 1;
     const onRoute = !!keep && keep.has(key);
@@ -2596,7 +2909,8 @@ function paintFlow(svg: any): void {
       if (share > 0) {
         // Never fatter than the circles it joins — a line as wide as its
         // endpoints stops being a line, the same guard the structural width uses.
-        const rA = WORLD.rOf.get(path.dataset.a) || 8, rB = WORLD.rOf.get(path.dataset.b) || 8;
+        const rA = world.rOf.get(path.dataset.a || "") || 8;
+        const rB = world.rOf.get(path.dataset.b || "") || 8;
         const cap = Math.max(1.4, 0.85 * Math.min(rA, rB));
         path.setAttribute("stroke-width", Math.min(cap, 1.2 + share * 18).toFixed(2));
       } else if (onRoute) {
@@ -2625,7 +2939,7 @@ const ALONG_ROWS = 3;
 const signed = (pct: number): string =>
   (Math.abs(pct) < 0.05 ? "" : pct > 0 ? "+" : "") + (Math.abs(pct) < 0.05 ? "0.0" : pct.toFixed(1)) + "%";
 
-const meritOf = (pct: number, direction: string | undefined): string => {
+const meritOf = (pct: number, direction: string | undefined): Merit => {
   if (Math.abs(pct) < EFFECT_FLOOR_PCT) return "flat";
   if (direction === "higher_better") return pct > 0 ? "good" : "bad";
   if (direction === "lower_better")  return pct > 0 ? "bad"  : "good";
@@ -2662,17 +2976,22 @@ const isChangedInput = (boxId: string): boolean => {
 // from a source AND backward-reachable from the target is exactly "lies on some
 // path between them". Null when nothing moved, or when nothing that moved can
 // reach it — the caller then just lights the box on its own.
-function traceTo(target: any): { els: Set<any>; links: Set<any> } | null {
+function traceTo(target: AtlasElementIdentifier): AtlasTrace | null {
   if (!ATLAS) return null;
+  const atlas = ATLAS;
   const sources = changedInputIds()
     .map(elementOfBox)
-    .filter((el): el is string => el !== null && ATLAS.nodes.has(el));
+    .filter((elementIdentifier): elementIdentifier is string =>
+      elementIdentifier !== null && atlas.nodes.has(elementIdentifier));
   if (!sources.length) return null;
 
-  const walk = (seeds: any[], next: (id: any) => any) => {
-    const seen = new Set<any>(seeds), stack = [...seeds];
+  const walk = (
+    seeds: AtlasElementIdentifier[],
+    next: (identifier: AtlasElementIdentifier) => Iterable<AtlasElementIdentifier> | undefined,
+  ): Set<AtlasElementIdentifier> => {
+    const seen = new Set<AtlasElementIdentifier>(seeds), stack = [...seeds];
     while (stack.length) {
-      const id = stack.pop();
+      const id = stack.pop()!;
       for (const n of next(id) || []) {
         if (n === END || seen.has(n)) continue;
         seen.add(n);
@@ -2681,16 +3000,16 @@ function traceTo(target: any): { els: Set<any>; links: Set<any> } | null {
     }
     return seen;
   };
-  const down = walk(sources, (id) => ATLAS.succ.get(id));
+  const down = walk(sources, identifier => atlas.succ.get(identifier));
   if (!down.has(target)) return null;
-  const up = walk([target], (id) => ATLAS.pred.get(id));
+  const up = walk([target], identifier => atlas.pred.get(identifier));
 
-  const els = new Set<any>();
+  const els = new Set<AtlasElementIdentifier>();
   for (const id of down) if (up.has(id)) els.add(id);
   if (!els.size) return null;
 
-  const links = new Set<any>();
-  for (const a of els) for (const b of ATLAS.succ.get(a) || []) {
+  const links = new Set<AtlasLinkKey>();
+  for (const a of els) for (const b of atlas.succ.get(a) || []) {
     if (els.has(b)) links.add(a + "\u0000" + b);
   }
   return { els, links };
@@ -2698,7 +3017,7 @@ function traceTo(target: any): { els: Set<any>; links: Set<any> } | null {
 
 // The circle a box sits in — an element can stand for several boxes, and a box
 // inside a tangle lights the tangle.
-function elementOfBox(boxId: string): any {
+function elementOfBox(boxId: string): AtlasElementIdentifier | null {
   if (!ATLAS) return null;
   for (const [id, node] of ATLAS.nodes) {
     if (id !== END && node.boxes && node.boxes.indexOf(boxId) !== -1) return id;
@@ -2711,18 +3030,18 @@ function elementOfBox(boxId: string): any {
 // closed in to 2000% and you saw the circle and nothing else, which is no help
 // at all when the question is "where does this sit". This keeps about half the
 // picture's height in frame, so the box arrives with its neighbours around it.
-function frameNear(id: any) {
-  const [cx, cy] = WORLD.at.get(id);
-  const r = WORLD.rOf.get(id) || 0;
-  const h = Math.max(r * 6, WORLD.H * 0.5), w = h * frameAspect();
+function frameNear(identifier: AtlasElementIdentifier): AtlasFrame {
+  const [cx, cy] = WORLD!.at.get(identifier)!;
+  const r = WORLD!.rOf.get(identifier) || 0;
+  const h = Math.max(r * 6, WORLD!.H * 0.5), w = h * frameAspect();
   return { x: cx - w / 2, y: cy - h / 2, w, h };
 }
 
 // Two things ask for this — a box's row in the movers list, and a destination's
 // heading in the pathway list — so they share it, keyed by whichever control is
 // pressed rather than by what it happens to point at.
-function litFor(key: string, el: any) {
-  if (!el || !WORLD || !WORLD.at.has(el)) return;
+function litFor(key: string, elementIdentifier: AtlasElementIdentifier | null): void {
+  if (!elementIdentifier || !WORLD || !WORLD.at.has(elementIdentifier)) return;
   if (R.traceKey === key) {
     // Letting go leaves the frame where it is: the reader put it there by
     // clicking, and yanking it back would undo a move they did not ask to undo.
@@ -2732,7 +3051,7 @@ function litFor(key: string, el: any) {
   }
   // Whatever was being read before, this replaces it.
   R.roots = []; R.open = []; R.current = []; R.lanes = [];
-  R.traceKey = key; R.trace = el;
+  R.traceKey = key; R.trace = elementIdentifier;
   paintAtlas();
   // A trace is a shape, so the frame fits the shape. With nothing moved to
   // trace FROM there is nothing to fit, so the box is simply picked out where
@@ -2792,7 +3111,7 @@ function moveList(moves: BoxMove[], key: string, cap = MOVE_ROWS): string {
 // ranking of peers and now scales to its own; the eyebrow above it says which
 // peers. (The map's colours keep the global scale: they are comparing a box to
 // the whole run, not to the three boxes listed beside it.)
-function moveBar(pct: number, merit: string, scale: number): string {
+function moveBar(pct: number, merit: Merit, scale: number): string {
   const width = scale > 0 ? Math.min(1, Math.abs(pct) / scale) * 50 : 0;
   const side = pct > 0 ? "left" : "right";
   return `<span class="bar"><i style="width:${width.toFixed(1)}%;${side}:50%;background:${
@@ -2936,8 +3255,8 @@ export const ATLAS_ZOOM_MAX = 24;
 
 // The drawn radius of one element. Exported so a test can check the picture's
 // own rule — a ribbon is never fatter than the circles it joins.
-export function atlasRadius(id: any): number {
-  return (WORLD && WORLD.rOf.get(id)) || 0;
+export function atlasRadius(identifier: AtlasElementIdentifier): number {
+  return WORLD?.rOf.get(identifier) || 0;
 }
 
 export function atlasZoomPercent(): number {
@@ -2988,7 +3307,7 @@ export function atlasPanBy(dxWorld: number, dyWorld: number): void {
 // light up what it touches; click a tangle to go inside it; drag to move when
 // the frame has closed in; Escape lets go one layer at a time.
 // ---------------------------------------------------------------------------
-let panFrom: any = null;
+let panFrom: { x: number; y: number; vb: AtlasFrame } | null = null;
 let panMoved = 0;
 
 function atlasPointerDown(e: PointerEvent): void {
@@ -2999,7 +3318,7 @@ function atlasPointerDown(e: PointerEvent): void {
 }
 
 function atlasPointerMove(e: PointerEvent): void {
-  if (!panFrom) return;
+  if (!panFrom || !VB) return;
   const svg = svgEl();
   if (!svg) return;
   const box = svg.getBoundingClientRect();
@@ -3032,23 +3351,24 @@ export function initAtlasStage(): void {
   if (!stage || stage.dataset.wired) return;
   stage.dataset.wired = "1";
 
-  stage.addEventListener("pointerdown", e => { if ((e.target as Element).closest("svg.atlas")) atlasPointerDown(e); });
+  stage.addEventListener("pointerdown", event => {
+    if (eventTargetElement(event.target)?.closest("svg.atlas")) atlasPointerDown(event);
+  });
 
   // Ctrl / Cmd + wheel and trackpad pinch zoom about the cursor; a plain wheel
   // or two-finger scroll pans. The same division of labour as the map, so the
   // gesture you already know keeps working when the picture changes.
   stage.addEventListener("wheel", event => {
-    const e = event as WheelEvent;
-    if (!VB || !(e.target as Element).closest("svg.atlas")) return;
-    e.preventDefault();
-    if (e.ctrlKey || e.metaKey) {
-      atlasZoomBy(Math.exp(-e.deltaY * 0.0022), e.clientX, e.clientY);
+    if (!VB || !eventTargetElement(event.target)?.closest("svg.atlas")) return;
+    event.preventDefault();
+    if (event.ctrlKey || event.metaKey) {
+      atlasZoomBy(Math.exp(-event.deltaY * 0.0022), event.clientX, event.clientY);
       return;
     }
     const svg = svgEl();
     const box = svg ? svg.getBoundingClientRect() : null;
     const perPx = box && box.width ? VB.w / box.width : 1;
-    atlasPanBy(e.deltaX * perPx, e.deltaY * perPx);
+    atlasPanBy(event.deltaX * perPx, event.deltaY * perPx);
   }, { passive: false });
   stage.addEventListener("pointermove", atlasPointerMove);
   stage.addEventListener("pointerup", atlasPointerUp);
@@ -3057,11 +3377,11 @@ export function initAtlasStage(): void {
   stage.addEventListener("click", event => {
     // A drag that ends on a circle is not a click on it.
     if (panMoved > 4) { panMoved = 0; return; }
-    const target = event.target as Element;
-    if (!target || !target.closest) return;
+    const target = eventTargetElement(event.target);
+    if (!target) return;
 
     if (target.closest("[data-atlas-close]")) { closeAtlas(); return; }
-    const zoomBtn = target.closest("[data-atlas-zoom]") as HTMLElement | null;
+    const zoomBtn = closestHtmlElement(target, "[data-atlas-zoom]");
     if (zoomBtn) {
       const which = zoomBtn.dataset.atlasZoom;
       if (which === "fit") atlasFitWidth();
@@ -3075,65 +3395,71 @@ export function initAtlasStage(): void {
     }
     if (target.closest("[data-replay]"))      { WHEEL_PICK = null; PICK_FROM_WHEEL = false; paintAtlas(); playTour(); return; }
 
-    const nd = target.closest("g.n.focus .nd") as HTMLElement | null;
+    const nd = closestSvgElement(target, "g.n.focus .nd");
     if (nd) { pickWheelBox(nd.dataset.box); return; }
 
-    const g = target.closest("svg.atlas g.n") as HTMLElement | null;
+    const g = closestSvgElement(target, "svg.atlas g.n");
     if (!g) return;
-    selectEl(g.dataset.el);
+    if (g.dataset.el) selectEl(g.dataset.el);
   });
 
   // Double-click closes the frame in on any element — and on a tangle, closing
   // in IS going inside it, where its loops are. A single click is now the same
   // question everywhere ("how do I get here"), so the way in moved here.
   stage.addEventListener("dblclick", event => {
-    const g = (event.target as Element).closest("svg.atlas g.n") as HTMLElement | null;
-    if (!g || !WORLD || !WORLD.at.has(g.dataset.el)) return;
+    const g = closestSvgElement(event.target, "svg.atlas g.n");
+    const elementIdentifier = g?.dataset.el;
+    if (!elementIdentifier || !WORLD || !WORLD.at.has(elementIdentifier)) return;
     event.preventDefault();
-    if (g.dataset.loop) { enterTangle(g.dataset.el); return; }
-    zoomTo(frameOn(g.dataset.el));
+    if (g.dataset.loop) { enterTangle(elementIdentifier); return; }
+    zoomTo(frameOn(elementIdentifier));
   });
 
   stage.addEventListener("keydown", event => {
-    const e = event as KeyboardEvent;
-    if (e.key !== "Enter" && e.key !== " ") return;
-    const g = (e.target as Element).closest && (e.target as Element).closest("svg.atlas g.n") as HTMLElement | null;
-    if (!g) return;
-    e.preventDefault();
-    if (g.dataset.loop) enterTangle(g.dataset.el); else selectEl(g.dataset.el);
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const g = closestSvgElement(event.target, "svg.atlas g.n");
+    const elementIdentifier = g?.dataset.el;
+    if (!elementIdentifier) return;
+    event.preventDefault();
+    if (g.dataset.loop) enterTangle(elementIdentifier); else selectEl(elementIdentifier);
   });
 
   // Pointing at a circle points at the fork it belongs to — the picture and
   // the list are the same control seen twice, so either can be swept.
   stage.addEventListener("pointerover", event => {
     if (!atlasIsOpen() || R.inside) return;
-    const g = (event.target as Element)?.closest?.("svg.atlas g.n") as HTMLElement | null;
-    previewFork(g ? forkAtElement(g.dataset.el) : null);
+    const g = closestSvgElement(event.target, "svg.atlas g.n");
+    previewFork(g?.dataset.el ? forkAtElement(g.dataset.el) : null);
   });
   stage.addEventListener("pointerleave", () => previewFork(null));
 
   stage.addEventListener("mouseover", event => {
     const tip = document.getElementById("tooltip");
     if (!tip) return;
-    const target = event.target as Element;
-    if (!target || !target.closest) return;
-    const nd = target.closest("g.n.focus .nd") as HTMLElement | null;
+    const target = eventTargetElement(event.target);
+    if (!target) return;
+    const nd = closestSvgElement(target, "g.n.focus .nd");
     if (nd) {
-      const w = WHEELS.get(R.inside);
-      const n = w ? w.share.get(nd.dataset.box) : 0;
-      tip.innerHTML = `<div class="tooltip-title">${escapeHtml(boxLabel(nd.dataset.box))}</div>` +
-        tipEffect([nd.dataset.box!], "boxes") +
-        `<div class="tooltip-text">in ${n} ${plural(n, "loop")} of this tangle · click to follow one</div>`;
+      const w = R.inside ? WHEELS.get(R.inside) : undefined;
+      const boxIdentifier = nd.dataset.box || "";
+      const numberOfLoops = w ? w.share.get(boxIdentifier) || 0 : 0;
+      tip.innerHTML = `<div class="tooltip-title">${escapeHtml(boxLabel(boxIdentifier))}</div>` +
+        tipEffect([boxIdentifier], "boxes") +
+        `<div class="tooltip-text">in ${numberOfLoops} ${plural(numberOfLoops, "loop")} of this tangle · click to follow one</div>`;
       tip.classList.add("visible");
       return;
     }
-    const g = target.closest("svg.atlas g.n") as HTMLElement | null;
-    if (!g || !ATLAS || !ATLAS.nodes.has(g.dataset.el)) { tip.classList.remove("visible"); return; }
-    const node = ATLAS.nodes.get(g.dataset.el);
+    const g = closestSvgElement(target, "svg.atlas g.n");
+    const elementIdentifier = g?.dataset.el;
+    if (!elementIdentifier || !ATLAS || !ATLAS.nodes.has(elementIdentifier)) {
+      tip.classList.remove("visible");
+      return;
+    }
+    const node = ATLAS.nodes.get(elementIdentifier)!;
     const M = measure(ATLAS);
     tip.innerHTML = `<div class="tooltip-title">${escapeHtml(node.label)}</div>` +
       tipEffect(node.boxes, plural(node.boxes.length, "box", "boxes")) +
-      `<div class="tooltip-text">${pct(M.weight(g.dataset.el))} of all readings pass through · ` +
+      `<div class="tooltip-text">${pct(M.weight(elementIdentifier))} of all readings pass through · ` +
       `${node.boxes.length} ${plural(node.boxes.length, "box", "boxes")}` +
       `${node.loop ? " · double-click to go inside" : ""}</div>`;
     tip.classList.add("visible");
@@ -3142,8 +3468,8 @@ export function initAtlasStage(): void {
   stage.addEventListener("mousemove", event => {
     const tip = document.getElementById("tooltip");
     if (!tip || !tip.classList.contains("visible")) return;
-    tip.style.left = (event as MouseEvent).clientX + 14 + "px";
-    tip.style.top  = (event as MouseEvent).clientY + 14 + "px";
+    tip.style.left = event.clientX + 14 + "px";
+    tip.style.top  = event.clientY + 14 + "px";
   });
 
   // The panel is the app's, so its atlas content is wired here rather than in
@@ -3156,18 +3482,18 @@ export function initAtlasStage(): void {
     // back whatever is actually chosen.
     content.addEventListener("pointerover", event => {
       if (!atlasIsOpen()) return;
-      const row = (event.target as Element)?.closest?.("[data-fork]") as HTMLElement | null;
+      const row = closestHtmlElement(event.target, "[data-fork]");
       previewFork(row ? forkOfKey(row.dataset.forkpath) : null);
     });
     content.addEventListener("pointerleave", () => {
       if (atlasIsOpen()) previewFork(null);
     });
     content.addEventListener("click", event => {
-      const t = event.target as Element;
+      const t = eventTargetElement(event.target);
       // The panel carries its own copies of the atlas controls, and a click on
       // one of them never reached the stage's handler — so they are wired here.
-      if (t && t.closest && atlasIsOpen()) {
-        const card = t.closest("[data-loopidx]") as HTMLElement | null;
+      if (t && atlasIsOpen()) {
+        const card = closestHtmlElement(t, "[data-loopidx]");
         if (card) {
           const i = Number(card.dataset.loopidx);
           // A loop can only be DRAWN from inside its tangle — the wheel is the
@@ -3178,7 +3504,7 @@ export function initAtlasStage(): void {
           return;
         }
         // The pathway list: a fork opens, "All pathways" steps back out.
-        const crumb = t.closest("[data-crumb]") as HTMLElement | null;
+        const crumb = closestHtmlElement(t, "[data-crumb]");
         if (crumb) {
           const to = Number(crumb.dataset.crumb);
           // "All pathways" is the way back to nothing picked at all, so it
@@ -3192,22 +3518,22 @@ export function initAtlasStage(): void {
         // Before the row it sits under, because a box picked out from under a
         // folded row is a narrowing of that row rather than a second click on
         // it — opening the row again would shut what was just asked about.
-        const lane = t.closest("[data-lane]") as HTMLElement | null;
+        const lane = closestHtmlElement(t, "[data-lane]");
         if (lane) {
           const at = KEY_PATH.get(lane.dataset.lanerow || "");
           if (at) pickLane(at, lane.dataset.lane!);
           return;
         }
-        const fork = t.closest("[data-fork]") as HTMLElement | null;
+        const fork = closestHtmlElement(t, "[data-fork]");
         if (fork) { openFork(decodePath(fork.dataset.forkpath)); return; }
-        const more = t.closest("[data-moves-toggle]") as HTMLElement | null;
+        const more = closestHtmlElement(t, "[data-moves-toggle]");
         if (more) {
           const key = more.dataset.movesToggle!;
           MOVES_OPEN[key] = !MOVES_OPEN[key];
           renderInspector();
           return;
         }
-        const mover = t.closest("[data-moverbox]") as HTMLElement | null;
+        const mover = closestHtmlElement(t, "[data-moverbox]");
         if (mover) { litBox(mover.dataset.moverbox!); return; }
         if (t.closest("[data-replay]")) { WHEEL_PICK = null; PICK_FROM_WHEEL = false; paintAtlas(); playTour(); return; }
         if (t.closest("[data-zoomout]")) {
@@ -3215,12 +3541,12 @@ export function initAtlasStage(): void {
           return;
         }
       }
-      const el = (event.target as Element).closest("[data-atlas-box]") as HTMLElement | null;
+      const el = closestHtmlElement(event.target, "[data-atlas-box]");
       if (!el || !atlasIsOpen()) return;
       const id = el.dataset.atlasBox!;
       closeAtlas();
-      if (nodeById[id] && typeof selectNode === "function") {
-        selectNode(id);
+      if (nodeById[id] && typeof focusNode === "function") {
+        focusNode(id);
         if (typeof scrollNodeIntoView === "function") scrollNodeIntoView(id);
       }
     });
@@ -3236,7 +3562,7 @@ export function initAtlasStage(): void {
 // then the selection, then the atlas itself.
 document.addEventListener("keydown", event => {
   if (!atlasIsOpen()) return;
-  const target = event.target as HTMLElement | null;
+  const target = event.target instanceof HTMLElement ? event.target : null;
   // Never while typing: the search box and every field in the app take these
   // keys for themselves.
   if (target && (/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName) || target.isContentEditable)) return;

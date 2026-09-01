@@ -14,9 +14,8 @@
 // Nothing here touches the DOM, the app's state, or the map's filters: it takes
 // a graph and a start box and returns an atlas. 21-atlas-view.ts draws it.
 //
-// This is the engine prototyped in tools/pathway-atlas.html. That file stays as
-// the standalone version (drop a CSV in, no app needed); THIS is the one the
-// app runs, and the one tests/pathway-atlas.test.ts reads.
+// This engine powers the in-app Atlas and is exercised directly by
+// tests/pathway-atlas.test.ts.
 // =============================================================================
 
 // ===========================================================================
@@ -34,11 +33,11 @@
 //   scope      keep only what the start box can reach
 //   loops      contract each feedback loop to a single element
 //   name       propose a grouping from the box names
-//   refine     split any group whose members do not behave alike
+//   refine     split every group whose members do not behave alike
 //   decompose  cut the result into single-entry / single-exit regions
 //   count      exact totals by dynamic programming (BigInt)
 //
-// Nothing is sampled, capped, budgeted or truncated at any point, so "every
+// No stage samples, caps, budgets or truncates the graph, so "every
 // pathway is represented" is a property of the construction rather than a hope.
 //
 // TWO GUARANTEES, and the refine step is what buys the second one:
@@ -60,28 +59,125 @@ export const SLOT = "◇";        // stands in for whatever varies between lanes
 export const END = "\u0000END";      // virtual finish, so every pathway has one
 export const SEP = "\u0001";                // never appears in a label
 
+export type AtlasIdentifier = string;
+export type AtlasGroupIdentifier = string;
+export type AtlasClassIdentifier = string;
+export type AtlasRoleIdentifier = string;
+export type AtlasLaneValue = string;
+
+export interface AtlasGraphNode {
+  id: AtlasIdentifier;
+  label?: string;
+  direction?: string;
+}
+
+export interface AtlasLink {
+  from: AtlasIdentifier;
+  to: AtlasIdentifier;
+}
+
+export interface AtlasGraphEdge extends AtlasLink {
+  elasticity: number;
+  effect?: string;
+}
+
+export interface AtlasGraphInput<NodeType extends AtlasGraphNode = AtlasGraphNode, EdgeType extends AtlasLink = AtlasGraphEdge> {
+  nodes: NodeType[];
+  edges: EdgeType[];
+  name?: string;
+}
+
+export interface AtlasGraph<NodeType extends AtlasGraphNode = AtlasGraphNode, EdgeType extends AtlasLink = AtlasGraphEdge> {
+  nodes: NodeType[];
+  edges: EdgeType[];
+  byId: Map<AtlasIdentifier, NodeType>;
+  out: Map<AtlasIdentifier, EdgeType[]>;
+  inc: Map<AtlasIdentifier, EdgeType[]>;
+  name: string;
+}
+
+export interface LaneMember {
+  id: AtlasIdentifier;
+  token: AtlasLaneValue;
+}
+
+export interface LaneFamily {
+  key: string;
+  pre: string;
+  suf: string;
+  members: LaneMember[];
+  anchor: number;
+  overlap: number;
+}
+
+type LaneFamilyCandidate = Omit<LaneFamily, "overlap">;
+
+export interface RejectedLaneFamily {
+  key: string;
+  why: string;
+}
+
+export interface LaneDetectionOptions {
+  minMembers?: number;
+  minTokenFamilies?: number;
+  maxSpan?: number;
+  neighbourOverlap?: number;
+}
+
+interface ResolvedLaneDetectionOptions {
+  minMembers: number;
+  minTokenFamilies: number;
+  maxSpan: number;
+  neighbourOverlap: number;
+}
+
+export interface LaneDetection {
+  roleOf: Map<AtlasIdentifier, AtlasRoleIdentifier>;
+  laneOf: Map<AtlasIdentifier, AtlasLaneValue>;
+  families: LaneFamily[];
+  laneValues: Set<AtlasLaneValue>;
+  rejected: RejectedLaneFamily[];
+  foldedBoxes: number;
+  roleCount: number;
+}
+
 // ---------------------------------------------------------------------------
 // 0. GRAPH
 // ---------------------------------------------------------------------------
-export function buildGraph(map: any) {
-  const byId = new Map<any, any>(), out = new Map<any, any>(), inc = new Map<any, any>();
-  for (const n of map.nodes) { byId.set(n.id, n); out.set(n.id, []); inc.set(n.id, []); }
-  const edges: any[] = [];
-  for (const e of map.edges) {
-    if (!byId.has(e.from) || !byId.has(e.to)) continue;
-    edges.push(e);
-    out.get(e.from).push(e);
-    inc.get(e.to).push(e);
+export function buildGraph<NodeType extends AtlasGraphNode, EdgeType extends AtlasLink>(
+  map: AtlasGraphInput<NodeType, EdgeType>,
+): AtlasGraph<NodeType, EdgeType> {
+  const byId = new Map<AtlasIdentifier, NodeType>();
+  const out = new Map<AtlasIdentifier, EdgeType[]>();
+  const inc = new Map<AtlasIdentifier, EdgeType[]>();
+  for (const node of map.nodes) {
+    byId.set(node.id, node);
+    out.set(node.id, []);
+    inc.set(node.id, []);
+  }
+  const edges: EdgeType[] = [];
+  for (const edge of map.edges) {
+    if (!byId.has(edge.from) || !byId.has(edge.to)) continue;
+    edges.push(edge);
+    out.get(edge.from)!.push(edge);
+    inc.get(edge.to)!.push(edge);
   }
   return { nodes: map.nodes, edges, byId, out, inc, name: map.name || "map" };
 }
 
-export function reachableFrom(G: any, startId: any, stopAt: any) {
-  const seen = new Set<any>([startId]), stack = [startId];
+export function reachableFrom<NodeType extends AtlasGraphNode, EdgeType extends AtlasLink>(
+  graph: AtlasGraph<NodeType, EdgeType>,
+  startIdentifier: AtlasIdentifier,
+  stopAt: ReadonlySet<AtlasIdentifier> | null,
+): Set<AtlasIdentifier> {
+  const seen = new Set<AtlasIdentifier>([startIdentifier]);
+  const stack: AtlasIdentifier[] = [startIdentifier];
   while (stack.length) {
-    const id = stack.pop();
-    if (stopAt && id !== startId && stopAt.has(id)) continue;
-    for (const e of G.out.get(id) || []) if (!seen.has(e.to)) { seen.add(e.to); stack.push(e.to); }
+    const identifier = stack.pop()!;
+    if (stopAt && identifier !== startIdentifier && stopAt.has(identifier)) continue;
+    for (const edge of graph.out.get(identifier) || []) {
+      if (!seen.has(edge.to)) { seen.add(edge.to); stack.push(edge.to); }
+    }
   }
   return seen;
 }
@@ -116,81 +212,114 @@ export const LANE_DEFAULTS = {
   neighbourOverlap: 0.25, // how alike members' surroundings must be
 };
 
-export const words = (s: any) => String(s).split(/\s+/).filter(Boolean);
+export const words = (source: string): string[] => source.split(/\s+/).filter(Boolean);
 
-export function candidateFamilies(nodes: any, maxSpan: any) {
-  const byKey = new Map<any, any>();
-  for (const n of nodes) {
-    const w = words(n.label || n.id);
-    for (let i = 0; i < w.length; i++) {
-      for (let j = i + 1; j <= Math.min(w.length, i + maxSpan); j++) {
-        const pre = w.slice(0, i), suf = w.slice(j);
-        if (pre.length + suf.length === 0) continue;   // need something to anchor on
-        const key = pre.join(" ") + SEP + suf.join(" ");
-        let m = byKey.get(key);
-        if (!m) byKey.set(key, m = new Map<any, any>());
-        if (!m.has(n.id)) m.set(n.id, w.slice(i, j).join(" "));
+export function candidateFamilies(
+  nodes: readonly AtlasGraphNode[],
+  maxSpan: number,
+): Map<string, Map<AtlasIdentifier, AtlasLaneValue>> {
+  const byKey = new Map<string, Map<AtlasIdentifier, AtlasLaneValue>>();
+  for (const node of nodes) {
+    const labelWords = words(node.label || node.id);
+    for (let startIndex = 0; startIndex < labelWords.length; startIndex++) {
+      for (
+        let endIndex = startIndex + 1;
+        endIndex <= Math.min(labelWords.length, startIndex + maxSpan);
+        endIndex++
+      ) {
+        const prefixWords = labelWords.slice(0, startIndex);
+        const suffixWords = labelWords.slice(endIndex);
+        if (prefixWords.length + suffixWords.length === 0) continue; // need something to anchor on
+        const key = prefixWords.join(" ") + SEP + suffixWords.join(" ");
+        let membersByIdentifier = byKey.get(key);
+        if (!membersByIdentifier) {
+          membersByIdentifier = new Map<AtlasIdentifier, AtlasLaneValue>();
+          byKey.set(key, membersByIdentifier);
+        }
+        if (!membersByIdentifier.has(node.id)) {
+          membersByIdentifier.set(node.id, labelWords.slice(startIndex, endIndex).join(" "));
+        }
       }
     }
   }
   return byKey;
 }
 
-export function detectLanes(nodes: any, edges: any, opts: any = {}) {
-  const o = { ...LANE_DEFAULTS, ...opts };
-  if (!o.minMembers) return {
-    roleOf: new Map<any, any>(nodes.map((n: any) => [n.id, "N:" + n.id])), laneOf: new Map<any, any>(),
-    families: [], laneValues: new Set<any>(), rejected: [], foldedBoxes: 0, roleCount: nodes.length,
+export function detectLanes(
+  nodes: readonly AtlasGraphNode[],
+  edges: readonly AtlasLink[],
+  options: LaneDetectionOptions = {},
+): LaneDetection {
+  const resolvedOptions: ResolvedLaneDetectionOptions = { ...LANE_DEFAULTS, ...options };
+  if (!resolvedOptions.minMembers) return {
+    roleOf: new Map(nodes.map(node => [node.id, "N:" + node.id])),
+    laneOf: new Map<AtlasIdentifier, AtlasLaneValue>(),
+    families: [], laneValues: new Set<AtlasLaneValue>(), rejected: [], foldedBoxes: 0, roleCount: nodes.length,
   };
 
-  const linked = new Set<any>();
-  for (const e of edges) { linked.add(e.from + SEP + e.to); linked.add(e.to + SEP + e.from); }
+  const linked = new Set<string>();
+  for (const edge of edges) {
+    linked.add(edge.from + SEP + edge.to);
+    linked.add(edge.to + SEP + edge.from);
+  }
 
-  const rejected: any[] = [], pool: any[] = [];
-  for (const [key, m] of candidateFamilies(nodes, o.maxSpan)) {
-    if (m.size < o.minMembers) continue;
-    const members = [...m].map(([id, token]) => ({ id, token }));
-    if (new Set<any>(members.map(x => x.token)).size !== members.length) continue;
+  const rejected: RejectedLaneFamily[] = [];
+  const pool: LaneFamilyCandidate[] = [];
+  for (const [key, membersByIdentifier] of candidateFamilies(nodes, resolvedOptions.maxSpan)) {
+    if (membersByIdentifier.size < resolvedOptions.minMembers) continue;
+    const members = [...membersByIdentifier].map(([identifier, token]) => ({ id: identifier, token }));
+    if (new Set(members.map(member => member.token)).size !== members.length) continue;
 
     let adjacent = false;
-    for (let i = 0; i < members.length && !adjacent; i++)
-      for (let j = i + 1; j < members.length && !adjacent; j++)
-        if (linked.has(members[i].id + SEP + members[j].id)) adjacent = true;
+    for (let firstIndex = 0; firstIndex < members.length && !adjacent; firstIndex++)
+      for (let secondIndex = firstIndex + 1; secondIndex < members.length && !adjacent; secondIndex++)
+        if (linked.has(members[firstIndex].id + SEP + members[secondIndex].id)) adjacent = true;
     if (adjacent) { rejected.push({ key, why: "members are linked to each other, so this is a sequence not a set of alternatives" }); continue; }
 
-    const [pre, suf] = key.split(SEP);
-    pool.push({ key, pre, suf, members, anchor: words(pre).length + words(suf).length });
+    const [prefix, suffix] = key.split(SEP);
+    pool.push({
+      key,
+      pre: prefix,
+      suf: suffix,
+      members,
+      anchor: words(prefix).length + words(suffix).length,
+    });
   }
 
   // Lane values and families define each other, so settle them together.
   let kept = pool;
   for (let round = 0; round < 6; round++) {
-    const tokenFamilies = new Map<any, any>();
-    for (const f of kept)
-      for (const t of new Set<any>(f.members.map((m: any) => m.token)))
-        tokenFamilies.set(t, (tokenFamilies.get(t) || 0) + 1);
-    const values = new Set<any>([...tokenFamilies]
-      .filter(([t, c]) => c >= o.minTokenFamilies && !/^[0-9]+$/.test(t) && t.length > 1)
-      .map(([t]) => t));
-    const next = pool
-      .map(f => ({ ...f, members: f.members.filter((m: any) => values.has(m.token)) }))
-      .filter(f => f.members.length >= o.minMembers);
-    const settled = next.length === kept.length &&
-      next.every((f, i) => f.key === kept[i].key && f.members.length === kept[i].members.length);
-    kept = next;
+    const tokenFamilies = new Map<AtlasLaneValue, number>();
+    for (const family of kept)
+      for (const token of new Set(family.members.map(member => member.token)))
+        tokenFamilies.set(token, (tokenFamilies.get(token) || 0) + 1);
+    const values = new Set<AtlasLaneValue>([...tokenFamilies]
+      .filter(([token, count]) => count >= resolvedOptions.minTokenFamilies && !/^[0-9]+$/.test(token) && token.length > 1)
+      .map(([token]) => token));
+    const nextFamilies = pool
+      .map(family => ({ ...family, members: family.members.filter(member => values.has(member.token)) }))
+      .filter(family => family.members.length >= resolvedOptions.minMembers);
+    const settled = nextFamilies.length === kept.length &&
+      nextFamilies.every((family, index) =>
+        family.key === kept[index].key && family.members.length === kept[index].members.length);
+    kept = nextFamilies;
     if (settled) break;
   }
 
   // Bigger family wins a contested box; more anchor words breaks the tie.
-  const assign = (list: any) => {
-    const roleOf = new Map<any, any>(), laneOf = new Map<any, any>(), claimed = new Set<any>();
-    for (const f of [...list].sort((a, b) =>
-      b.members.length - a.members.length || b.anchor - a.anchor || (a.key < b.key ? -1 : 1)))
-      for (const m of f.members) {
-        if (claimed.has(m.id)) continue;
-        claimed.add(m.id);
-        roleOf.set(m.id, "L:" + f.key);
-        laneOf.set(m.id, m.token);
+  const assign = (families: readonly LaneFamilyCandidate[]) => {
+    const roleOf = new Map<AtlasIdentifier, AtlasRoleIdentifier>();
+    const laneOf = new Map<AtlasIdentifier, AtlasLaneValue>();
+    const claimed = new Set<AtlasIdentifier>();
+    for (const family of [...families].sort((firstFamily, secondFamily) =>
+      secondFamily.members.length - firstFamily.members.length ||
+      secondFamily.anchor - firstFamily.anchor ||
+      (firstFamily.key < secondFamily.key ? -1 : 1)))
+      for (const member of family.members) {
+        if (claimed.has(member.id)) continue;
+        claimed.add(member.id);
+        roleOf.set(member.id, "L:" + family.key);
+        laneOf.set(member.id, member.token);
       }
     return { roleOf, laneOf };
   };
@@ -199,62 +328,71 @@ export function detectLanes(nodes: any, edges: any, opts: any = {}) {
   // siblings sit in the same place in the map, so what flows into and out of
   // them plays the same parts.
   const tentative = assign(kept);
-  const around = new Map<any, any>();
-  for (const e of edges) {
-    if (!around.has(e.from)) around.set(e.from, new Set<any>());
-    if (!around.has(e.to)) around.set(e.to, new Set<any>());
-    around.get(e.from).add(tentative.roleOf.get(e.to) || "N:" + e.to);
-    around.get(e.to).add(tentative.roleOf.get(e.from) || "N:" + e.from);
+  const around = new Map<AtlasIdentifier, Set<AtlasRoleIdentifier>>();
+  for (const edge of edges) {
+    if (!around.has(edge.from)) around.set(edge.from, new Set<AtlasRoleIdentifier>());
+    if (!around.has(edge.to)) around.set(edge.to, new Set<AtlasRoleIdentifier>());
+    around.get(edge.from)!.add(tentative.roleOf.get(edge.to) || "N:" + edge.to);
+    around.get(edge.to)!.add(tentative.roleOf.get(edge.from) || "N:" + edge.from);
   }
-  const survivors: any[] = [];
-  for (const f of kept) {
-    const mine = f.members.filter((m: any) => tentative.roleOf.get(m.id) === "L:" + f.key);
-    if (mine.length < o.minMembers) continue;
-    const sets = mine.map((m: any) => around.get(m.id) || new Set<any>());
-    let pairs = 0, total = 0;
-    for (let i = 0; i < sets.length; i++)
-      for (let j = i + 1; j < sets.length; j++) {
-        let inter = 0;
-        for (const r of sets[i]) if (sets[j].has(r)) inter++;
-        const union = sets[i].size + sets[j].size - inter;
-        total += union ? inter / union : 0;
-        pairs++;
+  const survivors: LaneFamily[] = [];
+  for (const family of kept) {
+    const mine = family.members.filter(member => tentative.roleOf.get(member.id) === "L:" + family.key);
+    if (mine.length < resolvedOptions.minMembers) continue;
+    const surroundingRoleSets = mine.map(member =>
+      around.get(member.id) || new Set<AtlasRoleIdentifier>());
+    let pairCount = 0, totalOverlap = 0;
+    for (let firstIndex = 0; firstIndex < surroundingRoleSets.length; firstIndex++)
+      for (let secondIndex = firstIndex + 1; secondIndex < surroundingRoleSets.length; secondIndex++) {
+        let intersectionSize = 0;
+        for (const role of surroundingRoleSets[firstIndex]) {
+          if (surroundingRoleSets[secondIndex].has(role)) intersectionSize++;
+        }
+        const unionSize = surroundingRoleSets[firstIndex].size +
+          surroundingRoleSets[secondIndex].size - intersectionSize;
+        totalOverlap += unionSize ? intersectionSize / unionSize : 0;
+        pairCount++;
       }
-    const overlap = pairs ? total / pairs : 1;
-    if (overlap < o.neighbourOverlap) {
-      rejected.push({ key: f.key, why: `members sit in different parts of the map (${(overlap * 100).toFixed(0)}% shared surroundings)` });
+    const overlap = pairCount ? totalOverlap / pairCount : 1;
+    if (overlap < resolvedOptions.neighbourOverlap) {
+      rejected.push({ key: family.key, why: `members sit in different parts of the map (${(overlap * 100).toFixed(0)}% shared surroundings)` });
       continue;
     }
-    survivors.push({ ...f, members: mine, overlap });
+    survivors.push({ ...family, members: mine, overlap });
   }
 
   const { roleOf, laneOf } = assign(survivors);
-  for (const n of nodes) if (!roleOf.has(n.id)) roleOf.set(n.id, "N:" + n.id);
+  for (const node of nodes) if (!roleOf.has(node.id)) roleOf.set(node.id, "N:" + node.id);
 
-  const size = new Map<any, any>();
+  const size = new Map<AtlasRoleIdentifier, number>();
   for (const role of roleOf.values()) size.set(role, (size.get(role) || 0) + 1);
 
   return {
     roleOf, laneOf, rejected,
     families: survivors
-      .map(f => ({ ...f, members: f.members.filter((m: any) => roleOf.get(m.id) === "L:" + f.key) }))
-      .filter(f => f.members.length >= o.minMembers)
-      .sort((a, b) => b.members.length - a.members.length),
-    laneValues: new Set<any>(laneOf.values()),
-    foldedBoxes: [...size.values()].filter(c => c > 1).reduce((a, c) => a + c, 0),
+      .map(family => ({
+        ...family,
+        members: family.members.filter(member => roleOf.get(member.id) === "L:" + family.key),
+      }))
+      .filter(family => family.members.length >= resolvedOptions.minMembers)
+      .sort((firstFamily, secondFamily) => secondFamily.members.length - firstFamily.members.length),
+    laneValues: new Set(laneOf.values()),
+    foldedBoxes: [...size.values()]
+      .filter(memberCount => memberCount > 1)
+      .reduce((total, memberCount) => total + memberCount, 0),
     roleCount: size.size,
   };
 }
 
-export const familyLabel = (key: any) => {
+export const familyLabel = (key: string): string => {
   const [pre, suf] = key.split(SEP);
   return (pre ? pre + " " : "") + SLOT + (suf ? " " + suf : "");
 };
 
-export function roleLabel(role: any, byId: any) {
+export function roleLabel(role: AtlasRoleIdentifier, byId: ReadonlyMap<AtlasIdentifier, AtlasGraphNode>): string {
   if (!role.startsWith("L:")) {
-    const n = byId.get(role.slice(2));
-    return n ? (n.label || n.id) : role.slice(2);
+    const node = byId.get(role.slice(2));
+    return node ? (node.label || node.id) : role.slice(2);
   }
   return familyLabel(role.slice(2));
 }
@@ -267,62 +405,103 @@ export function roleLabel(role: any, byId: any) {
 // a strand, and what leaves the rest of the pipeline working on something
 // guaranteed to be acyclic.
 // ---------------------------------------------------------------------------
-export function stronglyConnected(ids: any, succ: any) {
-  const index = new Map<any, any>(), low = new Map<any, any>(), onStack = new Set<any>(), stack: any[] = [], comps: any[] = [];
+export function stronglyConnected<Identifier>(
+  identifiers: readonly Identifier[],
+  successors: ReadonlyMap<Identifier, ReadonlySet<Identifier>>,
+): Identifier[][] {
+  const index = new Map<Identifier, number>();
+  const low = new Map<Identifier, number>();
+  const onStack = new Set<Identifier>();
+  const stack: Identifier[] = [];
+  const components: Identifier[][] = [];
   let counter = 0;
-  for (const root of ids) {
+  for (const root of identifiers) {
     if (index.has(root)) continue;
-    const work = [{ v: root, kids: null as any, i: 0 }];
+    const work: Array<{ value: Identifier; children: Identifier[] | null; childIndex: number }> = [
+      { value: root, children: null, childIndex: 0 },
+    ];
     while (work.length) {
-      const f = work[work.length - 1];
-      if (f.kids === null) {
-        index.set(f.v, counter); low.set(f.v, counter); counter++;
-        stack.push(f.v); onStack.add(f.v);
-        f.kids = [...(succ.get(f.v) || [])];
+      const frame = work[work.length - 1];
+      if (frame.children === null) {
+        index.set(frame.value, counter); low.set(frame.value, counter); counter++;
+        stack.push(frame.value); onStack.add(frame.value);
+        frame.children = [...(successors.get(frame.value) || [])];
       }
-      if (f.i < f.kids.length) {
-        const w = f.kids[f.i++];
-        if (!index.has(w)) work.push({ v: w, kids: null as any, i: 0 });
-        else if (onStack.has(w)) low.set(f.v, Math.min(low.get(f.v), index.get(w)));
+      if (frame.childIndex < frame.children.length) {
+        const child = frame.children[frame.childIndex++];
+        if (!index.has(child)) work.push({ value: child, children: null, childIndex: 0 });
+        else if (onStack.has(child)) {
+          low.set(frame.value, Math.min(low.get(frame.value)!, index.get(child)!));
+        }
         continue;
       }
-      if (low.get(f.v) === index.get(f.v)) {
-        const comp: any[] = [];
-        for (;;) { const w = stack.pop(); onStack.delete(w); comp.push(w); if (w === f.v) break; }
-        comps.push(comp);
+      if (low.get(frame.value) === index.get(frame.value)) {
+        const component: Identifier[] = [];
+        for (;;) {
+          const member = stack.pop()!;
+          onStack.delete(member);
+          component.push(member);
+          if (member === frame.value) break;
+        }
+        components.push(component);
       }
       work.pop();
       if (work.length) {
-        const p = work[work.length - 1].v;
-        low.set(p, Math.min(low.get(p), low.get(f.v)));
+        const parent = work[work.length - 1].value;
+        low.set(parent, Math.min(low.get(parent)!, low.get(frame.value)!));
       }
     }
   }
-  return comps;
+  return components;
 }
 
-export function collapseLoops(scope: any, edges: any) {
-  const succ = new Map<any, any>();
-  for (const id of scope) succ.set(id, new Set<any>());
-  for (const e of edges) if (scope.has(e.from) && scope.has(e.to)) succ.get(e.from).add(e.to);
+export interface AtlasLoopGroup {
+  id: AtlasGroupIdentifier;
+  loop: boolean;
+  boxes: AtlasIdentifier[];
+}
 
-  const groupOf = new Map<any, any>(), groups = new Map<any, any>();
-  let n = 0;
-  for (const comp of stronglyConnected([...scope], succ)) {
-    const loop = comp.length > 1 || succ.get(comp[0]).has(comp[0]);
-    const id = "g" + (n++);
-    for (const b of comp) groupOf.set(b, id);
-    groups.set(id, { id, loop, boxes: comp });
+export interface CollapsedAtlasLoops {
+  groups: Map<AtlasGroupIdentifier, AtlasLoopGroup>;
+  groupOf: Map<AtlasIdentifier, AtlasGroupIdentifier>;
+  succ: Map<AtlasGroupIdentifier, Set<AtlasGroupIdentifier>>;
+  pred: Map<AtlasGroupIdentifier, Set<AtlasGroupIdentifier>>;
+}
+
+export function collapseLoops(
+  scope: ReadonlySet<AtlasIdentifier>,
+  edges: readonly AtlasLink[],
+): CollapsedAtlasLoops {
+  const successorsByIdentifier = new Map<AtlasIdentifier, Set<AtlasIdentifier>>();
+  for (const identifier of scope) successorsByIdentifier.set(identifier, new Set<AtlasIdentifier>());
+  for (const edge of edges) {
+    if (scope.has(edge.from) && scope.has(edge.to)) successorsByIdentifier.get(edge.from)!.add(edge.to);
   }
-  const gsucc = new Map<any, any>(), gpred = new Map<any, any>();
-  for (const id of groups.keys()) { gsucc.set(id, new Set<any>()); gpred.set(id, new Set<any>()); }
-  for (const [a, outs] of succ)
-    for (const b of outs) {
-      const x = groupOf.get(a), y = groupOf.get(b);
-      if (x === y) continue;
-      gsucc.get(x).add(y); gpred.get(y).add(x);
+
+  const groupOf = new Map<AtlasIdentifier, AtlasGroupIdentifier>();
+  const groups = new Map<AtlasGroupIdentifier, AtlasLoopGroup>();
+  let groupNumber = 0;
+  for (const component of stronglyConnected([...scope], successorsByIdentifier)) {
+    const loop = component.length > 1 || successorsByIdentifier.get(component[0])!.has(component[0]);
+    const groupIdentifier = "g" + (groupNumber++);
+    for (const boxIdentifier of component) groupOf.set(boxIdentifier, groupIdentifier);
+    groups.set(groupIdentifier, { id: groupIdentifier, loop, boxes: component });
+  }
+  const groupSuccessors = new Map<AtlasGroupIdentifier, Set<AtlasGroupIdentifier>>();
+  const groupPredecessors = new Map<AtlasGroupIdentifier, Set<AtlasGroupIdentifier>>();
+  for (const identifier of groups.keys()) {
+    groupSuccessors.set(identifier, new Set<AtlasGroupIdentifier>());
+    groupPredecessors.set(identifier, new Set<AtlasGroupIdentifier>());
+  }
+  for (const [sourceIdentifier, outgoingIdentifiers] of successorsByIdentifier)
+    for (const targetIdentifier of outgoingIdentifiers) {
+      const sourceGroup = groupOf.get(sourceIdentifier)!;
+      const targetGroup = groupOf.get(targetIdentifier)!;
+      if (sourceGroup === targetGroup) continue;
+      groupSuccessors.get(sourceGroup)!.add(targetGroup);
+      groupPredecessors.get(targetGroup)!.add(sourceGroup);
     }
-  return { groups, groupOf, succ: gsucc, pred: gpred };
+  return { groups, groupOf, succ: groupSuccessors, pred: groupPredecessors };
 }
 
 // ---------------------------------------------------------------------------
@@ -348,21 +527,35 @@ export function collapseLoops(scope: any, edges: any) {
 // tangle is left without a story, and the ones that actually move the system
 // come first.
 // ---------------------------------------------------------------------------
-export function shortestCycleThrough(box: any, adj: any) {
-  if ((adj.get(box) || []).some((e: any) => e.to === box)) return [box];
-  const prev = new Map<any, any>(), queue: any[] = [];
-  for (const e of adj.get(box) || [])
-    if (!prev.has(e.to)) { prev.set(e.to, box); queue.push(e.to); }
+export function shortestCycleThrough(
+  boxIdentifier: AtlasIdentifier,
+  adjacency: ReadonlyMap<AtlasIdentifier, readonly AtlasLink[]>,
+): AtlasIdentifier[] | null {
+  if ((adjacency.get(boxIdentifier) || []).some(edge => edge.to === boxIdentifier)) return [boxIdentifier];
+  const previousByIdentifier = new Map<AtlasIdentifier, AtlasIdentifier>();
+  const queue: AtlasIdentifier[] = [];
+  for (const edge of adjacency.get(boxIdentifier) || [])
+    if (!previousByIdentifier.has(edge.to)) {
+      previousByIdentifier.set(edge.to, boxIdentifier);
+      queue.push(edge.to);
+    }
   for (let head = 0; head < queue.length; head++) {
-    const n = queue[head];
-    for (const e of adj.get(n) || []) {
-      if (e.to === box) {
-        const path = [n];
-        for (let x = prev.get(n); x !== box; x = prev.get(x)) path.push(x);
-        path.push(box);
+    const identifier = queue[head];
+    for (const edge of adjacency.get(identifier) || []) {
+      if (edge.to === boxIdentifier) {
+        const path = [identifier];
+        for (
+          let previousIdentifier = previousByIdentifier.get(identifier)!;
+          previousIdentifier !== boxIdentifier;
+          previousIdentifier = previousByIdentifier.get(previousIdentifier)!
+        ) path.push(previousIdentifier);
+        path.push(boxIdentifier);
         return path.reverse();
       }
-      if (!prev.has(e.to)) { prev.set(e.to, n); queue.push(e.to); }
+      if (!previousByIdentifier.has(edge.to)) {
+        previousByIdentifier.set(edge.to, identifier);
+        queue.push(edge.to);
+      }
     }
   }
   return null;
@@ -370,67 +563,103 @@ export function shortestCycleThrough(box: any, adj: any) {
 
 // Rotations of one loop are the same loop, so name each by the rotation that
 // starts at its first box alphabetically.
-export function canonicalCycle(cycle: any) {
-  let k = 0;
-  for (let i = 1; i < cycle.length; i++) if (cycle[i] < cycle[k]) k = i;
-  return cycle.slice(k).concat(cycle.slice(0, k)).join(">");
+export function canonicalCycle(cycle: readonly AtlasIdentifier[]): string {
+  let firstIndex = 0;
+  for (let index = 1; index < cycle.length; index++) {
+    if (cycle[index] < cycle[firstIndex]) firstIndex = index;
+  }
+  return cycle.slice(firstIndex).concat(cycle.slice(0, firstIndex)).join(">");
 }
 
-export function analyseTangle(boxes: any, edges: any, outsideIn: any, outsideOut: any) {
-  const set = new Set<any>(boxes);
-  const inner = edges.filter((e: any) => set.has(e.from) && set.has(e.to));
+export interface AtlasTangleLoop<EdgeType extends AtlasGraphEdge = AtlasGraphEdge> {
+  key: string;
+  cycle: AtlasIdentifier[];
+  links: EdgeType[];
+  sign: number;
+  gain: number;
+  reinforcing: boolean;
+}
+
+export interface AtlasTangle<EdgeType extends AtlasGraphEdge = AtlasGraphEdge> {
+  boxes: AtlasIdentifier[];
+  loops: AtlasTangleLoop<EdgeType>[];
+  links: EdgeType[];
+  linkCount: number;
+  parallel: number;
+  contradictory: number;
+  independent: number;
+  waysIn: AtlasIdentifier[];
+  waysOut: AtlasIdentifier[];
+  reinforcing: number;
+  balancing: number;
+}
+
+export function analyseTangle<EdgeType extends AtlasGraphEdge>(
+  boxes: readonly AtlasIdentifier[],
+  edges: readonly EdgeType[],
+  outsideIn: ReadonlySet<AtlasIdentifier>,
+  outsideOut: ReadonlySet<AtlasIdentifier>,
+): AtlasTangle<EdgeType> {
+  const boxIdentifiers = [...boxes];
+  const boxSet = new Set(boxIdentifiers);
+  const inner = edges.filter(edge => boxSet.has(edge.from) && boxSet.has(edge.to));
 
   // Two boxes can be joined twice, and the two links can disagree about sign —
   // in which case the polarity of every loop through them depends on which one
   // you take. Taking whichever happened to be listed first would make the
   // answer silently arbitrary, so the stronger link wins and the count of
   // disagreements is reported rather than swallowed.
-  const strongest = new Map<any, any>();
+  const strongest = new Map<string, EdgeType>();
   let parallel = 0, contradictory = 0;
-  for (const e of inner) {
-    const key = e.from + "\u0001" + e.to;
+  for (const edge of inner) {
+    const key = edge.from + "\u0001" + edge.to;
     const had = strongest.get(key);
-    if (!had) { strongest.set(key, e); continue; }
+    if (!had) { strongest.set(key, edge); continue; }
     parallel++;
-    if ((had.elasticity < 0) !== (e.elasticity < 0)) contradictory++;
-    if (Math.abs(e.elasticity) > Math.abs(had.elasticity)) strongest.set(key, e);
+    if ((had.elasticity < 0) !== (edge.elasticity < 0)) contradictory++;
+    if (Math.abs(edge.elasticity) > Math.abs(had.elasticity)) strongest.set(key, edge);
   }
-  const adj = new Map<any, any>(boxes.map((b: any) => [b, []]));
-  for (const e of strongest.values()) adj.get(e.from).push(e);
+  const adjacency = new Map<AtlasIdentifier, EdgeType[]>(boxIdentifiers.map(identifier => [identifier, []]));
+  for (const edge of strongest.values()) adjacency.get(edge.from)!.push(edge);
 
-  const loops: any[] = [], seen = new Set<any>();
-  for (const box of boxes) {
-    const cycle = shortestCycleThrough(box, adj);
+  const loops: AtlasTangleLoop<EdgeType>[] = [];
+  const seen = new Set<string>();
+  for (const boxIdentifier of boxIdentifiers) {
+    const cycle = shortestCycleThrough(boxIdentifier, adjacency);
     if (!cycle) continue;
     const key = canonicalCycle(cycle);
     if (seen.has(key)) continue;
     seen.add(key);
     let sign = 1, gain = 1;
-    const links: any[] = [];
-    for (let i = 0; i < cycle.length; i++) {
-      const from = cycle[i], to = cycle[(i + 1) % cycle.length];
-      const e = adj.get(from).find((x: any) => x.to === to);
-      if (!e) { sign = 0; break; }
-      links.push(e);
-      sign *= e.elasticity < 0 ? -1 : 1;
-      gain *= Math.abs(e.elasticity);
+    const links: EdgeType[] = [];
+    for (let cycleIndex = 0; cycleIndex < cycle.length; cycleIndex++) {
+      const sourceIdentifier = cycle[cycleIndex];
+      const targetIdentifier = cycle[(cycleIndex + 1) % cycle.length];
+      const edge = adjacency.get(sourceIdentifier)!.find(
+        candidateEdge => candidateEdge.to === targetIdentifier,
+      );
+      if (!edge) { sign = 0; break; }
+      links.push(edge);
+      sign *= edge.elasticity < 0 ? -1 : 1;
+      gain *= Math.abs(edge.elasticity);
     }
     if (!sign) continue;
     loops.push({ key, cycle, links, sign, gain, reinforcing: sign > 0 });
   }
-  loops.sort((a, b) => b.gain - a.gain || a.cycle.length - b.cycle.length);
+  loops.sort((firstLoop, secondLoop) =>
+    secondLoop.gain - firstLoop.gain || firstLoop.cycle.length - secondLoop.cycle.length);
 
   return {
-    boxes, loops,
+    boxes: boxIdentifiers, loops,
     links: [...strongest.values()],
     linkCount: inner.length,
     parallel, contradictory,
     // How many loops it would take to generate every loop in here. The plain
     // count of loops can run to thousands; this one is small and exact.
-    independent: inner.length - boxes.length + 1,
+    independent: inner.length - boxIdentifiers.length + 1,
     waysIn: [...outsideIn], waysOut: [...outsideOut],
-    reinforcing: loops.filter(l => l.reinforcing).length,
-    balancing: loops.filter(l => !l.reinforcing).length,
+    reinforcing: loops.filter(loop => loop.reinforcing).length,
+    balancing: loops.filter(loop => !loop.reinforcing).length,
   };
 }
 
@@ -452,34 +681,63 @@ export function analyseTangle(boxes: any, edges: any, outsideIn: any, outsideOut
 // the box with the biggest out-minus-in. Linear, and in practice within a hair
 // of the smallest possible set of back links.
 // ---------------------------------------------------------------------------
-export function orderTangle(boxes: any, links: any) {
-  const outD = new Map<any, any>(), inD = new Map<any, any>(), outs = new Map<any, any>(), ins = new Map<any, any>();
-  for (const b of boxes) { outD.set(b, 0); inD.set(b, 0); outs.set(b, []); ins.set(b, []); }
-  for (const e of links) {
-    if (!outD.has(e.from) || !inD.has(e.to)) continue;
-    outD.set(e.from, outD.get(e.from) + 1); inD.set(e.to, inD.get(e.to) + 1);
-    outs.get(e.from).push(e.to); ins.get(e.to).push(e.from);
+export function orderTangle(
+  boxes: readonly AtlasIdentifier[],
+  links: readonly AtlasLink[],
+): AtlasIdentifier[] {
+  const outgoingDegree = new Map<AtlasIdentifier, number>();
+  const incomingDegree = new Map<AtlasIdentifier, number>();
+  const outgoingIdentifiers = new Map<AtlasIdentifier, AtlasIdentifier[]>();
+  const incomingIdentifiers = new Map<AtlasIdentifier, AtlasIdentifier[]>();
+  for (const boxIdentifier of boxes) {
+    outgoingDegree.set(boxIdentifier, 0);
+    incomingDegree.set(boxIdentifier, 0);
+    outgoingIdentifiers.set(boxIdentifier, []);
+    incomingIdentifiers.set(boxIdentifier, []);
   }
-  const left: any[] = [], right: any[] = [], gone = new Set<any>();
-  const drop = (v: any) => {
-    gone.add(v);
-    for (const w of outs.get(v)) if (!gone.has(w)) inD.set(w, inD.get(w) - 1);
-    for (const w of ins.get(v)) if (!gone.has(w)) outD.set(w, outD.get(w) - 1);
+  for (const link of links) {
+    if (!outgoingDegree.has(link.from) || !incomingDegree.has(link.to)) continue;
+    outgoingDegree.set(link.from, outgoingDegree.get(link.from)! + 1);
+    incomingDegree.set(link.to, incomingDegree.get(link.to)! + 1);
+    outgoingIdentifiers.get(link.from)!.push(link.to);
+    incomingIdentifiers.get(link.to)!.push(link.from);
+  }
+  const left: AtlasIdentifier[] = [];
+  const right: AtlasIdentifier[] = [];
+  const gone = new Set<AtlasIdentifier>();
+  const drop = (identifier: AtlasIdentifier) => {
+    gone.add(identifier);
+    for (const outgoingIdentifier of outgoingIdentifiers.get(identifier)!) {
+      if (!gone.has(outgoingIdentifier)) {
+        incomingDegree.set(outgoingIdentifier, incomingDegree.get(outgoingIdentifier)! - 1);
+      }
+    }
+    for (const incomingIdentifier of incomingIdentifiers.get(identifier)!) {
+      if (!gone.has(incomingIdentifier)) {
+        outgoingDegree.set(incomingIdentifier, outgoingDegree.get(incomingIdentifier)! - 1);
+      }
+    }
   };
   while (gone.size < boxes.length) {
     let moved = true;
     while (moved) {
       moved = false;
-      for (const v of boxes) if (!gone.has(v) && outD.get(v) === 0) { right.unshift(v); drop(v); moved = true; }
-      for (const v of boxes) if (!gone.has(v) && inD.get(v) === 0 && outD.get(v) > 0) { left.push(v); drop(v); moved = true; }
+      for (const identifier of boxes) if (!gone.has(identifier) && outgoingDegree.get(identifier) === 0) {
+        right.unshift(identifier); drop(identifier); moved = true;
+      }
+      for (const identifier of boxes) if (!gone.has(identifier) && incomingDegree.get(identifier) === 0 && outgoingDegree.get(identifier)! > 0) {
+        left.push(identifier); drop(identifier); moved = true;
+      }
     }
     if (gone.size >= boxes.length) break;
-    let best = null, score = -Infinity;
-    for (const v of boxes) {
-      if (gone.has(v)) continue;
-      const s = outD.get(v) - inD.get(v);
-      if (s > score) { score = s; best = v; }
+    let best: AtlasIdentifier | null = null;
+    let score = -Infinity;
+    for (const identifier of boxes) {
+      if (gone.has(identifier)) continue;
+      const candidateScore = outgoingDegree.get(identifier)! - incomingDegree.get(identifier)!;
+      if (candidateScore > score) { score = candidateScore; best = identifier; }
     }
+    if (best === null) throw new Error("Tangle ordering could not select a remaining box.");
     left.push(best); drop(best);
   }
   return left.concat(right);
@@ -488,62 +746,143 @@ export function orderTangle(boxes: any, links: any) {
 // Everything the wheel is drawn from. Computed when a tangle is opened rather
 // than when the atlas is built, so a map full of feedback still builds in the
 // time it takes to draw one frame.
-export function wheelOf(t: any) {
-  const order = orderTangle(t.boxes, t.links);
-  const pos = new Map<any, any>(order.map((b, i) => [b, i]));
-  const forward: any[] = [], back: any[] = [];
-  for (const e of t.links) (pos.get(e.to) > pos.get(e.from) ? forward : back).push(e);
+export type AtlasWheelEdge = AtlasGraphEdge;
+
+export interface AtlasWheelLoop {
+  back: AtlasWheelEdge;
+  links: AtlasWheelEdge[];
+  cycle: string[];
+  reinforcing: boolean;
+  gain: number;
+}
+
+export interface AtlasWheel {
+  order: string[];
+  pos: Map<string, number>;
+  forward: AtlasWheelEdge[];
+  back: AtlasWheelEdge[];
+  loops: AtlasWheelLoop[];
+  share: Map<string, number>;
+  touching: Map<string, AtlasWheelEdge[]>;
+  links: AtlasWheelEdge[];
+}
+
+export interface AtlasWheelTangle {
+  boxes: readonly string[];
+  links: readonly AtlasWheelEdge[];
+}
+
+export function wheelOf(tangle: AtlasWheelTangle): AtlasWheel {
+  const boxIdentifiers = [...tangle.boxes];
+  const boxIdentifierSet = new Set(boxIdentifiers);
+  const links = tangle.links.filter(edge =>
+    boxIdentifierSet.has(edge.from) && boxIdentifierSet.has(edge.to));
+  const order = orderTangle(boxIdentifiers, links);
+  const positionByBoxIdentifier = new Map<string, number>(
+    order.map((boxIdentifier, index) => [boxIdentifier, index]),
+  );
+  const forward: AtlasWheelEdge[] = [], back: AtlasWheelEdge[] = [];
+  for (const edge of links) {
+    ((positionByBoxIdentifier.get(edge.to) || 0) > (positionByBoxIdentifier.get(edge.from) || 0)
+      ? forward
+      : back).push(edge);
+  }
 
   // The forward links alone are acyclic, so the way home from a back link is a
   // shortest path in a DAG — no search, just relax in order. A few back links
   // cannot get home that way, because their return needs another back link;
   // those fall back to a plain search, so every back link gets its loop.
-  const fwdOut = new Map<any, any>(t.boxes.map((b: any) => [b, []]));
-  for (const e of forward) fwdOut.get(e.from).push(e);
-  const allOut = new Map<any, any>(t.boxes.map((b: any) => [b, []]));
-  for (const e of t.links) allOut.get(e.from).push(e);
+  const forwardEdgesBySourceIdentifier = new Map<string, AtlasWheelEdge[]>(
+    boxIdentifiers.map(boxIdentifier => [boxIdentifier, []]),
+  );
+  for (const edge of forward) forwardEdgesBySourceIdentifier.get(edge.from)!.push(edge);
+  const allEdgesBySourceIdentifier = new Map<string, AtlasWheelEdge[]>(
+    boxIdentifiers.map(boxIdentifier => [boxIdentifier, []]),
+  );
+  for (const edge of links) allEdgesBySourceIdentifier.get(edge.from)!.push(edge);
 
-  const loops: any[] = [];
-  for (const e of back) {
-    const dist = new Map<any, any>([[e.to, 0]]), prev = new Map<any, any>();
-    for (const b of order) {
-      if (!dist.has(b)) continue;
-      for (const f of fwdOut.get(b))
-        if (!dist.has(f.to) || dist.get(f.to) > dist.get(b) + 1) {
-          dist.set(f.to, dist.get(b) + 1); prev.set(f.to, f);
+  const loops: AtlasWheelLoop[] = [];
+  for (const backEdge of back) {
+    const distanceByBoxIdentifier = new Map<string, number>([[backEdge.to, 0]]);
+    const previousEdgeByBoxIdentifier = new Map<string, AtlasWheelEdge>();
+    for (const boxIdentifier of order) {
+      if (!distanceByBoxIdentifier.has(boxIdentifier)) continue;
+      for (const forwardEdge of forwardEdgesBySourceIdentifier.get(boxIdentifier)!) {
+        const nextDistance = distanceByBoxIdentifier.get(boxIdentifier)! + 1;
+        if (!distanceByBoxIdentifier.has(forwardEdge.to) ||
+            distanceByBoxIdentifier.get(forwardEdge.to)! > nextDistance) {
+          distanceByBoxIdentifier.set(forwardEdge.to, nextDistance);
+          previousEdgeByBoxIdentifier.set(forwardEdge.to, forwardEdge);
         }
+      }
     }
-    let chain: any[] = [];
-    if (dist.has(e.from)) {
-      for (let at = e.from; at !== e.to; ) { const f = prev.get(at); chain.unshift(f); at = f.from; }
+    const chain: AtlasWheelEdge[] = [];
+    if (distanceByBoxIdentifier.has(backEdge.from)) {
+      for (let currentIdentifier = backEdge.from; currentIdentifier !== backEdge.to; ) {
+        const previousEdge = previousEdgeByBoxIdentifier.get(currentIdentifier)!;
+        chain.unshift(previousEdge);
+        currentIdentifier = previousEdge.from;
+      }
     } else {
-      const seen = new Map<any, any>(), q = [e.to];
-      for (let i = 0; i < q.length; i++)
-        for (const f of allOut.get(q[i]) || []) {
-          if (seen.has(f.to) || f.to === e.to) continue;
-          seen.set(f.to, f); q.push(f.to);
+      const seenEdgeByBoxIdentifier = new Map<string, AtlasWheelEdge>();
+      const queue = [backEdge.to];
+      for (let queueIndex = 0; queueIndex < queue.length; queueIndex++) {
+        for (const candidateEdge of allEdgesBySourceIdentifier.get(queue[queueIndex]) || []) {
+          if (seenEdgeByBoxIdentifier.has(candidateEdge.to) || candidateEdge.to === backEdge.to) continue;
+          seenEdgeByBoxIdentifier.set(candidateEdge.to, candidateEdge);
+          queue.push(candidateEdge.to);
         }
-      if (!seen.has(e.from)) continue;
-      for (let at = e.from; at !== e.to; ) { const f = seen.get(at); chain.unshift(f); at = f.from; }
+      }
+      if (!seenEdgeByBoxIdentifier.has(backEdge.from)) continue;
+      for (let currentIdentifier = backEdge.from; currentIdentifier !== backEdge.to; ) {
+        const previousEdge = seenEdgeByBoxIdentifier.get(currentIdentifier)!;
+        chain.unshift(previousEdge);
+        currentIdentifier = previousEdge.from;
+      }
     }
-    const links = chain.concat([e]);
+    const links = chain.concat([backEdge]);
     let sign = 1, gain = 1;
-    for (const l of links) { if (l.elasticity < 0) sign = -sign; gain *= Math.abs(l.elasticity); }
-    loops.push({ back: e, links, cycle: links.map(l => l.from), reinforcing: sign > 0, gain });
+    for (const link of links) {
+      if (link.elasticity < 0) sign = -sign;
+      gain *= Math.abs(link.elasticity);
+    }
+    loops.push({
+      back: backEdge,
+      links,
+      cycle: links.map(link => link.from),
+      reinforcing: sign > 0,
+      gain,
+    });
   }
 
-  const share = new Map<any, any>(t.boxes.map((b: any) => [b, 0]));
-  for (const l of loops) for (const b of l.cycle) share.set(b, share.get(b) + 1);
-  const touching = new Map<any, any>(t.boxes.map((b: any) => [b, []]));
-  for (const e of t.links) { touching.get(e.from).push(e); touching.get(e.to).push(e); }
+  const share = new Map<string, number>(boxIdentifiers.map(boxIdentifier => [boxIdentifier, 0]));
+  for (const loop of loops) {
+    for (const boxIdentifier of loop.cycle) {
+      share.set(boxIdentifier, (share.get(boxIdentifier) || 0) + 1);
+    }
+  }
+  const touching = new Map<string, AtlasWheelEdge[]>(boxIdentifiers.map(boxIdentifier => [boxIdentifier, []]));
+  for (const edge of links) {
+    touching.get(edge.from)!.push(edge);
+    touching.get(edge.to)!.push(edge);
+  }
 
-  return { order, pos, forward, back, loops, share, touching, links: t.links };
+  return {
+    order,
+    pos: positionByBoxIdentifier,
+    forward,
+    back,
+    loops,
+    share,
+    touching,
+    links,
+  };
 }
 
 // ---------------------------------------------------------------------------
 // 3. REFINE THE GROUPING UNTIL IT IS TRUE
 // ---------------------------------------------------------------------------
-// Start from what the names propose, then repeatedly split any group whose
+// Start from what the names propose, then repeatedly split each group whose
 // members disagree about which groups they lead to. What settles out is the
 // coarsest grouping in which members really are interchangeable going forward.
 //
@@ -570,39 +909,87 @@ export function wheelOf(t: any) {
 //
 // Neither can miss a pathway. The difference is only how much is claimed about
 // the members of a group, which is why the tool reports both numbers.
-export function quotientHasCycle(ids: any, succ: any, cls: any) {
-  const csucc = new Map<any, any>();
-  for (const id of ids) {
-    const c = cls.get(id);
-    if (!csucc.has(c)) csucc.set(c, new Set<any>());
+export function quotientHasCycle<Identifier>(
+  identifiers: readonly Identifier[],
+  successors: ReadonlyMap<Identifier, ReadonlySet<Identifier>>,
+  classByIdentifier: ReadonlyMap<Identifier, string>,
+): boolean {
+  const classSuccessors = new Map<string, Set<string>>();
+  for (const identifier of identifiers) {
+    const classIdentifier = classByIdentifier.get(identifier);
+    if (classIdentifier === undefined) {
+      throw new Error("Every identifier must have a quotient class.");
+    }
+    if (!classSuccessors.has(classIdentifier)) classSuccessors.set(classIdentifier, new Set<string>());
   }
-  for (const id of ids) {
-    const c = cls.get(id);
-    for (const s of succ.get(id)) {
-      const d = cls.get(s);
-      if (d === c) return true;
-      csucc.get(c).add(d);
+  for (const identifier of identifiers) {
+    const classIdentifier = classByIdentifier.get(identifier)!;
+    for (const successor of successors.get(identifier) || []) {
+      const successorClass = classByIdentifier.get(successor);
+      if (successorClass === undefined) {
+        throw new Error("Every successor must have a quotient class.");
+      }
+      if (successorClass === classIdentifier) return true;
+      classSuccessors.get(classIdentifier)!.add(successorClass);
     }
   }
-  return stronglyConnected([...csucc.keys()], csucc).some(comp => comp.length > 1);
+  return stronglyConnected([...classSuccessors.keys()], classSuccessors).some(component => component.length > 1);
 }
 
-export function refineForward(ids: any, succ: any, initial: any, strict: any) {
-  let cls = new Map<any, any>(ids.map((id: any) => [id, String(initial.get(id))]));
-  let count = new Set<any>(cls.values()).size;
-  for (let round = 0; round <= ids.length + 1; round++) {
-    if (!strict && !quotientHasCycle(ids, succ, cls)) return { cls, rounds: round, settled: false };
-    const sig = new Map<any, any>(), rename = new Map<any, any>();
-    for (const id of ids) {
-      const outs = [...new Set<any>([...succ.get(id)].map(x => cls.get(x)))].sort().join(",");
-      sig.set(id, cls.get(id) + SEP + outs);
+export interface AtlasRefinement<Identifier> {
+  cls: Map<Identifier, AtlasClassIdentifier>;
+  rounds: number;
+  settled: boolean;
+}
+
+export function refineForward<Identifier>(
+  identifiers: readonly Identifier[],
+  successors: ReadonlyMap<Identifier, ReadonlySet<Identifier>>,
+  initial: ReadonlyMap<Identifier, string>,
+  strict: boolean,
+): AtlasRefinement<Identifier> {
+  let classByIdentifier = new Map<Identifier, AtlasClassIdentifier>();
+  for (const identifier of identifiers) {
+    const initialClass = initial.get(identifier);
+    if (initialClass === undefined) {
+      throw new Error("Every identifier must have an initial refinement class.");
     }
-    for (const id of ids) if (!rename.has(sig.get(id))) rename.set(sig.get(id), "c" + rename.size);
-    if (rename.size === count) return { cls, rounds: round, settled: true };
-    cls = new Map<any, any>(ids.map((id: any) => [id, rename.get(sig.get(id))]));
-    count = rename.size;
+    classByIdentifier.set(identifier, initialClass);
   }
-  return { cls, rounds: ids.length, settled: true };
+  let classCount = new Set(classByIdentifier.values()).size;
+  for (let round = 0; round <= identifiers.length + 1; round++) {
+    if (!strict && !quotientHasCycle(identifiers, successors, classByIdentifier)) {
+      return { cls: classByIdentifier, rounds: round, settled: false };
+    }
+    const signatureByIdentifier = new Map<Identifier, string>();
+    const renamedClassBySignature = new Map<string, AtlasClassIdentifier>();
+    for (const identifier of identifiers) {
+      const outgoingClasses = [...new Set(
+        [...(successors.get(identifier) || [])].map(successor => {
+          const successorClass = classByIdentifier.get(successor);
+          if (successorClass === undefined) {
+            throw new Error("Every successor must be included in forward refinement.");
+          }
+          return successorClass;
+        }),
+      )].sort().join(",");
+      signatureByIdentifier.set(identifier, classByIdentifier.get(identifier)! + SEP + outgoingClasses);
+    }
+    for (const identifier of identifiers) {
+      const signature = signatureByIdentifier.get(identifier)!;
+      if (!renamedClassBySignature.has(signature)) {
+        renamedClassBySignature.set(signature, "c" + renamedClassBySignature.size);
+      }
+    }
+    if (renamedClassBySignature.size === classCount) {
+      return { cls: classByIdentifier, rounds: round, settled: true };
+    }
+    classByIdentifier = new Map(
+      identifiers.map(identifier => [identifier, renamedClassBySignature.get(signatureByIdentifier.get(identifier)!)!]),
+    );
+    classCount = renamedClassBySignature.size;
+  }
+  return { cls: classByIdentifier, rounds: identifiers.length, settled: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -614,72 +1001,100 @@ export function refineForward(ids: any, succ: any, initial: any, strict: any) {
 // two is a self-contained choice — exactly the unit worth putting on screen
 // behind one open/close triangle.
 // ---------------------------------------------------------------------------
-export function reversePostorder(root: any, succOf: any) {
-  const seen = new Set<any>([root]), post: any[] = [], stack = [{ n: root, kids: null as any, i: 0 }];
+export type AtlasAdjacencyReader<Identifier> = (identifier: Identifier) => readonly Identifier[];
+
+export function reversePostorder<Identifier>(
+  root: Identifier,
+  successorsOf: AtlasAdjacencyReader<Identifier>,
+): Identifier[] {
+  const seen = new Set<Identifier>([root]);
+  const postorder: Identifier[] = [];
+  const stack: Array<{ identifier: Identifier; children: readonly Identifier[] | null; childIndex: number }> = [
+    { identifier: root, children: null, childIndex: 0 },
+  ];
   while (stack.length) {
-    const f = stack[stack.length - 1];
-    if (f.kids === null) f.kids = succOf(f.n);
-    if (f.i < f.kids.length) {
-      const s = f.kids[f.i++];
-      if (!seen.has(s)) { seen.add(s); stack.push({ n: s, kids: null as any, i: 0 }); }
+    const frame = stack[stack.length - 1];
+    if (frame.children === null) frame.children = successorsOf(frame.identifier);
+    if (frame.childIndex < frame.children.length) {
+      const successor = frame.children[frame.childIndex++];
+      if (!seen.has(successor)) {
+        seen.add(successor);
+        stack.push({ identifier: successor, children: null, childIndex: 0 });
+      }
       continue;
     }
-    post.push(f.n); stack.pop();
+    postorder.push(frame.identifier); stack.pop();
   }
-  return post.reverse();
+  return postorder.reverse();
 }
 
-export function immediateDominators(root: any, succOf: any, predOf: any) {
-  const rpo = reversePostorder(root, succOf);
-  const num = new Map<any, any>(rpo.map((n, i) => [n, i]));
-  const idom = new Map<any, any>([[root, root]]);
-  const intersect = (a: any, b: any) => {
-    while (a !== b) {
-      while (num.get(a) > num.get(b)) a = idom.get(a);
-      while (num.get(b) > num.get(a)) b = idom.get(b);
+export function immediateDominators<Identifier>(
+  root: Identifier,
+  successorsOf: AtlasAdjacencyReader<Identifier>,
+  predecessorsOf: AtlasAdjacencyReader<Identifier>,
+): Map<Identifier, Identifier> {
+  const reversePostorderIdentifiers = reversePostorder(root, successorsOf);
+  const orderByIdentifier = new Map(reversePostorderIdentifiers.map((identifier, index) => [identifier, index]));
+  const immediateDominatorByIdentifier = new Map<Identifier, Identifier>([[root, root]]);
+  const intersect = (firstIdentifier: Identifier, secondIdentifier: Identifier): Identifier => {
+    while (firstIdentifier !== secondIdentifier) {
+      while (orderByIdentifier.get(firstIdentifier)! > orderByIdentifier.get(secondIdentifier)!) {
+        firstIdentifier = immediateDominatorByIdentifier.get(firstIdentifier)!;
+      }
+      while (orderByIdentifier.get(secondIdentifier)! > orderByIdentifier.get(firstIdentifier)!) {
+        secondIdentifier = immediateDominatorByIdentifier.get(secondIdentifier)!;
+      }
     }
-    return a;
+    return firstIdentifier;
   };
   for (let changed = true; changed;) {
     changed = false;
-    for (const n of rpo) {
-      if (n === root) continue;
-      let cand = null;
-      for (const p of predOf(n)) {
-        if (!num.has(p) || !idom.has(p)) continue;
-        cand = cand === null ? p : intersect(p, cand);
+    for (const identifier of reversePostorderIdentifiers) {
+      if (identifier === root) continue;
+      let candidate: Identifier | null = null;
+      for (const predecessor of predecessorsOf(identifier)) {
+        if (!orderByIdentifier.has(predecessor) || !immediateDominatorByIdentifier.has(predecessor)) continue;
+        candidate = candidate === null ? predecessor : intersect(predecessor, candidate);
       }
-      if (cand !== null && idom.get(n) !== cand) { idom.set(n, cand); changed = true; }
+      if (candidate !== null && immediateDominatorByIdentifier.get(identifier) !== candidate) {
+        immediateDominatorByIdentifier.set(identifier, candidate); changed = true;
+      }
     }
   }
-  return idom;
+  return immediateDominatorByIdentifier;
 }
 
 // Exact totals: paths(n) is how many pathways run from n to the finish, summed
 // over successors in reverse topological order. BigInt, because on a real map
 // this number is genuinely astronomical.
-export function countPaths(start: any, succOf: any) {
-  const topo = reversePostorder(start, succOf);
-  const paths = new Map<any, any>([[END, 1n]]);
-  for (let i = topo.length - 1; i >= 0; i--) {
-    const n = topo[i];
-    if (n === END) continue;
+export function countPaths(
+  start: AtlasClassIdentifier,
+  successorsOf: AtlasAdjacencyReader<AtlasClassIdentifier>,
+): Map<AtlasClassIdentifier, bigint> {
+  const topologicalOrder = reversePostorder(start, successorsOf);
+  const paths = new Map<AtlasClassIdentifier, bigint>([[END, 1n]]);
+  for (let index = topologicalOrder.length - 1; index >= 0; index--) {
+    const identifier = topologicalOrder[index];
+    if (identifier === END) continue;
     let total = 0n;
-    for (const s of succOf(n)) total += paths.get(s) || 0n;
-    paths.set(n, total);
+    for (const successor of successorsOf(identifier)) total += paths.get(successor) || 0n;
+    paths.set(identifier, total);
   }
   return paths;
 }
 
-export function addFinish(succ: any, pred: any) {
-  succ.set(END, new Set<any>());
-  if (pred) pred.set(END, new Set<any>());
-  const finishes: any[] = [];
-  for (const [id, outs] of succ) {
+export function addFinish(
+  successors: Map<AtlasClassIdentifier, Set<AtlasClassIdentifier>>,
+  predecessors: Map<AtlasClassIdentifier, Set<AtlasClassIdentifier>> | null,
+): AtlasClassIdentifier[] {
+  successors.set(END, new Set<AtlasClassIdentifier>());
+  if (predecessors) predecessors.set(END, new Set<AtlasClassIdentifier>());
+  const finishes: AtlasClassIdentifier[] = [];
+  for (const [id, outs] of successors) {
     if (id === END || outs.size) continue;
     finishes.push(id);
     outs.add(END);
-    if (pred) pred.get(END).add(id);
+    if (predecessors) predecessors.get(END)!.add(id);
   }
   return finishes;
 }
@@ -687,84 +1102,219 @@ export function addFinish(succ: any, pred: any) {
 // ---------------------------------------------------------------------------
 // 5. THE ATLAS
 // ---------------------------------------------------------------------------
-export function buildAtlas(G: any, startId: any, opts: any = {}) {
+export interface AtlasBuildOptions {
+  stopAtOutcomes?: boolean;
+  lanes?: LaneDetectionOptions;
+  grouping?: "strict" | "loose";
+}
+
+export interface AtlasElement<EdgeType extends AtlasGraphEdge = AtlasGraphEdge> {
+  id: AtlasClassIdentifier;
+  label: string;
+  loop: boolean;
+  boxes: AtlasIdentifier[];
+  lanes: Set<AtlasLaneValue>;
+  copies: number;
+  roles: Set<AtlasRoleIdentifier>;
+  tangles: AtlasTangle<EdgeType>[];
+  end?: boolean;
+}
+
+export interface AtlasBoxSequenceItem {
+  kind: "box";
+  id: AtlasClassIdentifier;
+}
+
+export interface AtlasJoinSequenceItem {
+  kind: "join";
+  id: AtlasClassIdentifier;
+}
+
+export interface AtlasAlternative {
+  first: AtlasClassIdentifier;
+  shapes: bigint;
+  seq: AtlasSequence;
+}
+
+export interface AtlasChoiceSequenceItem {
+  kind: "choice";
+  at: AtlasClassIdentifier;
+  rejoin: AtlasClassIdentifier | null;
+  alts: AtlasAlternative[];
+}
+
+export type AtlasSequenceItem = AtlasBoxSequenceItem | AtlasJoinSequenceItem | AtlasChoiceSequenceItem;
+export type AtlasSequence = AtlasSequenceItem[];
+
+export interface AtlasFeedbackLoop<EdgeType extends AtlasGraphEdge = AtlasGraphEdge>
+  extends AtlasTangleLoop<EdgeType> {
+  element: AtlasClassIdentifier;
+  elementLabel: string;
+  copies: number;
+  lanes: Set<AtlasLaneValue>;
+  tangleSize: number;
+  independent: number;
+}
+
+export interface AtlasSplitFamily {
+  key: string;
+  into: number;
+}
+
+export interface AtlasResult<EdgeType extends AtlasGraphEdge = AtlasGraphEdge> {
+  startId: AtlasIdentifier;
+  start: AtlasClassIdentifier;
+  tree: AtlasSequence;
+  nodes: Map<AtlasClassIdentifier, AtlasElement<EdgeType>>;
+  succ: Map<AtlasClassIdentifier, Set<AtlasClassIdentifier>>;
+  pred: Map<AtlasClassIdentifier, Set<AtlasClassIdentifier>>;
+  ipdom: Map<AtlasClassIdentifier, AtlasClassIdentifier>;
+  paths: Map<AtlasClassIdentifier, bigint>;
+  lanes: LaneDetection;
+  scope: Set<AtlasIdentifier>;
+  finishes: AtlasClassIdentifier[];
+  tails: Map<AtlasClassIdentifier, AtlasSequence>;
+  stepLanes: Map<string, Set<AtlasLaneValue>>;
+  stepTakenBy: Map<string, Set<AtlasGroupIdentifier>>;
+  grouping: "strict" | "loose";
+  everyStepShared: boolean;
+  partialSteps: number;
+  totalSteps: number;
+  loops: AtlasElement<EdgeType>[];
+  feedback: AtlasFeedbackLoop<EdgeType>[];
+  shapes: bigint;
+  pathways: bigint;
+  boxesInScope: number;
+  elements: number;
+  elementsUngrouped: number;
+  splitFamilies: AtlasSplitFamily[];
+  refineRounds: number;
+  ms: number;
+}
+
+export interface AtlasSequenceBuildContext<EdgeType extends AtlasGraphEdge = AtlasGraphEdge> {
+  nodes: Map<AtlasClassIdentifier, AtlasElement<EdgeType>>;
+  ipdom: Map<AtlasClassIdentifier, AtlasClassIdentifier>;
+  paths: Map<AtlasClassIdentifier, bigint>;
+  succ: AtlasAdjacencyReader<AtlasClassIdentifier>;
+  END: typeof END;
+  limit: number;
+  emitted: Set<AtlasClassIdentifier>;
+  tails: Map<AtlasClassIdentifier, AtlasSequence>;
+}
+
+export function buildAtlas<NodeType extends AtlasGraphNode, EdgeType extends AtlasGraphEdge>(
+  graph: AtlasGraph<NodeType, EdgeType>,
+  startId: AtlasIdentifier,
+  options: AtlasBuildOptions = {},
+): AtlasResult<EdgeType> {
   const t0 = Date.now();
-  const stopAt = opts.stopAtOutcomes
-    ? new Set<any>(G.nodes.filter((n: any) => n.direction).map((n: any) => n.id))
+  const stopAt = options.stopAtOutcomes
+    ? new Set<AtlasIdentifier>(graph.nodes.filter(node => node.direction).map(node => node.id))
     : null;
 
-  const scope = reachableFrom(G, startId, stopAt);
-  const scopedNodes = G.nodes.filter((n: any) => scope.has(n.id));
-  const scopedEdges = G.edges.filter((e: any) =>
-    scope.has(e.from) && scope.has(e.to) &&
-    !(stopAt && stopAt.has(e.from) && e.from !== startId));
+  const scope = reachableFrom(graph, startId, stopAt);
+  const scopedNodes = graph.nodes.filter(node => scope.has(node.id));
+  const scopedEdges = graph.edges.filter(edge =>
+    scope.has(edge.from) && scope.has(edge.to) &&
+    !(stopAt && stopAt.has(edge.from) && edge.from !== startId));
 
-  const lanes = detectLanes(scopedNodes, scopedEdges, opts.lanes || {});
-  const L = collapseLoops(scope, scopedEdges);
-  const startGroup = L.groupOf.get(startId);
+  const lanes = detectLanes(scopedNodes, scopedEdges, options.lanes || {});
+  const collapsedLoops = collapseLoops(scope, scopedEdges);
+  const startGroup = collapsedLoops.groupOf.get(startId);
+  if (!startGroup || !graph.byId.has(startId)) {
+    throw new Error(`Cannot build an Atlas from unknown start box "${startId}".`);
+  }
 
   // What the names propose. Identical loops in different lanes get the same
   // proposal, so four copies of one feedback loop become one element.
-  const initial = new Map<any, any>();
-  for (const [gid, g] of L.groups) {
-    if (gid === startGroup) { initial.set(gid, "START"); continue; }
-    const roles = [...new Set<any>(g.boxes.map((b: any) => lanes.roleOf.get(b)))].sort();
-    initial.set(gid, g.loop ? "LOOP:" + roles.join("+") : roles[0]);
+  const initial = new Map<AtlasGroupIdentifier, string>();
+  for (const [groupIdentifier, group] of collapsedLoops.groups) {
+    if (groupIdentifier === startGroup) { initial.set(groupIdentifier, "START"); continue; }
+    const roles = [...new Set(group.boxes.map(boxIdentifier => lanes.roleOf.get(boxIdentifier)!))].sort();
+    initial.set(groupIdentifier, group.loop ? "LOOP:" + roles.join("+") : roles[0]);
   }
 
   // Unpack every tangle once, before anything is folded, so polarity and gain
   // are read off the real links rather than off the grouped ones.
-  const tangles = new Map<any, any>();
-  for (const [gid, g] of L.groups) {
-    if (!g.loop) continue;
-    const set = new Set<any>(g.boxes);
-    const inSide = new Set<any>(), outSide = new Set<any>();
-    for (const e of scopedEdges) {
-      if (!set.has(e.from) && set.has(e.to)) inSide.add(e.to);
-      if (set.has(e.from) && !set.has(e.to)) outSide.add(e.from);
+  const tangles = new Map<AtlasGroupIdentifier, AtlasTangle<EdgeType>>();
+  for (const [groupIdentifier, group] of collapsedLoops.groups) {
+    if (!group.loop) continue;
+    const boxIdentifierSet = new Set<AtlasIdentifier>(group.boxes);
+    const outsideEntryIdentifiers = new Set<AtlasIdentifier>();
+    const outsideExitIdentifiers = new Set<AtlasIdentifier>();
+    for (const edge of scopedEdges) {
+      if (!boxIdentifierSet.has(edge.from) && boxIdentifierSet.has(edge.to)) {
+        outsideEntryIdentifiers.add(edge.to);
+      }
+      if (boxIdentifierSet.has(edge.from) && !boxIdentifierSet.has(edge.to)) {
+        outsideExitIdentifiers.add(edge.from);
+      }
     }
-    tangles.set(gid, analyseTangle(g.boxes, scopedEdges, inSide, outSide));
+    tangles.set(groupIdentifier, analyseTangle(
+      group.boxes,
+      scopedEdges,
+      outsideEntryIdentifiers,
+      outsideExitIdentifiers,
+    ));
   }
 
-  const gids = [...L.groups.keys()];
-  const refined = refineForward(gids, L.succ, initial, opts.grouping === "strict");
+  const groupIdentifiers = [...collapsedLoops.groups.keys()];
+  const refined = refineForward(
+    groupIdentifiers,
+    collapsedLoops.succ,
+    initial,
+    options.grouping === "strict",
+  );
   const classOf = refined.cls;
 
   // The quotient: one element per settled class.
-  const nodes = new Map<any, any>(), succ = new Map<any, any>(), pred = new Map<any, any>();
-  for (const gid of gids) {
-    const cid = classOf.get(gid);
-    let node = nodes.get(cid);
+  const nodes = new Map<AtlasClassIdentifier, AtlasElement<EdgeType>>();
+  const successors = new Map<AtlasClassIdentifier, Set<AtlasClassIdentifier>>();
+  const predecessors = new Map<AtlasClassIdentifier, Set<AtlasClassIdentifier>>();
+  for (const groupIdentifier of groupIdentifiers) {
+    const classIdentifier = classOf.get(groupIdentifier)!;
+    let node = nodes.get(classIdentifier);
     if (!node) {
-      nodes.set(cid, node = { id: cid, loop: false, boxes: [], lanes: new Set<any>(), copies: 0, roles: new Set<any>(), tangles: [] });
-      succ.set(cid, new Set<any>()); pred.set(cid, new Set<any>());
+      nodes.set(classIdentifier, node = {
+        id: classIdentifier, label: "", loop: false, boxes: [], lanes: new Set<AtlasLaneValue>(),
+        copies: 0, roles: new Set<AtlasRoleIdentifier>(), tangles: [],
+      });
+      successors.set(classIdentifier, new Set<AtlasClassIdentifier>());
+      predecessors.set(classIdentifier, new Set<AtlasClassIdentifier>());
     }
-    const g = L.groups.get(gid);
+    const group = collapsedLoops.groups.get(groupIdentifier)!;
     node.copies++;
-    node.loop = node.loop || g.loop;
-    if (g.loop && tangles.has(gid)) node.tangles.push(tangles.get(gid));
-    for (const b of g.boxes) {
-      node.boxes.push(b);
-      node.roles.add(lanes.roleOf.get(b));
-      const lane = lanes.laneOf.get(b);
+    node.loop = node.loop || group.loop;
+    if (group.loop && tangles.has(groupIdentifier)) node.tangles.push(tangles.get(groupIdentifier)!);
+    for (const boxIdentifier of group.boxes) {
+      node.boxes.push(boxIdentifier);
+      node.roles.add(lanes.roleOf.get(boxIdentifier)!);
+      const lane = lanes.laneOf.get(boxIdentifier);
       if (lane) node.lanes.add(lane);
     }
   }
   // Which lanes actually take each step, and which do not. On the looser
   // setting this is the whole story of where the strands differ, so it is
   // recorded rather than inferred.
-  const stepLanes = new Map<any, any>(), stepTakenBy = new Map<any, any>();
-  for (const [a, outs] of L.succ)
-    for (const b of outs) {
-      const x = classOf.get(a), y = classOf.get(b);
-      if (x === y) continue;
-      succ.get(x).add(y); pred.get(y).add(x);
-      const key = x + ">" + y;
-      if (!stepLanes.has(key)) { stepLanes.set(key, new Set<any>()); stepTakenBy.set(key, new Set<any>()); }
-      stepTakenBy.get(key).add(a);
-      for (const box of L.groups.get(a).boxes) {
+  const stepLanes = new Map<string, Set<AtlasLaneValue>>();
+  const stepTakenBy = new Map<string, Set<AtlasGroupIdentifier>>();
+  for (const [sourceGroupIdentifier, outgoingGroupIdentifiers] of collapsedLoops.succ)
+    for (const targetGroupIdentifier of outgoingGroupIdentifiers) {
+      const sourceClassIdentifier = classOf.get(sourceGroupIdentifier)!;
+      const targetClassIdentifier = classOf.get(targetGroupIdentifier)!;
+      if (sourceClassIdentifier === targetClassIdentifier) continue;
+      successors.get(sourceClassIdentifier)!.add(targetClassIdentifier);
+      predecessors.get(targetClassIdentifier)!.add(sourceClassIdentifier);
+      const key = sourceClassIdentifier + ">" + targetClassIdentifier;
+      if (!stepLanes.has(key)) {
+        stepLanes.set(key, new Set<AtlasLaneValue>());
+        stepTakenBy.set(key, new Set<AtlasGroupIdentifier>());
+      }
+      stepTakenBy.get(key)!.add(sourceGroupIdentifier);
+      for (const box of collapsedLoops.groups.get(sourceGroupIdentifier)!.boxes) {
         const lane = lanes.laneOf.get(box);
-        if (lane) stepLanes.get(key).add(lane);
+        if (lane) stepLanes.get(key)!.add(lane);
       }
     }
 
@@ -772,68 +1322,84 @@ export function buildAtlas(G: any, startId: any, opts: any = {}) {
   // Zero on the strict setting by construction; on the looser one this is the
   // honest measure of what the condensation is glossing over.
   let partialSteps = 0;
-  const membersOf = new Map<any, any>();
-  for (const gid of gids) {
-    const c = classOf.get(gid);
-    membersOf.set(c, (membersOf.get(c) || 0) + 1);
+  const membersOf = new Map<AtlasClassIdentifier, number>();
+  for (const groupIdentifier of groupIdentifiers) {
+    const classIdentifier = classOf.get(groupIdentifier)!;
+    membersOf.set(classIdentifier, (membersOf.get(classIdentifier) || 0) + 1);
   }
   for (const [key, takers] of stepTakenBy)
-    if (takers.size < membersOf.get(key.split(">")[0])) partialSteps++;
+    if (takers.size < membersOf.get(key.split(">")[0])!) partialSteps++;
   for (const node of nodes.values()) {
     const roles = [...node.roles];
     node.label = node.loop
-      ? loopLabel(node, G)
+      ? loopLabel(node, graph)
       : roles.length === 1 && node.boxes.length > 1
-        ? roleLabel(roles[0], G.byId)
-        : (G.byId.get(node.boxes[0]) || {}).label || node.boxes[0];
+        ? roleLabel(roles[0], graph.byId)
+        : graph.byId.get(node.boxes[0])?.label || node.boxes[0];
   }
 
-  const start = classOf.get(startGroup);
-  nodes.set(END, { id: END, label: "end", loop: false, boxes: [], lanes: new Set<any>(), copies: 0, roles: new Set<any>(), end: true });
-  const finishes = addFinish(succ, pred);
-  const succOf = (n: any) => [...succ.get(n)];
-  const predOf = (n: any) => [...pred.get(n)];
-  const ipdom = immediateDominators(END, predOf, succOf);
-  const paths = countPaths(start, succOf);
+  const start = classOf.get(startGroup)!;
+  nodes.set(END, {
+    id: END, label: "end", loop: false, boxes: [], lanes: new Set<AtlasLaneValue>(),
+    copies: 0, roles: new Set<AtlasRoleIdentifier>(), tangles: [], end: true,
+  });
+  const finishes = addFinish(successors, predecessors);
+  const successorsOf = (identifier: AtlasClassIdentifier) => [...(successors.get(identifier) || [])];
+  const predecessorsOf = (identifier: AtlasClassIdentifier) => [...(predecessors.get(identifier) || [])];
+  const immediatePostDominators = immediateDominators(END, predecessorsOf, successorsOf);
+  const paths = countPaths(start, successorsOf);
 
   // The same structure with no grouping at all, so the condensation is
   // measured rather than asserted and the true pathway total is to hand.
-  const rawSucc = new Map<any, any>();
-  for (const gid of gids) rawSucc.set(gid, new Set<any>(L.succ.get(gid)));
-  addFinish(rawSucc, null);
-  const rawPaths = countPaths(startGroup, (n: any) => [...rawSucc.get(n)]);
+  const ungroupedSuccessors = new Map<AtlasGroupIdentifier, Set<AtlasGroupIdentifier>>();
+  for (const groupIdentifier of groupIdentifiers) {
+    ungroupedSuccessors.set(groupIdentifier, new Set(collapsedLoops.succ.get(groupIdentifier)));
+  }
+  addFinish(ungroupedSuccessors, null);
+  const rawPaths = countPaths(
+    startGroup,
+    identifier => [...(ungroupedSuccessors.get(identifier) || [])],
+  );
 
-  const ctx = { nodes, ipdom, paths, succ: succOf, END,
-                limit: nodes.size + 8, emitted: new Set<any>(), tails: new Map<any, any>() };
-  const tree = buildSequence(start, END, ctx);
+  const sequenceBuildContext: AtlasSequenceBuildContext<EdgeType> = {
+    nodes, ipdom: immediatePostDominators, paths, succ: successorsOf, END,
+    limit: nodes.size + 8,
+    emitted: new Set<AtlasClassIdentifier>(),
+    tails: new Map<AtlasClassIdentifier, AtlasSequence>(),
+  };
+  const tree = buildSequence(start, END, sequenceBuildContext);
 
   // Where a proposed family had to be split because its members stopped
   // behaving alike. Not a failure — this is the divergence, named.
-  const splits = new Map<any, any>();
-  for (const [gid, cid] of classOf) {
-    const proposal = initial.get(gid);
+  const splits = new Map<AtlasRoleIdentifier, Set<AtlasClassIdentifier>>();
+  for (const [groupIdentifier, classIdentifier] of classOf) {
+    const proposal = initial.get(groupIdentifier)!;
     if (!proposal.startsWith("L:")) continue;
-    if (!splits.has(proposal)) splits.set(proposal, new Set<any>());
-    splits.get(proposal).add(cid);
+    if (!splits.has(proposal)) splits.set(proposal, new Set<AtlasClassIdentifier>());
+    splits.get(proposal)!.add(classIdentifier);
   }
 
   return {
-    startId, start, tree, nodes, succ, pred, ipdom, paths, lanes, scope, finishes,
-    tails: ctx.tails, stepLanes, stepTakenBy,
-    grouping: opts.grouping === "strict" ? "strict" : "loose",
+    startId, start, tree, nodes,
+    succ: successors,
+    pred: predecessors,
+    ipdom: immediatePostDominators,
+    paths, lanes, scope, finishes,
+    tails: sequenceBuildContext.tails, stepLanes, stepTakenBy,
+    grouping: options.grouping === "strict" ? "strict" : "loose",
     everyStepShared: partialSteps === 0,
     partialSteps, totalSteps: stepTakenBy.size,
-    loops: [...nodes.values()].filter(n => n.loop),
+    loops: [...nodes.values()].filter(node => node.loop),
     feedback: gatherFeedback(nodes),
     shapes: paths.get(start) || 0n,
     pathways: rawPaths.get(startGroup) || 0n,
     boxesInScope: scope.size,
     elements: nodes.size - 1,
-    elementsUngrouped: gids.length,
+    elementsUngrouped: groupIdentifiers.length,
     splitFamilies: [...splits]
-      .filter(([, s]) => s.size > 1)
-      .map(([role, s]) => ({ key: role.slice(2), into: s.size }))
-      .sort((a, b) => b.into - a.into),
+      .filter(([, classIdentifiers]) => classIdentifiers.size > 1)
+      .map(([role, classIdentifiers]) => ({ key: role.slice(2), into: classIdentifiers.size }))
+      .sort((firstSplit, secondSplit) => secondSplit.into - firstSplit.into),
     refineRounds: refined.rounds,
     ms: Date.now() - t0,
   };
@@ -842,14 +1408,17 @@ export function buildAtlas(G: any, startId: any, opts: any = {}) {
 // A loop is named after its strongest loop when that is short enough to read,
 // and by its size when it is not. Reciting 108 member names, which is what this
 // used to do, is the opposite of a name.
-export function loopLabel(node: any, G: any) {
+export function loopLabel<EdgeType extends AtlasGraphEdge, NodeType extends AtlasGraphNode>(
+  node: AtlasElement<EdgeType>,
+  graph: Pick<AtlasGraph<NodeType, EdgeType>, "byId">,
+): string {
   const t = node.tangles[0];
   if (!t || !t.loops.length) return `feedback loop of ${node.boxes.length} boxes`;
   // One loop can be named after itself. A tangle of many cannot — naming it
   // after the strongest implies the others are variations on it, and they are
   // not, so it is named by what it is instead.
   if (t.loops.length === 1)
-    return t.loops[0].cycle.map((b: any) => (G.byId.get(b) || {}).label || b).join(" ⇄ ");
+    return t.loops[0].cycle.map(boxIdentifier => graph.byId.get(boxIdentifier)?.label || boxIdentifier).join(" ⇄ ");
   return `feedback tangle · ${t.loops.length} loops`;
 }
 
@@ -863,31 +1432,54 @@ export function loopLabel(node: any, G: any) {
 // until the page is larger than the graph it came from. So an element is
 // expanded once and later meetings point at it. Nothing is lost: the two
 // readings continue identically from there.
-export function buildSequence(entry: any, stop: any, ctx: any) {
-  const items: any[] = [];
-  let n = entry, guard = 0;
-  while (n !== stop && n !== ctx.END) {
-    if (guard++ > ctx.limit) throw new Error("region walk failed to terminate at " + n);
-    if (ctx.emitted.has(n)) { items.push({ kind: "join", id: n }); break; }
-    ctx.emitted.add(n);
-    items.push({ kind: "box", id: n });
-    const outs = ctx.succ(n);
-    if (outs.length === 0) break;
-    if (outs.length === 1) { n = outs[0]; continue; }
-    const rejoin = ctx.ipdom.get(n);
-    const whole = ctx.paths.get(rejoin) || 1n;
-    const alts = outs.map((s: any) => ({
-      first: s,
-      shapes: (ctx.paths.get(s) || 0n) / whole,
-      seq: s === rejoin ? [] : buildSequence(s, rejoin, ctx),
-    })).sort((a: any, b: any) => (a.shapes > b.shapes ? -1 : a.shapes < b.shapes ? 1 : 0));
-    items.push({ kind: "choice", at: n, rejoin: rejoin === ctx.END ? null : rejoin, alts });
-    n = rejoin;
+export function buildSequence<EdgeType extends AtlasGraphEdge>(
+  entry: AtlasClassIdentifier,
+  stop: AtlasClassIdentifier,
+  context: AtlasSequenceBuildContext<EdgeType>,
+): AtlasSequence {
+  const items: AtlasSequence = [];
+  let currentIdentifier = entry;
+  let iterationCount = 0;
+  while (currentIdentifier !== stop && currentIdentifier !== context.END) {
+    if (iterationCount++ > context.limit) {
+      throw new Error("region walk failed to terminate at " + currentIdentifier);
+    }
+    if (context.emitted.has(currentIdentifier)) {
+      items.push({ kind: "join", id: currentIdentifier });
+      break;
+    }
+    context.emitted.add(currentIdentifier);
+    items.push({ kind: "box", id: currentIdentifier });
+    const outgoingIdentifiers = context.succ(currentIdentifier);
+    if (outgoingIdentifiers.length === 0) break;
+    if (outgoingIdentifiers.length === 1) {
+      currentIdentifier = outgoingIdentifiers[0];
+      continue;
+    }
+    const rejoin = context.ipdom.get(currentIdentifier);
+    if (rejoin === undefined) {
+      throw new Error(`No post-dominator exists for Atlas split "${currentIdentifier}".`);
+    }
+    const whole = context.paths.get(rejoin) || 1n;
+    const alternatives: AtlasAlternative[] = outgoingIdentifiers.map(successor => ({
+      first: successor,
+      shapes: (context.paths.get(successor) || 0n) / whole,
+      seq: successor === rejoin ? [] : buildSequence(successor, rejoin, context),
+    })).sort((first, second) => (first.shapes > second.shapes ? -1 : first.shapes < second.shapes ? 1 : 0));
+    items.push({
+      kind: "choice",
+      at: currentIdentifier,
+      rejoin: rejoin === context.END ? null : rejoin,
+      alts: alternatives,
+    });
+    currentIdentifier = rejoin;
   }
   // What follows each element, so a "joins here" reads as the stretch it
   // points at rather than as a dead end.
-  for (let i = 0; i < items.length; i++)
-    if (items[i].kind === "box") ctx.tails.set(items[i].id, items.slice(i));
+  for (let index = 0; index < items.length; index++) {
+    const item = items[index];
+    if (item.kind === "box") context.tails.set(item.id, items.slice(index));
+  }
   return items;
 }
 
@@ -896,43 +1488,67 @@ export function buildSequence(entry: any, stop: any, ctx: any) {
 // ---------------------------------------------------------------------------
 // Which lanes reach a stretch. One only some lanes can reach is a real
 // divergence — the pocket where those lanes behave unlike the rest.
-export function lanesIn(seq: any, nodes: any, into = new Set<any>()) {
-  for (const item of seq) {
-    if (item.kind === "choice") for (const a of item.alts) lanesIn(a.seq, nodes, into);
-    else for (const l of nodes.get(item.id).lanes || []) into.add(l);
+export function lanesIn(
+  sequence: readonly AtlasSequenceItem[],
+  nodes: ReadonlyMap<AtlasClassIdentifier, Pick<AtlasElement, "lanes">>,
+  into = new Set<AtlasLaneValue>(),
+): Set<AtlasLaneValue> {
+  for (const item of sequence) {
+    if (item.kind === "choice") for (const alternative of item.alts) lanesIn(alternative.seq, nodes, into);
+    else for (const lane of nodes.get(item.id)?.lanes || []) into.add(lane);
   }
   return into;
 }
 
-export function boxesIn(seq: any, nodes: any, into = new Set<any>()) {
-  for (const item of seq) {
-    if (item.kind === "choice") for (const a of item.alts) boxesIn(a.seq, nodes, into);
-    else for (const b of nodes.get(item.id).boxes || []) into.add(b);
+export function boxesIn(
+  sequence: readonly AtlasSequenceItem[],
+  nodes: ReadonlyMap<AtlasClassIdentifier, Pick<AtlasElement, "boxes">>,
+  into = new Set<AtlasIdentifier>(),
+): Set<AtlasIdentifier> {
+  for (const item of sequence) {
+    if (item.kind === "choice") for (const alternative of item.alts) boxesIn(alternative.seq, nodes, into);
+    else for (const boxIdentifier of nodes.get(item.id)?.boxes || []) into.add(boxIdentifier);
   }
   return into;
 }
 
-export function countItems(seq: any, acc = { boxes: 0, choices: 0, joins: 0, depth: 0 }, depth = 0) {
-  acc.depth = Math.max(acc.depth, depth);
-  for (const item of seq) {
-    if (item.kind === "box") acc.boxes++;
-    else if (item.kind === "join") acc.joins++;
-    else { acc.choices++; for (const a of item.alts) countItems(a.seq, acc, depth + 1); }
-  }
-  return acc;
+export interface AtlasItemCount {
+  boxes: number;
+  choices: number;
+  joins: number;
+  depth: number;
 }
 
-export function formatCount(n: any) {
-  if (typeof n !== "bigint") n = BigInt(n);
-  if (n < 1000000000000000n) return Number(n).toLocaleString("en-GB");
-  const s = n.toString();
+export function countItems(
+  sequence: readonly AtlasSequenceItem[],
+  accumulator: AtlasItemCount = { boxes: 0, choices: 0, joins: 0, depth: 0 },
+  depth = 0,
+): AtlasItemCount {
+  accumulator.depth = Math.max(accumulator.depth, depth);
+  for (const item of sequence) {
+    if (item.kind === "box") accumulator.boxes++;
+    else if (item.kind === "join") accumulator.joins++;
+    else {
+      accumulator.choices++;
+      for (const alternative of item.alts) countItems(alternative.seq, accumulator, depth + 1);
+    }
+  }
+  return accumulator;
+}
+
+export function formatCount(value: bigint | number | string): string {
+  const numericValue = typeof value === "bigint" ? value : BigInt(value);
+  if (numericValue < 1000000000000000n) return Number(numericValue).toLocaleString("en-GB");
+  const s = numericValue.toString();
   return s[0] + "." + s.slice(1, 3) + " × 10^" + (s.length - 1);
 }
 
 // Every loop on the map in one list, strongest first, each knowing which
 // element it lives in and how many places that element stands for.
-export function gatherFeedback(nodes: any) {
-  const out: any[] = [];
+export function gatherFeedback<EdgeType extends AtlasGraphEdge>(
+  nodes: ReadonlyMap<AtlasClassIdentifier, AtlasElement<EdgeType>>,
+): AtlasFeedbackLoop<EdgeType>[] {
+  const out: AtlasFeedbackLoop<EdgeType>[] = [];
   for (const node of nodes.values()) {
     if (!node.loop || !node.tangles.length) continue;
     const t = node.tangles[0];
@@ -941,7 +1557,8 @@ export function gatherFeedback(nodes: any) {
                  copies: node.tangles.length, lanes: node.lanes,
                  tangleSize: t.boxes.length, independent: t.independent });
   }
-  return out.sort((a, b) => b.gain - a.gain || a.cycle.length - b.cycle.length);
+  return out.sort((firstLoop, secondLoop) =>
+    secondLoop.gain - firstLoop.gain || firstLoop.cycle.length - secondLoop.cycle.length);
 }
 
 // ---------------------------------------------------------------------------
@@ -952,24 +1569,35 @@ export function gatherFeedback(nodes: any) {
 // weight of n: how much of everything passes through it. That single number is
 // what makes a flow diagram, a proportional block and a bar all say the same
 // thing rather than three different things.
-export function measure(A: any) {
-  const succOf = (n: any) => [...A.succ.get(n)];
-  const order = reversePostorder(A.start, succOf);
-  const into = new Map<any, any>([[A.start, 1n]]);
-  const depth = new Map<any, any>([[A.start, 0]]);
-  for (const n of order) {
-    const i = into.get(n) || 0n, d = depth.get(n) || 0;
-    for (const s of succOf(n)) {
-      into.set(s, (into.get(s) || 0n) + i);
-      if ((depth.get(s) || 0) < d + 1) depth.set(s, d + 1);
+export interface AtlasMeasurement {
+  order: AtlasClassIdentifier[];
+  into: Map<AtlasClassIdentifier, bigint>;
+  depth: Map<AtlasClassIdentifier, number>;
+  total: bigint;
+  weight: (identifier: AtlasClassIdentifier) => number;
+  linkWeight: (sourceIdentifier: AtlasClassIdentifier, targetIdentifier: AtlasClassIdentifier) => number;
+}
+
+export function measure(atlas: Pick<AtlasResult, "succ" | "start" | "paths">): AtlasMeasurement {
+  const successorsOf = (identifier: AtlasClassIdentifier) => [...(atlas.succ.get(identifier) || [])];
+  const order = reversePostorder(atlas.start, successorsOf);
+  const into = new Map<AtlasClassIdentifier, bigint>([[atlas.start, 1n]]);
+  const depth = new Map<AtlasClassIdentifier, number>([[atlas.start, 0]]);
+  for (const identifier of order) {
+    const readingsIntoIdentifier = into.get(identifier) || 0n;
+    const identifierDepth = depth.get(identifier) || 0;
+    for (const successor of successorsOf(identifier)) {
+      into.set(successor, (into.get(successor) || 0n) + readingsIntoIdentifier);
+      if ((depth.get(successor) || 0) < identifierDepth + 1) depth.set(successor, identifierDepth + 1);
     }
   }
-  const total = A.paths.get(A.start) || 1n;
-  const share = (v: any) => (total > 0n ? Number((v * 1000000n) / total) / 1000000 : 0);
+  const total = atlas.paths.get(atlas.start) || 1n;
+  const share = (value: bigint) => (total > 0n ? Number((value * 1000000n) / total) / 1000000 : 0);
   return {
     order, into, depth, total,
-    weight: (n: any) => share((into.get(n) || 0n) * (A.paths.get(n) || 0n)),
-    linkWeight: (a: any, b: any) => share((into.get(a) || 0n) * (A.paths.get(b) || 0n)),
+    weight: identifier => share((into.get(identifier) || 0n) * (atlas.paths.get(identifier) || 0n)),
+    linkWeight: (sourceIdentifier, targetIdentifier) =>
+      share((into.get(sourceIdentifier) || 0n) * (atlas.paths.get(targetIdentifier) || 0n)),
   };
 }
 
@@ -989,44 +1617,63 @@ export function measure(A: any) {
 //
 // Breadth-first over partial paths, so strands come out shortest first with no
 // sorting: every link counts one, and a level of the search is a length.
-export function strands(A: any, opts: any = {}) {
-  const limit = Math.max(1, opts.limit || 200);
-  const through = opts.through || null;
+export interface AtlasStrandOptions {
+  limit?: number;
+  through?: AtlasClassIdentifier | null;
+}
+
+export interface AtlasStrandResult {
+  list: AtlasClassIdentifier[][];
+  truncated: boolean;
+  reachable: boolean;
+}
+
+export function strands(
+  atlas: Pick<AtlasResult, "start" | "succ">,
+  options: AtlasStrandOptions = {},
+): AtlasStrandResult {
+  const limit = Math.max(1, options.limit || 200);
+  const through = options.through || null;
   const FRONTIER = Math.max(2000, limit * 50);   // a hairball must not eat memory
 
   // Filtering by an element: before the walk reaches it, step only into
   // elements that can still get there. Everything after it is unconstrained.
-  let gate: Set<any> | null = null;
+  let gate: Set<AtlasClassIdentifier> | null = null;
   if (through) {
-    const back = new Map<any, any[]>();
-    for (const [n, outs] of A.succ) {
-      for (const s of outs) { if (!back.has(s)) back.set(s, []); back.get(s)!.push(n); }
+    const predecessorsByIdentifier = new Map<AtlasClassIdentifier, AtlasClassIdentifier[]>();
+    for (const [identifier, successors] of atlas.succ) {
+      for (const successor of successors) {
+        if (!predecessorsByIdentifier.has(successor)) predecessorsByIdentifier.set(successor, []);
+        predecessorsByIdentifier.get(successor)!.push(identifier);
+      }
     }
-    gate = new Set<any>([through]);
-    const stack = [through];
+    gate = new Set<AtlasClassIdentifier>([through]);
+    const stack: AtlasClassIdentifier[] = [through];
     while (stack.length) {
-      const n = stack.pop();
-      for (const p of back.get(n) || []) if (!gate.has(p)) { gate.add(p); stack.push(p); }
+      const identifier = stack.pop()!;
+      for (const predecessor of predecessorsByIdentifier.get(identifier) || []) {
+        if (!gate.has(predecessor)) { gate.add(predecessor); stack.push(predecessor); }
+      }
     }
-    if (!gate.has(A.start)) return { list: [], truncated: false, reachable: false };
+    if (!gate.has(atlas.start)) return { list: [], truncated: false, reachable: false };
   }
 
-  const out: any[][] = [];
-  let level: any[][] = [[A.start]];
+  const out: AtlasClassIdentifier[][] = [];
+  let level: AtlasClassIdentifier[][] = [[atlas.start]];
   let truncated = false;
 
   while (level.length && out.length < limit) {
-    const next: any[][] = [];
+    const next: AtlasClassIdentifier[][] = [];
     for (const path of level) {
       if (out.length >= limit) break;
       const tail = path[path.length - 1];
       const passed = !through || path.indexOf(through) >= 0;
-      for (const s of A.succ.get(tail) || []) {
-        if (s === END) { if (passed) out.push(path); continue; }
-        if (path.indexOf(s) >= 0) continue;                 // acyclic already, but cheap
-        if (gate && !passed && !gate.has(s)) continue;
+      for (const successor of atlas.succ.get(tail) || []) {
+        if (successor === END) { if (passed) out.push(path); continue; }
+        if (path.indexOf(successor) >= 0) continue;         // acyclic already, but cheap
+        if (gate && !passed && !gate.has(successor)) continue;
         if (next.length >= FRONTIER) { truncated = true; break; }
-        next.push(path.concat([s]));
+        next.push(path.concat([successor]));
       }
     }
     level = next;

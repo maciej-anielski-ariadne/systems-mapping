@@ -29,9 +29,11 @@ import { atlasIsOpen, closeAtlas } from "./21-atlas-view";
 import { downloadCsvBlob, readCsvFile } from "./16-file-io";
 import { closeBuilder, openBuilder } from "./16a-builder-state";
 import { bootEmptyStateGrid } from "./16e-canvas-edit";
+import { clearSearch } from "./17a-search";
 import { addCategory, addStage, addStream } from "./16f-canvas-mutations";
 import { exportCanvasImage, getExportSelection, publishCanvasHtml } from "./19-export";
 import { downloadReviewLog, syncReviewRail } from "./25-review-rail";
+import { endReviewPass } from "./24-review-record";
 import {
   EDGES,
   NODES,
@@ -129,6 +131,9 @@ document.querySelectorAll(".create-map-trigger").forEach(button => {
     const hasData = state.dataLoaded && (NODES.length > 0 || EDGES.length > 0);
     if (hasData && !confirm("Clear the current map and start with an empty grid? This can't be undone.")) return;
     if (typeof clearCsvFromStorage === "function") clearCsvFromStorage();
+    if (typeof closeAtlas === "function") closeAtlas();
+    if (typeof clearSearch === "function") clearSearch();
+    if (typeof endReviewPass === "function") endReviewPass();
     if (typeof bootEmptyStateGrid === "function") bootEmptyStateGrid();
   });
 });

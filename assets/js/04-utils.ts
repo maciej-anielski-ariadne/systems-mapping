@@ -188,6 +188,25 @@ export function splitCategoriesByClass(
   return { primary: primary, secondary: secondary };
 }
 
+/**
+ * Whether a box survives the active map filters. Kept as a pure helper so
+ * rendering, selection breadth, export, and collapsed-edge derivation can use
+ * the same visibility contract without importing one another.
+ */
+export function isNodeVisibleWithFilters(
+  node: GraphNode,
+  hiddenStreams: Set<string>,
+  hiddenStages: Set<string>,
+  hiddenCategories: Set<string>,
+  categories: CategoryMap = CATEGORIES,
+): boolean {
+  if (hiddenStreams.has(node.stream) || hiddenStages.has(node.stage)) return false;
+  const { primary, secondary } = splitCategoriesByClass(nodeCategoryIds(node), categories);
+  if (primary.length > 0 && primary.every(categoryId => hiddenCategories.has(categoryId))) return false;
+  if (secondary.length > 0 && secondary.every(categoryId => hiddenCategories.has(categoryId))) return false;
+  return true;
+}
+
 // Slack (px) before an edge whose target is barely to the right of its source
 // still counts as "backward". Shared by isBackwardEdge so the path builder and
 // any caller asking "is this a feedback edge?" can never drift apart.

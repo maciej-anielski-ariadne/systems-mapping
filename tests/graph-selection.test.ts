@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { loadDataFromCsv } from "../assets/js/06-data-loader";
 import {
   bfsNeighbors,
@@ -6,8 +6,11 @@ import {
   getDescendants,
   computeHighlightedEdges,
   computeMaxHighlightDepth,
+  applyFocusBreadth,
+  focusNode,
+  scrollNodeIntoView,
 } from "../assets/js/09-graph-selection";
-import { outgoingEdges } from "../assets/js/03-state";
+import { layout, outgoingEdges, state } from "../assets/js/03-state";
 import { LINEAR_CSV } from "./fixtures/graphs";
 
 describe("graph traversal on A → B → C", () => {
@@ -39,5 +42,41 @@ describe("graph traversal on A → B → C", () => {
   it("respects direction flags", () => {
     expect(computeHighlightedEdges("b", 1, false, true)).toEqual(new Set(["edge_1"]));
     expect(computeHighlightedEdges("b", 1, true, false)).toEqual(new Set(["edge_0"]));
+  });
+
+  it("ignores a stale navigation identifier after a map replacement", () => {
+    expect(() => focusNode("node-from-previous-map")).not.toThrow();
+    expect(state.selectedNodeId).toBeNull();
+  });
+
+  it("measures wide focus against visible boxes only", () => {
+    state.highlightDepth = 0;
+    state.selectedNodeId = "a";
+    state.selectedNodeIds = new Set(["a"]);
+    state.ancestorSet = new Set();
+    state.descendantSet = new Set();
+    state.hiddenStages = new Set(["s2", "s3"]);
+
+    applyFocusBreadth();
+
+    expect(document.body.classList.contains("focus-wide")).toBe(true);
+  });
+
+  it("centres navigation using rendered zoom coordinates", () => {
+    const container = document.getElementById("viz-scroll")!;
+    Object.defineProperty(container, "clientWidth", { configurable: true, value: 400 });
+    Object.defineProperty(container, "clientHeight", { configurable: true, value: 240 });
+    const scrollTo = vi.fn();
+    container.scrollTo = scrollTo;
+    state.zoomLevel = 2;
+
+    scrollNodeIntoView("c", "auto");
+
+    const position = layout.positions.c;
+    expect(scrollTo).toHaveBeenCalledWith({
+      left: (position.x + position.width / 2) * 2 - 200,
+      top: (position.y + position.height / 2) * 2 - 120,
+      behavior: "auto",
+    });
   });
 });

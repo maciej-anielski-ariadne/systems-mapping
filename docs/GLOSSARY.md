@@ -75,8 +75,8 @@ panel says so and shows what the number would have been.
 instead of the current one. In a loop ("better service → more demand → more deliveries →
 better service") something has to go first; `delay()` makes the rule explicit — this pass
 uses last pass's number — so the answer no longer depends on which box happens to be
-calculated first, and the loop settles instead of chasing its own tail. "Unit" = one step
-behind. The detail panel tags such an input "previous step".
+calculated first. It does not promise that the loop will settle; gain and bounds still
+decide that. "Unit" = one step behind. The detail panel tags such an input "previous step".
 
 **Gain (of a feedback loop).** When links form a loop that feeds back on itself, "gain" is
 how much the loop amplifies each time round. Gain below 1 settles down to a steady answer;

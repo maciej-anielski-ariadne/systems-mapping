@@ -18,6 +18,8 @@ assets/data/sample_uk_border.csv
 # Node / build tooling
 node_modules/
 coverage/
+playwright-report/
+test-results/
 *.tsbuildinfo
 .vite/
 

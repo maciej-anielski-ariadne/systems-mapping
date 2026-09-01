@@ -95,8 +95,12 @@ export function computeRenderEdges(): RenderEdge[] {
   const visibleNodeIds = new Set<string>();
   for (const n of NODES) if (isNodeVisible(n)) visibleNodeIds.add(n.id);
   const isVisibleId = (id: string): boolean => visibleNodeIds.has(id);
-  // node ids are slugs without "->", so "a"+"bc" and "ab"+"c" stay distinct.
-  const pairKey = (from: string, to: string): string => from + "->" + to;
+  // Length-prefix both halves rather than relying on an identifier delimiter.
+  // Canonical imported ids currently exclude "->", but synthetic-edge identity
+  // must remain collision-free even for programmatically-constructed models or
+  // a future grammar extension.
+  const pairKey = (from: string, to: string): string =>
+    from.length + ":" + from + to.length + ":" + to;
 
   // ───── (a) Real edges: both endpoints visible ────────────────────────────
   for (const edge of EDGES) {

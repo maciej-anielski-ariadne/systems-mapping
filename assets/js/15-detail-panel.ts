@@ -35,9 +35,11 @@ import {
   streamById,
   stageById,
   state,
+  markEdgeGeometryChanged,
 } from "./03-state";
 import { upgradeSelectsIn } from "./04b-typeable-dropdown";
 import { escapeHtml, formatScalar, formatScalarInput, splitCategoriesByClass, nodeCategoryIds } from "./04-utils";
+import { isBlankInput, parseStrictFiniteNumber } from "./05b-input-validation";
 import {
   explainNode, formatNodeDelta, resolveEdgeElasticity,
   formulaInLabels, formulaConstants, formulaReads, formulaInLabelsFailed,
@@ -51,7 +53,7 @@ import {
   isFormulaFunction, FORMULA_NUMBER_PATTERN_SOURCE, FORMULA_IDENTIFIER_PATTERN_SOURCE,
 } from "./07a-formula";
 import { EFFECT_OPTIONS } from "./02-config";
-import { selectNode, focusNode, scrollNodeIntoView } from "./09-graph-selection";
+import { focusNode, scrollNodeIntoView } from "./09-graph-selection";
 import { render, renderSelectionChange } from "./11-rendering";
 import { applySimMultiplier, updateDetailPanelDeltaInline } from "./14-simulation-panel";
 import { applySelectionClass } from "./17-events";
@@ -1287,7 +1289,7 @@ export function wireSharedHandlers(node: GraphNode, contentState: HTMLElement): 
   contentState.querySelectorAll("[data-target-node]").forEach(item => {
     item.addEventListener("click", () => {
       const targetNodeId = item.getAttribute("data-target-node")!;
-      selectNode(targetNodeId);
+      focusNode(targetNodeId);
       scrollNodeIntoView(targetNodeId);
     });
   });
@@ -1477,7 +1479,7 @@ export function wireEditModeHandlers(node: GraphNode, contentState: HTMLElement)
     btn.addEventListener("click", () => {
       const targetId = btn.getAttribute("data-jump-node")!;
       if (nodeById[targetId]) {
-        selectNode(targetId);
+        focusNode(targetId);
         scrollNodeIntoView(targetId);
       }
     });
@@ -1572,8 +1574,13 @@ export function applyNodeFieldEdit(node: GraphNode, field: string, input: HTMLIn
   let value: string | number | boolean | undefined;
   if (input.type === "checkbox") value = input.checked;
   else if (input.type === "number") {
-    const v = parseFloat(input.value);
-    value = (input.value === "" || isNaN(v)) ? undefined : v;
+    value = parseStrictFiniteNumber(input.value);
+    if (!isBlankInput(input.value) && value === undefined) {
+      input.setCustomValidity("Use a finite decimal number.");
+      input.reportValidity();
+      return;
+    }
+    input.setCustomValidity("");
   } else {
     value = input.value;
   }
@@ -1584,6 +1591,8 @@ export function applyNodeFieldEdit(node: GraphNode, field: string, input: HTMLIn
   // controllable / direction) trigger a full re-render so the panel reflects
   // the new state.
   let skipDetailRender = false;
+  let mutationImpact: "topology" | "calculation" | "presentation" = "topology";
+  let searchableDataChanged = false;
 
   if (field === "label") {
     const trimmed = String(value).trim();
@@ -1593,6 +1602,8 @@ export function applyNodeFieldEdit(node: GraphNode, field: string, input: HTMLIn
   } else if (field === "description") {
     node.description = String(value || "");
     skipDetailRender = true;
+    mutationImpact = "presentation";
+    searchableDataChanged = true;
   } else if (field === "stream") {
     if (!streamById[value as string]) return;
     node.stream = value as string;
@@ -1630,20 +1641,37 @@ export function applyNodeFieldEdit(node: GraphNode, field: string, input: HTMLIn
     node.category = node.primaryCategories[0] || node.categoryIds[0];
   } else if (field === "baseline") {
     if (value === undefined) { delete node.baseline; }
-    else if (value === 0)    { delete node.baseline; input.value = ""; }   // simulation divides by baseline
-    else                     { node.baseline = value as number; }
+    else if ((value as number) <= 0) {
+      input.setCustomValidity("Starting value must be positive or blank.");
+      input.reportValidity();
+      input.value = node.baseline === undefined ? "" : String(node.baseline);
+      return;
+    } else {
+      node.baseline = value as number;
+    }
     skipDetailRender = true;
+    mutationImpact = "calculation";
   } else if (field === "unit") {
     if (value) node.unit = String(value); else delete node.unit;
     skipDetailRender = true;
+    mutationImpact = "presentation";
+    searchableDataChanged = true;
   } else if (field === "controllable") {
     if (value) node.controllable = true; else delete node.controllable;
   } else if (field === "direction") {
     if (value) node.direction = value as GraphNode["direction"]; else delete node.direction;
   } else if (field === "sliderMax") {
     if (value === undefined) delete node.sliderMax;
-    else                     node.sliderMax = value as number;
+    else if ((value as number) < 1) {
+      input.setCustomValidity("Slider max must be at least 1.");
+      input.reportValidity();
+      input.value = node.sliderMax === undefined ? "" : String(node.sliderMax);
+      return;
+    } else {
+      node.sliderMax = value as number;
+    }
     skipDetailRender = true;
+    mutationImpact = "calculation";
   } else if (field === "combine") {
     // Blank (and the redundant explicit "multiplicative") means "no combine
     // column at all" — the standard rule, and the shape an untouched CSV has.
@@ -1659,15 +1687,37 @@ export function applyNodeFieldEdit(node: GraphNode, field: string, input: HTMLIn
   } else if (field === "minValue") {
     // TS calls these minValue/maxValue; the CSV columns are min/max.
     if (value === undefined) delete node.minValue;
-    else                     node.minValue = value as number;
+    else if (node.maxValue !== undefined && (value as number) > node.maxValue) {
+      input.setCustomValidity("Minimum cannot be above the current maximum.");
+      input.reportValidity();
+      input.value = node.minValue === undefined ? "" : String(node.minValue);
+      return;
+    } else {
+      node.minValue = value as number;
+    }
     skipDetailRender = true;
+    mutationImpact = "calculation";
   } else if (field === "maxValue") {
     if (value === undefined) delete node.maxValue;
-    else                     node.maxValue = value as number;
+    else if (node.minValue !== undefined && (value as number) < node.minValue) {
+      input.setCustomValidity("Maximum cannot be below the current minimum.");
+      input.reportValidity();
+      input.value = node.maxValue === undefined ? "" : String(node.maxValue);
+      return;
+    } else {
+      node.maxValue = value as number;
+    }
     skipDetailRender = true;
+    mutationImpact = "calculation";
   }
 
-  if (typeof applyCanvasMutation === "function") applyCanvasMutation({ skipDetailRender: skipDetailRender });
+  if (typeof applyCanvasMutation === "function") {
+    applyCanvasMutation({
+      skipDetailRender: skipDetailRender,
+      impact: mutationImpact,
+      searchableDataChanged: searchableDataChanged,
+    });
+  }
 }
 
 export function applyEdgeFieldEdit(edgeId: string, field: string, input: HTMLInputElement): void {
@@ -1676,21 +1726,37 @@ export function applyEdgeFieldEdit(edgeId: string, field: string, input: HTMLInp
   if (field === "effect") {
     if (!EFFECT_OPTIONS.includes(input.value)) return;
     edge.effect = input.value as EffectKind;
+    markEdgeGeometryChanged();
   } else if (field === "style") {
     if (input.value === "dashed") edge.style = "dashed"; else delete edge.style;
+    markEdgeGeometryChanged();
     // Line style doesn't affect layout — preserve focus.
-    if (typeof applyCanvasMutation === "function") applyCanvasMutation({ skipDetailRender: true });
+    if (typeof applyCanvasMutation === "function") {
+      applyCanvasMutation({ skipDetailRender: true, impact: "presentation" });
+    }
     return;
   } else if (field === "elasticity") {
-    const v = parseFloat(input.value);
-    if (input.value === "" || isNaN(v)) delete edge.elasticity;
-    else                                  edge.elasticity = v;
+    const elasticityValue = parseStrictFiniteNumber(input.value);
+    if (!isBlankInput(input.value) && elasticityValue === undefined) {
+      input.setCustomValidity("Use a finite decimal number.");
+      input.reportValidity();
+      input.value = edge.elasticity === undefined ? "" : String(edge.elasticity);
+      return;
+    }
+    input.setCustomValidity("");
+    if (elasticityValue === undefined) delete edge.elasticity;
+    else edge.elasticity = elasticityValue;
+    markEdgeGeometryChanged();
     // Editing elasticity / description doesn't change layout — preserve focus.
-    if (typeof applyCanvasMutation === "function") applyCanvasMutation({ skipDetailRender: true });
+    if (typeof applyCanvasMutation === "function") {
+      applyCanvasMutation({ skipDetailRender: true, impact: "calculation" });
+    }
     return;
   } else if (field === "description") {
     edge.description = String(input.value || "");
-    if (typeof applyCanvasMutation === "function") applyCanvasMutation({ skipDetailRender: true });
+    if (typeof applyCanvasMutation === "function") {
+      applyCanvasMutation({ skipDetailRender: true, impact: "presentation" });
+    }
     return;
   }
   if (typeof applyCanvasMutation === "function") applyCanvasMutation();

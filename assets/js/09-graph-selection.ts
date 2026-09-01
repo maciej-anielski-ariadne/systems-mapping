@@ -15,13 +15,14 @@
 // =============================================================================
 
 import type { Edge } from "./types";
-import { maxReachableDepth } from "./04-utils";
+import { isNodeVisibleWithFilters, maxReachableDepth } from "./04-utils";
 import {
   state,
   incomingEdges,
   outgoingEdges,
   NODES,
   EDGES,
+  nodeById,
   edgeById,
   layout,
   topologicalOrder,
@@ -57,7 +58,7 @@ export function bfsNeighbors(
   for (let level = 0; level < depth && frontier.length; level++) {
     const next: string[] = [];
     for (const id of frontier) {
-      for (const edge of adjacency[id]) {
+      for (const edge of adjacency[id] || []) {
         const neighbour = edge[endpoint];
         if (neighbour !== nodeId && !result.has(neighbour)) {
           result.add(neighbour);
@@ -212,7 +213,15 @@ export const FOCUS_WIDE_SHARE = 0.25;
 export function applyFocusBreadth(): void {
   if (typeof document === "undefined" || !document.body) return;
   let lit = 0;
+  let visible = 0;
   for (const node of NODES) {
+    if (!isNodeVisibleWithFilters(
+      node,
+      state.hiddenStreams,
+      state.hiddenStages,
+      state.hiddenCategories,
+    )) continue;
+    visible++;
     if (state.selectedNodeIds.has(node.id) ||
         state.ancestorSet.has(node.id) ||
         state.descendantSet.has(node.id)) lit++;
@@ -220,7 +229,7 @@ export function applyFocusBreadth(): void {
   // Counted against the boxes actually on the map, so hiding a row with the
   // filters moves the threshold with it rather than measuring against boxes
   // nobody can see.
-  const share = NODES.length ? lit / NODES.length : 0;
+  const share = visible ? lit / visible : 0;
   document.body.classList.toggle("focus-wide", share > FOCUS_WIDE_SHARE);
 }
 
@@ -270,6 +279,10 @@ export function notifySelectionChanged(): void {
 // Toggle behaviour: clicking the already-selected node deselects it. A plain
 // click always collapses to a single-node selection (clearing any multi-set).
 export function selectNode(nodeId: string): void {
+  // Navigation/search can briefly hold an identifier from the previous map.
+  // Unknown identifiers are never a valid selection and must remain a safe
+  // no-op rather than entering traversal with missing adjacency arrays.
+  if (!nodeById[nodeId]) return;
   // Any selection change ends an in-flight inline rename — fold the typed
   // characters into a single history snapshot before moving on. Safe to call
   // when no rename is active (no-op). See 16h-canvas-inline-rename.js.
@@ -312,6 +325,7 @@ export function selectNode(nodeId: string): void {
  * So: same thing, minus the toggle. Already there is a repaint, not a reversal.
  */
 export function focusNode(nodeId: string): void {
+  if (!nodeById[nodeId]) return;
   if (state.selectedNodeId === nodeId && state.selectedNodeIds.size <= 1) {
     // The caller asked to be taken here and here is where we are — but what is
     // ON the box may have changed (a verdict just landed), so still repaint.
@@ -478,7 +492,8 @@ export function scrollNodeIntoView(nodeId: string, behavior: ScrollBehavior = "s
   if (!pos) return;
   const container = document.getElementById("viz-scroll");
   if (!container) return;
-  const targetX = pos.x + pos.width / 2 - container.clientWidth / 2;
-  const targetY = pos.y + pos.height / 2 - container.clientHeight / 2;
+  const zoomLevel = Number.isFinite(state.zoomLevel) ? state.zoomLevel : 1;
+  const targetX = (pos.x + pos.width / 2) * zoomLevel - container.clientWidth / 2;
+  const targetY = (pos.y + pos.height / 2) * zoomLevel - container.clientHeight / 2;
   container.scrollTo({ left: targetX, top: targetY, behavior });
 }

@@ -1,0 +1,862 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ariadne Maps — code review, 1 September 2026</title>
+  <style>
+    :root {
+      --paper: #eef3f5;
+      --paper-raised: #f8fbfc;
+      --ink: #172126;
+      --ink-soft: #536269;
+      --line: #bdcbd1;
+      --line-strong: #8da1aa;
+      --map-blue: #2d617d;
+      --map-teal: #167d78;
+      --signal-red: #b74738;
+      --signal-amber: #a96813;
+      --signal-violet: #69548f;
+      --code-background: #dde7ea;
+      --shadow: 0 18px 50px rgba(32, 56, 67, 0.09);
+      --content-width: 1120px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        linear-gradient(rgba(45, 97, 125, 0.055) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(45, 97, 125, 0.055) 1px, transparent 1px),
+        var(--paper);
+      background-size: 28px 28px;
+      font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+
+    a { color: var(--map-blue); text-underline-offset: 0.18em; }
+    a:hover { color: var(--map-teal); }
+    a:focus-visible, summary:focus-visible {
+      outline: 3px solid rgba(22, 125, 120, 0.45);
+      outline-offset: 4px;
+      border-radius: 2px;
+    }
+
+    .report-header {
+      position: relative;
+      overflow: hidden;
+      padding: 58px 24px 44px;
+      color: #f6fbfc;
+      background: #203b4a;
+    }
+    .report-header::after {
+      content: "";
+      position: absolute;
+      width: 420px;
+      height: 420px;
+      right: -110px;
+      top: -170px;
+      border: 52px solid rgba(106, 195, 187, 0.16);
+      border-radius: 50%;
+      box-shadow:
+        0 0 0 42px rgba(238, 243, 245, 0.05),
+        0 0 0 90px rgba(238, 243, 245, 0.025);
+    }
+    .header-content {
+      position: relative;
+      z-index: 1;
+      max-width: var(--content-width);
+      margin: 0 auto;
+    }
+    .eyebrow {
+      margin: 0 0 12px;
+      color: #a9d9d4;
+      font: 700 0.76rem/1.2 ui-monospace, "SFMono-Regular", Consolas, monospace;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+    h1, h2, h3 {
+      font-family: Charter, "Iowan Old Style", Georgia, serif;
+      line-height: 1.08;
+    }
+    h1 {
+      max-width: 820px;
+      margin: 0;
+      font-size: clamp(2.55rem, 7vw, 5.4rem);
+      font-weight: 500;
+      letter-spacing: -0.045em;
+    }
+    .header-deck {
+      max-width: 760px;
+      margin: 20px 0 0;
+      color: #d5e3e7;
+      font-size: clamp(1rem, 2vw, 1.22rem);
+    }
+    .header-metadata {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 24px;
+      margin-top: 28px;
+      color: #b9cbd1;
+      font: 600 0.78rem/1.4 ui-monospace, "SFMono-Regular", Consolas, monospace;
+    }
+
+    .report-shell {
+      display: grid;
+      grid-template-columns: 188px minmax(0, 1fr);
+      gap: 44px;
+      max-width: var(--content-width);
+      margin: 0 auto;
+      padding: 42px 24px 90px;
+    }
+    .review-spine {
+      align-self: start;
+      position: sticky;
+      top: 24px;
+      padding: 8px 0;
+    }
+    .review-spine::before {
+      content: "";
+      position: absolute;
+      left: 11px;
+      top: 28px;
+      bottom: 80px;
+      width: 2px;
+      background: var(--line);
+    }
+    .spine-label {
+      margin: 0 0 16px 32px;
+      color: var(--ink-soft);
+      font: 700 0.68rem/1.2 ui-monospace, "SFMono-Regular", Consolas, monospace;
+      letter-spacing: 0.11em;
+      text-transform: uppercase;
+    }
+    .spine-link {
+      position: relative;
+      display: grid;
+      grid-template-columns: 23px 1fr;
+      gap: 9px;
+      align-items: center;
+      min-height: 42px;
+      color: var(--ink);
+      text-decoration: none;
+      font-size: 0.8rem;
+      font-weight: 700;
+    }
+    .spine-node {
+      position: relative;
+      z-index: 1;
+      width: 23px;
+      height: 23px;
+      display: grid;
+      place-items: center;
+      color: white;
+      border: 4px solid var(--paper);
+      border-radius: 50%;
+      font: 700 0.58rem/1 ui-monospace, "SFMono-Regular", Consolas, monospace;
+    }
+    .spine-node.critical { background: var(--signal-red); }
+    .spine-node.high { background: var(--signal-amber); }
+    .spine-node.medium { background: var(--map-blue); }
+    .spine-node.programmes { background: var(--map-teal); }
+    .spine-node.evidence { background: var(--signal-violet); }
+    .spine-note {
+      margin: 20px 0 0 32px;
+      color: var(--ink-soft);
+      font-size: 0.72rem;
+      line-height: 1.45;
+    }
+
+    main { min-width: 0; }
+    section {
+      scroll-margin-top: 24px;
+      margin-bottom: 54px;
+    }
+    h2 {
+      margin: 0 0 18px;
+      font-size: clamp(1.85rem, 4vw, 3rem);
+      font-weight: 500;
+      letter-spacing: -0.025em;
+    }
+    h3 {
+      margin: 0 0 10px;
+      font-size: 1.34rem;
+      font-weight: 600;
+    }
+    p { margin: 0 0 14px; }
+    .section-introduction {
+      max-width: 760px;
+      margin-bottom: 24px;
+      color: var(--ink-soft);
+      font-size: 1.02rem;
+    }
+
+    .verdict {
+      padding: 28px;
+      background: var(--paper-raised);
+      border-left: 5px solid var(--signal-red);
+      box-shadow: var(--shadow);
+    }
+    .verdict strong { color: var(--signal-red); }
+    .verdict p:last-child { margin-bottom: 0; }
+
+    .number-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      margin-top: 22px;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+    .number-cell {
+      padding: 20px 18px;
+      border-right: 1px solid var(--line);
+    }
+    .number-cell:last-child { border-right: 0; }
+    .number-value {
+      display: block;
+      font: 500 2.25rem/1 Charter, "Iowan Old Style", Georgia, serif;
+      letter-spacing: -0.04em;
+    }
+    .number-label {
+      display: block;
+      margin-top: 7px;
+      color: var(--ink-soft);
+      font-size: 0.76rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .programme-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .programme-card {
+      position: relative;
+      min-height: 180px;
+      padding: 22px 22px 20px;
+      background: rgba(248, 251, 252, 0.9);
+      border-top: 3px solid var(--map-teal);
+    }
+    .programme-card::after {
+      content: attr(data-programme);
+      position: absolute;
+      right: 16px;
+      top: 14px;
+      color: rgba(45, 97, 125, 0.18);
+      font: 700 2rem/1 ui-monospace, "SFMono-Regular", Consolas, monospace;
+    }
+    .programme-card p { color: var(--ink-soft); font-size: 0.9rem; }
+    .programme-card .programme-covers {
+      margin: 14px 0 0;
+      color: var(--map-blue);
+      font: 700 0.72rem/1.45 ui-monospace, "SFMono-Regular", Consolas, monospace;
+    }
+
+    .finding-list {
+      display: grid;
+      gap: 12px;
+    }
+    details.finding {
+      background: rgba(248, 251, 252, 0.94);
+      border: 1px solid var(--line);
+      border-left-width: 5px;
+    }
+    details.finding.critical { border-left-color: var(--signal-red); }
+    details.finding.high { border-left-color: var(--signal-amber); }
+    details.finding.medium { border-left-color: var(--map-blue); }
+    details.finding[open] { box-shadow: var(--shadow); }
+    summary {
+      display: grid;
+      grid-template-columns: 72px minmax(0, 1fr) auto;
+      gap: 14px;
+      align-items: start;
+      padding: 18px 20px;
+      cursor: pointer;
+      list-style: none;
+    }
+    summary::-webkit-details-marker { display: none; }
+    summary::after {
+      content: "+";
+      color: var(--ink-soft);
+      font: 500 1.3rem/1 ui-monospace, "SFMono-Regular", Consolas, monospace;
+    }
+    details[open] summary::after { content: "−"; }
+    .finding-identifier {
+      color: var(--ink-soft);
+      font: 700 0.72rem/1.4 ui-monospace, "SFMono-Regular", Consolas, monospace;
+      letter-spacing: 0.04em;
+    }
+    .finding-title {
+      font-family: Charter, "Iowan Old Style", Georgia, serif;
+      font-size: 1.12rem;
+      font-weight: 600;
+      line-height: 1.25;
+    }
+    .finding-body {
+      padding: 0 24px 24px 106px;
+      color: #304047;
+    }
+    .finding-body p:last-child { margin-bottom: 0; }
+    .finding-metadata {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .tag {
+      display: inline-block;
+      padding: 4px 8px;
+      color: var(--ink-soft);
+      background: var(--code-background);
+      border-radius: 2px;
+      font: 700 0.66rem/1.25 ui-monospace, "SFMono-Regular", Consolas, monospace;
+      letter-spacing: 0.035em;
+      text-transform: uppercase;
+    }
+    .evidence {
+      margin: 14px 0;
+      padding: 14px 16px;
+      background: #e7eef1;
+      border-left: 3px solid var(--line-strong);
+      font-size: 0.88rem;
+    }
+    .evidence strong {
+      display: block;
+      margin-bottom: 5px;
+      color: var(--ink);
+      font: 700 0.7rem/1.3 ui-monospace, "SFMono-Regular", Consolas, monospace;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    code {
+      padding: 0.08em 0.28em;
+      color: #213941;
+      background: var(--code-background);
+      border-radius: 2px;
+      font: 0.9em/1.4 ui-monospace, "SFMono-Regular", Consolas, monospace;
+      overflow-wrap: anywhere;
+    }
+
+    .minor-list, .positive-list, .method-list {
+      margin: 0;
+      padding-left: 1.25rem;
+    }
+    .minor-list li, .positive-list li, .method-list li { margin: 0 0 10px; }
+    .positive-panel {
+      padding: 24px 26px;
+      background: rgba(22, 125, 120, 0.08);
+      border-top: 3px solid var(--map-teal);
+    }
+
+    .verification-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: rgba(248, 251, 252, 0.9);
+      font-size: 0.88rem;
+    }
+    .verification-table th, .verification-table td {
+      padding: 12px 14px;
+      text-align: left;
+      vertical-align: top;
+      border-bottom: 1px solid var(--line);
+    }
+    .verification-table th {
+      color: var(--ink-soft);
+      font: 700 0.68rem/1.3 ui-monospace, "SFMono-Regular", Consolas, monospace;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .status-pass { color: var(--map-teal); font-weight: 800; }
+    .status-fail { color: var(--signal-red); font-weight: 800; }
+    .status-observed { color: var(--signal-amber); font-weight: 800; }
+
+    .decision-list {
+      counter-reset: decision;
+      display: grid;
+      gap: 12px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .decision-list li {
+      counter-increment: decision;
+      position: relative;
+      padding: 18px 20px 18px 58px;
+      background: rgba(248, 251, 252, 0.9);
+      border: 1px solid var(--line);
+    }
+    .decision-list li::before {
+      content: counter(decision);
+      position: absolute;
+      left: 18px;
+      top: 18px;
+      width: 24px;
+      height: 24px;
+      display: grid;
+      place-items: center;
+      color: white;
+      background: var(--map-blue);
+      border-radius: 50%;
+      font: 700 0.72rem/1 ui-monospace, "SFMono-Regular", Consolas, monospace;
+    }
+    .recommendation { color: var(--map-teal); font-weight: 800; }
+
+    .report-footer {
+      padding: 28px 24px;
+      color: #cbd9de;
+      background: #203b4a;
+      text-align: center;
+      font-size: 0.82rem;
+    }
+
+    @media (max-width: 860px) {
+      .report-shell { grid-template-columns: 1fr; gap: 28px; }
+      .review-spine {
+        position: static;
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 7px;
+        padding: 0;
+      }
+      .review-spine::before, .spine-label, .spine-note { display: none; }
+      .spine-link {
+        display: flex;
+        min-height: auto;
+        padding: 8px;
+        border: 1px solid var(--line);
+        background: rgba(248, 251, 252, 0.86);
+        font-size: 0.68rem;
+      }
+      .spine-node { flex: 0 0 auto; border-color: var(--paper-raised); }
+      .programme-grid { grid-template-columns: 1fr; }
+      .number-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .number-cell:nth-child(2) { border-right: 0; }
+      .number-cell:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+    }
+
+    @media (max-width: 560px) {
+      .report-header { padding-top: 42px; }
+      .report-shell { padding-inline: 14px; }
+      .review-spine { grid-template-columns: 1fr 1fr; }
+      .review-spine .spine-link:last-of-type { grid-column: 1 / -1; }
+      summary { grid-template-columns: 52px minmax(0, 1fr) auto; padding: 16px 14px; gap: 9px; }
+      .finding-body { padding: 0 16px 20px; }
+      .finding-metadata { margin-top: 6px; }
+      .verification-table { display: block; overflow-x: auto; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+    }
+
+    @media print {
+      body { background: white; font-size: 10pt; }
+      .report-header { padding: 28px 0; color: black; background: white; border-bottom: 2px solid black; }
+      .report-header::after, .review-spine { display: none; }
+      .header-deck, .header-metadata { color: #333; }
+      .report-shell { display: block; max-width: none; padding: 24px 0; }
+      details.finding { break-inside: avoid; }
+      details.finding:not([open]) .finding-body { display: block; }
+      summary::after { display: none; }
+      a { color: black; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="report-header">
+    <div class="header-content">
+      <p class="eyebrow">Ariadne Maps / independent multi-agent review</p>
+      <h1>The unsafe seams are now pinned.</h1>
+      <p class="header-deck">This began as an independent multi-agent review of the state, input, authoring, Review, Atlas, test, browser, accessibility, performance, and documentation seams around a strong core. The recommended implementation has now closed thirty findings and materially mitigated the remaining accessibility finding.</p>
+      <div class="header-metadata">
+        <span>BASELINE eafdc22 / main</span>
+        <span>REVIEWED 1 SEPTEMBER 2026</span>
+        <span>SCOPE all maintained app surfaces</span>
+        <span>IMPLEMENTED codex/address-code-review-findings</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="report-shell">
+    <nav class="review-spine" aria-label="Report sections">
+      <p class="spine-label">Review path</p>
+      <a class="spine-link" href="#verdict"><span class="spine-node critical">1</span><span>Verdict</span></a>
+      <a class="spine-link" href="#critical"><span class="spine-node critical">1</span><span>Critical</span></a>
+      <a class="spine-link" href="#high"><span class="spine-node high">13</span><span>High</span></a>
+      <a class="spine-link" href="#medium"><span class="spine-node medium">17</span><span>Medium</span></a>
+      <a class="spine-link" href="#programmes"><span class="spine-node programmes">7</span><span>Programmes</span></a>
+      <a class="spine-link" href="#evidence"><span class="spine-node evidence">✓</span><span>Evidence</span></a>
+      <p class="spine-note">Counts are consolidated findings, not raw agent observations. Open a finding for evidence and remediation.</p>
+    </nav>
+
+    <main>
+      <section id="verdict">
+        <p class="eyebrow">Executive verdict</p>
+        <h2>Strong engines, repaired seams</h2>
+        <div class="verdict">
+          <p><strong>The recommended sequence is complete.</strong> Map lifecycle and input boundaries were repaired first; navigation and mutation capabilities were then made explicit; solver, Review, and Atlas contracts were consolidated behind tests; finally, shuffled and real-browser acceptance were added.</p>
+          <p>Thirty findings are closed. M11 is materially mitigated with semantic SVG controls, keyboard activation, accessible state, focus treatment, and browser coverage; its textual graph alternative and third-party axe scan are deliberately deferred. M16 is closed: both Atlas production modules are fully typed under strict TypeScript, guarded against explicit <code>any</code>, suppression comments, unnecessary assertions, and chained assertions.</p>
+        </div>
+        <div class="number-strip" aria-label="Review totals">
+          <div class="number-cell"><span class="number-value">30 + 1</span><span class="number-label">Closed + mitigated</span></div>
+          <div class="number-cell"><span class="number-value">925</span><span class="number-label">Tests green in normal order</span></div>
+          <div class="number-cell"><span class="number-value">0</span><span class="number-label">Tests red when shuffled</span></div>
+          <div class="number-cell"><span class="number-value">75.65%</span><span class="number-label">Line coverage</span></div>
+        </div>
+        <div class="positive-panel" style="margin-top: 22px;">
+          <p><b>Resolution evidence.</b> The built artifact now has a Chromium acceptance suite for boot, persistence, CSV import/export, search, keyboard operation, and mode transitions. At 390×844 the page is contained and header actions remain reachable. Under the isolated Node 26 runner, the 300-box fixture measured a 128.0 ms import, 228.9 ms pan, 487.2 ms settled zoom, 9.4 ms p95 selection-to-frame, 117.7 ms slider scrub, 96.0/120.9 ms read/edit transitions, 192.3 ms Atlas open, and 130.2 ms Bulk edit open.</p>
+        </div>
+      </section>
+
+      <section id="programmes">
+        <p class="eyebrow">Cross-surface opportunities</p>
+        <h2>Seven programmes solve thirty-one findings</h2>
+        <p class="section-introduction">These useful synergy seams became the implementation workstreams. Each now has a shared contract and focused regression coverage.</p>
+        <div class="programme-grid">
+          <article class="programme-card" data-programme="01">
+            <h3>Atomic map lifecycle</h3>
+            <p>One transaction for successful import, failed import, New map, undo restoration, and persisted-state replacement. Explicitly separate map-scoped state from session-scoped state and cancel pending writes.</p>
+            <p class="programme-covers">COVERS H02 H03 H04 H05 H06</p>
+          </article>
+          <article class="programme-card" data-programme="02">
+            <h3>Canonical input boundary</h3>
+            <p>One schema validator for import, Bulk edit, direct edit, and export. Use safe identifiers, finite numeric rules, strict colours, null-prototype maps or <code>Map</code>, and context-correct escaping.</p>
+            <p class="programme-covers">COVERS H09 H10 M01 M02 M06</p>
+          </article>
+          <article class="programme-card" data-programme="03">
+            <h3>Navigation contract</h3>
+            <p>Every “go to box” surface uses the non-toggle focus primitive and one layout-to-scroll coordinate conversion that respects zoom and visibility.</p>
+            <p class="programme-covers">COVERS M03 M04 M05</p>
+          </article>
+          <article class="programme-card" data-programme="04">
+            <h3>Capability-aware mutations</h3>
+            <p>Keep one mutation transaction, but declare what changed: topology, calculation, geometry, presentation, review, persistence, and history. Reading surfaces never receive mutation capability.</p>
+            <p class="programme-covers">COVERS H07 M07</p>
+          </article>
+          <article class="programme-card" data-programme="05">
+            <h3>One solver truth</h3>
+            <p>The live simulation and Review preview should share a pure solver core and dependency schedule. Proposals must demonstrate a real outcome change, not only make a warning disappear.</p>
+            <p class="programme-covers">COVERS H08 H12 M08</p>
+          </article>
+          <article class="programme-card" data-programme="06">
+            <h3>Typed Atlas paint snapshot</h3>
+            <p>Introduce typed graph and edge-key boundaries, then compute one revision-keyed paint snapshot per interaction rather than rebuilding the same paths, effects, shares, and cuts repeatedly.</p>
+            <p class="programme-covers">COVERS H11 M09 M16</p>
+          </article>
+          <article class="programme-card" data-programme="07">
+            <h3>Confidence stack</h3>
+            <p>Reset application state per test, shuffle in CI, align Node versions, smoke-test the built artifact in real browsers, add accessibility and 300-box budgets, and derive machine-verifiable documentation from schema.</p>
+            <p class="programme-covers">COVERS H13 H14 M10–M15 M17</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="critical">
+        <p class="eyebrow">Critical correctness</p>
+        <h2>User-authored text can destroy its own round-trip</h2>
+        <div class="finding-list">
+          <details class="finding critical" open>
+            <summary><span class="finding-identifier">C01</span><span class="finding-title">Multiline CSV fields corrupt maps, dropping boxes, links, and review records</span></summary>
+            <div class="finding-body">
+              <div class="finding-metadata"><span class="tag">Correctness</span><span class="tag">Data loss</span><span class="tag">High confidence</span></div>
+              <p>The serializer correctly quotes line breaks, but the parser splits the document into physical lines before it parses quoted records. A multiline description or review note written by the app cannot be read back by the app.</p>
+              <div class="evidence"><strong>Evidence</strong><code>assets/js/05a-csv-serializer.ts:39–50</code> quotes line breaks; <code>assets/js/05-csv-parser.ts:78–119</code> splits on every newline first. Textareas accept multiline descriptions at <code>assets/js/15-detail-panel.ts:165–169</code> and <code>:1593–1595</code>.</div>
+              <p><b>Verified failure:</b> serializing and reloading <code>First line↵Second line</code> reports success but drops the box; its links disappear with it. Review notes truncate or corrupt similarly.</p>
+              <p><b>Remediation:</b> parse complete RFC 4180 records with quote state preserved across physical lines, preferably through a proven CSV parser. Pin LF, CRLF, quote, and comma round-trips for descriptions, labels, and review notes.</p>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <section id="high">
+        <p class="eyebrow">High priority</p>
+        <h2>Correctness and release confidence</h2>
+        <p class="section-introduction">These defects either mutate the wrong thing, resurrect or erase state, crash a supported workflow, create unsafe rendering boundaries, or invalidate the reliability of the default validation pipeline.</p>
+        <div class="finding-list">
+          <details class="finding high" open>
+            <summary><span class="finding-identifier">H02</span><span class="finding-title">A rejected import resets edge allocation and gives later edges duplicate IDs</span></summary>
+            <div class="finding-body">
+              <div class="finding-metadata"><span class="tag">Import</span><span class="tag">Editing</span><span class="tag">Verified</span></div>
+              <p>The edge counter resets before fatal validation. A failed import retains the old graph but leaves allocation at zero; the next new edge can reuse an existing ID. Selection can then resolve the wrong edge, and deletion removes every edge sharing that ID.</p>
+              <div class="evidence"><strong>Evidence</strong><code>assets/js/06-data-loader.ts:595–618</code>, <code>:167–178</code>; <code>assets/js/16e-canvas-edit.ts:1541–1561</code> and <code>:1684–1694</code>.</div>
+              <p><b>Remediation:</b> derive the next unused ID only after successful commit, inside the atomic map-lifecycle transaction.</p>
+            </div>
+          </details>
+
+          <details class="finding high" open>
+            <summary><span class="finding-identifier">H03</span><span class="finding-title">Stale search results survive map replacement and crash when activated</span></summary>
+            <div class="finding-body">
+              <div class="finding-metadata"><span class="tag">Search</span><span class="tag">Import</span><span class="tag">Verified</span></div>
+              <p>Successful load does not clear the search query, match objects, or focused result. Activating a result from the previous map passes an absent node ID into traversal, which assumes adjacency exists and throws.</p>
+              <div class="evidence"><strong>Evidence</strong><code>assets/js/06-data-loader.ts:907–929</code>; <code>assets/js/17a-search.ts:374–399</code>; <code>assets/js/09-graph-selection.ts:49–70</code> and <code>:272–299</code>.</div>
+              <p><b>Remediation:</b> clear search atomically on every replacement and defensively reject unknown IDs in selection and focus primitives.</p>
+            </div>
+          </details>
+
+          <details class="finding high" open>
+            <summary><span class="finding-identifier">H04</span><span class="finding-title">Undo erases Review audit records despite their stated non-undoable contract</span></summary>
+            <div class="finding-body">
+              <div class="finding-metadata"><span class="tag">Review</span><span class="tag">Undo</span><span class="tag">Audit integrity</span></div>
+              <p>Undo snapshots contain the complete CSV, including reviews. Restoring an older model snapshot therefore restores an older review log too. A verdict recorded after an edit disappears when that edit is undone.</p>
+              <div class="evidence"><strong>Evidence</strong><code>assets/js/24-review-record.ts:517–569</code>; <code>assets/js/16f-canvas-mutations.ts:67–76</code>; <code>assets/js/16g-canvas-undo.ts:104–120</code> and <code>:251–319</code>; <code>assets/js/06-data-loader.ts:930–978</code>.</div>
+              <p><b>Remediation:</b> separate model-history snapshots from the audit log, or reconcile current reviews during model restoration.</p>
+            </div>
+          </details>
+
+          <details class="finding high">
+            <summary><span class="finding-identifier">H05</span><span class="finding-title">New map retains parameters, reviews, search, selection, and other old-map state</span></summary>
+            <div class="finding-body">
+              <div class="finding-metadata"><span class="tag">New map</span><span class="tag">State lifecycle</span><span class="tag">Verified</span></div>
+              <p><code>bootEmptyStateGrid</code> resets graph collections and a subset of UI state, not the full map-scoped state. Old review entries become tombstones, old parameters remain exportable, and reused IDs can inherit old metadata.</p>
+              <div class="evidence"><strong>Evidence</strong><code>assets/js/17-events.ts:122–133</code>; <code>assets/js/16e-canvas-edit.ts:418–471</code>; review reconciliation at <code>assets/js/06-data-loader.ts:272–276</code>.</div>
+              <p><b>Remediation:</b> use one atomic replacement/reset routine with an explicit inventory of map-scoped and session-scoped state.</p>
+            </div>
+          </details>
+
+          <details class="finding high">
+            <summary><span class="finding-identifier">H06</span><span class="finding-title">A pending autosave can resurrect the old map after New map</span></summary>
+            <div class="finding-body">
+              <div class="finding-metadata"><span class="tag">Persistence</span><span class="tag">Race</span><span class="tag">Verified</span></div>
+              <p>Clearing the stored CSV does not cancel the debounce timer or invalidate its pending payload. An edit followed immediately by New map can write the old CSV back after the empty map appears; refresh restores the old map.</p>
+              <div class="evidence"><strong>Evidence</strong><code>assets/js/04a-storage.ts:65–111</code>; <code>assets/js/17-events.ts:122–133</code>.</div>
+              <p><b>Remediation:</b> cancel timers and pending payloads on clear, using a storage generation token or an atomic empty-state write.</p>
+            </div>
+          </details>
+
+          <details class="finding high" open>
+            <summary><span class="finding-identifier">H07</span><span class="finding-title">Reading and simulation modes still allow keyboard mutation of a selected edge</span></summary>
+            <div class="finding-body">
+              <div class="finding-metadata"><span class="tag">Mode safety</span><span class="tag">Editing</span><span class="tag">Verified</span></div>
+              <p>Edge selection is mode-agnostic, and Arrow-key effect cycling runs before the edit-mode guard. In reading mode, select an <code>increases</code> edge and press ArrowRight: it becomes <code>decreases</code> and is persisted.</p>
+              <div class="evidence"><strong>Evidence</strong><code>assets/js/16e-canvas-edit.ts:293–342</code>, <code>:554–561</code>, and <code>:1574–1609</code>; <code>assets/js/09-graph-selection.ts:386–429</code>.</div>
+              <p><b>Remediation:</b> require edit mode and inactive simulation for every mutation capability; keep read-only edge focus separate from editable selection.</p>
+            </div>
+          </details>
+
+          <details class="finding high" open>
+            <summary><span class="finding-identifier">H08</span><span class="finding-title">Formula dependencies without arrows compute in the wrong order</span></summary>
+            <div class="finding-body">
+              <div class="finding-metadata"><span class="tag">Simulation</span><span class="tag">Formula</span><span class="tag">Verified</span></div>
+              <p>The solver knows formula references are dependencies, but the cold sweep order is derived only from visual edges. The loader warns about a missing arrow yet retains the formula. If the target precedes its source in edge order, it consumes the seeded source value and can finish wrong.</p>
+              <div class="evidence"><strong>Evidence</strong><code>assets/js/06-data-loader.ts:196–242</code> and <code>:391–439</code>; <code>assets/js/07-simulation-engine.ts:330–352</code> and <code>:665–777</code>.</div>
+              <p><b>Verified failure:</b> with <code>B = a * 2</code>, no A→B arrow, and A moved from 100 to 200, B remains 200 instead of 400 when B is scheduled first.</p>
+              <p><b>Remediation:</b> either reject formulas missing dependency links or schedule from formula dependencies rather than presentation edges.</p>
+            </div>
+          </details>
+
+          <details class="finding high">
+            <summary><span class="finding-identifier">H09</span><span class="finding-title">Prototype-key IDs can crash import</span></summary>
+            <div class="finding-body">
+              <div class="finding-metadata"><span class="tag">Import</span><span class="tag">Identifier safety</span><span class="tag">Verified</span></div>
+              <p>External IDs populate plain objects. Values such as <code>__proto__</code>, <code>constructor</code>, or <code>toString</code> collide with inherited properties; solver dependency code later assumes retrieved values are arrays.</p>
+              <div class="evidence"><strong>Evidence</strong><code>assets/js/06-data-loader.ts:137–178</code> and <code>:661–808</code>; <code>assets/js/07-simulation-engine.ts:330–352</code>.</div>
+              <p><b>Verified failure:</b> importing a node named <code>__proto__</code> throws <code>back.includes is not a function</code>.</p>
+              <p><b>Remediation:</b> use <code>Map</code> or null-prototype dictionaries and reject reserved keys through the shared schema validator.</p>
+            </div>
+          </details>
+
+          <details class="finding high" open>
+            <summary><span class="finding-identifier">H10</span><span class="finding-title">Imported identifiers and colours cross unsafe string-rendering boundaries</span></summary>
+            <div class="finding-body">
+              <div class="finding-metadata"><span class="tag">Security</span><span class="tag">Import</span><span class="tag">All renderers</span></div>
+              <p>Node, stream, category, and colour values are accepted without a canonical grammar or strict colour validation, then interpolated raw into SVG and HTML attributes. A quote-bearing CSV can corrupt markup and potentially inject active SVG attributes. The same values flow into simulation and exported viewer markup.</p>
+              <div class="evidence"><strong>Evidence</strong><code>assets/js/06-data-loader.ts:621–641</code> and <code>:668–676</code>; live SVG at <code>assets/js/11-rendering.ts:1031–1037</code>, <code>:1105–1116</code>, and <code>:1261–1270</code>; simulation at <code>assets/js/14-simulation-panel.ts:99–104</code>; export at <code>assets/js/19-export.ts:578–716</code>.</div>
+              <p><b>Remediation:</b> validate at the input boundary and use distinct text, attribute, selector, and CSS-value handling or DOM construction at every output boundary. Add adversarial import/export tests.</p>
+            </div>
+          </details>
+
+          <details class="finding high" open>
+            <summary><span class="finding-identifier">H11</span><span class="finding-title">Atlas stores one wheel edge key and looks up another, so selected chords cannot light</span></summary>
+            <div class="finding-body">
+              <div class="finding-metadata"><span class="tag">Atlas</span><span class="tag">Interaction</span><span class="tag">Source proof</span></div>
+              <p>Wheel paths store <code>from + U+0001 + to</code>. <code>paintWheel</code> constructs its selected-link set with <code>from + "" + to</code>. Those strings cannot match, so the chord’s <code>.on</code> state is never applied.</p>
+              <div class="evidence"><strong>Evidence</strong><code>assets/js/21-atlas-view.ts:646–652</code> versus <code>:1928–1935</code>.</div>
+              <p><b>Remediation:</b> introduce one typed <code>wheelEdgeKey</code> function and assert the exact selected chord set in the Atlas DOM test.</p>
+            </div>
+          </details>
+
+          <details class="finding high" open>
+            <summary><span class="finding-identifier">H12</span><span class="finding-title">Review’s “Include it in the formula” auto-fix is mathematically inert</span></summary>
+            <div class="finding-body">
+              <div class="finding-metadata"><span class="tag">Review</span><span class="tag">Simulation</span><span class="tag">Misleading fix</span></div>
+              <p>The proposed fix multiplies the existing formula by <code>source / source</code>. That is one for every nonzero value, so it clears a reference-based warning without making the source causal; at zero it can create <code>0/0</code>.</p>
+              <div class="evidence"><strong>Evidence</strong><code>assets/js/22a-review-model.ts:341–346</code>. Proposal ranking rewards cleared findings at <code>:406–419</code>.</div>
+              <p><b>Remediation:</b> remove this proposal until meaningful current-to-baseline ratio semantics exist, or require an owner-authored expression. A proposal test must move the source and prove the target changes.</p>
+            </div>
+          </details>
+
+          <details class="finding high">
+            <summary><span class="finding-identifier">H13</span><span class="finding-title">CI runs Node 20 against a jsdom release that requires newer Node</span></summary>
+            <div class="finding-body">
+              <div class="finding-metadata"><span class="tag">CI</span><span class="tag">Dependencies</span><span class="tag">Release</span></div>
+              <p>CI pins Node 20. The lockfile pins <code>jsdom@30.0.1</code>, which declares <code>^22.22.2 || ^24.15.0 || &gt;=26</code>. The project declares no Node engine and the README names none.</p>
+              <div class="evidence"><strong>Evidence</strong><code>.github/workflows/ci.yml:13–16</code>; <code>package-lock.json:1937–1967</code>; <code>package.json</code>.</div>
+              <p><b>Remediation:</b> align CI, <code>package.json.engines</code>, and README on Node 24.15+ or 26, or downgrade jsdom to a version supporting Node 20.</p>
+            </div>
+          </details>
+
+          <details class="finding high">
+            <summary><span class="finding-identifier">H14</span><span class="finding-title">The normal green test run depends on declaration order</span></summary>
+            <div class="finding-body">
+              <div class="finding-metadata"><span class="tag">Tests</span><span class="tag">Isolation</span><span class="tag">Reproduced</span></div>
+              <p>The test DOM is mounted once per file and only <code>localStorage</code> is consistently reset. Mutable app state, modes, filters, reviewer identity, timers, and module caches leak between tests.</p>
+              <div class="evidence"><strong>Evidence</strong><code>tests/setup.ts:87–98</code>. <code>npx vitest run --sequence.shuffle --sequence.seed=303</code> failed five tests: CSV serializer, Review record, Review rail, simulation rendering, and filters. Each also fails when shuffled alone.</div>
+              <p><b>Remediation:</b> create a complete application-state fixture, reset timers/listeners/caches, and run a fixed shuffled seed in CI.</p>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <section id="medium">
+        <p class="eyebrow">Medium priority</p>
+        <h2>Behavioral drift, performance risk, accessibility, and evidence gaps</h2>
+        <div class="finding-list">
+          <details class="finding medium">
+            <summary><span class="finding-identifier">M01</span><span class="finding-title">Numeric validation is permissive and inconsistent across import, Bulk edit, and direct edit</span></summary>
+            <div class="finding-body"><div class="finding-metadata"><span class="tag">Schema</span><span class="tag">Simulation</span></div><p><code>parseFloat</code> accepts prefixes such as <code>12xyz</code> and non-finite values; baseline documentation says positive while import and builder reject only zero; direct editing allows negative baselines and crossed bounds that reload differently.</p><div class="evidence"><strong>Evidence</strong><code>assets/js/05-csv-parser.ts:131–138</code>; <code>06-data-loader.ts:734–806</code>; <code>16a-builder-state.ts:490–508</code>; <code>15-detail-panel.ts:1571–1667</code>.</div><p><b>Remediation:</b> one strict finite-number validator and the same constraints at every authoring surface.</p></div>
+          </details>
+          <details class="finding medium">
+            <summary><span class="finding-identifier">M02</span><span class="finding-title">Direct import does not enforce unique, usable row, column, or category IDs</span></summary>
+            <div class="finding-body"><div class="finding-metadata"><span class="tag">Schema</span><span class="tag">Import</span></div><p>Only node IDs receive duplicate checks. Duplicate or blank dimension IDs can satisfy raw-section validation while indexes and layout collapse them inconsistently; Bulk edit already rejects the same defects.</p><div class="evidence"><strong>Evidence</strong><code>assets/js/06-data-loader.ts:605–675</code>; builder validation at <code>assets/js/16a-builder-state.ts:451–508</code>.</div><p><b>Remediation:</b> share the builder’s schema validator with direct import and validate fully before state mutation.</p></div>
+          </details>
+          <details class="finding medium">
+            <summary><span class="finding-identifier">M03</span><span class="finding-title">Atlas and detail navigation bypass the non-toggle focus primitive</span></summary>
+            <div class="finding-body"><div class="finding-metadata"><span class="tag">Navigation</span><span class="tag">Cross-mode synergy</span></div><p><code>focusNode</code> exists specifically because navigation must not toggle off an already-selected box. Atlas return-to-map and detail link navigation still call <code>selectNode</code>; returning to the selected start or following a self-loop can empty the panel.</p><div class="evidence"><strong>Evidence</strong><code>assets/js/09-graph-selection.ts:301–323</code>; <code>21-atlas-view.ts:3218–3224</code>; <code>15-detail-panel.ts:1283–1292</code>.</div><p><b>Remediation:</b> route every navigation surface through <code>focusNode</code> and one contract test.</p></div>
+          </details>
+          <details class="finding medium">
+            <summary><span class="finding-identifier">M04</span><span class="finding-title">Scroll-to-box ignores render zoom</span></summary>
+            <div class="finding-body"><div class="finding-metadata"><span class="tag">Navigation</span><span class="tag">Zoom</span></div><p><code>scrollNodeIntoView</code> centres unscaled layout coordinates while the SVG uses scaled dimensions. Search, Review, detail, undo, and Atlas navigation can land away from distant targets at any zoom other than one.</p><div class="evidence"><strong>Evidence</strong><code>assets/js/09-graph-selection.ts:472–483</code>.</div><p><b>Remediation:</b> centralize layout-to-scroll conversion using committed render zoom; test far corners at 0.4×, 1×, and 2×.</p></div>
+          </details>
+          <details class="finding medium">
+            <summary><span class="finding-identifier">M05</span><span class="finding-title">Focus breadth counts hidden boxes despite claiming to measure visible boxes</span></summary>
+            <div class="finding-body"><div class="finding-metadata"><span class="tag">Filters</span><span class="tag">Selection</span></div><p>The contract says the threshold follows what is visible, but numerator and denominator both use all nodes. Hiding many rows, columns, or categories can suppress wide-focus styling even when most visible boxes are lit.</p><div class="evidence"><strong>Evidence</strong><code>assets/js/09-graph-selection.ts:212–224</code>.</div><p><b>Remediation:</b> compute visible-lit over visible-total from cached filter/layout state.</p></div>
+          </details>
+          <details class="finding medium">
+            <summary><span class="finding-identifier">M06</span><span class="finding-title">Collapsed-edge keys assume IDs cannot contain a delimiter the loader permits</span></summary>
+            <div class="finding-body"><div class="finding-metadata"><span class="tag">Collapsed views</span><span class="tag">Identifier safety</span></div><p>Collapsed connectors use <code>from + "-&gt;" + to</code>. Because IDs may contain <code>-&gt;</code>, two different pairs can collide and merge or suppress connectors.</p><div class="evidence"><strong>Evidence</strong><code>assets/js/10a-collapsed-edges.ts:98–99</code>; no matching constraint at <code>06-data-loader.ts:668–676</code>.</div><p><b>Remediation:</b> nested maps, tuple identity, or length-prefixed keys, backed by the canonical identifier grammar.</p></div>
+          </details>
+          <details class="finding medium">
+            <summary><span class="finding-identifier">M07</span><span class="finding-title">The mutation funnel over-invalidates simple edits but is bypassed for later edge cycles</span></summary>
+            <div class="finding-body"><div class="finding-metadata"><span class="tag">Redundancy</span><span class="tag">Correctness</span><span class="tag">Performance</span></div><p>Descriptions and line styles pay for indexes, layout, solver, Review, sweep, full render, and serialization. By contrast, second and later edge-effect keypresses use a copied partial pipeline that omits Review and sweep invalidation, leaving derived results stale during a cycle session.</p><div class="evidence"><strong>Evidence</strong><code>assets/js/16f-canvas-mutations.ts:67–103</code>; <code>15-detail-panel.ts:1592–1694</code>; partial path at <code>16e-canvas-edit.ts:1612–1631</code>.</div><p><b>Remediation:</b> one capability-aware transaction with explicit topology, geometry, calculation, presentation, review, persistence, and history dirtiness.</p></div>
+          </details>
+          <details class="finding medium">
+            <summary><span class="finding-identifier">M08</span><span class="finding-title">Review can perform roughly two dozen full solves for one three-proposal card</span></summary>
+            <div class="finding-body"><div class="finding-metadata"><span class="tag">Performance</span><span class="tag">Review</span><span class="tag">Static risk</span></div><p>Validation solves; preview performs two validations and two additional solves; ranking previews every proposal; the panel asks for proposals while finding fixability and again while preparing the card, then previews the selected proposal once more when expanded.</p><div class="evidence"><strong>Evidence</strong><code>assets/js/22a-review-model.ts:102–217</code> and <code>:374–419</code>; <code>assets/js/23-review-panel.ts:302–390</code>.</div><p><b>Remediation:</b> revision-keyed baseline caching, one after-snapshot per proposal, cheap collapsed-card predicates, and lazy proposal generation on expansion. Benchmark 300 nodes with 20 and 100 findings.</p></div>
+          </details>
+          <details class="finding medium">
+            <summary><span class="finding-identifier">M09</span><span class="finding-title">One Atlas paint repeats whole-model derivations and blocked cuts approach O(B×E)</span></summary>
+            <div class="finding-body"><div class="finding-metadata"><span class="tag">Performance</span><span class="tag">Atlas</span><span class="tag">Static risk</span></div><p>Path, share, effect, route, and trace derivations repeat within one paint; blocked-node propagation scans the surviving edge set for every blocked element. Slider scrubbing on a dense Atlas repeats much of this work each frame.</p><div class="evidence"><strong>Evidence</strong><code>assets/js/21-atlas-view.ts:1603–1665</code>, <code>:2142–2183</code>, and <code>:2245–2585</code>.</div><p><b>Remediation:</b> a revision-keyed <code>AtlasPaintSnapshot</code> plus outgoing adjacency for O(V+E) cut propagation; measure p95 frame time at the 300-box target.</p></div>
+          </details>
+          <details class="finding medium" open>
+            <summary><span class="finding-identifier">M10</span><span class="finding-title">Passing CI does not prove boot, built-artifact behavior, or the primary authoring flows</span></summary>
+            <div class="finding-body"><div class="finding-metadata"><span class="tag">Tests</span><span class="tag">Browser</span><span class="tag">Coverage</span></div><p>Everything runs under jsdom; the boot entry is excluded; no automated test loads raw or built HTML. Search has 0% line coverage, keyboard navigation 0.47%, canvas mutations 11.59%, inline rename 11.53%, file I/O 21.95%, and direct canvas editing 28.06%. There are no coverage thresholds.</p><div class="evidence"><strong>Evidence</strong><code>vitest.config.ts:8–22</code>; V8 coverage from this review. The suite contains no browser runner or built-artifact smoke test.</div><p><b>Remediation:</b> add focused interaction tests plus a small browser acceptance suite covering fresh boot, saved restore, import/export, mode transitions, direct editing, search, keyboard navigation, and offline built HTML.</p></div>
+          </details>
+          <details class="finding medium">
+            <summary><span class="finding-identifier">M11</span><span class="finding-title">The primary SVG map is not semantically exposed as interactive controls</span></summary>
+            <div class="finding-body"><div class="finding-metadata"><span class="tag">Accessibility</span><span class="tag">Keyboard</span></div><p>Nodes and row/column toggles are clickable SVG groups without roles, tab stops, accessible names, or selected/pressed state. Global shortcuts do not make them discoverable to screen readers or conventional Tab navigation.</p><div class="evidence"><strong>Evidence</strong><code>assets/js/11-rendering.ts:1051–1117</code> and <code>:1264–1352</code>; click delegation at <code>:61–77</code>.</div><p><b>Remediation:</b> semantic focusable controls, Enter/Space support, a textual graph/list alternative, and axe plus keyboard-only browser tests.</p></div>
+          </details>
+          <details class="finding medium" open>
+            <summary><span class="finding-identifier">M12</span><span class="finding-title">At 390px, the header hides supported actions off-screen</span></summary>
+            <div class="finding-body"><div class="finding-metadata"><span class="tag">Responsive</span><span class="tag">Browser verified</span></div><p>In reading mode the 390px viewport produced a 552px page/header scroll width; Edit and Theme were beyond the viewport. Atlas still required 495px and pushed Close Atlas and Theme off-screen. No responsive header rule exists.</p><div class="evidence"><strong>Evidence</strong>Measured in the running app at 390×844. Header groups are non-shrinking at <code>assets/css/03-app-shell.css:137–154</code>; there is no small-width header adaptation.</div><p><b>Remediation:</b> define a narrow action strategy—compact labels, overflow menu, or two-row header—and pin every mode at 390×844.</p></div>
+          </details>
+          <details class="finding medium">
+            <summary><span class="finding-identifier">M13</span><span class="finding-title">Freshness of the tracked release artifact is not enforced</span></summary>
+            <div class="finding-body"><div class="finding-metadata"><span class="tag">Release</span><span class="tag">Build</span></div><p><code>dist/systems-map.html</code> is tracked. CI rebuilds it but neither fails on a diff nor smoke-tests that exact file, so source can merge with a stale distributable.</p><div class="evidence"><strong>Evidence</strong><code>.github/workflows/ci.yml:17–25</code>; <code>scripts/rename-dist.mjs:8–14</code>.</div><p><b>Remediation:</b> stop tracking dist and publish an artifact, or build then run <code>git diff --exit-code -- dist/systems-map.html</code> and smoke-test it.</p></div>
+          </details>
+          <details class="finding medium">
+            <summary><span class="finding-identifier">M14</span><span class="finding-title">Simulation and interface documentation contains factual drift</span></summary>
+            <div class="finding-body"><div class="finding-metadata"><span class="tag">Documentation</span><span class="tag">User workflow</span></div><p>The README says a 100-iteration cap while code uses 250; design docs say <code>delay()</code> makes a loop structurally convergent, which a unit delay cannot guarantee. The README also describes raw <code>index.html</code> as directly runnable, Shift-only edit gestures, folded filters, old Edit Data/Create Map controls, and an incomplete reviews schema.</p><div class="evidence"><strong>Evidence</strong><code>README.md:14</code>, <code>:50–68</code>, <code>:89</code>, <code>:340</code>, <code>:445–477</code>; <code>docs/CALCULATION-ENGINE-DESIGN.md:125–150</code>; actual cap at <code>assets/js/07-simulation-engine.ts:90–106</code>.</div><p><b>Remediation:</b> rewrite user flows from the current UI and distinguish evaluation order from convergence. Generate schema documentation from one canonical definition where practical.</p></div>
+          </details>
+          <details class="finding medium">
+            <summary><span class="finding-identifier">M15</span><span class="finding-title">The documentation drift test proves filenames, not documentation truth</span></summary>
+            <div class="finding-body"><div class="finding-metadata"><span class="tag">Tests</span><span class="tag">Documentation</span></div><p>The test only asserts that every source filename occurs somewhere in README text. It passed alongside the behavioral, schema, control-label, count, and solver errors above.</p><div class="evidence"><strong>Evidence</strong><code>tests/readme-file-map.test.ts:21–33</code>.</div><p><b>Remediation:</b> rename its claim to file-name inventory; add generated schema/command checks for machine-verifiable content and review behavioral docs against acceptance flows.</p></div>
+          </details>
+          <details class="finding medium">
+            <summary><span class="finding-identifier">M16</span><span class="finding-title">Strict TypeScript is effectively absent at the Atlas boundary</span></summary>
+            <div class="finding-body"><div class="finding-metadata"><span class="tag">Maintainability</span><span class="tag">Atlas</span><span class="tag">De-duplication</span></div><p>The 1,034-line Atlas engine contained 284 <code>any</code> occurrences; the 3,273-line view contained 226. The wheel-key mismatch was exactly the kind of defect branded element and edge-key types should prevent.</p><div class="evidence"><strong>Original evidence</strong><code>tsconfig.json</code> enabled strict mode, but <code>assets/js/20-atlas-engine.ts</code> and <code>21-atlas-view.ts</code> opted out locally through <code>any</code>.</div><p><b>Resolution: Closed.</b> The engine now exports typed graph, lane, loop/tangle, wheel, sequence, result, measurement, and strand contracts; the view consumes those contracts through typed graph, world, reading, fork, trace, and paint state. Explicit <code>any</code>, <code>unknown</code> escape types, chained assertions, suppression comments, and unvalidated DOM casts are absent. <code>WheelEdgeKey</code> remains opaque behind one reviewed constructor and a validating DOM parser. Atlas-scoped lint prevents regression, while compile-time contract tests preserve application-specific graph fields and behavioral tests protect opaque fork handles, folded lanes, exact path counts, strands, loops/tangles, current reading, and wheel chord selection.</p></div>
+          </details>
+          <details class="finding medium">
+            <summary><span class="finding-identifier">M17</span><span class="finding-title">Scale tests protect algorithms, not the agreed 300-box interaction budget</span></summary>
+            <div class="finding-body"><div class="finding-metadata"><span class="tag">Performance</span><span class="tag">Evidence gap</span></div><p>Existing tests successfully pin virtualization, bounded DOM, collapsed-route behavior, and large exact Atlas counts. They run in jsdom without layout or paint and allow broad 1–2 second thresholds. The documented 296-box/15ms claim has no reproducible benchmark.</p><div class="evidence"><strong>Evidence</strong><code>tests/builder-scale.test.ts</code>, <code>virtualization.test.ts</code>, <code>collapsed-edges.test.ts</code>, and <code>pathway-atlas.test.ts</code>.</div><p><b>Remediation:</b> record real-browser load, render, select, pan, zoom, slider scrub, mode switch, Atlas open, and Bulk edit latency on a canonical 300-box fixture.</p></div>
+          </details>
+        </div>
+      </section>
+
+      <section id="minor">
+        <p class="eyebrow">Minor cleanup</p>
+        <h2>Useful, but not first</h2>
+        <ul class="minor-list">
+          <li><code>vite.config.ts</code> sets <code>inlineDynamicImports</code>; Vite reports that it is ignored because code splitting is disabled.</li>
+          <li><code>assets/js/04b-typeable-dropdown.ts</code> carries a second HTML escape helper justified by an obsolete script-load-order constraint. Consolidate only after separating text and attribute escaping.</li>
+          <li><code>assets/js/21-atlas-view.ts:2043–2046</code> duplicates a simulation heading.</li>
+          <li>Comments still refer to retired <code>.js</code> module names and old six-step or old-control terminology.</li>
+        </ul>
+      </section>
+
+      <section id="positives">
+        <p class="eyebrow">What is already strong</p>
+        <h2>Keep these properties intact</h2>
+        <div class="positive-panel">
+          <ul class="positive-list">
+            <li>The CSV loader, formula parser, simulation engine, Review record, collapsed-edge logic, and Atlas engine have strong targeted behavioral coverage.</li>
+            <li>Atlas completeness and soundness are compared with brute-force small graphs rather than asserted from implementation details.</li>
+            <li>Selection repaint tests compare incremental output with a cold full render.</li>
+            <li>Main-map rendering already uses geometry caches, viewport culling, coalesced work, static/overlay separation, and incremental selection/simulation patches.</li>
+            <li>Bulk edit deliberately virtualizes large tables, lazily upgrades dropdowns, and caps whole-map history memory.</li>
+            <li>Collapsed hidden-edge traversal is sign-state bounded rather than enumerating every hidden route.</li>
+            <li>Export shares pure layout and presentation helpers with the live renderer. Keep the distinct live/export DOM semantics; consolidate the pure presentation model, not the renderers wholesale.</li>
+            <li>Standalone HTML export escapes <code>&lt;</code> in embedded JSON, preventing a script-close breakout.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="decisions">
+        <p class="eyebrow">Decisions applied</p>
+        <h2>Recommended owner rulings adopted</h2>
+        <ol class="decision-list">
+          <li><b>CSV newlines:</b> standards-compliant multiline cells are supported. <span class="recommendation">Applied.</span></li>
+          <li><b>Identifier grammar:</b> a conservative canonical grammar rejects unsafe or ambiguous identifiers without silently rewriting identity. <span class="recommendation">Applied.</span></li>
+          <li><b>Review history:</b> audit records remain outside model undo and tombstones reconcile across deletion and restoration. <span class="recommendation">Applied.</span></li>
+          <li><b>Formula/arrow mismatch:</b> formulas with a missing dependency arrow remain diagnosable but inactive until the author resolves the mismatch. <span class="recommendation">Applied.</span></li>
+          <li><b>Supported Node:</b> CI, package engines, the lockfile, and documentation now align on Node 26+. <span class="recommendation">Applied.</span></li>
+          <li><b>Narrow layout:</b> 390×844 is covered by a contained, scrollable header action rail and browser acceptance. <span class="recommendation">Applied.</span></li>
+        </ol>
+      </section>
+
+      <section id="evidence">
+        <p class="eyebrow">Evidence and method</p>
+        <h2>What was actually checked</h2>
+        <table class="verification-table">
+          <thead><tr><th>Check</th><th>Result</th><th>Interpretation</th></tr></thead>
+          <tbody>
+            <tr><td><code>npm run check</code></td><td class="status-pass">Passed on Node 26</td><td>Typecheck, 40 files / 925 tests, lint, and the production build all pass under the declared runtime.</td></tr>
+            <tr><td>Shuffled tests, seed 303</td><td class="status-pass">925 passed</td><td>The fixed shuffled order is now a CI gate; the five deterministic leaks are repaired.</td></tr>
+            <tr><td>V8 coverage</td><td class="status-pass">75.65% lines</td><td>71.35% statements, 59.70% branches, and 73.32% functions. Search is 81.78%; inline rename is 71.79%.</td></tr>
+            <tr><td>Built-artifact browser acceptance</td><td class="status-pass">3 passed</td><td>Boot, restore, CSV round-trip, search, keyboard access, mode transitions, compact layout, and scale run against <code>dist/systems-map.html</code>.</td></tr>
+            <tr><td>Chromium, 390×844</td><td class="status-pass">Contained</td><td>No body overflow; header actions remain reachable through the action rail.</td></tr>
+            <tr><td>Chromium, 300 boxes</td><td class="status-pass">All interactions inside budget</td><td>128.0 ms import; 228.9 ms pan; 487.2 ms settled zoom; 9.4 ms p95 selection-to-frame; 117.7 ms slider scrub; 96.0/120.9 ms read/edit; 192.3 ms Atlas open; 130.2 ms Bulk edit open. CI gates are respectively 5000, 750, 1500, 500, 1500, 1500/1500, 5000, and 3000 ms.</td></tr>
+            <tr><td>Production bundle</td><td class="status-pass">Current</td><td>Tracked single-file output is 742KB and CI fails if a build changes it. Vite retains one ignored-option warning.</td></tr>
+            <tr><td>Retired material</td><td class="status-pass">Removed</td><td>Standalone analysis pages, design mockups, their references, and standalone-page tests are gone; maintained Atlas engine coverage remains.</td></tr>
+          </tbody>
+        </table>
+
+        <h3 style="margin-top: 28px;">Review method</h3>
+        <ul class="method-list">
+          <li>Three parallel specialist passes: correctness/state/persistence; architecture/redundancy/performance; tests/documentation/build/accessibility.</li>
+          <li>Deliberate overlap on correctness and architecture; findings were consolidated only after file-and-line cross-checking.</li>
+          <li>Targeted temporary probes reproduced multiline round-trip loss, edge-ID collision after rejected import, stale-search activation, Review/undo loss, New-map state leakage, autosave resurrection, read-mode edge mutation, formula scheduling, prototype-key crashes, and numeric inconsistency. No probe remains in the repository.</li>
+          <li>Actual runtime mode transitions and responsive measurements were checked in the served app, not inferred from unit tests.</li>
+          <li>Implementation used three parallel workstreams plus an integration pass. Every verified failure received focused regression coverage before the full suite.</li>
+          <li>Performance findings M08 and M09 were addressed through Review snapshot caches, lazy proposals, one Atlas paint snapshot, and adjacency-based cut propagation. M17 now gates import, pan, zoom, selection, slider scrubbing, mode changes, Atlas, and Bulk edit in real Chromium at the agreed 300-box scale.</li>
+        </ul>
+      </section>
+    </main>
+  </div>
+
+  <footer class="report-footer">Ariadne Maps code review and resolution record · source baseline eafdc22 · implemented 1 September 2026</footer>
+</body>
+</html>

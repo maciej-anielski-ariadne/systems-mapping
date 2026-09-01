@@ -61,6 +61,9 @@ const rows = (): HTMLElement[] => Array.from(rail().querySelectorAll(".rail-row"
 const names = (): string[] => rows().map(r => (r.querySelector(".rail-name") as HTMLElement).textContent!);
 
 initReviewRail();
+// Listener wiring is application setup, not part of any one test. Keeping it
+// at suite setup makes the tests independent of declaration or shuffle order.
+initReviewStage();
 
 beforeEach(() => {
   loadDataFromCsv(CSV);          // ends any pass, as loading a map does
@@ -327,7 +330,6 @@ describe("working through the queue", () => {
 describe("what these surfaces refuse to do", () => {
   it("will not start a pass until there is a name to sign it with", () => {
     state.reviewer = "";
-    initReviewStage();
     openReview();
     const start = document.getElementById("review-start-pass") as HTMLButtonElement;
     expect(start.disabled).toBe(true);

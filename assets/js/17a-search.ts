@@ -475,6 +475,21 @@ export function handleSearchKeydown(event: KeyboardEvent): void {
 // unchanged — it just happens once per pause instead of once per character.
 export const SEARCH_INPUT_DEBOUNCE_MS = 120;
 let _searchInputTimer: ReturnType<typeof setTimeout> | null = null;
+let _searchBlurTimer: ReturnType<typeof setTimeout> | null = null;
+
+// Cancel delayed search work without running it. This is intentionally separate
+// from flushPendingSearchInput(): a discarded test/lifecycle must not apply an
+// old query to the new map.
+export function cancelPendingSearchWorkWithoutFlushing(): void {
+  if (_searchInputTimer !== null) {
+    clearTimeout(_searchInputTimer);
+    _searchInputTimer = null;
+  }
+  if (_searchBlurTimer !== null) {
+    clearTimeout(_searchBlurTimer);
+    _searchBlurTimer = null;
+  }
+}
 
 export function handleSearchInputDebounced(): void {
   if (_searchInputTimer !== null) clearTimeout(_searchInputTimer);
@@ -503,7 +518,11 @@ export function flushPendingSearchInput(): void {
   // Hide dropdown when the input loses focus, but use a tiny delay so a
   // click inside the dropdown can register before we hide it.
   input.addEventListener("blur", () => {
-    setTimeout(hideSearchDropdown, 120);
+    if (_searchBlurTimer !== null) clearTimeout(_searchBlurTimer);
+    _searchBlurTimer = setTimeout(() => {
+      _searchBlurTimer = null;
+      hideSearchDropdown();
+    }, 120);
   });
   // If the user clicks back into the input with a query already entered,
   // restore the dropdown.

@@ -40,4 +40,28 @@ export default tseslint.config(
       },
     },
   },
+  {
+    // Atlas has completed its strict typing migration. Keep the rest of the
+    // incremental TypeScript migration independent, but do not allow these two
+    // modules to fall back to explicit `any` as their contracts evolve.
+    files: ["assets/js/20-atlas-engine.ts", "assets/js/21-atlas-view.ts"],
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    rules: {
+      "@typescript-eslint/no-explicit-any": "error",
+      "@typescript-eslint/ban-ts-comment": "error",
+      "@typescript-eslint/no-unnecessary-type-assertion": "error",
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "TSAsExpression > TSAsExpression",
+          message: "Do not bypass Atlas typing with a chained type assertion; narrow or type the source value instead.",
+        },
+      ],
+    },
+  },
 );

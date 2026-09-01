@@ -629,7 +629,7 @@ export function renderBuilderStreamsStep(): string {
   } else {
     html += renderBuilderRows("streams", identityOrder(state.builder.streams), 7, (i) => {
       const s = state.builder.streams[i];
-      const invalidId = v.dupStreams.has(s.id) || !s.id ? ' invalid' : '';
+      const invalidId = v.dupStreams.has(s.id) || v.invalidIdentifiers.has(s.id) || !s.id ? ' invalid' : '';
       let row = '<tr draggable="true" class="' + rowSelectedClass(i).trim() + '" data-section="streams" data-index="' + i + '">';
       row +=   rowSelectTd("streams", i);
       row +=   rowDragHandleHtml();
@@ -684,7 +684,7 @@ export function renderBuilderStagesStep(): string {
   } else {
     html += renderBuilderRows("stages", identityOrder(state.builder.stages), 5, (i) => {
       const s = state.builder.stages[i];
-      const invalidId = v.dupStages.has(s.id) || !s.id ? ' invalid' : '';
+      const invalidId = v.dupStages.has(s.id) || v.invalidIdentifiers.has(s.id) || !s.id ? ' invalid' : '';
       let row = '<tr draggable="true" class="' + rowSelectedClass(i).trim() + '" data-section="stages" data-index="' + i + '">';
       row +=   rowSelectTd("stages", i);
       row +=   rowDragHandleHtml();
@@ -735,7 +735,7 @@ export function renderBuilderCategoriesStep(): string {
   } else {
     html += renderBuilderRows("categories", identityOrder(state.builder.categories), 8, (i) => {
       const c = state.builder.categories[i];
-      const invalidId = v.dupCategories.has(c.id) || !c.id ? ' invalid' : '';
+      const invalidId = v.dupCategories.has(c.id) || v.invalidIdentifiers.has(c.id) || !c.id ? ' invalid' : '';
       let row = '<tr draggable="true" class="' + rowSelectedClass(i).trim() + '" data-section="categories" data-index="' + i + '">';
       row +=   rowSelectTd("categories", i);
       row +=   rowDragHandleHtml();
@@ -844,7 +844,7 @@ export function renderBuilderNodesStep(): string {
   } else {
     html += renderBuilderRows("nodes", sortedBuilderIndices("nodes"), 17, (i) => {
       const n = state.builder.nodes[i];
-      const idInvalid       = !n.id || v.dupNodes.has(n.id)   ? ' invalid' : '';
+      const idInvalid       = !n.id || v.dupNodes.has(n.id) || v.invalidIdentifiers.has(n.id) ? ' invalid' : '';
       const streamInvalid   = !v.streamIds.has(n.stream)      ? ' invalid' : '';
       const stageInvalid    = !v.stageIds.has(n.stage)        ? ' invalid' : '';
       const categoryInvalid = !v.categoryIds.has(n.category as string)  ? ' invalid' : '';
@@ -1012,7 +1012,7 @@ export function renderBuilderParamsStep(): string {
       // Two cheap hints, mirroring the loader's own checks: an id a box has
       // already taken, and a value that isn't a number. Everything else waits
       // for "Apply to map".
-      const idInvalid    = (!p.id || v.dupParams.has(p.id) || v.clashParams.has(p.id)) ? ' invalid' : '';
+      const idInvalid    = (!p.id || v.dupParams.has(p.id) || v.clashParams.has(p.id) || v.invalidIdentifiers.has(p.id)) ? ' invalid' : '';
       const valueInvalid = v.badParamValueRows.has(i) ? ' invalid' : '';
       const idHint = v.clashParams.has(p.id)
         ? ' data-tooltip="A box already uses this id — a formula could mean either, so this constant would be dropped."'

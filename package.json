@@ -4,20 +4,26 @@
   "description": "Ariadne Maps — a single-page web app for building and simulating causal maps from a spreadsheet.",
   "type": "module",
   "private": true,
+  "engines": {
+    "node": ">=26.0.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build && node scripts/rename-dist.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:shuffle": "vitest run --sequence.shuffle --sequence.seed=303",
+    "test:browser": "playwright test",
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "check": "npm run typecheck && npm run test && npm run build"
+    "check": "npm run typecheck && npm run test && npm run lint && npm run build"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.62.1",
     "@types/node": "^26.2.0",
     "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^10.8.1",

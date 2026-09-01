@@ -14,7 +14,7 @@
 // =============================================================================
 
 import type { Category, GraphNode, NodePosition } from "./types";
-import { CATEGORIES, EDGES, NODES, STAGES, STREAMS, layout, nodeById, setLayout, stageById, state, streamById } from "./03-state";
+import { CATEGORIES, EDGES, NODES, STAGES, STREAMS, edgeGeometryRevision, layout, nodeById, setLayout, stageById, state, streamById } from "./03-state";
 import { deselectAll, selectNode, notifySelectionChanged } from "./09-graph-selection";
 import { computeEdgeAnchorOffsets, deltaColorFor, edgeBezierPath, effectMarkerName, escapeHtml, getMapTextScale, isBackwardEdge, simEffectFill, wrapLabel, SIM_FLAT_FILL, SIM_INK, type AnchorOffset } from "./04-utils";
 import { COL_GAP, COL_HEADER_HEIGHT, LABEL_INSET, NODE_GAP_Y, NODE_HEIGHT, NODE_WIDTH, ROW_HEADER_WIDTH, ROW_PADDING, SVG_PADDING_TOP } from "./02-config";
@@ -82,6 +82,39 @@ svg.addEventListener("click", event => {
   }
 });
 
+// SVG groups are not native controls, so click support alone leaves the map
+// undiscoverable to conventional Tab navigation and screen readers. The
+// renderer gives each actionable group a role, name and state; this delegated
+// handler supplies the native button keyboard contract without adding one
+// listener per box.
+svg.addEventListener("keydown", event => {
+  const keyboardEvent = event as KeyboardEvent;
+  if (keyboardEvent.key !== "Enter" && keyboardEvent.key !== " ") return;
+  const target = keyboardEvent.target as Element | null;
+  if (!target || typeof target.closest !== "function") return;
+
+  const nodeGroup = target.closest(".node-group");
+  const rowLabel = target.closest(".row-label-group");
+  const columnHeader = target.closest(".col-header-group");
+  if (!nodeGroup && !rowLabel && !columnHeader) return;
+
+  keyboardEvent.preventDefault();
+  keyboardEvent.stopPropagation();
+  if (nodeGroup) {
+    selectNode(nodeGroup.getAttribute("data-node-id")!);
+    return;
+  }
+  if (rowLabel) {
+    const streamId = rowLabel.getAttribute("data-stream-id")!;
+    toggleStream(streamId);
+    svg.querySelector<SVGGElement>('.row-label-group[data-stream-id="' + CSS.escape(streamId) + '"]')?.focus();
+    return;
+  }
+  const stageId = columnHeader!.getAttribute("data-stage-id")!;
+  toggleStage(stageId);
+  svg.querySelector<SVGGElement>('.col-header-group[data-stage-id="' + CSS.escape(stageId) + '"]')?.focus();
+});
+
 // Node rich-tooltip, delegated via mouseover / mouseout / mousemove (these
 // bubble to svg, unlike mouseenter / mouseleave). _hoverGroup is the node-group
 // currently showing a tooltip, so show/hide fire only on real enter/leave.
@@ -134,7 +167,7 @@ export function nodePrimaryFill(node: GraphNode, gradId: string): { defs: string
   if (prim.length === 0) return { defs: "", fill: "#a3a3a3", textColor: "#1c1917" };
   if (prim.length === 1) return { defs: "", fill: prim[0].color, textColor: prim[0].textColor };
   const stops = prim.map((c, i) =>
-    '<stop offset="' + Math.round(i / (prim.length - 1) * 100) + '%" stop-color="' + c.color + '"></stop>'
+    '<stop offset="' + Math.round(i / (prim.length - 1) * 100) + '%" stop-color="' + escapeHtml(c.color) + '"></stop>'
   ).join("");
   const defs = '<defs><linearGradient id="' + gradId + '" x1="0" y1="0" x2="1" y2="1">' + stops + '</linearGradient></defs>';
   return { defs: defs, fill: "url(#" + gradId + ")", textColor: prim[0].textColor };
@@ -158,7 +191,7 @@ export function nodeSecondaryChips(node: GraphNode, pos: NodePosition): { svg: s
   shown.forEach((c, i) => {
     const x = rightEdge - inset - bs - i * (bs + gap);
     minX = Math.min(minX, x);
-    svg += '<rect x="' + x + '" y="' + y + '" width="' + bs + '" height="' + bs + '" rx="2" fill="' + c.color + '" stroke="rgba(0,0,0,0.4)" stroke-width="1"></rect>';
+    svg += '<rect x="' + x + '" y="' + y + '" width="' + bs + '" height="' + bs + '" rx="2" fill="' + escapeHtml(c.color) + '" stroke="rgba(0,0,0,0.4)" stroke-width="1"></rect>';
   });
   if (overflow > 0) {
     const pillW = 22, pillX = minX - gap - pillW;
@@ -176,6 +209,8 @@ export function nodeSecondaryChips(node: GraphNode, pos: NodePosition): { svg: s
 // simulation renders re-run them for nothing, which is wasteful on dense maps
 // (E ≫ N). Cache the geometry and reuse it until one of its real inputs changes:
 //   • NODES / EDGES array identity — reassigned on every data load / mutation.
+//   • edgeGeometryRevision() — advanced by in-place edge additions and semantic
+//     edits, for which the EDGES array identity deliberately stays unchanged.
 //   • the layout GEOMETRY REVISION (08-layout) — bumped only when some node
 //     actually moved / resized or a row/column changed. Keying on the layout
 //     object identity instead (as this cache first did) meant a guaranteed miss
@@ -187,7 +222,8 @@ export function nodeSecondaryChips(node: GraphNode, pos: NodePosition): { svg: s
 // Selection/hover/sim renders don't touch any of these, so they hit the cache.
 interface EdgeGeometry { renderEdges: RenderEdge[]; anchorOffsets: AnchorOffset[]; }
 let _edgeGeomCache: (EdgeGeometry & {
-  nodes: typeof NODES; edges: typeof EDGES; geometryRevision: number; hiddenKey: string;
+  nodes: typeof NODES; edges: typeof EDGES; geometryRevision: number;
+  edgeRevision: number; hiddenKey: string;
 }) | null = null;
 
 const _edgeStyleOf = (re: RenderEdge): string =>
@@ -200,8 +236,10 @@ function edgeGeometry(): EdgeGeometry {
     [...state.hiddenStages].sort().join(",") + "|" +
     [...state.hiddenCategories].sort().join(",");
   const geometryRevision = layoutGeometryRevision();
+  const edgeRevision = edgeGeometryRevision();
   const c = _edgeGeomCache;
-  if (c && c.nodes === NODES && c.edges === EDGES && c.geometryRevision === geometryRevision && c.hiddenKey === hiddenKey) {
+  if (c && c.nodes === NODES && c.edges === EDGES && c.geometryRevision === geometryRevision &&
+      c.edgeRevision === edgeRevision && c.hiddenKey === hiddenKey) {
     return c;
   }
   const renderEdges = computeRenderEdges();
@@ -213,7 +251,15 @@ function edgeGeometry(): EdgeGeometry {
     (re) => re.effect,
     _edgeStyleOf,
   );
-  _edgeGeomCache = { renderEdges, anchorOffsets, nodes: NODES, edges: EDGES, geometryRevision, hiddenKey };
+  _edgeGeomCache = {
+    renderEdges,
+    anchorOffsets,
+    nodes: NODES,
+    edges: EDGES,
+    geometryRevision,
+    edgeRevision,
+    hiddenKey,
+  };
   return _edgeGeomCache;
 }
 
@@ -676,9 +722,9 @@ export function buildOverlayContent(): string {
     const py = drag.currentY - previewH / 2;
     content += '<g class="node-drag-preview">';
     content += fillInfo.defs;
-    content += '<rect x="' + px + '" y="' + py + '" width="' + NODE_WIDTH + '" height="' + previewH + '" rx="5" fill="' + fillInfo.fill + '" stroke="rgba(0,0,0,0.4)" stroke-width="1"></rect>';
-    content += '<rect x="' + px + '" y="' + py + '" width="6" height="' + previewH + '" rx="2" fill="' + stream.color + '"></rect>';
-    content += '<text class="node-label" x="' + (px + LABEL_INSET) + '" y="' + (py + 16) + '" fill="' + fillInfo.textColor + '" dominant-baseline="middle">';
+    content += '<rect x="' + px + '" y="' + py + '" width="' + NODE_WIDTH + '" height="' + previewH + '" rx="5" fill="' + escapeHtml(fillInfo.fill) + '" stroke="rgba(0,0,0,0.4)" stroke-width="1"></rect>';
+    content += '<rect x="' + px + '" y="' + py + '" width="6" height="' + previewH + '" rx="2" fill="' + escapeHtml(stream.color) + '"></rect>';
+    content += '<text class="node-label" x="' + (px + LABEL_INSET) + '" y="' + (py + 16) + '" fill="' + escapeHtml(fillInfo.textColor) + '" dominant-baseline="middle">';
     for (let i = 0; i < previewLines.length; i++) {
       const dy = i === 0 ? "0" : "1.083em";
       content += '<tspan x="' + (px + LABEL_INSET) + '" dy="' + dy + '">' + escapeHtml(previewLines[i]) + '</tspan>';
@@ -1034,7 +1080,7 @@ export function render(): void {
     const rowHeight  = layout.rowHeights[stream.id];
 
     // Very faint coloured stripe behind the row
-    content += '<rect x="0" y="' + rowYPos + '" width="' + layout.totalWidth + '" height="' + rowHeight + '" fill="' + stream.color + '" opacity="0.025"></rect>';
+    content += '<rect x="0" y="' + rowYPos + '" width="' + layout.totalWidth + '" height="' + rowHeight + '" fill="' + escapeHtml(stream.color) + '" opacity="0.025"></rect>';
     // Horizontal divider line just above each row
     content += '<line x1="0" y1="' + rowYPos + '" x2="' + layout.totalWidth + '" y2="' + rowYPos + '" stroke="var(--border-subtle)" stroke-width="1"></line>';
   }
@@ -1055,7 +1101,7 @@ export function render(): void {
 
     const cx = colLeft + colW / 2;
     const stageTip = (isStageCollapsed ? "Click to expand " : "Click to collapse ") + stage.label + " on the map.";
-    content += '<g class="col-header-group' + (isStageCollapsed ? ' collapsed' : '') + '" data-stage-id="' + escapeHtml(stage.id) + '" data-tooltip="' + escapeHtml(stageTip) + '">';
+    content += '<g class="col-header-group' + (isStageCollapsed ? ' collapsed' : '') + '" data-stage-id="' + escapeHtml(stage.id) + '" data-tooltip="' + escapeHtml(stageTip) + '" role="button" tabindex="0" aria-label="' + escapeHtml((isStageCollapsed ? "Expand column " : "Collapse column ") + stage.label) + '" aria-expanded="' + String(!isStageCollapsed) + '">';
     // Transparent hit area over the header band captures the toggle click (the
     // label text has pointer-events:none).
     content += '<rect class="col-header-hit" x="' + colLeft + '" y="0" width="' + colW + '" height="' + headerBandBottom + '"></rect>';
@@ -1109,11 +1155,11 @@ export function render(): void {
     const labelText = isCollapsed ? "+ " + stream.short : stream.short;
 
     const streamTip = (isCollapsed ? "Click to expand " : "Click to collapse ") + stream.label + " on the map.";
-    content += '<g class="row-label-group' + (isCollapsed ? ' collapsed' : '') + '" data-stream-id="' + stream.id + '" data-tooltip="' + escapeHtml(streamTip) + '">';
+    content += '<g class="row-label-group' + (isCollapsed ? ' collapsed' : '') + '" data-stream-id="' + escapeHtml(stream.id) + '" data-tooltip="' + escapeHtml(streamTip) + '" role="button" tabindex="0" aria-label="' + escapeHtml((isCollapsed ? "Expand row " : "Collapse row ") + stream.label) + '" aria-expanded="' + String(!isCollapsed) + '">';
     content += '<rect class="row-label-bg" x="0" y="' + rowYPos + '" width="' + ROW_HEADER_WIDTH + '" height="' + rowHeight + '"></rect>';
     // Thin coloured stripe on the right edge of the strip
-    content += '<rect x="' + (ROW_HEADER_WIDTH - 4) + '" y="' + rowYPos + '" width="4" height="' + rowHeight + '" fill="' + stream.color + '" opacity="' + (isCollapsed ? 0.4 : 0.7) + '"></rect>';
-    content += '<text class="row-label-text" fill="' + stream.color + '" x="' + (ROW_HEADER_WIDTH / 2) + '" y="' + (rowYPos + rowHeight / 2) + '" text-anchor="middle" dominant-baseline="middle">' + escapeHtml(labelText) + '</text>';
+    content += '<rect x="' + (ROW_HEADER_WIDTH - 4) + '" y="' + rowYPos + '" width="4" height="' + rowHeight + '" fill="' + escapeHtml(stream.color) + '" opacity="' + (isCollapsed ? 0.4 : 0.7) + '"></rect>';
+    content += '<text class="row-label-text" fill="' + escapeHtml(stream.color) + '" x="' + (ROW_HEADER_WIDTH / 2) + '" y="' + (rowYPos + rowHeight / 2) + '" text-anchor="middle" dominant-baseline="middle">' + escapeHtml(labelText) + '</text>';
     content += '</g>';
   }
 
@@ -1261,13 +1307,15 @@ export function render(): void {
     const rectFill   = preDesat ? desaturateColor(fillInfo.fill)  : fillInfo.fill;
     const stripeFill = (preDesat || effect) ? desaturateColor(stream.color) : stream.color;
 
-    content += '<g class="' + nodeClasses + '" data-node-id="' + node.id + '">';
+    const nodeAccessibleLabel = node.label + ", row " + (streamById[node.stream]?.label || node.stream) +
+      ", column " + (stageById[node.stage]?.label || node.stage);
+    content += '<g class="' + nodeClasses + '" data-node-id="' + escapeHtml(node.id) + '" role="button" tabindex="0" aria-label="' + escapeHtml(nodeAccessibleLabel) + '" aria-pressed="' + String(state.selectedNodeIds.has(node.id)) + '">';
     content += fillInfo.defs;   // per-node gradient def (empty unless multi-primary)
 
     // ── Background rect with conditional border ──
     const border = nodeRectStroke(node.id, ctx);
 
-    content += '<rect class="node-rect" x="' + pos.x + '" y="' + pos.y + '" width="' + pos.width + '" height="' + pos.height + '" rx="5" fill="' + rectFill + '" stroke="' + border.stroke + '" stroke-width="' + border.width + '"></rect>';
+    content += '<rect class="node-rect" x="' + pos.x + '" y="' + pos.y + '" width="' + pos.width + '" height="' + pos.height + '" rx="5" fill="' + escapeHtml(rectFill) + '" stroke="' + escapeHtml(border.stroke) + '" stroke-width="' + border.width + '"></rect>';
 
 
     // ── Coloured stripe down the left edge (the stream colour) ──
@@ -1293,7 +1341,7 @@ export function render(): void {
       " L " + barLeft + "," + (barTop + barRadius) +
       " A " + barRadius + "," + barRadius + " 0 0 1 " + (barLeft + barRadius) + "," + barTop +
       " Z";
-    content += '<path class="node-stripe" d="' + barPath + '" fill="' + stripeFill + '"></path>';
+    content += '<path class="node-stripe" d="' + barPath + '" fill="' + escapeHtml(stripeFill) + '"></path>';
 
     // ── Label (wrapped to up to 2 lines) ──
     // One <text> with one or two <tspan> children. Using `dy="1.083em"` (the
@@ -1306,7 +1354,7 @@ export function render(): void {
     const labelLines = pos.labelLines || wrapLabel(node.label, 24);
     const labelX = pos.x + LABEL_INSET;
     const labelBlockTopY = pos.y + 16;
-    content += '<text class="node-label" x="' + labelX + '" y="' + labelBlockTopY + '" fill="' + textColor + '" dominant-baseline="middle">';
+    content += '<text class="node-label" x="' + labelX + '" y="' + labelBlockTopY + '" fill="' + escapeHtml(textColor) + '" dominant-baseline="middle">';
     for (let lineIdx = 0; lineIdx < labelLines.length; lineIdx++) {
       const dy = lineIdx === 0 ? "0" : "1.083em";
       content += '<tspan x="' + labelX + '" dy="' + dy + '">' + escapeHtml(labelLines[lineIdx]) + '</tspan>';
@@ -1322,7 +1370,7 @@ export function render(): void {
     if (valueText) {
       const deltaInfo = formatNodeDelta(node.id);
       const valueY = pos.y + pos.height - 12;
-      content += '<text class="node-value" x="' + (pos.x + LABEL_INSET) + '" y="' + valueY + '" fill="' + textColor + '" dominant-baseline="middle" opacity="0.75">' + escapeHtml(valueText) + '</text>';
+      content += '<text class="node-value" x="' + (pos.x + LABEL_INSET) + '" y="' + valueY + '" fill="' + escapeHtml(textColor) + '" dominant-baseline="middle" opacity="0.75">' + escapeHtml(valueText) + '</text>';
 
       // Where a mover prints how far it moved, a held box prints that it is
       // held. What is holding it is named in the panel and on hover — there is
@@ -1483,6 +1531,7 @@ export function refreshSelectionStyling(): boolean {
       }
     }
     setIfChanged(group, "class", classes);
+    setIfChanged(group, "aria-pressed", String(state.selectedNodeIds.has(id)));
     if (rect) {
       const border = nodeRectStroke(id, ctx);
       setIfChanged(rect, "stroke", border.stroke);

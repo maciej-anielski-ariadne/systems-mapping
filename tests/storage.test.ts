@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   saveCsvToStorage,
+  scheduleCsvSave,
   loadCsvFromStorage,
   clearCsvFromStorage,
   saveUiStateToStorage,
@@ -10,14 +11,40 @@ import {
   clearBuilderFromStorage,
 } from "../assets/js/04a-storage";
 import { state } from "../assets/js/03-state";
+import { bootEmptyStateGrid } from "../assets/js/16e-canvas-edit";
+import { loadDataFromCsv } from "../assets/js/06-data-loader";
+import { LINEAR_CSV } from "./fixtures/graphs";
 
 describe("CSV slot", () => {
+  afterEach(() => vi.useRealTimers());
+
   it("round-trips and clears", () => {
     expect(loadCsvFromStorage()).toBeNull();
     saveCsvToStorage("# SECTION: streams\nid\nops");
     expect(loadCsvFromStorage()).toBe("# SECTION: streams\nid\nops");
     clearCsvFromStorage();
     expect(loadCsvFromStorage()).toBeNull();
+  });
+
+  it("cancels a queued save when the current map is cleared", () => {
+    vi.useFakeTimers();
+    scheduleCsvSave("old map");
+
+    clearCsvFromStorage();
+    vi.advanceTimersByTime(1000);
+
+    expect(loadCsvFromStorage()).toBeNull();
+  });
+
+  it("does not let empty-map boot overwrite an immediate import", () => {
+    vi.useFakeTimers();
+    clearCsvFromStorage();
+    bootEmptyStateGrid();
+
+    expect(loadDataFromCsv(LINEAR_CSV)).toBe(true);
+    vi.advanceTimersByTime(1000);
+
+    expect(loadCsvFromStorage()).toBe(LINEAR_CSV);
   });
 });
 

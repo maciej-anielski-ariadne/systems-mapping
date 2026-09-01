@@ -12,14 +12,22 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 26
           cache: npm
       - run: npm ci
       - name: Type-check
         run: npm run typecheck
       - name: Test
         run: npm run test
+      - name: Test in fixed shuffled order
+        run: npm run test:shuffle
       - name: Lint
         run: npm run lint
       - name: Build single-file bundle
         run: npm run build
+      - name: Verify tracked bundle is current
+        run: git diff --exit-code -- dist/systems-map.html
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+      - name: Test built bundle in Chromium
+        run: npm run test:browser

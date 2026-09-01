@@ -4,6 +4,8 @@ Run them with:
 
 ```bash
 npm test            # one pass (Vitest, jsdom environment)
+npm run test:shuffle # fixed seed used in CI to prove isolation
+npm run test:browser # built-artifact Chromium acceptance + 300-box budget
 npm run test:watch  # re-run on change
 ```
 
@@ -15,8 +17,11 @@ npm run test:watch  # re-run on change
 - `fixtures/` — reusable sample graphs/data the tests load instead of hand-building input.
 - `helpers/` — shared test utilities (e.g. DOM setup).
 - `setup.ts` — global test setup (run once before the suite; wired in `vitest.config.ts`).
-- `readme-file-map.test.ts` — a guard that fails if a file in `assets/js/` or `assets/css/`
-  isn't listed in the top-level README, so the documentation can't silently drift.
+- `source-inventory.test.ts` — narrowly checks that source filenames appear in the README.
+- `documentation-contracts.test.ts` — checks machine-verifiable runtime, solver, schema and
+  command claims rather than pretending a filename inventory proves behavioral truth.
+- `browser/` — Playwright acceptance against the exact built single-file artifact.
 
-CI runs this suite (plus type-check, lint, and build) on every push — see
+CI runs the normal and shuffled suites, type-check, lint, build freshness and
+the Chromium acceptance suite on every push — see
 `.github/workflows/ci.yml`.
