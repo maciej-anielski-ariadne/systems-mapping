@@ -401,6 +401,45 @@ body.reading .sidebar-add-btn,
 body.reading .sidebar-row-delete,
 body.reading .sidebar-cat-reclass { display: none; }
 
+/* === Contextual toolbar ====================================================
+ * The search, File and theme controls stay put. Everything between them is
+ * the action set for the surface currently on screen; incompatible tools do
+ * not remain as disabled or distracting alternatives. */
+.toolbar-edit-actions,
+.toolbar-review-actions,
+.toolbar-sim-reset,
+#simulation-exit-button,
+#atlas-exit-button,
+#review-exit-button { display: none; }
+
+body.editing:not(.review-open) .toolbar-edit-actions { display: flex; }
+body.editing:not(.review-open) #sim-toggle-button,
+body.editing:not(.review-open) #atlas-control { display: none; }
+
+body.sim-mode:not(.review-open) .toolbar-sim-reset { display: inline-flex; }
+/* Outside Atlas, Exit simulation occupies the stable right-hand exit slot. */
+body.sim-mode:not(.atlas-open):not(.review-open) #sim-toggle-button { display: none; }
+body.sim-mode:not(.atlas-open):not(.review-open) #simulation-exit-button { display: inline-flex; }
+body.sim-mode:not(.atlas-open):not(.review-open) #mode-toggle-button { display: none; }
+
+body.atlas-open:not(.review-open) #atlas-exit-button { display: inline-flex; }
+body.atlas-open:not(.review-open) #mode-toggle-button { display: none; }
+body.atlas-open:not(.sim-mode) #review-button,
+body.atlas-open.sim-mode #review-button { display: none; }
+/* Simulation is a modifier of Atlas: when it is active its own toggle remains
+ * visible as the second exit, beside Reset sliders and Change starting box. */
+body.atlas-open.sim-mode #sim-toggle-button { display: inline-flex; }
+
+body.review-open #filters-group,
+body.atlas-open #filters-group { display: none; }
+body.review-open #reading-tools-group,
+body.review-open .toolbar-edit-actions { display: none; }
+body.review-open .toolbar-review-actions { display: flex; }
+body.review-open #mode-toggle-button,
+body.review-open #simulation-exit-button,
+body.review-open #atlas-exit-button { display: none; }
+body.review-open #review-exit-button { display: inline-flex; }
+
 /* The colour dot on a row IS the <input type="color">, so hiding it while
  * reading would take the colour key away with the picker. It stays, and stops
  * being a control instead. */

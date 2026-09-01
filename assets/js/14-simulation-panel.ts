@@ -21,7 +21,7 @@ import { render, scheduleRender, updateSimulationValuesInPlace } from "./11-rend
 import { patchDetailPanelValues, renderDetailPanel } from "./15-detail-panel";
 import { saveUiStateToStorage, scheduleUiStateSave } from "./04a-storage";
 import { renderSidebar } from "./13-sidebar";
-import { applyPanelPinnedClasses, setFiltersOpen } from "./17-events";
+import { applyPanelPinnedClasses, setFiltersOpen, setUiMode } from "./17-events";
 import { atlasIsOpen, refreshAtlasValues } from "./21-atlas-view";
 import { syncReviewRail } from "./25-review-rail";
 
@@ -238,14 +238,18 @@ function bindSimPanelHandlers(simPanel: HTMLElement): void {
     const target = event.target as Element;
     if (!target || typeof target.closest !== "function") return;
     if (!target.closest("#sim-reset-button")) return;
-    cancelSimTick();
-    state.userOverrides = {};
-    recomputeValues();
-    renderSimulationPanel();
-    render();
-    renderDetailPanel();
-    saveUiStateToStorage();
+    resetSimulation();
   });
+}
+
+export function resetSimulation(): void {
+  cancelSimTick();
+  state.userOverrides = {};
+  recomputeValues();
+  renderSimulationPanel();
+  render();
+  renderDetailPanel();
+  saveUiStateToStorage();
 }
 
 // ───── One solve + repaint per animation frame ────────────────────────────
@@ -495,6 +499,11 @@ export function toggleSimulationMode(): void {
   // Everything below re-renders from scratch, so an owed slider tick has nothing
   // left to contribute.
   cancelSimTick();
+  // Editing changes the model; simulation changes inputs to that model. They
+  // use the same canvas controls for different jobs, so entering simulation
+  // finishes editing first rather than leaving two active modes behind one
+  // toolbar.
+  if (!state.simulationMode && state.uiMode === "edit") setUiMode("read");
   state.simulationMode = !state.simulationMode;
 
   const button = document.getElementById("sim-toggle-button");
@@ -525,4 +534,14 @@ export function toggleSimulationMode(): void {
   render();
   renderDetailPanel();
   saveUiStateToStorage();
+}
+
+const toolbarSimulationResetButton = document.getElementById("toolbar-sim-reset");
+if (toolbarSimulationResetButton) toolbarSimulationResetButton.addEventListener("click", resetSimulation);
+
+const simulationExitButton = document.getElementById("simulation-exit-button");
+if (simulationExitButton) {
+  simulationExitButton.addEventListener("click", () => {
+    if (state.simulationMode) toggleSimulationMode();
+  });
 }

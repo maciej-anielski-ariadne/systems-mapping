@@ -305,9 +305,11 @@ export function syncAtlasButton(): void {
   const button = atlasButtonEl();
   if (!button) return;
   const open = atlasIsOpen();
+  button.innerHTML = (open ? "Change starting box" : "Atlas") +
+    '<span class="header-caret" aria-hidden="true">▾</span>';
   button.classList.toggle("active", open);
   button.setAttribute("data-tooltip", open
-    ? "Close the atlas and go back to the map."
+    ? "Choose a different box to start the atlas from."
     : "Every pathway out of one box, as one picture you zoom into.");
 }
 
@@ -354,8 +356,12 @@ export function initAtlasEntry(): void {
   if (button) {
     button.addEventListener("click", event => {
       event.stopPropagation();
-      if (atlasIsOpen()) { closeAtlas(); return; }
       if (!state.dataLoaded) return;
+      if (atlasIsOpen()) {
+        const menu = atlasMenuEl();
+        setAtlasMenuOpen(!menu || menu.hidden);
+        return;
+      }
       const selected = state.selectedNodeId;
       if (selected && nodeById[selected] && outgoingEdges[selected] && outgoingEdges[selected].length) {
         setAtlasMenuOpen(false);
@@ -410,6 +416,13 @@ export function initAtlasEntry(): void {
   }
 
   syncAtlasButton();
+}
+
+const atlasExitButton = document.getElementById("atlas-exit-button");
+if (atlasExitButton) {
+  atlasExitButton.addEventListener("click", () => {
+    if (atlasIsOpen()) closeAtlas();
+  });
 }
 
 // Draw (or redraw) the whole picture, then frame it and play whatever the

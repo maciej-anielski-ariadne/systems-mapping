@@ -25,6 +25,7 @@
 import { state, NODES, nodeById } from "./03-state";
 import { escapeHtml, formatScalar } from "./04-utils";
 import { focusNode, scrollNodeIntoView } from "./09-graph-selection";
+import { setUiMode } from "./17-events";
 import {
   groupFindings,
   currentSweep,
@@ -41,6 +42,13 @@ import { downloadReviewLog } from "./25-review-rail";
 import type { LogRow } from "./24-review-record";
 import type { FindingGroup, ReviewSummary, Sweep, SweepException, SweepRow } from "./22-review";
 import type { Finding, FindingSeverity } from "./types";
+import type { ReviewFixOperation, ReviewProposal, ReviewProposalPreview } from "./types";
+import {
+  captureReviewModelSnapshot,
+  previewReviewProposal,
+  reviewProposalsForFinding,
+} from "./22a-review-model";
+import { applyConfirmedReviewProposal } from "./22b-review-apply";
 
 // Above this many adjustable boxes the sweep is one solve per box of a map
 // big enough for that to be felt, so it waits to be asked for. Below it, the
@@ -56,10 +64,62 @@ let sweepRequestedFor = -1;
 let fullListOpen = false;
 let logOpen = false;
 let listenersWired = false;
+let expandedIssueKey: string | null = null;
+let pinnedIssueKey: string | null = null;
+let pinnedIssueFallback: Finding | null = null;
+let pinnedIssueExpanded = false;
+let resolvedIssueLabel: string | null = null;
+const selectedProposalIdentifierByIssueKey = new Map<string, string>();
+const editedProposalByIssueKey = new Map<string, ReviewProposal>();
 
 // ───── The element, and the open/closed state ─────────────────────────────
 function stageEl(): HTMLElement | null {
   return document.getElementById("review-stage");
+}
+
+function issueBannerElement(): HTMLElement | null {
+  return document.getElementById("review-issue-banner");
+}
+
+function findingByIdentity(issueKey: string): Finding | undefined {
+  return state.loadErrors.find(finding => findingIdentity(finding) === issueKey);
+}
+
+function renderPinnedIssueBanner(): void {
+  const banner = issueBannerElement();
+  if (!banner) return;
+  if (!pinnedIssueKey || reviewIsOpen()) {
+    banner.hidden = true;
+    banner.innerHTML = "";
+    return;
+  }
+
+  const liveFinding = findingByIdentity(pinnedIssueKey);
+  const finding = liveFinding || pinnedIssueFallback;
+  if (!finding) {
+    banner.hidden = true;
+    return;
+  }
+  const resolved = !liveFinding;
+  const node = finding.boxId ? nodeById[finding.boxId] : undefined;
+  banner.hidden = false;
+  banner.classList.toggle("is-expanded", pinnedIssueExpanded);
+  banner.classList.toggle("is-resolved", resolved);
+  let html = '<button type="button" class="review-banner-main" id="review-banner-toggle" aria-expanded="' +
+    (pinnedIssueExpanded ? "true" : "false") + '">';
+  html += '<span class="review-sev sev-' + (resolved ? "mismatch" : finding.severity) + '" aria-hidden="true"></span>';
+  html += '<span class="review-banner-copy"><b>' + (resolved ? "Issue resolved" : escapeHtml(node?.label || finding.boxId || "Review issue")) + '</b>';
+  html += '<span>' + escapeHtml(resolved ? "The latest check no longer finds this issue." : finding.message) + '</span></span>';
+  html += '<span class="review-disclosure">' + (pinnedIssueExpanded ? "−" : "+") + '</span></button>';
+  html += '<button type="button" class="review-banner-dismiss" id="review-banner-dismiss" aria-label="Hide issue banner">×</button>';
+  if (pinnedIssueExpanded) {
+    html += '<div class="review-banner-details">';
+    if (!resolved && finding.fix) html += '<div>' + markCode(finding.fix) + '</div>';
+    html += '<button type="button" class="review-secondary" id="review-banner-back">Back to Review</button>';
+    if (resolved) html += '<button type="button" class="review-apply" id="review-banner-next">Next issue</button>';
+    html += '</div>';
+  }
+  banner.innerHTML = html;
 }
 
 export function reviewIsOpen(): boolean {
@@ -73,6 +133,7 @@ export function openReview(): void {
   stage.hidden = false;
   document.body.classList.add("review-open");
   renderReview();
+  renderPinnedIssueBanner();
   syncReviewButton();
 }
 
@@ -83,6 +144,8 @@ export function closeReview(): void {
   stage.innerHTML = "";
   document.body.classList.remove("review-open");
   fullListOpen = false;
+  expandedIssueKey = null;
+  renderPinnedIssueBanner();
   syncReviewButton();
 }
 
@@ -184,6 +247,7 @@ export function renderReview(): void {
   html += '</div>';
 
   stage.innerHTML = html;
+  syncReviewToolbarActions();
 }
 
 // Counted in CARDS and in CONSEQUENCES, never in findings. One box can be wrong
@@ -218,6 +282,16 @@ function renderIssuesSection(summary: ReviewSummary): string {
     return html;
   }
 
+  if (resolvedIssueLabel) {
+    html += '<div class="review-resolved">' +
+      '<span><b>Fixed:</b> ' + escapeHtml(resolvedIssueLabel) + '</span>' +
+      '<span class="review-resolved-actions">' +
+        '<button type="button" class="review-apply" id="review-next-issue">Next issue</button>' +
+        '<button type="button" class="review-secondary" id="review-stay-here">Stay here</button>' +
+      '</span>' +
+    '</div>';
+  }
+
   if (summary.consequenceCount > 0) {
     html += '<div class="review-hint">' + summary.consequenceCount + ' further finding' +
             (summary.consequenceCount === 1 ? " is" : "s are") + ' folded into the cards below — ' +
@@ -225,35 +299,241 @@ function renderIssuesSection(summary: ReviewSummary): string {
             'Fix the cause and they clear themselves.</div>';
   }
 
-  for (const group of summary.groups) html += renderCauseCard(group);
+  const snapshot = captureReviewModelSnapshot();
+  const preparedGroups = summary.groups.map(group => {
+    const fixableFinding = fixableFindingInGroup(group, snapshot);
+    const proposals = fixableFinding ? reviewProposalsForFinding(fixableFinding, snapshot) : [];
+    return { group, fixableFinding, proposals };
+  });
+  preparedGroups.sort((left, right) => Number(!!right.fixableFinding) - Number(!!left.fixableFinding));
+  for (const preparedGroup of preparedGroups) {
+    html += renderCauseCard(preparedGroup.group, snapshot, preparedGroup.fixableFinding, preparedGroup.proposals);
+  }
   return html;
 }
 
-function renderCauseCard(group: FindingGroup): string {
-  const clickable = group.boxId ? ' data-review-box="' + escapeHtml(group.boxId) + '"' : "";
-  let html = '<div class="review-card' + (group.boxId ? " is-clickable" : "") + '"' + clickable + '>';
-  html +=   '<div class="review-card-head">';
+function renderCauseCard(
+  group: FindingGroup,
+  snapshot = captureReviewModelSnapshot(),
+  fixableFinding = fixableFindingInGroup(group, snapshot),
+  proposals = fixableFinding ? reviewProposalsForFinding(fixableFinding, snapshot) : [],
+): string {
+  const primaryFinding = fixableFinding || group.causes[0];
+  const issueKey = findingIdentity(primaryFinding);
+  const isExpanded = expandedIssueKey === issueKey;
+  let html = '<div class="review-card review-issue-card' + (isExpanded ? " is-expanded" : "") + '">';
+  html +=   '<button type="button" class="review-card-head review-card-toggle" data-review-issue="' +
+            escapeHtml(issueKey) + '" aria-expanded="' + (isExpanded ? "true" : "false") + '">';
   html +=     '<span class="review-sev sev-' + group.severity + '" aria-hidden="true"></span>';
   html +=     '<span class="review-card-label">' + escapeHtml(group.label) + '</span>';
   if (group.boxId) html += '<span class="review-card-id">' + escapeHtml(group.boxId) + '</span>';
-  html +=   '</div>';
+  if (proposals.length) html += '<span class="review-direct-tag">Fix here</span>';
+  html +=     '<span class="review-disclosure" aria-hidden="true">' + (isExpanded ? "−" : "+") + '</span>';
+  html +=   '</button>';
 
-  for (const f of group.causes) {
-    html += '<div class="review-what">' + markCode(f.message) + '</div>';
-    if (f.fix) html += '<div class="review-fix">' + markCode(f.fix) + '</div>';
-  }
+  if (isExpanded) {
+    html += '<div class="review-card-content">';
+    for (const finding of group.causes) {
+      html += '<div class="review-what">' + markCode(finding.message) + '</div>';
+      if (finding.fix) html += '<div class="review-fix">' + markCode(finding.fix) + '</div>';
+    }
 
-  if (group.consequences.length) {
-    html += '<div class="review-fold">';
-    html +=   '<b>' + group.consequences.length + ' box' + (group.consequences.length === 1 ? "" : "es") +
-              ' downstream also read wrong</b> — ' +
-              group.consequences.slice(0, 5).map(c => escapeHtml(labelOf(c))).join(", ") +
-              (group.consequences.length > 5 ? " and " + (group.consequences.length - 5) + " more" : "") + ".";
+    if (group.consequences.length) {
+      html += '<div class="review-fold">';
+      html +=   '<b>' + group.consequences.length + ' box' + (group.consequences.length === 1 ? "" : "es") +
+                ' downstream also read wrong</b> — ' +
+                group.consequences.slice(0, 5).map(consequence => escapeHtml(labelOf(consequence))).join(", ") +
+                (group.consequences.length > 5 ? " and " + (group.consequences.length - 5) + " more" : "") + ".";
+      html += '</div>';
+    }
+
+    if (fixableFinding && proposals.length) {
+      html += renderProposalChoices(fixableFinding, proposals, snapshot);
+    } else if (group.boxId) {
+      html += '<button type="button" class="review-open-map" data-open-review-issue="' +
+              escapeHtml(issueKey) + '">Open on map</button>';
+    }
     html += '</div>';
   }
 
   html += '</div>';
   return html;
+}
+
+function findingIdentity(finding: Finding | undefined): string {
+  if (!finding) return "missing-finding";
+  return finding.issueKey || [finding.kind, finding.boxId || "map", finding.message].join(":");
+}
+
+function fixableFindingInGroup(
+  group: FindingGroup,
+  snapshot = captureReviewModelSnapshot(),
+): Finding | undefined {
+  return group.causes.find(finding => reviewProposalsForFinding(finding, snapshot).length > 0);
+}
+
+function proposalForDisplay(issueKey: string, proposals: ReviewProposal[]): ReviewProposal {
+  const selectedIdentifier = selectedProposalIdentifierByIssueKey.get(issueKey);
+  const selectedProposal = proposals.find(proposal => proposal.id === selectedIdentifier) || proposals[0];
+  selectedProposalIdentifierByIssueKey.set(issueKey, selectedProposal.id);
+  const editedProposal = editedProposalByIssueKey.get(issueKey);
+  return editedProposal && editedProposal.id === selectedProposal.id ? editedProposal : selectedProposal;
+}
+
+function renderProposalChoices(
+  finding: Finding,
+  proposals: ReviewProposal[],
+  snapshot: ReturnType<typeof captureReviewModelSnapshot>,
+): string {
+  const issueKey = findingIdentity(finding);
+  const selectedProposal = proposalForDisplay(issueKey, proposals);
+  const preview = previewReviewProposal(snapshot, selectedProposal);
+  let html = '<div class="review-proposals" data-proposal-region="' + escapeHtml(issueKey) + '">';
+  html += '<div class="review-proposal-label">Proposed fix</div>';
+  for (const proposal of proposals) {
+    const selected = proposal.id === selectedProposal.id;
+    html += '<label class="review-proposal-option' + (selected ? " is-selected" : "") + '">';
+    html += '<input type="radio" name="proposal-' + escapeHtml(issueKey) + '" data-review-proposal="' +
+            escapeHtml(proposal.id) + '" data-review-issue-key="' + escapeHtml(issueKey) + '"' +
+            (selected ? " checked" : "") + ' />';
+    html += '<span><b>' + escapeHtml(proposal.label) + '</b><small>' + escapeHtml(proposal.explanation) + '</small></span>';
+    html += '</label>';
+  }
+  html += renderOperationEditors(issueKey, selectedProposal.operations);
+  html += '<div class="review-preview" data-review-preview="' + escapeHtml(issueKey) + '">' +
+          renderProposalPreview(preview) + '</div>';
+  html += '<button type="button" class="review-apply" data-confirm-review-fix="' +
+          escapeHtml(issueKey) + '">Confirm fix</button>';
+  html += '<button type="button" class="review-open-map" data-open-review-issue="' +
+          escapeHtml(issueKey) + '">Open on map instead</button>';
+  html += '</div>';
+  return html;
+}
+
+function renderOperationEditors(issueKey: string, operations: ReviewFixOperation[]): string {
+  let html = '<div class="review-editors">';
+  operations.forEach((operation, operationIndex) => {
+    if (operation.kind === "set-node-field") {
+      const inputType = typeof operation.value === "number" ? "number" : "text";
+      if (typeof operation.value === "boolean") return;
+      html += '<label><span>' + escapeHtml(operation.field) + '</span><input type="' + inputType +
+              '" data-review-operation="' + operationIndex + '" data-review-issue-key="' + escapeHtml(issueKey) +
+              '" value="' + escapeHtml(String(operation.value ?? "")) + '" /></label>';
+    } else if (operation.kind === "add-connection" || operation.kind === "update-connection") {
+      html += '<label><span>Connection type</span><select data-review-operation="' + operationIndex +
+              '" data-review-issue-key="' + escapeHtml(issueKey) + '">';
+      for (const effect of ["enables", "increases", "decreases"]) {
+        html += '<option value="' + effect + '"' + (operation.effect === effect ? " selected" : "") + '>' + effect + '</option>';
+      }
+      html += '</select></label>';
+    }
+  });
+  html += '</div>';
+  return html;
+}
+
+function renderProposalPreview(preview: ReviewProposalPreview): string {
+  let html = '<div class="review-preview-summary"><b>' + preview.issuesCleared + ' issue' +
+    (preview.issuesCleared === 1 ? "" : "s") + ' cleared</b>';
+  if (preview.issuesIntroduced) html += ' · <span class="is-warning">' + preview.issuesIntroduced + ' introduced</span>';
+  html += ' · ' + preview.valueChanges.length + ' value' + (preview.valueChanges.length === 1 ? "" : "s") + ' change</div>';
+  if (preview.valueChanges.length) {
+    html += '<details><summary>Preview downstream values</summary><div class="review-value-changes">';
+    for (const change of preview.valueChanges.slice(0, 12)) {
+      html += '<div><span>' + escapeHtml(change.label) + '</span><code>' +
+        escapeHtml(formatScalar(change.before)) + ' → ' + escapeHtml(formatScalar(change.after)) +
+        (change.percentChange === null ? "" : ' (' + (change.percentChange > 0 ? "+" : "") + change.percentChange.toFixed(1) + '%)') +
+        '</code></div>';
+    }
+    html += '</div></details>';
+  }
+  return html;
+}
+
+function openNextReviewIssue(): void {
+  const summary = groupFindings(state.loadErrors);
+  const snapshot = captureReviewModelSnapshot();
+  const orderedGroups = [...summary.groups].sort((left, right) => {
+    const leftFixable = fixableFindingInGroup(left, snapshot) ? 1 : 0;
+    const rightFixable = fixableFindingInGroup(right, snapshot) ? 1 : 0;
+    return rightFixable - leftFixable;
+  });
+  const nextGroup = orderedGroups[0];
+  if (!nextGroup) {
+    expandedIssueKey = null;
+  } else {
+    expandedIssueKey = findingIdentity(fixableFindingInGroup(nextGroup, snapshot) || nextGroup.causes[0]);
+  }
+  renderReview();
+}
+
+function currentReviewFinding(): Finding | undefined {
+  if (expandedIssueKey) {
+    const expandedFinding = findingByIdentity(expandedIssueKey);
+    if (expandedFinding) return expandedFinding;
+  }
+  const summary = groupFindings(state.loadErrors);
+  const snapshot = captureReviewModelSnapshot();
+  const firstGroup = [...summary.groups].sort((left, right) =>
+    Number(!!fixableFindingInGroup(right, snapshot)) - Number(!!fixableFindingInGroup(left, snapshot)),
+  )[0];
+  return firstGroup ? fixableFindingInGroup(firstGroup, snapshot) || firstGroup.causes[0] : undefined;
+}
+
+function syncReviewToolbarActions(): void {
+  const finding = currentReviewFinding();
+  const nextButton = document.getElementById("toolbar-review-next") as HTMLButtonElement | null;
+  const openMapButton = document.getElementById("toolbar-review-open-map") as HTMLButtonElement | null;
+  if (nextButton) nextButton.disabled = !finding;
+  if (openMapButton) openMapButton.disabled = !finding || !finding.boxId;
+}
+
+function openFindingOnMap(finding: Finding): void {
+  const issueKey = findingIdentity(finding);
+  pinnedIssueKey = issueKey;
+  pinnedIssueFallback = { ...finding };
+  pinnedIssueExpanded = false;
+  closeReview();
+  setUiMode("edit");
+  if (finding.boxId && nodeById[finding.boxId]) {
+    focusNode(finding.boxId);
+    scrollNodeIntoView(finding.boxId);
+  }
+  renderPinnedIssueBanner();
+}
+
+function updateEditedProposalFromControl(
+  issueKey: string,
+  operationIndex: number,
+  control: HTMLInputElement | HTMLSelectElement,
+): void {
+  const finding = findingByIdentity(issueKey);
+  if (!finding) return;
+  const snapshot = captureReviewModelSnapshot();
+  const proposals = reviewProposalsForFinding(finding, snapshot);
+  if (!proposals.length) return;
+  const currentProposal = proposalForDisplay(issueKey, proposals);
+  const editedProposal: ReviewProposal = {
+    ...currentProposal,
+    operations: currentProposal.operations.map(operation => ({ ...operation })),
+  };
+  const operation = editedProposal.operations[operationIndex];
+  if (!operation) return;
+
+  if (operation.kind === "set-node-field") {
+    const originalValue = operation.value;
+    operation.value = typeof originalValue === "number"
+      ? (control.value === "" ? undefined : Number(control.value))
+      : control.value;
+  } else if (operation.kind === "add-connection" || operation.kind === "update-connection") {
+    if (control.value === "enables" || control.value === "increases" || control.value === "decreases") {
+      operation.effect = control.value;
+    }
+  }
+  editedProposalByIssueKey.set(issueKey, editedProposal);
+
+  const previewElement = document.querySelector('[data-review-preview="' + CSS.escape(issueKey) + '"]');
+  if (previewElement) previewElement.innerHTML = renderProposalPreview(previewReviewProposal(snapshot, editedProposal));
 }
 
 function labelOf(f: Finding): string {
@@ -583,12 +863,71 @@ export function initReviewStage(): void {
   if (!listenersWired) {
     listenersWired = true;
     onReviewRecordChanged(refreshReview);
+    document.addEventListener("review-findings-changed", () => {
+      refreshReview();
+      renderPinnedIssueBanner();
+    });
   }
 
   const button = document.getElementById("review-button");
   if (button && !button.dataset.wired) {
     button.dataset.wired = "1";
     button.addEventListener("click", toggleReview);
+  }
+
+  const issueBanner = issueBannerElement();
+  if (issueBanner && !issueBanner.dataset.wired) {
+    issueBanner.dataset.wired = "1";
+    issueBanner.addEventListener("click", event => {
+      const target = event.target as HTMLElement;
+      if (target.closest("#review-banner-dismiss")) {
+        pinnedIssueKey = null;
+        pinnedIssueFallback = null;
+        renderPinnedIssueBanner();
+        return;
+      }
+      if (target.closest("#review-banner-back")) {
+        openReview();
+        if (pinnedIssueKey && findingByIdentity(pinnedIssueKey)) expandedIssueKey = pinnedIssueKey;
+        renderReview();
+        return;
+      }
+      if (target.closest("#review-banner-next")) {
+        pinnedIssueKey = null;
+        pinnedIssueFallback = null;
+        openReview();
+        openNextReviewIssue();
+        return;
+      }
+      if (target.closest("#review-banner-toggle")) {
+        pinnedIssueExpanded = !pinnedIssueExpanded;
+        renderPinnedIssueBanner();
+      }
+    });
+  }
+
+  const toolbarNextIssueButton = document.getElementById("toolbar-review-next");
+  if (toolbarNextIssueButton && !toolbarNextIssueButton.dataset.wired) {
+    toolbarNextIssueButton.dataset.wired = "1";
+    toolbarNextIssueButton.addEventListener("click", () => {
+      resolvedIssueLabel = null;
+      openNextReviewIssue();
+    });
+  }
+
+  const toolbarOpenMapButton = document.getElementById("toolbar-review-open-map");
+  if (toolbarOpenMapButton && !toolbarOpenMapButton.dataset.wired) {
+    toolbarOpenMapButton.dataset.wired = "1";
+    toolbarOpenMapButton.addEventListener("click", () => {
+      const finding = currentReviewFinding();
+      if (finding) openFindingOnMap(finding);
+    });
+  }
+
+  const reviewExitButton = document.getElementById("review-exit-button");
+  if (reviewExitButton && !reviewExitButton.dataset.wired) {
+    reviewExitButton.dataset.wired = "1";
+    reviewExitButton.addEventListener("click", closeReview);
   }
 
   const stage = stageEl();
@@ -599,6 +938,63 @@ export function initReviewStage(): void {
     const target = event.target as HTMLElement;
 
     if (target.closest("#review-close")) { closeReview(); return; }
+
+    if (target.closest("#review-next-issue")) {
+      resolvedIssueLabel = null;
+      openNextReviewIssue();
+      return;
+    }
+
+    if (target.closest("#review-stay-here")) {
+      resolvedIssueLabel = null;
+      renderReview();
+      return;
+    }
+
+    const issueToggle = target.closest("[data-review-issue]") as HTMLElement | null;
+    if (issueToggle) {
+      const issueKey = issueToggle.getAttribute("data-review-issue")!;
+      expandedIssueKey = expandedIssueKey === issueKey ? null : issueKey;
+      resolvedIssueLabel = null;
+      renderReview();
+      return;
+    }
+
+    const proposalChoice = target.closest("[data-review-proposal]") as HTMLInputElement | null;
+    if (proposalChoice) {
+      const issueKey = proposalChoice.getAttribute("data-review-issue-key")!;
+      selectedProposalIdentifierByIssueKey.set(issueKey, proposalChoice.getAttribute("data-review-proposal")!);
+      editedProposalByIssueKey.delete(issueKey);
+      renderReview();
+      return;
+    }
+
+    const confirmFix = target.closest("[data-confirm-review-fix]") as HTMLElement | null;
+    if (confirmFix) {
+      const issueKey = confirmFix.getAttribute("data-confirm-review-fix")!;
+      const finding = findingByIdentity(issueKey);
+      if (!finding) { renderReview(); return; }
+      const proposals = reviewProposalsForFinding(finding, captureReviewModelSnapshot());
+      if (!proposals.length) { renderReview(); return; }
+      const proposal = proposalForDisplay(issueKey, proposals);
+      const node = finding.boxId ? nodeById[finding.boxId] : undefined;
+      resolvedIssueLabel = node?.label || finding.boxId || "Review issue";
+      expandedIssueKey = null;
+      selectedProposalIdentifierByIssueKey.delete(issueKey);
+      editedProposalByIssueKey.delete(issueKey);
+      applyConfirmedReviewProposal(proposal);
+      renderReview();
+      return;
+    }
+
+    const openOnMap = target.closest("[data-open-review-issue]") as HTMLElement | null;
+    if (openOnMap) {
+      const issueKey = openOnMap.getAttribute("data-open-review-issue")!;
+      const finding = findingByIdentity(issueKey);
+      if (!finding) return;
+      openFindingOnMap(finding);
+      return;
+    }
 
     if (target.closest("#review-run-sweep")) {
       sweepRequestedFor = solverGeneration();
@@ -680,6 +1076,13 @@ export function initReviewStage(): void {
   stage.addEventListener("input", event => {
     const target = event.target as HTMLElement;
 
+    const operationIndexText = target.getAttribute && target.getAttribute("data-review-operation");
+    const proposalIssueKey = target.getAttribute && target.getAttribute("data-review-issue-key");
+    if (operationIndexText !== null && proposalIssueKey) {
+      updateEditedProposalFromControl(proposalIssueKey, Number(operationIndexText), target as HTMLInputElement | HTMLSelectElement);
+      return;
+    }
+
     if (target && target.id === "review-reviewer") {
       state.reviewer = (target as HTMLInputElement).value.trim();
       const named = reviewerNamed();
@@ -707,6 +1110,15 @@ export function initReviewStage(): void {
         '[data-log-action="addressed"][data-log-box="' + CSS.escape(closeBox) + '"]',
       ) as HTMLButtonElement | null;
       if (button) button.disabled = !(target as HTMLTextAreaElement).value.trim();
+    }
+  });
+
+  stage.addEventListener("change", event => {
+    const target = event.target as HTMLElement;
+    const operationIndexText = target.getAttribute && target.getAttribute("data-review-operation");
+    const proposalIssueKey = target.getAttribute && target.getAttribute("data-review-issue-key");
+    if (operationIndexText !== null && proposalIssueKey) {
+      updateEditedProposalFromControl(proposalIssueKey, Number(operationIndexText), target as HTMLInputElement | HTMLSelectElement);
     }
   });
 

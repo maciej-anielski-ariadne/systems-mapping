@@ -256,6 +256,54 @@ export interface Finding {
    *  downstream shadow of another box's mistake: the id of the box actually at
    *  fault. A finding with this set is a consequence, not a job. */
   causedBy?: string;
+  /** Stable identity for an exact problem. Messages are presentation text and
+   *  can change; Review uses this key to compare a proposed fix with the same
+   *  detached model after the patch has been applied. */
+  issueKey?: string;
+  /** Machine-readable evidence for checks that can name the exact field or
+   *  connection involved. Findings without a target remain navigation-only. */
+  target?: ReviewFindingTarget;
+}
+
+export type ReviewNodeField =
+  | "baseline"
+  | "controllable"
+  | "combine"
+  | "formula"
+  | "minValue"
+  | "maxValue";
+
+export type ReviewFindingTarget =
+  | { kind: "node-field"; nodeId: string; field: ReviewNodeField }
+  | { kind: "formula-reference"; nodeId: string; referencedId: string }
+  | { kind: "connection"; sourceId: string; targetId: string };
+
+export type ReviewFixOperation =
+  | { kind: "set-node-field"; nodeId: string; field: ReviewNodeField; value: string | number | boolean | undefined }
+  | { kind: "add-connection"; sourceId: string; targetId: string; effect: EffectKind; elasticity?: number }
+  | { kind: "remove-connection"; sourceId: string; targetId: string }
+  | { kind: "update-connection"; sourceId: string; targetId: string; effect: EffectKind; elasticity?: number };
+
+export interface ReviewProposal {
+  id: string;
+  label: string;
+  explanation: string;
+  operations: ReviewFixOperation[];
+}
+
+export interface ReviewValueChange {
+  nodeId: string;
+  label: string;
+  before: number;
+  after: number;
+  percentChange: number | null;
+}
+
+export interface ReviewProposalPreview {
+  issuesCleared: number;
+  issuesIntroduced: number;
+  remainingIssueCount: number;
+  valueChanges: ReviewValueChange[];
 }
 
 // ───── The review record (24-review-record.ts) ──────────────────────────────

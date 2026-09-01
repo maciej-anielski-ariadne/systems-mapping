@@ -52,6 +52,8 @@ import { scheduleCsvSave } from "./04a-storage";
 import { STREAM_COLOR_PALETTE } from "./02-config";
 import { deriveShortLabel } from "./16e-canvas-edit";
 import { pickTextColor, cloneNodeForUndo, cloneEdgeForUndo } from "./04-utils";
+import { attributeFindings, invalidateSweep } from "./22-review";
+import { refreshLiveReviewFindings } from "./22a-review-model";
 
 // ───── Mutation chokepoint ────────────────────────────────────────────────
 // Every canvas edit ends here. Re-runs the pipeline that data-loader.js runs
@@ -76,6 +78,12 @@ export function applyCanvasMutation(options?: { skipDetailRender?: boolean; skip
   rebuildIndexes();
   setLayout(computeLayout());
   recomputeValues();
+  // Review findings describe the current model, not the file as it looked when
+  // it was first opened. Re-run the reproducible checks after every mutation;
+  // import-row findings are preserved by refreshLiveReviewFindings().
+  refreshLiveReviewFindings();
+  attributeFindings(state.loadErrors);
+  invalidateSweep();
   if (!options || !options.skipSidebarRender) renderSidebar();
   render();
   if (!options || !options.skipDetailRender) renderDetailPanel();

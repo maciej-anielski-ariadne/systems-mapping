@@ -112,14 +112,12 @@ describe("the filters drawer", () => {
 });
 
 describe("the file menu", () => {
-  it("holds all seven ways the map comes in and goes out, and closes on the next click", () => {
+  it("keeps document actions in File and closes on the next click", () => {
     loadDataFromCsv(sampleCsv);
     const menu = document.getElementById("file-menu") as HTMLElement;
-    expect(menu.querySelectorAll(".menu-item").length).toBe(7);
+    expect(menu.querySelectorAll(".menu-item").length).toBe(5);
     for (const trigger of [
-      ".create-map-trigger",         // New map      (editing only)
       ".import-data-trigger",        // Import
-      ".edit-data-trigger",          // Bulk edit    (editing only)
       ".save-data-trigger",          // Spreadsheet
       ".export-review-log-trigger",  // Review log
       ".export-image-trigger",       // Image
@@ -134,11 +132,13 @@ describe("the file menu", () => {
     expect(menu.hidden).toBe(true);
   });
 
-  it("keeps the two authoring items marked editing-only", () => {
+  it("surfaces map-wide authoring actions in the Edit toolbar", () => {
     const menu = document.getElementById("file-menu") as HTMLElement;
-    expect(menu.querySelector(".create-map-trigger")!.classList.contains("edit-only")).toBe(true);
-    expect(menu.querySelector(".edit-data-trigger")!.classList.contains("edit-only")).toBe(true);
-    expect(menu.querySelector(".import-data-trigger")!.classList.contains("edit-only")).toBe(false);
+    const editActions = document.getElementById("toolbar-edit-actions") as HTMLElement;
+    expect(menu.querySelector(".create-map-trigger")).toBeNull();
+    expect(menu.querySelector(".edit-data-trigger")).toBeNull();
+    expect(editActions.querySelector(".create-map-trigger")?.textContent).toBe("New map");
+    expect(editActions.querySelector(".edit-data-trigger")?.textContent).toBe("Bulk edit");
   });
 
   it("has nothing to offer before a map is loaded", () => {
@@ -168,6 +168,29 @@ describe("the header is grouped, not evenly spaced", () => {
     expect(document.getElementById("filters-group")).not.toBeNull();
     expect(document.getElementById("filters-button")!.closest(".header-group")!.id)
       .toBe("filters-group");
+  });
+});
+
+describe("contextual modes", () => {
+  it("never leaves Edit and Simulate active together", () => {
+    loadDataFromCsv(sampleCsv);
+    setUiMode("edit");
+    expect(state.uiMode).toBe("edit");
+
+    toggleSimulationMode();
+    expect(state.simulationMode).toBe(true);
+    expect(state.uiMode).toBe("read");
+
+    setUiMode("edit");
+    expect(state.uiMode).toBe("edit");
+    expect(state.simulationMode).toBe(false);
+  });
+
+  it("puts simulation's exit in the stable right-hand action group", () => {
+    loadDataFromCsv(sampleCsv);
+    if (!state.simulationMode) toggleSimulationMode();
+    (document.getElementById("simulation-exit-button") as HTMLButtonElement).click();
+    expect(state.simulationMode).toBe(false);
   });
 });
 

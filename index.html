@@ -141,24 +141,15 @@
               data-tooltip="Rows, columns, tags and link styles — what the map is showing.">Filters</button>
     </div>
 
-    <!-- File. Everything to do with the map as a DOCUMENT: start one, bring one
-         in, edit it as a sheet, take one away. Four header buttons folded into
-         one control, two of which (New map, Bulk edit) were .edit-only — which
-         is most of why the header used to reshuffle on every mode switch. They
-         keep .edit-only in here, one level deeper, and the row now holds still. -->
+    <!-- File keeps the import/export actions that remain useful in every mode.
+         Map-wide authoring actions surface directly when Edit is active. -->
     <div class="header-group">
       <div class="menu-wrap">
         <button id="file-button" class="header-button" aria-haspopup="true" aria-expanded="false"
                 data-tooltip="The map as a file — start one, bring one in, or take one away.">File<span class="header-caret" aria-hidden="true">▾</span></button>
         <div id="file-menu" class="menu" role="menu" hidden>
-          <button class="menu-item edit-only create-map-trigger" role="menuitem">
-            <b>New map</b><span>Clear the map and start from an empty 3×3 grid.</span>
-          </button>
           <button class="menu-item import-data-trigger" role="menuitem">
             <b>Import…</b><span>Open a map spreadsheet — same as dragging one onto the window.</span>
-          </button>
-          <button class="menu-item edit-only edit-data-trigger" role="menuitem">
-            <b>Bulk edit</b><span>Edit the whole map in a form — handy for many edits at once.</span>
           </button>
           <div class="menu-sep" role="separator"></div>
           <div class="menu-head"><span>Export</span></div>
@@ -178,10 +169,20 @@
       </div>
     </div>
 
+    <!-- Editing replaces the reading tools with the actions an author needs
+         repeatedly. New map and Bulk edit used to be hidden one level down in
+         File, which made the mode reveal controls without revealing its two
+         map-wide actions. -->
+    <div class="header-group toolbar-edit-actions" id="toolbar-edit-actions">
+      <button class="header-button create-map-trigger">New map</button>
+      <button class="header-button edit-data-trigger">Bulk edit</button>
+    </div>
+
     <!-- The three reading tools. One group because they answer the same kind of
          question — help me understand this map — and because grouped, the three
          of them read as a set rather than as three more buttons. -->
-    <div class="header-group">
+    <div class="header-group" id="reading-tools-group">
+      <button id="toolbar-sim-reset" class="header-button toolbar-sim-reset">Reset sliders</button>
       <button id="sim-toggle-button" class="header-button" data-tooltip="Turn on what-if mode — a slider on every adjustable input; its effects update live.">Simulate</button>
       <!-- Review sits beside Simulate because it answers the question Simulate
            raises: do I believe these numbers? Carries a count badge of the things
@@ -199,16 +200,24 @@
            short list of the boxes worth starting from. A disabled button would
            have been the easy answer and the wrong one — grey chrome is chrome
            people stop seeing, and this control's whole job is to be seen. -->
-      <div class="menu-wrap read-only">
+      <div class="menu-wrap read-only" id="atlas-control">
         <button id="atlas-button" class="header-button" aria-haspopup="true" aria-expanded="false"
                 data-tooltip="Every pathway out of one box, as one picture you zoom into.">Atlas<span class="header-caret" aria-hidden="true">▾</span></button>
         <div id="atlas-menu" class="menu" role="menu" hidden></div>
       </div>
     </div>
 
+    <div class="header-group toolbar-review-actions" id="toolbar-review-actions">
+      <button id="toolbar-review-next" class="header-button">Next issue</button>
+      <button id="toolbar-review-open-map" class="header-button">Open on map</button>
+    </div>
+
     <div class="header-group">
       <button id="mode-toggle-button" class="header-button header-button--primary"
               data-tooltip="Switch between reading the map and changing it.">Edit</button>
+      <button id="simulation-exit-button" class="header-button">Exit simulation</button>
+      <button id="atlas-exit-button" class="header-button">Close Atlas</button>
+      <button id="review-exit-button" class="header-button">Done reviewing</button>
       <button id="theme-toggle-button" class="header-button header-button--icon" data-tooltip="Switch between the light and dark theme. Your choice is remembered." aria-label="Switch theme">☀</button>
     </div>
   </header>
@@ -349,6 +358,9 @@
          what a nudge on each adjustable input actually does. Filled by
          23-review-panel.ts when opened; empty and hidden otherwise. -->
     <div id="review-stage" class="review-stage" hidden></div>
+    <!-- Persists after Review closes so the author does not have to remember
+         the issue while inspecting or editing its box on the map. -->
+    <aside id="review-issue-banner" class="review-issue-banner" hidden aria-live="polite"></aside>
 
     <!-- Optional CSV-import overlay. No longer shown at startup — the
          canvas boots into an empty 3x3 starter grid instead, and you click

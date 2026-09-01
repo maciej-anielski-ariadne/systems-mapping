@@ -40,13 +40,13 @@ file to open.
 The app opens in **reading mode**: the map has the screen to itself. There is no
 docked left panel (**Filters** slides it over the map when you want it), the
 right-hand detail panel stays closed until you select a box, and the header
-carries only what a reader reaches for — **Filters · Import · Export · Simulate ·
-Review · Edit**, plus the theme switch.
+carries only what a reader reaches for — **Filters · File · Simulate · Review ·
+Atlas · Edit**, plus the theme switch.
 
-**Edit** switches modes. Both side panels dock, the authoring buttons appear
-(**New map**, **Bulk edit**), and the sidebar grows its rename / recolour /
-reorder / **+ Add** affordances. **Done** goes back. The mode is remembered
-across a refresh.
+**Edit** switches modes. Both side panels dock; **New map**, **Bulk edit** and
+**Review** replace the incompatible reading tools; and the sidebar grows its
+rename / recolour / reorder / **+ Add** affordances. **Done** goes back. The
+mode is remembered across a refresh.
 
 Direct manipulation on the map — Shift-click an empty cell to add a box, Shift-drag
 from a box's right edge to draw a link, Shift-drag a box to move it — lives in
@@ -60,19 +60,19 @@ the same happens in **simulation**: the sliders *are* the left panel, and you wo
 them against the map, so entering simulation docks the panel rather than leaving
 it as a drawer that would close the moment you clicked the map.
 
-The header holds four groups — **Filters** · **File** · the reading tools
-(**Simulate · Review · Atlas**) · the mode switch and the theme — spaced tight
-inside a group and wide between them, so the row reads as four things rather
-than as eight equals.
+The header keeps Search, File and Theme stable while the middle actions follow
+the current surface. Reading shows **Simulate · Review · Atlas**; editing shows
+**New map · Bulk edit · Review**; simulation surfaces **Reset sliders**; Review
+surfaces **Next issue · Open on map**; and Atlas surfaces **Change starting
+box**. Incompatible actions disappear rather than remaining disabled.
 
 - **Filters** opens the left panel as a drawer — rows, columns and tags, with the link-type / line-style / highlighting filters folded away under **Link and highlight options**. Esc or a click on the map closes it. Hidden while editing, where the panel is docked.
-- **File** opens a menu holding every way the map comes in and goes out — the map as a *document*:
-  - **New map** (editing only) clears the map and starts a fresh empty grid, asking for confirmation if a map is loaded.
+- **File** opens the document actions that remain useful in every mode:
   - **Import…** loads a spreadsheet from disk — same as dragging one onto the window.
-  - **Bulk edit** (editing only) opens the seven-step wizard (dimmed until a map exists).
   - **Spreadsheet** downloads the current map as a `.csv` (re-importable). With a box selected, saves only its highlighted boxes and links.
   - **Image** copies the map to your clipboard as a high-resolution PNG (rendered vector-sharp at up to 3× pixel density, backed off automatically to stay inside what browsers can allocate — one side at most 16384px, at most 64 megapixels total) and shows a "copied" toast — paste it straight into a doc, slide, or chat. It captures what's on screen, so zoom / pan to frame the part you want (only boxes overlapping the visible area are included, along with the links whose two ends are both on screen; if the whole map already fits, you get all of it). If a box is selected, only its highlighted boxes and links (out to the current **highlight depth**) are copied — rendered in the map's normal, un-highlighted style (the highlight only selects what to include). Either way the export is reflowed: empty columns and rows are dropped and the surviving rows reordered so connected boxes sit closer together. A map so large that even 1× exceeds those canvas limits still exports, but the toast tells you the percentage it came out at and suggests selecting a box to get that part at full quality; if the browser refuses the image outright, the toast says so rather than failing silently. (Clipboard image copy needs a secure context — works over http/localhost or https.)
   - **Web page** downloads `systems-map.html` — a self-contained, view-only page of the same framed map (same viewport / selection framing as **Image**) with pan / zoom / hover-for-details (no editing, importing, or simulating).
+- **New map** and **Bulk edit** appear directly in the toolbar while editing.
 - **Simulate** toggles simulation mode (sliders on adjustable boxes).
 - **Review** opens the [review panel](#review--checking-a-map-you-cannot-read-in-one-go) — everything the loader flagged, grouped by cause, what each adjustable box actually moves, and what nobody has checked yet. It carries a count badge whenever there is something to fix, so a map with problems never looks clean.
 - **Theme** (the ☀ / ☾ icon) switches between the light (Linen) and dark (Twilight) theme; your choice is remembered.
@@ -580,6 +580,8 @@ systems_mapping/
     │   ├── 20-atlas-engine.ts       Pathway atlas: scope → contract loops → group → count (exact)
     │   ├── 21-atlas-view.ts         Pathway atlas: the picture, the wheel, the tour, the panel
     │   ├── 22-review.ts             Review logic: findings grouped by cause + the input sweep
+    │   ├── 22a-review-model.ts      Detached Review solver, structured checks, proposals + previews
+    │   ├── 22b-review-apply.ts      Applies a confirmed Review proposal as one undoable map edit
     │   ├── 23-review-panel.ts       Review UI: the overlay, the cards, the header count badge
     │   ├── 24-review-record.ts      The review pass: the queue, verdicts, staleness, families
     │   ├── 25-review-rail.ts        The review queue docked beside the map, and the log export
@@ -642,6 +644,7 @@ features are split across multiple files:
 | The atlas UI — the picture, the wheel, the loop tour, the panel | `assets/js/21-atlas-view.ts`, `assets/css/16-atlas.css` |
 | What the loader checks, and the words it says | `assets/js/06-data-loader.ts` (the `finding(...)` calls) |
 | How a finding is blamed on a cause rather than listed as its own problem | `assets/js/22-review.ts` (`attributeFindings`) |
+| Direct fixes and downstream previews in Review | `assets/js/22a-review-model.ts`, `assets/js/22b-review-apply.ts`, `assets/js/23-review-panel.ts` |
 | The input sweep — what each adjustable box actually moves | `assets/js/22-review.ts` (`runSweep`, `sweepExceptions`) |
 | The Review panel UI + its header count badge | `assets/js/23-review-panel.ts`, `assets/css/17-review.css` |
 | The review pass — queue order, verdicts, staleness, the family prompt | `assets/js/24-review-record.ts` |

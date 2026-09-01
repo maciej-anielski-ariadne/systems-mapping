@@ -227,7 +227,12 @@ export function applyUiMode(): void {
 }
 
 export function setUiMode(mode: string): void {
-  state.uiMode = mode === "edit" ? "edit" : "read";
+  const nextMode = mode === "edit" ? "edit" : "read";
+  // Edit and Simulate both own the left panel and the meaning of canvas
+  // gestures. Entering Edit ends simulation; Atlas is already closed by
+  // applyUiMode below. Simulate performs the inverse when it is entered.
+  if (nextMode === "edit" && state.simulationMode) toggleSimulationMode();
+  state.uiMode = nextMode;
   applyUiMode();
   saveUiStateToStorage();
 }
@@ -290,16 +295,9 @@ document.addEventListener("mousedown", event => {
 });
 
 // ───── File menu ─────────────────────────────────────────────────────────
-// Everything to do with the map as a DOCUMENT behind one control: New map,
-// Import, Bulk edit, and the three exports. Six items, which sounds like a lot
-// until you notice they were six header buttons competing for the same glance —
-// four of them named, two of the four only present in editing mode, so the row
-// reshuffled every time you switched.
-//
-// Each item keeps its original trigger class and the handlers above bind by
-// class at module load, so nothing about how any of them works changed. The two
-// authoring items keep `.edit-only` too; it is a CSS rule on body.reading, so
-// it works just as well on a menu row as it did on a button.
+// Import and export remain behind one stable document control. New map and
+// Bulk edit surface directly in the contextual Edit actions instead: they are
+// actions within the current mode, not file formats.
 export function setFileMenuOpen(open: boolean): void {
   const menu = document.getElementById("file-menu");
   const button = document.getElementById("file-button");

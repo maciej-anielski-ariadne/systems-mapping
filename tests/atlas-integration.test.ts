@@ -15,6 +15,7 @@ import { loadDataFromCsv } from "../assets/js/06-data-loader";
 import { EDGES, NODES, nodeById, state } from "../assets/js/03-state";
 import { deselectAll, selectNode } from "../assets/js/09-graph-selection";
 import { renderDetailPanel } from "../assets/js/15-detail-panel";
+import { toggleSimulationMode } from "../assets/js/14-simulation-panel";
 import { setUiMode } from "../assets/js/17-events";
 import {
   atlasIsOpen,
@@ -36,6 +37,7 @@ const firstInput = (): string => {
 
 beforeEach(() => {
   closeAtlas();
+  if (state.simulationMode) toggleSimulationMode();
   setUiMode("read");
   initAtlasStage();          // idempotent; 18-main does this at boot. Wires the
                              // entry points AND the pointer handlers on the
@@ -93,11 +95,14 @@ describe("the ways in", () => {
     expect(state.atlas!.startId).toBe(start);
   });
 
-  it("the header button closes it again, so the door is also the way out", () => {
+  it("the header button changes the starting box and the contextual exit closes Atlas", () => {
     loadDataFromCsv(sampleCsv);
     selectNode(firstInput());
     atlasButton().click();
     atlasButton().click();
+    expect(atlasIsOpen()).toBe(true);
+    expect(atlasMenu().hidden).toBe(false);
+    (document.getElementById("atlas-exit-button") as HTMLButtonElement).click();
     expect(atlasIsOpen()).toBe(false);
   });
 
@@ -117,6 +122,20 @@ describe("the ways in", () => {
     // A box that ends the story is never offered — its atlas is one circle.
     const leaf = NODES.find(n => !EDGES.some(e => e.from === n.id))!;
     expect(atlasStartCandidates().some(c => c.id === leaf.id)).toBe(false);
+  });
+
+  it("keeps Simulation active while Atlas opens and closes", () => {
+    loadDataFromCsv(sampleCsv);
+    if (!state.simulationMode) toggleSimulationMode();
+    selectNode(firstInput());
+    atlasButton().click();
+    expect(atlasIsOpen()).toBe(true);
+    expect(state.simulationMode).toBe(true);
+
+    (document.getElementById("atlas-exit-button") as HTMLButtonElement).click();
+    expect(atlasIsOpen()).toBe(false);
+    expect(state.simulationMode).toBe(true);
+    toggleSimulationMode();
   });
 
   it("picking from that list opens the atlas there", () => {

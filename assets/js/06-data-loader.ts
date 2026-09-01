@@ -97,6 +97,7 @@ import { isUndoCaptureSuspended, clearHistory } from "./16g-canvas-undo";
 // separates a mistake from its downstream shadows (see 22-review.ts).
 import { finding, attributeFindings, groupFindings, REST_DRIFT, invalidateSweep } from "./22-review";
 import { refreshReview } from "./23-review-panel";
+import { refreshLiveReviewFindings } from "./22a-review-model";
 import { endReviewPass, reconcileReviews } from "./24-review-record";
 
 // The three ways a box can aggregate the arrows pointing into it. Blank in the
@@ -998,6 +999,11 @@ export function loadDataFromCsv(csvText: string): boolean {
   // from upstream. Runs last because it needs every finding in hand, and the
   // rest-state check above is the one that produces the shadows.
   attributeFindings(errors);
+  // Replace reproducible text-only findings with their structured equivalents.
+  // Import-row findings stay intact; structured targets are what lets Review
+  // offer a safe direct patch only when the exact field or connection is known.
+  refreshLiveReviewFindings();
+  attributeFindings(state.loadErrors);
   // A sweep is a fact about the shape of the map, and this is a different map.
   invalidateSweep();
   hideDropZone();
