@@ -297,6 +297,19 @@ describe("build/edit wizard — constants step and calculation columns", () => {
     expect(nodeById.capacity.maxValue).toBe(150);
   });
 
+  it("explains when to choose Strength, a scenario multiplier, or a formula", () => {
+    openAt(4);
+    const guide = overlay().querySelector(
+      ".builder-step-static > .calculation-choice-guide",
+    ) as HTMLDetailsElement;
+    expect(guide).toBeTruthy();
+    expect(guide.open).toBe(false);
+    expect(guide.textContent).toContain("Scenario multiplier");
+    expect(guide.textContent).toContain("Link Strength");
+    expect(guide.textContent).toContain("absolute units");
+    expect(guide.textContent).toContain("starting value at the baseline");
+  });
+
   it("sorts the Boxes table by a calculation column without touching row order", () => {
     openAt(4);
     const header = overlay().querySelector('[data-sort="nodes"][data-sortkey="combine"]')!;

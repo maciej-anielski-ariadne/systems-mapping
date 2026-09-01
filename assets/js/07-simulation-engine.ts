@@ -287,9 +287,9 @@ let incomingRowByNodeId: Record<string, IncomingRow> = createIdentifierRecord();
 // Bumped on every rebuild. Any cached per-solve bookkeeping stamped with an
 // older generation is stale and simply ignored.
 let solveGeneration = 0;
-// nodeId → the boxes that read it (arrows out PLUS any formula that names it,
-// even one the map forgot to draw an arrow for — the loader warns about that
-// but still computes it, so the solver must still propagate through it).
+// nodeId → the boxes that read it (arrows out PLUS every active formula that
+// names it). A formula missing a required arrow is deactivated by validation,
+// so it contributes no dependency here.
 let dependentsByNodeId: Record<string, string[]> = createIdentifierRecord();
 // The same graph the other way round (nodeId → the boxes it reads), used to work
 // out which boxes sit on a path back INTO the feedback core.

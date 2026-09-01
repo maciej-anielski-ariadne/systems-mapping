@@ -17,7 +17,7 @@ import type { Category, GraphNode, NodePosition } from "./types";
 import { CATEGORIES, EDGES, NODES, STAGES, STREAMS, edgeGeometryRevision, layout, nodeById, setLayout, stageById, state, streamById } from "./03-state";
 import { deselectAll, selectNode, notifySelectionChanged } from "./09-graph-selection";
 import { computeEdgeAnchorOffsets, deltaColorFor, edgeBezierPath, effectMarkerName, escapeHtml, getMapTextScale, isBackwardEdge, simEffectFill, wrapLabel, SIM_FLAT_FILL, SIM_INK, type AnchorOffset } from "./04-utils";
-import { COL_GAP, COL_HEADER_HEIGHT, LABEL_INSET, NODE_GAP_Y, NODE_HEIGHT, NODE_WIDTH, ROW_HEADER_WIDTH, ROW_PADDING, SVG_PADDING_TOP } from "./02-config";
+import { COL_GAP, COL_HEADER_HEIGHT, LABEL_INSET, NODE_GAP_Y, NODE_HEIGHT, NODE_WIDTH, ROW_HEADER_WIDTH, ROW_PADDING, SVG_PADDING_LEFT, SVG_PADDING_TOP } from "./02-config";
 import { computeLayout, layoutGeometryRevision, slotTopY } from "./08-layout";
 import { computeRenderEdges, type RenderEdge } from "./10a-collapsed-edges";
 import { isCategoryVisible, isEdgeVisible, isNodeVisible, toggleStage, toggleStream } from "./10-filters";
@@ -31,17 +31,29 @@ import { attachCanvasEditHandlers } from "./16e-canvas-edit";
 // Single grabbed reference to the SVG element we draw into.
 export const svg = document.getElementById("viz-svg") as unknown as SVGSVGElement;
 const stickyColumnHeadings = document.getElementById("viz-sticky-columns");
+const stickyRowHeadings = document.getElementById("viz-sticky-rows");
+const OVERVIEW_HEADING_ZOOM_THRESHOLD = 0.7;
+const OVERVIEW_COLUMN_HEADING_HEIGHT = 48;
+const OVERVIEW_ROW_HEADING_WIDTH = 88;
+const STANDARD_COLUMN_HEADING_HEIGHT = 32;
 
-// Keep a compact HTML copy of the stage headings above the scroller once the
-// SVG's own header band has moved out of view. HTML is intentional here: an SVG
-// child cannot be position:sticky relative to the surrounding scroll frame.
-// The buttons are rebuilt only with a full map render; ordinary pan events just
-// adjust six or so left/width styles through syncStickyColumnHeadings().
-export function renderStickyColumnHeadings(): void {
-  if (!stickyColumnHeadings) return;
+// Keep fixed-screen HTML copies of both axes. HTML is intentional: SVG children
+// cannot stay fixed to the surrounding scroll frame. Above the overview zoom
+// threshold the copies appear only after their original SVG axis pans away and
+// stay aligned with map geometry. Below it, the map itself is too small to label
+// legibly, so the copies become a stable screen-space index.
+export function renderFloatingHeadings(): void {
+  if (!stickyColumnHeadings || !stickyRowHeadings) return;
   if (!state.dataLoaded || !layout) {
+    document.getElementById("viz-container")?.classList.remove(
+      "heading-overview",
+      "floating-columns",
+      "floating-rows",
+    );
     stickyColumnHeadings.hidden = true;
     stickyColumnHeadings.innerHTML = "";
+    stickyRowHeadings.hidden = true;
+    stickyRowHeadings.innerHTML = "";
     return;
   }
 
@@ -54,27 +66,84 @@ export function renderStickyColumnHeadings(): void {
       String(!isCollapsed) + '" aria-label="' + escapeHtml(action + " column " + stage.label) + '">' +
       (isCollapsed ? "+ " : "") + escapeHtml(stage.label) + "</button>";
   }).join("");
-  syncStickyColumnHeadings();
+  stickyRowHeadings.innerHTML = STREAMS.map(stream => {
+    const isCollapsed = state.hiddenStreams.has(stream.id);
+    const action = isCollapsed ? "Expand" : "Collapse";
+    return '<button type="button" class="viz-sticky-row' + (isCollapsed ? " collapsed" : "") +
+      '" data-stream-id="' + escapeHtml(stream.id) + '" data-tooltip="' +
+      escapeHtml(action + " " + stream.label + " on the map.") + '" aria-expanded="' +
+      String(!isCollapsed) + '" aria-label="' + escapeHtml(action + " row " + stream.label) + '">' +
+      (isCollapsed ? "+ " : "") + escapeHtml(stream.short) + "</button>";
+  }).join("");
+
+  for (const button of stickyRowHeadings.querySelectorAll<HTMLElement>("[data-stream-id]")) {
+    const streamId = button.dataset.streamId;
+    if (streamId && streamById[streamId]) button.style.borderLeftColor = streamById[streamId].color;
+  }
+  syncFloatingHeadings();
 }
 
-export function syncStickyColumnHeadings(): void {
-  if (!stickyColumnHeadings || !state.dataLoaded || !layout) return;
+export function syncFloatingHeadings(): void {
+  if (!stickyColumnHeadings || !stickyRowHeadings || !state.dataLoaded || !layout) return;
   const scroller = document.getElementById("viz-scroll");
   if (!scroller) return;
 
   const zoomLevel = state.zoomLevel;
+  const overviewMode = zoomLevel < OVERVIEW_HEADING_ZOOM_THRESHOLD;
   const originalHeaderBottom = (SVG_PADDING_TOP + COL_HEADER_HEIGHT) * zoomLevel;
-  stickyColumnHeadings.hidden = scroller.scrollTop < originalHeaderBottom;
-  if (stickyColumnHeadings.hidden) return;
+  const originalRowHeaderRight = (SVG_PADDING_LEFT + ROW_HEADER_WIDTH) * zoomLevel;
+  const columnsVisible = overviewMode || scroller.scrollTop >= originalHeaderBottom;
+  const rowsVisible = overviewMode || scroller.scrollLeft >= originalRowHeaderRight;
+  const visualizationContainer = document.getElementById("viz-container");
+  visualizationContainer?.classList.toggle("heading-overview", overviewMode);
+  visualizationContainer?.classList.toggle("floating-columns", columnsVisible);
+  visualizationContainer?.classList.toggle("floating-rows", rowsVisible);
+  const columnHeadingHeight = columnsVisible
+    ? (overviewMode ? OVERVIEW_COLUMN_HEADING_HEIGHT : STANDARD_COLUMN_HEADING_HEIGHT)
+    : 0;
 
-  stickyColumnHeadings.querySelectorAll<HTMLElement>("[data-stage-id]").forEach(button => {
-    const stageId = button.dataset.stageId;
-    if (!stageId) return;
-    const columnLeft = layout!.colX[stageId];
-    const columnWidth = layout!.colWidths?.[stageId] || NODE_WIDTH;
-    button.style.left = String(columnLeft * zoomLevel - scroller.scrollLeft) + "px";
-    button.style.width = String(columnWidth * zoomLevel) + "px";
-  });
+  stickyColumnHeadings.hidden = !columnsVisible;
+  stickyColumnHeadings.classList.toggle("overview", overviewMode);
+  stickyRowHeadings.hidden = !rowsVisible;
+  stickyRowHeadings.classList.toggle("overview", overviewMode);
+  stickyRowHeadings.style.top = String(columnHeadingHeight) + "px";
+
+  if (columnsVisible) {
+    stickyColumnHeadings.querySelectorAll<HTMLElement>("[data-stage-id]").forEach((button, index) => {
+      const stageId = button.dataset.stageId;
+      if (!stageId) return;
+      const columnLeft = layout!.colX[stageId];
+      const columnWidth = layout!.colWidths?.[stageId] || NODE_WIDTH;
+      const headingLeft = overviewMode && index > 0 ? columnLeft - COL_GAP / 2 : columnLeft;
+      const headingRight = overviewMode && index < STAGES.length - 1
+        ? columnLeft + columnWidth + COL_GAP / 2
+        : columnLeft + columnWidth;
+      const overviewRowHeadingOffset = overviewMode ? OVERVIEW_ROW_HEADING_WIDTH : 0;
+      button.style.left = String(
+        overviewRowHeadingOffset + headingLeft * zoomLevel - scroller.scrollLeft,
+      ) + "px";
+      button.style.width = String((headingRight - headingLeft) * zoomLevel) + "px";
+    });
+  }
+
+  if (rowsVisible) {
+    const viewportHeight = scroller.clientHeight || 600;
+    const availableHeight = overviewMode
+      ? viewportHeight
+      : Math.max(0, viewportHeight - columnHeadingHeight);
+
+    stickyRowHeadings.querySelectorAll<HTMLElement>("[data-stream-id]").forEach(button => {
+      const streamId = button.dataset.streamId;
+      if (!streamId) return;
+      const rowTop = layout!.rowY[streamId] * zoomLevel - scroller.scrollTop -
+        (overviewMode ? 0 : columnHeadingHeight);
+      const rowHeight = layout!.rowHeights[streamId] * zoomLevel;
+      const visibleTop = Math.max(0, rowTop);
+      const visibleBottom = Math.min(rowTop + rowHeight, availableHeight);
+      button.style.top = String(visibleTop) + "px";
+      button.style.height = String(Math.max(0, visibleBottom - visibleTop)) + "px";
+    });
+  }
 }
 
 stickyColumnHeadings?.addEventListener("click", event => {
@@ -84,6 +153,15 @@ stickyColumnHeadings?.addEventListener("click", event => {
   if (!stageId) return;
   toggleStage(stageId);
   stickyColumnHeadings.querySelector<HTMLElement>('[data-stage-id="' + CSS.escape(stageId) + '"]')?.focus();
+});
+
+stickyRowHeadings?.addEventListener("click", event => {
+  const eventTarget = event.target instanceof Element ? event.target : null;
+  const button = eventTarget?.closest<HTMLElement>("[data-stream-id]");
+  const streamId = button?.dataset.streamId;
+  if (!streamId) return;
+  toggleStream(streamId);
+  stickyRowHeadings.querySelector<HTMLElement>('[data-stream-id="' + CSS.escape(streamId) + '"]')?.focus();
 });
 
 // ───── Delegated SVG interaction — bound ONCE, never per render ────────────
@@ -690,6 +768,12 @@ export function setMapTextScaleVar(svgEl: SVGSVGElement | HTMLElement, scale: nu
 export const STATIC_LAYER_CLASS  = "ml-static-layer";
 export const OVERLAY_LAYER_CLASS = "ml-overlay-layer";
 
+function nodeLeftForStage(stageId: string): number {
+  const columnLeft = layout.colX[stageId];
+  const columnWidth = layout.colWidths[stageId] || NODE_WIDTH;
+  return columnLeft + Math.max(0, (columnWidth - NODE_WIDTH) / 2);
+}
+
 // Build only the transient overlay markup. Reads the live canvasEdit state, so
 // it always reflects the current cursor / hover / drag / marquee.
 export function buildOverlayContent(): string {
@@ -705,7 +789,7 @@ export function buildOverlayContent(): string {
     if (!sameAsHover) {
       const cursorCellNodes = (layout.cells && layout.cells[cursorCell.streamId + ":" + cursorCell.stageId]) || [];
       const slot = Math.max(0, Math.min(cursorCellNodes.length, cursorCell.slotIndex || 0));
-      const x = layout.colX[cursorCell.stageId];
+      const x = nodeLeftForStage(cursorCell.stageId);
       const y = slotTopY(cursorCell.streamId, cursorCell.stageId, slot);
       content += '<g class="cursor-cell">';
       content +=   '<rect x="' + x + '" y="' + y + '" width="' + NODE_WIDTH + '" height="' + NODE_HEIGHT + '" rx="5"></rect>';
@@ -719,7 +803,7 @@ export function buildOverlayContent(): string {
   if (hoverCell && layout.rowY[hoverCell.streamId] !== undefined && layout.colX[hoverCell.stageId] !== undefined) {
     const existingInCell = NODES.reduce((acc, n) => (n.stream === hoverCell.streamId && n.stage === hoverCell.stageId) ? acc + 1 : acc, 0);
     const insertSlot = hoverCell.insertIndex != null ? hoverCell.insertIndex : existingInCell;
-    const ghostX = layout.colX[hoverCell.stageId];
+    const ghostX = nodeLeftForStage(hoverCell.stageId);
     const ghostY = slotTopY(hoverCell.streamId, hoverCell.stageId, insertSlot);
     const ghostLabel = "+ add box";
     content += '<g class="ghost-cell" data-stream-id="' + escapeHtml(hoverCell.streamId) + '" data-stage-id="' + escapeHtml(hoverCell.stageId) + '" data-insert-index="' + insertSlot + '">';
@@ -732,7 +816,7 @@ export function buildOverlayContent(): string {
   const drag = ce.draggingNode;
   if (drag && drag.dropCell && drag.dropCell.insertIndex != null && layout.rowY[drag.dropCell.streamId] !== undefined && layout.colX[drag.dropCell.stageId] !== undefined) {
     const dc = drag.dropCell;
-    const cellLeft = layout.colX[dc.stageId];
+    const cellLeft = nodeLeftForStage(dc.stageId);
     const groupSet = new Set((drag.groupIds && drag.groupIds.length) ? drag.groupIds : [drag.nodeId]);
     const kept = (layout.cells![dc.streamId + ":" + dc.stageId] || []).filter(n => !groupSet.has(n.id));
     let slotY = layout.rowY[dc.streamId] + ROW_PADDING;
@@ -779,7 +863,9 @@ export function buildOverlayContent(): string {
     content += fillInfo.defs;
     content += '<rect x="' + px + '" y="' + py + '" width="' + NODE_WIDTH + '" height="' + previewH + '" rx="5" fill="' + escapeHtml(fillInfo.fill) + '" stroke="rgba(0,0,0,0.4)" stroke-width="1"></rect>';
     content += '<rect x="' + px + '" y="' + py + '" width="6" height="' + previewH + '" rx="2" fill="' + escapeHtml(stream.color) + '"></rect>';
-    content += '<text class="node-label" x="' + (px + LABEL_INSET) + '" y="' + (py + 16) + '" fill="' + escapeHtml(fillInfo.textColor) + '" dominant-baseline="middle">';
+    content += '<text class="node-label" x="' + (px + LABEL_INSET) + '" y="' +
+      (py + 16) + '" fill="' + escapeHtml(fillInfo.textColor) +
+      '" dominant-baseline="middle">';
     for (let i = 0; i < previewLines.length; i++) {
       const dy = i === 0 ? "0" : "1.083em";
       content += '<tspan x="' + (px + LABEL_INSET) + '" dy="' + dy + '">' + escapeHtml(previewLines[i]) + '</tspan>';
@@ -1083,7 +1169,7 @@ export function render(): void {
     svg.setAttribute("width", String(0));
     svg.setAttribute("height", String(0));
     svg.innerHTML = "";
-    renderStickyColumnHeadings();
+    renderFloatingHeadings();
     return;
   }
 
@@ -1365,7 +1451,9 @@ export function render(): void {
 
     const nodeAccessibleLabel = node.label + ", row " + (streamById[node.stream]?.label || node.stream) +
       ", column " + (stageById[node.stage]?.label || node.stage);
-    content += '<g class="' + nodeClasses + '" data-node-id="' + escapeHtml(node.id) + '" role="button" tabindex="0" aria-label="' + escapeHtml(nodeAccessibleLabel) + '" aria-pressed="' + String(state.selectedNodeIds.has(node.id)) + '">';
+    content += '<g class="' + nodeClasses + '" data-node-id="' + escapeHtml(node.id) +
+      '" role="button" tabindex="0" aria-label="' + escapeHtml(nodeAccessibleLabel) +
+      '" aria-pressed="' + String(state.selectedNodeIds.has(node.id)) + '">';
     content += fillInfo.defs;   // per-node gradient def (empty unless multi-primary)
 
     // ── Background rect with conditional border ──
@@ -1489,7 +1577,7 @@ export function render(): void {
   _drawnNodesLength = NODES.length;
   _drawnEdgesLength = EDGES.length;
   _drawnGeometryRevision = layoutGeometryRevision();
-  renderStickyColumnHeadings();
+  renderFloatingHeadings();
 }
 
 // ───── Incremental selection repaint ──────────────────────────────────────

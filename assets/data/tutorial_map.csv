@@ -1,0 +1,99 @@
+# Ariadne Maps — Tutorial map
+# A neutral community-workshop programme designed for learning the app. The
+# map is small enough to follow end to end while exercising the full modelling
+# toolkit: filters, search, simulation, Atlas feedback loops, calculation
+# rules, evidence metadata, formulas, bounds and hidden constants. Its worked
+# formula cases contrast proportional links with rate conversion, capacity,
+# shares, balances, threshold conditions, joint requirements and delay().
+#
+# Every calculated box rests exactly at its stated baseline. Evidence statuses
+# are examples of documentation practice, not claims about a real programme.
+
+# SECTION: streams
+id,label,short,color
+planning,Planning,PLAN,#60a5fa
+delivery,Delivery,DELIV,#34d399
+community,Community,COMM,#fbbf24
+
+# SECTION: stages
+id,label
+inputs,Inputs
+preparedness,Preparedness
+participation,Participation
+outcomes,Outcomes
+
+# SECTION: categories
+id,label,color,text_color,class
+resource,Resource,#d4a373,#1c1917,primary
+capability,Capability,#7dd3fc,#082f49,primary
+activity,Activity,#5eead4,#042f2e,primary
+outcome,Outcome,#86efac,#052e16,primary
+learning,Learning point,#c4b5fd,#1e1b4b,secondary
+access,Access consideration,#fca5a5,#450a0a,secondary
+
+# SECTION: defaults
+key,value
+elasticity_enables,0.3
+elasticity_increases,0.25
+elasticity_decreases,-0.25
+
+# SECTION: params
+id,value,description
+people_reached_per_hour,5,People reached by one hour of outreach
+registration_rate,0.4,Share of reached people who register at baseline
+seats_per_workshop,20,Usable places in each workshop
+attendance_rate,0.8,Share of registered places that are attended
+confidence_feedback_strength,0.2,Strength of the delayed confidence feedback
+confidence_reference,70,Community confidence value that gives neutral feedback
+
+# SECTION: nodes
+id,label,description,stream,stage,category,baseline,unit,controllable,direction,slider_max,combine,formula,min,max,formula_evidence_status,formula_evidence_rationale,formula_evidence_source,formula_evidence_last_reviewed
+volunteer_hours,Volunteer time,Volunteer preparation time available each month.,planning,inputs,resource,100,hours/month,true,,2.5,,,,,unspecified,,,
+materials_budget,Materials budget,Monthly budget for tools and consumable materials.,planning,inputs,resource,2000,GBP/month,true,,2.5,,,,,unspecified,,,
+facilitator_slots,Facilitator capacity,Workshop sessions facilitators can cover each month.,delivery,inputs,resource,10,sessions/month,true,,2.5,,,,,unspecified,,,
+venue_slots,Venue availability,Workshop sessions with an accessible room available.,delivery,inputs,resource|access,8,sessions/month,true,,2.5,,,,,unspecified,,,
+outreach_effort,Outreach effort,Time spent inviting residents and partner groups.,community,inputs,resource,80,hours/month,true,,2.5,,,,,unspecified,,,
+access_barriers,Access barriers,Combined pressure from timing travel language and cost barriers.,community,inputs,resource|access,100,index,true,lower_better,2,,,,,unspecified,,,
+walk_in_interest,Walk-in interest,Residents who may arrive without registering in advance.,community,inputs,resource,16,people/month,true,,3,,,,,unspecified,,,
+completion_share,Completion share,Share of attendees who complete the programme activity.,delivery,inputs,capability|learning,0.75,share,true,higher_better,1.34,,,0,1,unspecified,,,
+follow_up_readiness,Follow-up readiness,Share of completed participants ready for a follow-up activity.,delivery,inputs,capability|learning,0.9,share,true,higher_better,1.12,,,0,1,unspecified,,,
+workshop_readiness,Workshop readiness,How prepared the team and materials are for delivery.,planning,preparedness,capability,100,index,,higher_better,,multiplicative,,30,140,unspecified,,,
+delivery_capacity,Delivery capacity,Workshop sessions possible after the scarcest prerequisite is considered.,delivery,preparedness,capability,8,sessions/month,,higher_better,,min,,,,unspecified,,,
+feedback_uplift,Confidence feedback,Delayed multiplier showing how community confidence affects later outreach.,community,preparedness,capability|learning,1,multiplier,,,,,1 + confidence_feedback_strength * (delay(community_confidence) / confidence_reference - 1),0.5,1.5,hypothesis,Exploratory delayed feedback shape,Workshop design assumption,2026-09-01
+outreach_reach,People reached,Residents reached through the monthly outreach effort.,community,participation,activity,400,people/month,,higher_better,,,outreach_effort * people_reached_per_hour * feedback_uplift,,,calibrated,Rate fitted to the tutorial observation set,Tutorial observations A,2026-09-01
+registrations,Registrations,Places requested subject to reach and the programme capacity ceiling.,community,participation,activity,160,people/month,,higher_better,,,"min(outreach_reach * registration_rate, delivery_capacity * seats_per_workshop)",,,supported,Form follows the registration and capacity definitions,Programme operating definitions,2026-09-01
+registration_share,Registration share,Share of reached people who register.,community,outcomes,outcome|learning,0.4,share,,higher_better,,,"clamp(registrations / outreach_reach, 0, 1)",0,1,validated,Ratio checked against separate tutorial cases,Tutorial validation cases,2026-09-01
+workshops_delivered,Workshops delivered,Sessions delivered within both demand and delivery capacity.,delivery,participation,activity,8,sessions/month,,higher_better,,,"min(registrations / seats_per_workshop, delivery_capacity)",,,supported,Capacity rule matches the programme definition,Programme operating definitions,2026-09-01
+attendees_served,Attendees served,People attending delivered workshop places.,delivery,outcomes,outcome,128,people/month,,higher_better,,,workshops_delivered * seats_per_workshop * attendance_rate,0,,calibrated,Attendance parameter fitted to tutorial observations,Tutorial observations B,2026-09-01
+completed_follow_ups,Completed follow-ups,Attendees who both complete the activity and are ready for follow-up.,delivery,outcomes,outcome|learning,86.4,people/month,,higher_better,,,attendees_served * completion_share * follow_up_readiness,0,,supported,Joint product follows the programme definitions,Programme operating definitions,2026-09-01
+unserved_interest,Unserved participant interest,Registered and walk-in interest above the places the programme can offer.,community,outcomes,outcome|learning,16,people/month,,lower_better,,,"max(registrations + walk_in_interest - delivery_capacity * seats_per_workshop, 0)",0,,hypothesis,Illustrative balance with a non-negative floor,Tutorial modelling exercise,2026-09-01
+participant_satisfaction,Participant satisfaction,Average participant rating after a workshop.,delivery,outcomes,outcome|learning,85,index,,higher_better,,multiplicative,,,,unspecified,,,
+community_confidence,Community confidence,Confidence that the programme is useful welcoming and reliable.,community,outcomes,outcome|learning,70,index,,higher_better,,additive,,0,100,unspecified,,,
+
+# SECTION: edges
+from,to,effect,elasticity,style,description,evidence_status,evidence_rationale,evidence_source,evidence_last_reviewed
+volunteer_hours,workshop_readiness,enables,0.35,,Preparation time enables stronger workshop readiness.,supported,Consistent with facilitator planning records,Tutorial planning review,2026-09-01
+materials_budget,workshop_readiness,enables,0.25,,Materials enable practical workshop preparation.,hypothesis,Plausible programme design relationship,Facilitator workshop,2026-09-01
+facilitator_slots,delivery_capacity,enables,1,,Facilitators are required for every workshop session.,supported,Staffing requirement in programme design,Programme operating definitions,2026-09-01
+venue_slots,delivery_capacity,enables,1,,A suitable room is required for every workshop session.,validated,Capacity rule checked against scheduling cases,Tutorial validation cases,2026-09-01
+community_confidence,feedback_uplift,increases,,dashed,Confidence feeds into a later outreach cycle.,hypothesis,Causal direction is intentionally exploratory,Workshop design assumption,2026-09-01
+outreach_effort,outreach_reach,increases,,,Outreach effort is converted to estimated people reached.,hypothesis,Association fitted but causal effect not established,Tutorial observations A,2026-09-01
+feedback_uplift,outreach_reach,increases,,dashed,Delayed confidence can amplify or damp later outreach reach.,hypothesis,Exploratory feedback mechanism,Workshop design assumption,2026-09-01
+outreach_reach,registrations,increases,,,Reach supplies the pool of possible registrations.,supported,Registration funnel definition,Programme operating definitions,2026-09-01
+delivery_capacity,registrations,enables,,,Available sessions cap the places that can be offered.,validated,Capacity rule checked against scheduling cases,Tutorial validation cases,2026-09-01
+registrations,registration_share,increases,,,Registrations are the numerator of the share.,supported,Ratio definition,Programme operating definitions,2026-09-01
+outreach_reach,registration_share,decreases,,,Reach is the denominator so more reach alone lowers the share.,supported,Ratio definition,Programme operating definitions,2026-09-01
+registrations,workshops_delivered,increases,,,Registration demand supports scheduling more sessions.,supported,Programme scheduling rule,Programme operating definitions,2026-09-01
+delivery_capacity,workshops_delivered,enables,,,Delivery capacity limits realised sessions.,validated,Capacity rule checked against scheduling cases,Tutorial validation cases,2026-09-01
+workshops_delivered,attendees_served,increases,,,Delivered sessions create available attended places.,calibrated,Attendance relationship fitted to observations,Tutorial observations B,2026-09-01
+attendees_served,completed_follow_ups,enables,,,Attendance supplies the people who may complete a follow-up.,supported,Required by the joint-product definition,Programme operating definitions,2026-09-01
+completion_share,completed_follow_ups,enables,,,Completion is required before a follow-up can be completed.,supported,Required by the joint-product definition,Programme operating definitions,2026-09-01
+follow_up_readiness,completed_follow_ups,enables,,,Readiness is required for a completed follow-up.,hypothesis,Readiness share is an illustrative modelling assumption,Tutorial modelling exercise,2026-09-01
+registrations,unserved_interest,increases,,,Registrations add to participant interest that needs a place.,supported,Part of the participant-flow balance,Programme operating definitions,2026-09-01
+walk_in_interest,unserved_interest,increases,,,Walk-in interest adds to demand beyond registrations.,hypothesis,Walk-in demand is included for scenario exploration,Tutorial modelling exercise,2026-09-01
+delivery_capacity,unserved_interest,decreases,,,Available session capacity is converted to places and subtracted from total interest.,supported,Part of the participant-flow balance,Programme operating definitions,2026-09-01
+workshop_readiness,participant_satisfaction,increases,0.3,,Better-prepared workshops tend to receive stronger ratings.,supported,Participant feedback themes,Tutorial feedback review,2026-09-01
+attendees_served,participant_satisfaction,increases,0.1,,A well-used programme can strengthen the participant experience.,unspecified,,,
+participant_satisfaction,community_confidence,increases,0.4,,Positive experiences can strengthen community confidence.,hypothesis,Causal direction remains to be tested,Workshop design assumption,2026-09-01
+attendees_served,community_confidence,increases,0.15,,Visible participation can strengthen confidence in the programme.,supported,Consistent with community feedback,Tutorial feedback review,2026-09-01
+access_barriers,community_confidence,decreases,0.25,,Greater access barriers reduce confidence and participation.,supported,Community access review,Tutorial access review,2026-09-01

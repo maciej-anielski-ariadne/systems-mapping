@@ -30,6 +30,7 @@ import {
   NODE_HEIGHT,
   NODE_LINE_STEP,
   NODE_WIDTH,
+  nodeWidthForZoom,
   ROW_HEADER_WIDTH,
   ROW_PADDING,
   SVG_PADDING_BOTTOM,
@@ -214,6 +215,7 @@ function computeLayoutGeometry(): Layout {
   // ───── Measure every node once (wrapped label + grown height) ─────────
   // measureLabelLines (04-utils) caches by text, so re-running computeLayout
   // during a drag/hover is cheap.
+  const expandedColumnWidth = nodeWidthForZoom(state.zoomLevel);
   const measured: Record<string, { lines: string[]; height: number }> = {};
   for (const node of NODES) measured[node.id] = measureNode(node);
   const heightOf = (id: string): number => (measured[id] ? measured[id].height : NODE_HEIGHT);
@@ -273,13 +275,19 @@ function computeLayoutGeometry(): Layout {
   // ───── X position + width for each column ─────────────────────────────
   const { colX, colWidths, totalWidth } = packColumns(
     STAGES.map(s => s.id),
-    id => state.hiddenStages.has(id) ? COLLAPSED_COL_WIDTH : NODE_WIDTH
+    id => state.hiddenStages.has(id) ? COLLAPSED_COL_WIDTH : expandedColumnWidth
   );
 
   // ───── Position every node by cumulative offset within its cell ───────
   const positions: Layout["positions"] = {};
   const setPos = (n: GraphNode, x: number, y: number): void => {
-    positions[n.id] = { x: x, y: y, width: NODE_WIDTH, height: heightOf(n.id), labelLines: measured[n.id].lines };
+    positions[n.id] = {
+      x,
+      y,
+      width: NODE_WIDTH,
+      height: heightOf(n.id),
+      labelLines: measured[n.id].lines,
+    };
   };
 
   for (const stream of STREAMS) {
@@ -287,7 +295,7 @@ function computeLayoutGeometry(): Layout {
       if (state.hiddenStages.has(stage.id)) continue;   // hidden column: no node positions
       const cellNodes = cells[stream.id + ":" + stage.id] || [];
       const cellTopY = rowY[stream.id] + ROW_PADDING;
-      const x = colX[stage.id];
+      const x = colX[stage.id] + Math.max(0, (colWidths[stage.id] - NODE_WIDTH) / 2);
 
       // Drag target cell: part the kept siblings to open a gap at insertIndex.
       // For a same-cell reorder the dragged ghost(s) rest in the gap; for a

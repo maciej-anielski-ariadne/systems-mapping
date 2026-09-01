@@ -58,7 +58,18 @@ gating.
 link maths for that box, e.g. `min(orders, capacity)`. It works in the boxes' own units
 rather than ratios, and can name other boxes and hidden constants. Deliberately tiny: `+ - *
 /`, brackets, and four functions (`min`, `max`, `clamp`, `delay`) — no code, nothing that can
-*do* anything. The whole language is 07a-formula.ts.
+*do* anything. A formula can express an identity, a domain assumption, a theory-led form
+or an empirically fitted relationship; it does not need to be an identity that was already
+known. The whole language is 07a-formula.ts.
+
+**Evidence status.** An informational label describing what evidence an author believes
+supports part of the model. The five shared labels are *Unspecified*, *Hypothesis*,
+*Supported*, *Calibrated* and *Validated*. The same words answer two distinct questions:
+a link's status is about evidence for the **causal claim**, while a formula's status is
+about evidence for the **mathematical form and parameter values**. A formula can be fitted
+well enough to be Calibrated or Validated while its causal link remains a Hypothesis—good
+prediction does not by itself prove causation. Status never changes the calculation:
+every syntactically valid active rule runs, and the app does not certify the evidence.
 
 **Hidden constant (parameter / "param").** A named number that belongs to the maths but not
 to the picture — a conversion rate, a route share, a tuning factor. Constants live in the

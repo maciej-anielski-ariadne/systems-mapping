@@ -16,10 +16,10 @@ import { loadDataFromCsv } from "../assets/js/06-data-loader";
 import { LINEAR_CSV } from "./fixtures/graphs";
 import { renderSidebar } from "../assets/js/13-sidebar";
 import { renderDetailPanel } from "../assets/js/15-detail-panel";
-import { NODES, STAGES, state } from "../assets/js/03-state";
+import { NODES, STAGES, STREAMS, state } from "../assets/js/03-state";
 import { deselectAll, refreshTraceForSelection, selectNode } from "../assets/js/09-graph-selection";
 import { initCanvasEdit, setShiftHeld } from "../assets/js/16e-canvas-edit";
-import { renderStickyColumnHeadings, syncStickyColumnHeadings } from "../assets/js/11-rendering";
+import { renderFloatingHeadings, syncFloatingHeadings } from "../assets/js/11-rendering";
 import { toggleSimulationMode } from "../assets/js/14-simulation-panel";
 import { applyRestoredUiState, saveUiStateToStorage, loadUiStateFromStorage } from "../assets/js/04a-storage";
 import {
@@ -28,9 +28,11 @@ import {
   applyUiMode,
   fitMapToFrame,
   fitZoomLevel,
-  setFileMenuOpen,
+  setExportMenuOpen,
   setFiltersOpen,
+  setNavigationControlMode,
   setUiMode,
+  wheelEventRequestsZoom,
 } from "../assets/js/17-events";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -41,6 +43,7 @@ const app = (): HTMLElement => document.querySelector(".app") as HTMLElement;
 beforeEach(() => {
   state.uiMode = "read";
   state.filtersOpen = false;
+  setNavigationControlMode("zoom");
   applyUiMode();
 });
 
@@ -52,12 +55,12 @@ describe("the app opens on the map", () => {
 
   it("offers the way in to editing, and the way back out", () => {
     const button = document.getElementById("mode-toggle-button")!;
-    expect(button.textContent).toBe("Edit");
+    expect(button.textContent).toBe("Edit map");
     setUiMode("edit");
     expect(document.body.classList.contains("editing")).toBe(true);
-    expect(button.textContent).toBe("Done");
+    expect(button.textContent).toBe("View map");
     setUiMode("read");
-    expect(button.textContent).toBe("Edit");
+    expect(button.textContent).toBe("Edit map");
   });
 
   it("keeps the pin classes for editing, where the panels are docked", () => {
@@ -75,6 +78,14 @@ describe("the app opens on the map", () => {
     setUiMode("edit");
     saveUiStateToStorage();
     expect(loadUiStateFromStorage().uiMode).toBe("edit");
+  });
+});
+
+describe("trackpad and wheel gestures", () => {
+  it("pans every unmodified wheel event and zooms only with a modifier", () => {
+    expect(wheelEventRequestsZoom({ ctrlKey: false, metaKey: false })).toBe(false);
+    expect(wheelEventRequestsZoom({ ctrlKey: true, metaKey: false })).toBe(true);
+    expect(wheelEventRequestsZoom({ ctrlKey: false, metaKey: true })).toBe(true);
   });
 });
 
@@ -137,40 +148,41 @@ describe("the filters drawer", () => {
   });
 });
 
-describe("the file menu", () => {
-  it("keeps document actions in File and closes on the next click", () => {
+describe("the document actions", () => {
+  it("separates New map and Import from the export formats", () => {
     loadDataFromCsv(sampleCsv);
-    const menu = document.getElementById("file-menu") as HTMLElement;
-    expect(menu.querySelectorAll(".menu-item").length).toBe(5);
+    const header = document.querySelector(".app-header") as HTMLElement;
+    const menu = document.getElementById("export-menu") as HTMLElement;
+    expect(header.querySelector(":scope > .header-document-actions > .create-map-trigger")).not.toBeNull();
+    expect(header.querySelector(":scope > .header-document-actions > .import-data-trigger")).not.toBeNull();
+    expect(menu.querySelectorAll(".menu-item").length).toBe(4);
     for (const trigger of [
-      ".import-data-trigger",        // Import
       ".save-data-trigger",          // Spreadsheet
       ".export-review-log-trigger",  // Review log
       ".export-image-trigger",       // Image
       ".publish-html-trigger",       // Web page
     ]) {
-      expect(menu.querySelector(trigger), trigger + " should live in the File menu").not.toBeNull();
+      expect(menu.querySelector(trigger), trigger + " should live in the Export menu").not.toBeNull();
     }
 
-    setFileMenuOpen(true);
+    setExportMenuOpen(true);
     expect(menu.hidden).toBe(false);
     document.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(menu.hidden).toBe(true);
   });
 
-  it("surfaces map-wide authoring actions in the Edit toolbar", () => {
-    const menu = document.getElementById("file-menu") as HTMLElement;
+  it("keeps Bulk edit with the map instead of document actions", () => {
+    const documentActions = document.querySelector(".header-document-actions") as HTMLElement;
     const editActions = document.getElementById("toolbar-edit-actions") as HTMLElement;
-    expect(menu.querySelector(".create-map-trigger")).toBeNull();
-    expect(menu.querySelector(".edit-data-trigger")).toBeNull();
-    expect(editActions.querySelector(".create-map-trigger")?.textContent).toBe("New map");
+    expect(documentActions.querySelector(".create-map-trigger")?.textContent).toContain("New map");
+    expect(documentActions.querySelector(".edit-data-trigger")).toBeNull();
     expect(editActions.querySelector(".edit-data-trigger")?.textContent).toBe("Bulk edit");
   });
 
   it("has nothing to offer before a map is loaded", () => {
     state.dataLoaded = false;
-    setFileMenuOpen(true);
-    expect((document.getElementById("file-menu") as HTMLElement).hidden).toBe(true);
+    setExportMenuOpen(true);
+    expect((document.getElementById("export-menu") as HTMLElement).hidden).toBe(true);
     state.dataLoaded = true;
   });
 });
@@ -188,12 +200,10 @@ describe("the header is grouped, not evenly spaced", () => {
     expect(loose).toEqual([]);
   });
 
-  it("hides the whole Filters group while editing, not just its button", () => {
-    // The group carries the id because a group holding one hidden button still
-    // takes its share of the row's gap.
-    expect(document.getElementById("filters-group")).not.toBeNull();
-    expect(document.getElementById("filters-button")!.closest(".header-group")!.id)
-      .toBe("filters-group");
+  it("puts Filters with the map instead of among application-wide actions", () => {
+    expect(document.getElementById("filters-button")!.closest("#map-scope-bar"))
+      .not.toBeNull();
+    expect(document.querySelector(".app-header #filters-button")).toBeNull();
   });
 });
 
@@ -212,10 +222,12 @@ describe("contextual modes", () => {
     expect(state.simulationMode).toBe(false);
   });
 
-  it("puts simulation's exit in the stable right-hand action group", () => {
+  it("turns the map's Simulate action into its local exit", () => {
     loadDataFromCsv(sampleCsv);
     if (!state.simulationMode) toggleSimulationMode();
-    (document.getElementById("simulation-exit-button") as HTMLButtonElement).click();
+    const simulationButton = document.getElementById("sim-toggle-button") as HTMLButtonElement;
+    expect(simulationButton.textContent).toBe("Exit simulation");
+    simulationButton.click();
     expect(state.simulationMode).toBe(false);
   });
 });
@@ -312,6 +324,25 @@ function frameOf(width: number, height: number): void {
 }
 
 describe("opening zoom", () => {
+  it("shares one control row between zoom and highlight depth", () => {
+    const navigationControls = document.getElementById("viz-navigation-controls")!;
+    const zoomModeButton = document.getElementById("viz-navigation-mode-zoom")!;
+    const depthModeButton = document.getElementById("viz-navigation-mode-depth")!;
+
+    expect(navigationControls.dataset.navigationMode).toBe("zoom");
+    expect(zoomModeButton.getAttribute("aria-pressed")).toBe("true");
+    expect(depthModeButton.getAttribute("aria-pressed")).toBe("false");
+
+    depthModeButton.click();
+    expect(navigationControls.dataset.navigationMode).toBe("depth");
+    expect(zoomModeButton.getAttribute("aria-pressed")).toBe("false");
+    expect(depthModeButton.getAttribute("aria-pressed")).toBe("true");
+    expect(navigationControls.getAttribute("aria-label")).toContain("Highlight depth");
+
+    setNavigationControlMode("zoom");
+    expect(navigationControls.getAttribute("aria-label")).toContain("Zoom");
+  });
+
   it("leaves a map that already fits at its own size", () => {
     loadDataFromCsv(sampleCsv);
     frameOf(4000, 3000);
@@ -341,17 +372,29 @@ describe("opening zoom", () => {
     loadDataFromCsv(sampleCsv);
     frameOf(600, 400);
     const readout = document.getElementById("viz-zoom-readout") as HTMLButtonElement;
+    const originalMatchMedia = globalThis.matchMedia;
+    Object.defineProperty(globalThis, "matchMedia", {
+      configurable: true,
+      value: (() => ({ matches: true })) as unknown as typeof globalThis.matchMedia,
+    });
     readout.dataset.fitNext = "height";
 
-    readout.click();
-    expect(state.zoomLevel).toBe(fitZoomLevel("height"));
-    expect(readout.dataset.fitNext).toBe("width");
-    expect(readout.dataset.tooltip).toBe("Fit width next");
+    try {
+      readout.click();
+      expect(state.zoomLevel).toBe(fitZoomLevel("height"));
+      expect(readout.dataset.fitNext).toBe("width");
+      expect(readout.dataset.tooltip).toBe("Fit width next");
 
-    readout.click();
-    expect(state.zoomLevel).toBe(fitZoomLevel("width"));
-    expect(readout.dataset.fitNext).toBe("height");
-    expect(readout.dataset.tooltip).toBe("Fit height next");
+      readout.click();
+      expect(state.zoomLevel).toBe(fitZoomLevel("width"));
+      expect(readout.dataset.fitNext).toBe("height");
+      expect(readout.dataset.tooltip).toBe("Fit height next");
+    } finally {
+      Object.defineProperty(globalThis, "matchMedia", {
+        configurable: true,
+        value: originalMatchMedia,
+      });
+    }
   });
 
   it("stops shrinking at the floor on load — cropped beats unreadable", () => {
@@ -377,26 +420,58 @@ describe("opening zoom", () => {
   });
 });
 
-describe("sticky column headings", () => {
-  it("appears only after the original headings scroll away and stays actionable", () => {
+describe("floating map headings", () => {
+  it("floats both axes after panning, keeps them actionable, and becomes a low-zoom index", () => {
     loadDataFromCsv(sampleCsv);
+    frameOf(640, 480);
     const scroller = document.getElementById("viz-scroll")!;
-    const stickyHeadings = document.getElementById("viz-sticky-columns")!;
+    const visualizationContainer = document.getElementById("viz-container")!;
+    const stickyColumns = document.getElementById("viz-sticky-columns")!;
+    const stickyRows = document.getElementById("viz-sticky-rows")!;
     scroller.scrollTop = 200;
-    renderStickyColumnHeadings();
+    scroller.scrollLeft = 200;
+    renderFloatingHeadings();
 
-    expect(stickyHeadings.hidden).toBe(false);
-    expect(stickyHeadings.querySelectorAll("[data-stage-id]")).toHaveLength(STAGES.length);
+    expect(stickyColumns.hidden).toBe(false);
+    expect(stickyRows.hidden).toBe(false);
+    expect(visualizationContainer.classList.contains("floating-columns")).toBe(true);
+    expect(visualizationContainer.classList.contains("floating-rows")).toBe(true);
+    expect(stickyColumns.querySelectorAll("[data-stage-id]")).toHaveLength(STAGES.length);
+    expect(stickyRows.querySelectorAll("[data-stream-id]")).toHaveLength(STREAMS.length);
 
-    const firstStageButton = stickyHeadings.querySelector<HTMLButtonElement>("[data-stage-id]")!;
+    const firstStageButton = stickyColumns.querySelector<HTMLButtonElement>("[data-stage-id]")!;
     const firstStageId = firstStageButton.dataset.stageId!;
     firstStageButton.click();
     expect(state.hiddenStages.has(firstStageId)).toBe(true);
-    expect(stickyHeadings.querySelector('[data-stage-id="' + CSS.escape(firstStageId) + '"]')?.classList.contains("collapsed")).toBe(true);
+    expect(stickyColumns.querySelector('[data-stage-id="' + CSS.escape(firstStageId) + '"]')?.classList.contains("collapsed")).toBe(true);
+
+    const firstStreamButton = stickyRows.querySelector<HTMLButtonElement>("[data-stream-id]")!;
+    const firstStreamId = firstStreamButton.dataset.streamId!;
+    firstStreamButton.click();
+    expect(state.hiddenStreams.has(firstStreamId)).toBe(true);
+    expect(stickyRows.querySelector('[data-stream-id="' + CSS.escape(firstStreamId) + '"]')?.classList.contains("collapsed")).toBe(true);
 
     scroller.scrollTop = 0;
-    syncStickyColumnHeadings();
-    expect(stickyHeadings.hidden).toBe(true);
+    scroller.scrollLeft = 0;
+    syncFloatingHeadings();
+    expect(stickyColumns.hidden).toBe(true);
+    expect(stickyRows.hidden).toBe(true);
+    expect(visualizationContainer.classList.contains("floating-columns")).toBe(false);
+    expect(visualizationContainer.classList.contains("floating-rows")).toBe(false);
+
+    state.zoomLevel = 0.25;
+    syncFloatingHeadings();
+    expect(stickyColumns.hidden).toBe(false);
+    expect(stickyRows.hidden).toBe(false);
+    expect(visualizationContainer.classList.contains("floating-columns")).toBe(true);
+    expect(visualizationContainer.classList.contains("floating-rows")).toBe(true);
+    expect(stickyColumns.classList.contains("overview")).toBe(true);
+    expect(stickyRows.classList.contains("overview")).toBe(true);
+    expect(stickyRows.style.top).toBe("48px");
+    const overviewFirstStageButton = stickyColumns.querySelector<HTMLElement>("[data-stage-id]")!;
+    expect(overviewFirstStageButton.style.width).not.toBe("");
+    expect(parseFloat(overviewFirstStageButton.style.left)).toBeGreaterThanOrEqual(88);
+    expect(stickyRows.querySelector<HTMLElement>("[data-stream-id]")!.style.height).not.toBe("");
   });
 });
 

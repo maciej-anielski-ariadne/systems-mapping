@@ -4,6 +4,7 @@ import {
   parseCsvDocument,
   parseBooleanCell,
   parseNumericCell,
+  parseEvidenceStatusCell,
 } from "../assets/js/05-csv-parser";
 
 describe("parseCsvLine", () => {
@@ -134,4 +135,23 @@ describe("parseNumericCell", () => {
     expect(parseNumericCell("Infinity")).toBeUndefined();
     expect(parseNumericCell("0x10")).toBeUndefined();
   });
+});
+
+describe("parseEvidenceStatusCell", () => {
+  it.each([
+    ["unspecified", "unspecified"],
+    [" HYPOTHESIS ", "hypothesis"],
+    ["Supported", "supported"],
+    ["calibrated", "calibrated"],
+    ["VALIDATED", "validated"],
+  ] as const)("normalises %s to the canonical status", (rawStatus, expectedStatus) => {
+    expect(parseEvidenceStatusCell(rawStatus)).toBe(expectedStatus);
+  });
+
+  it.each([undefined, null, "", "unrecognised"])(
+    "uses unspecified for missing or unrecognised informational evidence status %s",
+    (rawStatus) => {
+      expect(parseEvidenceStatusCell(rawStatus)).toBe("unspecified");
+    },
+  );
 });

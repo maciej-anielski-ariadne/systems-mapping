@@ -140,12 +140,12 @@ describe("confirmed Review fixes", () => {
     expect(expandedToggles).toHaveLength(1);
   });
 
-  it("temporarily replaces the toolbar without discarding Edit mode", () => {
+  it("owns its exit without discarding Edit mode", () => {
     setUiMode("edit");
     openReview();
     expect(state.uiMode).toBe("edit");
 
-    (document.getElementById("review-exit-button") as HTMLButtonElement).click();
+    (document.getElementById("review-close") as HTMLButtonElement).click();
     expect(state.uiMode).toBe("edit");
     expect(document.body.classList.contains("review-open")).toBe(false);
     closeReview();

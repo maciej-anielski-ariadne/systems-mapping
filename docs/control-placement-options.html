@@ -1,0 +1,976 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ariadne control placement study</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --page: #090b12;
+      --surface: #121522;
+      --surface-raised: #191d2c;
+      --surface-hover: #252a3d;
+      --line: #30364d;
+      --text: #f4f2ff;
+      --text-soft: #b9bbcc;
+      --text-dim: #777c95;
+      --global: #9d8cff;
+      --map-scope: #59d7cf;
+      --box-scope: #ffbf6b;
+      --surface-scope: #ff8192;
+      --canvas: #0f121d;
+      --shadow: 0 28px 88px rgb(0 0 0 / 44%);
+      font-family: "Avenir Next", "IBM Plex Sans", system-ui, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 16% -12%, rgb(82 67 168 / 20%), transparent 34rem),
+        var(--page);
+      color: var(--text);
+    }
+
+    button,
+    input { font: inherit; }
+    button { color: inherit; }
+    button:focus-visible,
+    input:focus-visible { outline: 2px solid var(--global); outline-offset: 2px; }
+    [hidden] { display: none !important; }
+
+    .study {
+      width: min(1540px, 100%);
+      margin: 0 auto;
+      padding: 28px clamp(16px, 4vw, 64px) 56px;
+    }
+
+    .study-header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 28px;
+      align-items: end;
+      margin-bottom: 24px;
+    }
+
+    .eyebrow,
+    .scope-label,
+    .panel-label,
+    .note-label {
+      font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.11em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow { margin: 0 0 8px; color: var(--map-scope); }
+    h1 {
+      max-width: 860px;
+      margin: 0;
+      font-size: clamp(34px, 4.8vw, 66px);
+      font-weight: 500;
+      letter-spacing: -0.047em;
+      line-height: 0.98;
+    }
+
+    .introduction {
+      max-width: 760px;
+      margin: 16px 0 0;
+      color: var(--text-soft);
+      font-size: 16px;
+      line-height: 1.55;
+    }
+
+    .scope-key {
+      display: grid;
+      gap: 7px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      background: rgb(18 21 34 / 84%);
+    }
+
+    .scope-key-row {
+      display: grid;
+      grid-template-columns: 12px 92px 1fr;
+      gap: 8px;
+      align-items: center;
+      color: var(--text-soft);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .scope-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .scope-dot.global { background: var(--global); }
+    .scope-dot.map { background: var(--map-scope); }
+    .scope-dot.box { background: var(--box-scope); }
+    .scope-dot.surface { background: var(--surface-scope); }
+    .scope-key-row strong { color: var(--text); font-size: 11px; }
+
+    .study-controls {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+
+    .control-group { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
+    .control-group:last-child { justify-content: flex-end; }
+    .selection-button {
+      min-height: 35px;
+      padding: 7px 11px;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      background: var(--surface-raised);
+      color: var(--text-soft);
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    .selection-button:hover { background: var(--surface-hover); color: var(--text); }
+    .selection-button[aria-pressed="true"] {
+      border-color: rgb(157 140 255 / 58%);
+      background: rgb(157 140 255 / 17%);
+      color: var(--text);
+    }
+
+    .comparison {
+      display: grid;
+      grid-template-columns: 274px minmax(0, 1fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .option-list { position: sticky; top: 18px; display: grid; gap: 7px; }
+    .option-card {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr);
+      gap: 10px;
+      width: 100%;
+      padding: 12px;
+      border: 1px solid transparent;
+      border-radius: 12px;
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .option-card:hover { background: var(--surface); }
+    .option-card[aria-selected="true"] {
+      border-color: var(--line);
+      background: var(--surface-raised);
+      box-shadow: inset 3px 0 var(--global);
+    }
+
+    .option-number {
+      padding-top: 2px;
+      color: var(--text-dim);
+      font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+      font-size: 11px;
+    }
+
+    .option-card strong { display: block; margin-bottom: 3px; font-size: 14px; }
+    .option-card small { display: block; color: var(--text-dim); font-size: 11px; line-height: 1.35; }
+
+    .preview-column { min-width: 0; }
+    .preview-shell {
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: #07090f;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .preview-frame {
+      width: 100%;
+      min-height: 610px;
+      margin: 0 auto;
+      overflow: hidden;
+      border-radius: 12px;
+      background: var(--canvas);
+      transition: width 200ms ease, min-height 200ms ease;
+    }
+
+    .preview-frame[data-viewport="phone"] { width: min(390px, 100%); min-height: 700px; }
+    .application {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      width: 100%;
+      min-width: 0;
+      min-height: inherit;
+      background: var(--canvas);
+    }
+
+    .global-bar {
+      position: relative;
+      z-index: 12;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+      min-height: 58px;
+      padding: 9px 13px;
+      border-bottom: 1px solid #282d42;
+      background: #171a28;
+    }
+
+    .brand {
+      display: grid;
+      place-items: center;
+      width: 27px;
+      height: 27px;
+      flex: 0 0 auto;
+      color: var(--global);
+    }
+
+    .brand svg { width: 25px; height: 25px; }
+    .search {
+      position: relative;
+      flex: 1 1 260px;
+      min-width: 68px;
+    }
+
+    .search::before {
+      content: "⌕";
+      position: absolute;
+      left: 10px;
+      top: 50%;
+      color: var(--text-dim);
+      transform: translateY(-53%);
+    }
+
+    .search input {
+      width: 100%;
+      height: 33px;
+      padding: 6px 10px 6px 30px;
+      border: 0;
+      border-radius: 7px;
+      background: #23273a;
+      color: var(--text);
+      font-size: 12px;
+    }
+
+    .bar-group { display: flex; gap: 4px; align-items: center; flex: 0 0 auto; }
+    .control {
+      min-height: 31px;
+      padding: 6px 9px;
+      border: 0;
+      border-radius: 7px;
+      background: #24283a;
+      color: #c6c7d7;
+      cursor: pointer;
+      font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+      font-size: 9.5px;
+      line-height: 1.2;
+      white-space: nowrap;
+    }
+
+    .control:hover { background: #32374e; color: white; }
+    .control.primary { background: var(--global); color: #111222; font-weight: 900; }
+    .control.map-control { box-shadow: inset 0 -2px var(--map-scope); }
+    .control.box-control { box-shadow: inset 0 -2px var(--box-scope); }
+    .control.surface-control { box-shadow: inset 0 -2px var(--surface-scope); }
+    .control.icon { width: 31px; padding-inline: 0; font-size: 14px; }
+    .review-count::after {
+      content: "7";
+      display: inline-grid;
+      place-items: center;
+      min-width: 16px;
+      height: 16px;
+      margin-left: 5px;
+      padding: 0 4px;
+      border-radius: 999px;
+      background: var(--box-scope);
+      color: #241b0e;
+      font-size: 9px;
+      font-weight: 900;
+    }
+
+    .app-body {
+      position: relative;
+      min-height: 552px;
+      overflow: hidden;
+      background:
+        linear-gradient(rgb(255 255 255 / 2%) 1px, transparent 1px),
+        linear-gradient(90deg, rgb(255 255 255 / 2%) 1px, transparent 1px),
+        var(--canvas);
+      background-size: 32px 32px;
+    }
+
+    .map-lines { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    .map-lines path { fill: none; stroke: #586079; stroke-width: 2; opacity: 0.55; }
+    .map-lines path.highlighted { stroke: var(--map-scope); opacity: 0.66; }
+
+    .map-box {
+      position: absolute;
+      z-index: 2;
+      width: 136px;
+      min-height: 58px;
+      padding: 12px 12px 10px;
+      border: 1px solid #3b435d;
+      border-radius: 10px;
+      background: #202537;
+      color: #ddddea;
+      text-align: left;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 700;
+      box-shadow: 0 8px 20px rgb(0 0 0 / 18%);
+    }
+
+    .map-box::before {
+      content: "";
+      display: block;
+      width: 7px;
+      height: 7px;
+      margin-bottom: 9px;
+      border-radius: 50%;
+      background: var(--global);
+    }
+
+    .map-box.selected {
+      border-color: var(--box-scope);
+      box-shadow: 0 0 0 3px rgb(255 191 107 / 12%), 0 10px 28px rgb(0 0 0 / 28%);
+    }
+
+    .map-box.one { left: 24%; top: 18%; }
+    .map-box.two { left: 47%; top: 38%; }
+    .map-box.three { left: 71%; top: 24%; }
+    .map-box.four { left: 32%; top: 68%; }
+
+    .left-panel,
+    .detail-panel {
+      position: absolute;
+      z-index: 5;
+      top: 15px;
+      bottom: 15px;
+      width: 174px;
+      padding: 13px;
+      border: 1px solid #2e3449;
+      border-radius: 10px;
+      background: rgb(19 22 34 / 95%);
+      box-shadow: 0 14px 34px rgb(0 0 0 / 26%);
+    }
+
+    .left-panel { left: 12px; }
+    .detail-panel { right: 12px; }
+    .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .panel-label { color: var(--text-dim); }
+    .panel-title { margin: 8px 0 14px; font-size: 14px; font-weight: 700; }
+    .panel-row { display: flex; align-items: center; gap: 7px; min-height: 29px; color: var(--text-soft); font-size: 10px; }
+    .panel-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--map-scope); }
+    .panel-row:nth-of-type(3) .panel-dot { background: var(--box-scope); }
+    .panel-row:nth-of-type(4) .panel-dot { background: var(--global); }
+    .panel-action-stack { display: grid; gap: 6px; margin-top: 14px; }
+    .panel-action-stack .control { width: 100%; text-align: left; }
+    .simulation-slider { width: 100%; margin: 12px 0 4px; accent-color: var(--map-scope); }
+
+    .surface-header {
+      position: absolute;
+      z-index: 9;
+      left: 202px;
+      right: 202px;
+      top: 14px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 43px;
+      padding: 6px 8px 6px 12px;
+      border: 1px solid #343b53;
+      border-radius: 10px;
+      background: rgb(18 21 33 / 94%);
+      box-shadow: 0 12px 34px rgb(0 0 0 / 28%);
+    }
+
+    .surface-header strong { min-width: 120px; font-size: 11px; }
+    .surface-header .bar-group { margin-left: auto; }
+
+    .canvas-dock {
+      position: absolute;
+      z-index: 8;
+      left: 50%;
+      bottom: 18px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 6px;
+      border: 1px solid #343b53;
+      border-radius: 11px;
+      background: rgb(18 21 33 / 94%);
+      box-shadow: 0 16px 38px rgb(0 0 0 / 36%);
+      transform: translateX(-50%);
+    }
+
+    .map-scope-strip {
+      position: absolute;
+      z-index: 7;
+      left: 202px;
+      top: 15px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 7px 6px 10px;
+      border-radius: 9px;
+      background: rgb(18 21 33 / 92%);
+      color: var(--text-soft);
+      font-size: 10px;
+    }
+
+    .map-scope-strip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--map-scope); }
+
+    .status-ribbon {
+      position: absolute;
+      z-index: 7;
+      right: 202px;
+      bottom: 18px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 9px;
+      border: 1px solid rgb(255 191 107 / 28%);
+      border-radius: 999px;
+      background: rgb(34 28 24 / 92%);
+      color: #f2d4a6;
+      cursor: pointer;
+      font-size: 10px;
+    }
+
+    .selection-shelf {
+      position: absolute;
+      z-index: 8;
+      left: calc(47% + 8px);
+      top: calc(38% + 64px);
+      display: flex;
+      gap: 4px;
+      padding: 5px;
+      border: 1px solid rgb(255 191 107 / 35%);
+      border-radius: 9px;
+      background: rgb(25 25 35 / 96%);
+      box-shadow: 0 14px 35px rgb(0 0 0 / 38%);
+    }
+
+    .selection-lens {
+      position: absolute;
+      z-index: 8;
+      left: calc(47% + 66px);
+      top: calc(38% - 60px);
+      display: grid;
+      grid-template-columns: repeat(3, 58px);
+      gap: 5px;
+      transform: translateX(-50%);
+    }
+
+    .selection-lens .control {
+      min-height: 54px;
+      padding: 8px 5px;
+      border-radius: 50%;
+      white-space: normal;
+      text-align: center;
+      box-shadow: 0 10px 30px rgb(0 0 0 / 38%);
+    }
+
+    .command-hint {
+      position: absolute;
+      z-index: 7;
+      left: 50%;
+      bottom: 22px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: rgb(18 21 33 / 88%);
+      color: var(--text-dim);
+      transform: translateX(-50%);
+      font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+      font-size: 9px;
+    }
+
+    .command-palette {
+      position: absolute;
+      z-index: 10;
+      left: 50%;
+      top: 70px;
+      width: min(390px, calc(100% - 40px));
+      padding: 9px;
+      border: 1px solid #3b425c;
+      border-radius: 12px;
+      background: rgb(22 25 38 / 98%);
+      box-shadow: 0 28px 70px rgb(0 0 0 / 50%);
+      transform: translateX(-50%);
+    }
+
+    .command-query { padding: 8px 9px; margin-bottom: 7px; border-radius: 7px; background: #24283a; color: var(--text-soft); font-size: 11px; }
+    .command-result { display: flex; justify-content: space-between; padding: 9px; border-radius: 7px; color: var(--text-soft); font-size: 11px; }
+    .command-result.active { background: rgb(157 140 255 / 16%); color: var(--text); }
+    .command-result small { color: var(--text-dim); }
+
+    .review-surface,
+    .edit-surface,
+    .atlas-surface {
+      position: absolute;
+      z-index: 6;
+      inset: 12px;
+      padding: 58px 15px 15px;
+      border: 1px solid #343a50;
+      border-radius: 12px;
+      background: rgb(17 20 31 / 96%);
+      box-shadow: 0 24px 60px rgb(0 0 0 / 42%);
+    }
+
+    .review-grid { display: grid; grid-template-columns: 0.65fr 1.35fr; gap: 10px; height: 100%; }
+    .surface-panel { padding: 12px; border-radius: 9px; background: #1b1f2e; }
+    .surface-panel h3 { margin: 6px 0 12px; font-size: 14px; }
+    .issue-card { padding: 9px; margin-bottom: 7px; border-left: 2px solid var(--box-scope); background: #242838; color: var(--text-soft); font-size: 10px; line-height: 1.4; }
+
+    .atlas-picture { position: relative; height: 100%; overflow: hidden; }
+    .atlas-ring { position: absolute; border: 1px solid rgb(89 215 207 / 52%); border-radius: 50%; }
+    .atlas-ring.large { width: 270px; height: 270px; left: 31%; top: 17%; }
+    .atlas-ring.medium { width: 130px; height: 130px; left: 18%; top: 42%; }
+    .atlas-ring.small { width: 84px; height: 84px; left: 64%; top: 26%; }
+    .atlas-node { position: absolute; display: grid; place-items: center; width: 68px; height: 68px; border-radius: 50%; background: #252b3c; color: var(--text-soft); font-size: 9px; text-align: center; }
+    .atlas-node.first { left: 30%; top: 39%; }
+    .atlas-node.second { left: 48%; top: 24%; }
+    .atlas-node.third { left: 57%; top: 57%; }
+
+    .edit-table { display: grid; gap: 6px; }
+    .edit-row { display: grid; grid-template-columns: 24px 1.2fr 1fr 1fr; gap: 8px; align-items: center; min-height: 35px; padding: 7px; border-radius: 7px; background: #202433; color: var(--text-soft); font-size: 10px; }
+    .edit-check { width: 13px; height: 13px; border: 1px solid var(--line); border-radius: 3px; }
+    .edit-check.checked { background: var(--global); }
+    .bulk-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 9px; padding: 7px; border-radius: 8px; background: rgb(157 140 255 / 12%); }
+    .bulk-bar strong { margin-right: auto; font-size: 10px; }
+
+    .scope-callout {
+      position: absolute;
+      z-index: 11;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 7px;
+      border-radius: 999px;
+      background: #0e1019;
+      color: var(--text-soft);
+      font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+      font-size: 8px;
+      pointer-events: none;
+    }
+
+    .scope-callout::before { content: ""; width: 6px; height: 6px; border-radius: 50%; }
+    .scope-callout.global-scope::before { background: var(--global); }
+    .scope-callout.map-scope::before { background: var(--map-scope); }
+    .scope-callout.box-scope::before { background: var(--box-scope); }
+    .scope-callout.surface-scope::before { background: var(--surface-scope); }
+
+    .notes { display: grid; grid-template-columns: 1.15fr 0.85fr 0.85fr; gap: 10px; margin-top: 16px; }
+    .note {
+      min-height: 112px;
+      padding: 15px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--surface);
+    }
+
+    .note-label { color: var(--text-dim); }
+    .note h2,
+    .note h3 { margin: 6px 0 9px; font-size: 15px; }
+    .note p { margin: 0; color: var(--text-soft); font-size: 12px; line-height: 1.5; }
+    .recommendation { margin-top: 11px; color: var(--map-scope); font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace; font-size: 9px; font-weight: 900; text-transform: uppercase; }
+    .meter { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; margin-top: 13px; }
+    .meter span { height: 5px; border-radius: 999px; background: #2b3045; }
+    .meter span.filled { background: var(--global); }
+
+    .preview-frame[data-viewport="phone"] .global-bar { gap: 6px; padding-inline: 7px; }
+    .preview-frame[data-viewport="phone"] .brand { display: none; }
+    .preview-frame[data-viewport="phone"] .search { flex-basis: 82px; }
+    .preview-frame[data-viewport="phone"] .search input { text-overflow: ellipsis; }
+    .preview-frame[data-viewport="phone"] .bar-group { min-width: 0; overflow-x: auto; scrollbar-width: none; }
+    .preview-frame[data-viewport="phone"] .left-panel {
+      top: 9px;
+      bottom: auto;
+      left: 7px;
+      width: auto;
+      padding: 6px;
+    }
+    .preview-frame[data-viewport="phone"] .left-panel .panel-label,
+    .preview-frame[data-viewport="phone"] .left-panel .panel-title,
+    .preview-frame[data-viewport="phone"] .left-panel .panel-row,
+    .preview-frame[data-viewport="phone"] .left-panel .simulation-slider { display: none; }
+    .preview-frame[data-viewport="phone"] .detail-panel {
+      top: auto;
+      right: 7px;
+      bottom: 7px;
+      left: 7px;
+      width: auto;
+      max-height: 214px;
+      padding: 11px;
+    }
+    .preview-frame[data-viewport="phone"] .state-map .detail-panel,
+    .preview-frame[data-viewport="phone"] .state-simulation .detail-panel { display: none; }
+    .preview-frame[data-viewport="phone"] .state-selected-box .detail-panel .panel-action-stack {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .preview-frame[data-viewport="phone"] .state-selected-box .detail-panel .panel-action-stack .control {
+      padding-inline: 5px;
+      text-align: center;
+      white-space: normal;
+    }
+    .preview-frame[data-viewport="phone"] .state-simulation .left-panel {
+      top: 60px;
+      bottom: 9px;
+      width: 148px;
+      padding: 10px;
+    }
+    .preview-frame[data-viewport="phone"] .state-simulation .left-panel .panel-label,
+    .preview-frame[data-viewport="phone"] .state-simulation .left-panel .panel-title,
+    .preview-frame[data-viewport="phone"] .state-simulation .left-panel .panel-row,
+    .preview-frame[data-viewport="phone"] .state-simulation .left-panel .simulation-slider { display: flex; }
+    .preview-frame[data-viewport="phone"] .state-simulation .left-panel .simulation-slider { display: block; }
+    .preview-frame[data-viewport="phone"] .map-box { width: 112px; min-height: 54px; }
+    .preview-frame[data-viewport="phone"] .map-box.one { left: 34%; }
+    .preview-frame[data-viewport="phone"] .map-box.two { left: 46%; top: 42%; }
+    .preview-frame[data-viewport="phone"] .map-box.three { left: 63%; top: 66%; }
+    .preview-frame[data-viewport="phone"] .map-box.four { display: none; }
+    .preview-frame[data-viewport="phone"] .surface-header { left: 7px; right: 7px; top: 7px; overflow: hidden; }
+    .preview-frame[data-viewport="phone"] .surface-header strong { min-width: 82px; }
+    .preview-frame[data-viewport="phone"] .surface-header .bar-group { overflow-x: auto; }
+    .preview-frame[data-viewport="phone"] .map-scope-strip { left: 130px; }
+    .preview-frame[data-viewport="phone"] .canvas-dock { max-width: calc(100% - 14px); overflow-x: auto; }
+    .preview-frame[data-viewport="phone"] .status-ribbon { right: 8px; }
+    .preview-frame[data-viewport="phone"] .selection-shelf { left: 132px; top: 56%; max-width: 250px; overflow-x: auto; }
+    .preview-frame[data-viewport="phone"] .selection-lens { left: 62%; top: 31%; grid-template-columns: repeat(3, 54px); }
+    .preview-frame[data-viewport="phone"] .selection-lens .control { min-height: 50px; }
+    .preview-frame[data-viewport="phone"] .review-grid { grid-template-columns: 1fr; overflow: auto; }
+    .preview-frame[data-viewport="phone"] .atlas-ring.large { left: 13%; }
+    .preview-frame[data-viewport="phone"] .atlas-ring.medium { left: 3%; }
+    .preview-frame[data-viewport="phone"] .atlas-node.first { left: 16%; }
+    .preview-frame[data-viewport="phone"] .atlas-node.second { left: 54%; }
+    .preview-frame[data-viewport="phone"] .atlas-node.third { left: 61%; }
+    .preview-frame[data-viewport="phone"] .edit-row { grid-template-columns: 20px 1fr 0.8fr; }
+    .preview-frame[data-viewport="phone"] .edit-row span:last-child { display: none; }
+
+    @media (max-width: 940px) {
+      .study-header,
+      .study-controls,
+      .comparison { grid-template-columns: 1fr; }
+      .scope-key { justify-self: start; }
+      .control-group:last-child { justify-content: flex-start; }
+      .option-list { position: static; grid-template-columns: repeat(5, minmax(165px, 1fr)); overflow-x: auto; padding-bottom: 5px; }
+      .notes { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 560px) {
+      .study { padding-inline: 12px; }
+      .preview-shell { padding: 5px; }
+      .option-list { grid-template-columns: repeat(5, 190px); }
+      .scope-key-row { grid-template-columns: 12px 76px 1fr; white-space: normal; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { transition-duration: 0.001ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="study">
+    <header class="study-header">
+      <div>
+        <p class="eyebrow">Ariadne control placement study</p>
+        <h1>Put every control where its consequence appears.</h1>
+        <p class="introduction">These options go beyond reorganising the toolbar. They test whether controls should belong to the whole application, the map, a selected box, or the temporary surface that needs them.</p>
+      </div>
+      <div class="scope-key" aria-label="Control scopes">
+        <div class="scope-key-row"><span class="scope-dot global"></span><strong>Global</strong><span>File, Learn, Search, Theme</span></div>
+        <div class="scope-key-row"><span class="scope-dot map"></span><strong>Whole map</strong><span>Filters, Simulation, Edit</span></div>
+        <div class="scope-key-row"><span class="scope-dot box"></span><strong>Selected box</strong><span>Atlas, Edit box, Simulate input</span></div>
+        <div class="scope-key-row"><span class="scope-dot surface"></span><strong>Current surface</strong><span>Reset, Next, Close, Change start</span></div>
+      </div>
+    </header>
+
+    <section class="study-controls" aria-label="Preview controls">
+      <div class="control-group" id="state-selection"></div>
+      <div class="control-group" id="viewport-selection"></div>
+    </section>
+
+    <section class="comparison">
+      <nav class="option-list" id="option-selection" aria-label="Control placement options"></nav>
+      <div class="preview-column">
+        <div class="preview-shell"><div class="preview-frame" id="preview-frame" data-viewport="desktop"></div></div>
+        <div class="notes">
+          <article class="note"><span class="note-label">Placement model</span><h2 id="option-title"></h2><p id="option-description"></p><div class="recommendation" id="recommendation" hidden>◆ Recommended direction</div></article>
+          <article class="note"><span class="note-label">What becomes easier</span><h3>Benefit</h3><p id="option-benefit"></p></article>
+          <article class="note"><span class="note-label">What could go wrong</span><h3>Trade-off</h3><p id="option-tradeoff"></p><div class="meter" id="disruption-meter"></div></article>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const applicationStates = [
+      { identifier: "map", label: "Map" },
+      { identifier: "selected-box", label: "Selected box" },
+      { identifier: "simulation", label: "Simulation" },
+      { identifier: "atlas", label: "Atlas" },
+      { identifier: "review", label: "Review" },
+      { identifier: "edit-selection", label: "Edit selection" },
+    ];
+
+    const viewportSizes = [
+      { identifier: "desktop", label: "Desktop · 1280" },
+      { identifier: "phone", label: "Phone · 390" },
+    ];
+
+    const placementOptions = [
+      {
+        identifier: "single-home",
+        number: "01",
+        title: "One home per action",
+        shortDescription: "Remove duplicates without changing the shell.",
+        description: "Keep the familiar toolbar, but move Reset into Simulation, Next and Done into Review, and Change starting box and Close into Atlas. Contextual copies disappear.",
+        benefit: "Immediate reduction in noise with little retraining or state-management work.",
+        tradeoff: "The toolbar still carries every entry point, so it remains dense before a surface opens.",
+        disruption: 1,
+      },
+      {
+        identifier: "canvas-dock",
+        number: "02",
+        title: "Map tools dock",
+        shortDescription: "Move analysis entries onto the canvas.",
+        description: "The top bar keeps global actions and Edit. Simulate, Review and Atlas become a compact map-tools dock. Once opened, each surface owns its actions and exit.",
+        benefit: "Separates application actions from things people do to understand this particular map.",
+        tradeoff: "A floating dock occupies map space and needs a deliberate mobile position.",
+        disruption: 2,
+      },
+      {
+        identifier: "scope-ladder",
+        number: "03",
+        title: "Scope ladder",
+        shortDescription: "Place controls at global, map, box and surface levels.",
+        description: "Global actions stay above the map; map-wide actions sit on the canvas; selected-box actions live in the detail panel; temporary actions live inside their surface.",
+        benefit: "The control’s location teaches what it will affect, while Atlas and Edit appear exactly when a box is selected.",
+        tradeoff: "Users must learn four predictable homes instead of scanning one toolbar.",
+        disruption: 3,
+        recommended: true,
+      },
+      {
+        identifier: "selection-lens",
+        number: "04",
+        title: "Selection lens",
+        shortDescription: "Reveal actions around the thing being explored.",
+        description: "Selecting a box reveals a small nearby action shelf or lens for Atlas, Simulation and Edit. Review becomes a quiet map-health signal rather than a permanent button.",
+        benefit: "Creates the shortest possible path from noticing a box to acting on it.",
+        tradeoff: "Actions are less discoverable before selection and the lens must avoid covering dense maps.",
+        disruption: 4,
+      },
+      {
+        identifier: "command-fabric",
+        number: "05",
+        title: "Adaptive command fabric",
+        shortDescription: "Replace most permanent controls with intent-driven commands.",
+        description: "Search becomes a command field; selection opens a local action lens; status signals invite Review; mobile uses an action sheet. Surfaces keep only their own controls.",
+        benefit: "Nearly eliminates permanent chrome and scales to many future capabilities.",
+        tradeoff: "Highest learning cost and strongest dependence on excellent keyboard, touch and onboarding design.",
+        disruption: 5,
+      },
+    ];
+
+    let selectedApplicationState = "map";
+    let selectedViewportSize = "desktop";
+    let selectedPlacementOption = "single-home";
+
+    const previewFrame = document.getElementById("preview-frame");
+    const stateSelection = document.getElementById("state-selection");
+    const viewportSelection = document.getElementById("viewport-selection");
+    const optionSelection = document.getElementById("option-selection");
+
+    function createBrandMarkup() {
+      return `<div class="brand" aria-label="Ariadne"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17 12 7l8 10M4 17h16" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="4" cy="17" r="2" fill="currentColor"/><circle cx="12" cy="7" r="2" fill="currentColor"/><circle cx="20" cy="17" r="2" fill="currentColor"/></svg></div>`;
+    }
+
+    function createSearchMarkup(commandMode = false) {
+      const placeholder = commandMode ? "Search or run a command…" : "Search map  (press /)";
+      return `<label class="search"><input aria-label="${placeholder}" placeholder="${placeholder}"></label>`;
+    }
+
+    function createControlMarkup(label, className = "", destinationState = "") {
+      const stateAttribute = destinationState ? ` data-destination-state="${destinationState}"` : "";
+      return `<button type="button" class="control ${className}"${stateAttribute}>${label}</button>`;
+    }
+
+    function createGlobalUtilitiesMarkup() {
+      return `<div class="bar-group">${createControlMarkup("File ▾", "global-control")}${createControlMarkup("Learn", "global-control")}${createControlMarkup("☀", "icon global-control")}</div>`;
+    }
+
+    function getCurrentPlacementOption() {
+      return placementOptions.find((placementOption) => placementOption.identifier === selectedPlacementOption);
+    }
+
+    function renderGlobalBar(optionIdentifier, stateIdentifier) {
+      const surfaceIsOpen = ["simulation", "atlas", "review", "edit-selection"].includes(stateIdentifier);
+      if (optionIdentifier === "single-home") {
+        return `<header class="global-bar">${createBrandMarkup()}${createSearchMarkup()}<div class="bar-group">
+          ${createControlMarkup("Simulate", "map-control", "simulation")}
+          ${createControlMarkup("Review", "review-count map-control", "review")}
+          ${stateIdentifier === "selected-box" ? "" : createControlMarkup("Atlas ▾", "map-control", "atlas")}
+          ${createControlMarkup("Edit", "primary map-control", "edit-selection")}
+        </div>${createGlobalUtilitiesMarkup()}</header>`;
+      }
+
+      if (optionIdentifier === "canvas-dock") {
+        return `<header class="global-bar">${createBrandMarkup()}${createSearchMarkup()}${createControlMarkup("Edit", "primary map-control", "edit-selection")}${createGlobalUtilitiesMarkup()}</header>`;
+      }
+
+      if (optionIdentifier === "scope-ladder" || optionIdentifier === "selection-lens") {
+        return `<header class="global-bar">${createBrandMarkup()}${createSearchMarkup()}${createGlobalUtilitiesMarkup()}</header>`;
+      }
+
+      return `<header class="global-bar">${createBrandMarkup()}${createSearchMarkup(true)}<div class="bar-group">${createControlMarkup("7 checks", "review-count", "review")}${createControlMarkup("⌘K", "icon")}</div></header>`;
+    }
+
+    function renderMapBoxes(stateIdentifier) {
+      const selectedClassName = stateIdentifier === "selected-box" ? " selected" : "";
+      return `<svg class="map-lines" viewBox="0 0 900 550" preserveAspectRatio="none" aria-hidden="true"><path d="M270 128 C380 110 400 250 490 245"/><path class="highlighted" d="M490 245 C610 205 635 150 710 165"/><path d="M490 245 C430 330 420 390 365 420"/></svg>
+        <button class="map-box one" type="button" data-destination-state="selected-box">Local opportunity</button>
+        <button class="map-box two${selectedClassName}" type="button" data-destination-state="selected-box">Travel confidence</button>
+        <button class="map-box three" type="button" data-destination-state="selected-box">Community activity</button>
+        <button class="map-box four" type="button" data-destination-state="selected-box">Shared knowledge</button>`;
+    }
+
+    function renderLeftPanel(stateIdentifier) {
+      if (stateIdentifier === "simulation") {
+        return `<aside class="left-panel"><div class="panel-head"><span class="panel-label">Simulation</span>${createControlMarkup("Reset", "surface-control")}</div><h3 class="panel-title">Adjustable boxes</h3><div class="panel-row">Local opportunity · 124%</div><input class="simulation-slider" type="range" value="62" aria-label="Simulation value"><div class="panel-row">Available time · 100%</div><input class="simulation-slider" type="range" value="50" aria-label="Simulation value"></aside>`;
+      }
+      return `<aside class="left-panel"><div class="panel-head"><span class="panel-label">Map filters</span>${createControlMarkup("3 hidden", "map-control")}</div><h3 class="panel-title">What is visible</h3><div class="panel-row"><span class="panel-dot"></span>Opportunity</div><div class="panel-row"><span class="panel-dot"></span>Movement</div><div class="panel-row"><span class="panel-dot"></span>Participation</div></aside>`;
+    }
+
+    function renderDetailPanel(optionIdentifier, stateIdentifier) {
+      if (stateIdentifier !== "selected-box") {
+        return `<aside class="detail-panel"><span class="panel-label">Selected box</span><h3 class="panel-title">Nothing selected</h3><div class="panel-row">Select a box to inspect it.</div></aside>`;
+      }
+
+      let actionMarkup = "";
+      if (optionIdentifier === "single-home") actionMarkup = createControlMarkup("Atlas this box", "box-control", "atlas");
+      if (optionIdentifier === "scope-ladder") actionMarkup = createControlMarkup("Open Atlas", "box-control", "atlas") + createControlMarkup("Simulate input", "box-control", "simulation") + createControlMarkup("Edit box", "box-control", "edit-selection");
+      return `<aside class="detail-panel"><span class="panel-label">Selected box</span><h3 class="panel-title">Travel confidence</h3><div class="panel-row">Baseline · 100</div><div class="panel-row">2 incoming links</div><div class="panel-row">2 outgoing links</div>${actionMarkup ? `<div class="panel-action-stack">${actionMarkup}</div>` : ""}</aside>`;
+    }
+
+    function renderSurfaceHeader(stateIdentifier) {
+      if (stateIdentifier === "simulation") return `<div class="surface-header"><strong>What-if simulation</strong><div class="bar-group">${createControlMarkup("Exit simulation", "surface-control", "map")}</div></div>`;
+      if (stateIdentifier === "atlas") return `<div class="surface-header"><strong>Atlas of Travel confidence</strong><div class="bar-group">${createControlMarkup("Change starting box", "surface-control")}${createControlMarkup("Close Atlas", "surface-control", "selected-box")}</div></div>`;
+      if (stateIdentifier === "review") return `<div class="surface-header"><strong>Review · 7 checks</strong><div class="bar-group">${createControlMarkup("Next issue", "surface-control")}${createControlMarkup("Open on map", "surface-control", "selected-box")}${createControlMarkup("Finish review", "surface-control", "map")}</div></div>`;
+      if (stateIdentifier === "edit-selection") return `<div class="surface-header"><strong>Edit map</strong><div class="bar-group">${createControlMarkup("View map", "surface-control", "map")}</div></div>`;
+      return "";
+    }
+
+    function renderCanvasDock(stateIdentifier) {
+      if (stateIdentifier !== "map" && stateIdentifier !== "selected-box") return "";
+      return `<div class="canvas-dock" aria-label="Map tools">${createControlMarkup("Simulate", "map-control", "simulation")}${createControlMarkup("Review", "review-count map-control", "review")}${createControlMarkup(stateIdentifier === "selected-box" ? "Atlas this box" : "Choose box for Atlas", "map-control", "atlas")}</div>`;
+    }
+
+    function renderScopeLadderControls(stateIdentifier) {
+      if (stateIdentifier === "map") {
+        return `<div class="map-scope-strip"><span>Map · View</span>${createControlMarkup("Edit map", "map-control", "edit-selection")}${createControlMarkup("Simulate", "map-control", "simulation")}</div><button class="status-ribbon" type="button" data-destination-state="review">● 7 map checks need attention</button>`;
+      }
+      if (stateIdentifier === "selected-box") {
+        return `<div class="map-scope-strip"><span>Map · View</span>${createControlMarkup("Edit map", "map-control", "edit-selection")}</div><button class="status-ribbon" type="button" data-destination-state="review">● 7 map checks</button>`;
+      }
+      return "";
+    }
+
+    function renderSelectionLensControls(optionIdentifier, stateIdentifier) {
+      if (stateIdentifier === "map") {
+        return `<button class="status-ribbon" type="button" data-destination-state="review">● Map health · 7 checks</button><div class="command-hint">Select a box for actions · press A for map actions</div>`;
+      }
+      if (stateIdentifier !== "selected-box") return "";
+      const lensClassName = optionIdentifier === "command-fabric" ? "selection-lens" : "selection-shelf";
+      return `<div class="${lensClassName}">${createControlMarkup("Atlas", "box-control", "atlas")}${createControlMarkup("Simulate", "box-control", "simulation")}${createControlMarkup("Edit", "box-control", "edit-selection")}</div><button class="status-ribbon" type="button" data-destination-state="review">● 7 map checks</button>`;
+    }
+
+    function renderCommandPalette(stateIdentifier) {
+      if (stateIdentifier !== "map") return "";
+      return `<div class="command-palette"><div class="command-query">› map actions</div><button class="command-result active" type="button" data-destination-state="simulation"><span>Simulate the map</span><small>S</small></button><button class="command-result" type="button" data-destination-state="review"><span>Review 7 checks</span><small>R</small></button><button class="command-result" type="button" data-destination-state="edit-selection"><span>Edit map structure</span><small>E</small></button></div>`;
+    }
+
+    function renderModeSurface(stateIdentifier) {
+      if (stateIdentifier === "review") {
+        return `<section class="review-surface"><div class="review-grid"><div class="surface-panel"><span class="panel-label">Review queue</span><h3>7 things to check</h3><div class="issue-card">Formula uses an untested relationship</div><div class="issue-card">Two boxes have no descriptions</div><div class="issue-card">Input range may be too narrow</div></div><div class="surface-panel"><span class="panel-label">Current issue</span><h3>Travel confidence</h3><div class="issue-card">Confirm whether this formula represents observed evidence or a working hypothesis.</div></div></div></section>`;
+      }
+      if (stateIdentifier === "atlas") {
+        return `<section class="atlas-surface"><div class="atlas-picture"><div class="atlas-ring large"></div><div class="atlas-ring medium"></div><div class="atlas-ring small"></div><div class="atlas-node first">Opportunity</div><div class="atlas-node second">Travel</div><div class="atlas-node third">Activity</div></div></section>`;
+      }
+      if (stateIdentifier === "edit-selection") {
+        return `<section class="edit-surface"><div class="bulk-bar"><strong>3 boxes selected</strong>${createControlMarkup("Set category ▾")}${createControlMarkup("Delete selected")}</div><div class="edit-table"><div class="edit-row"><span class="edit-check checked"></span><span>Local opportunity</span><span>Opportunity</span><span>Input</span></div><div class="edit-row"><span class="edit-check checked"></span><span>Travel confidence</span><span>Movement</span><span>Calculated</span></div><div class="edit-row"><span class="edit-check checked"></span><span>Community activity</span><span>Participation</span><span>Calculated</span></div><div class="edit-row"><span class="edit-check"></span><span>Shared knowledge</span><span>Participation</span><span>Input</span></div></div></section>`;
+      }
+      return "";
+    }
+
+    function renderApplication() {
+      const optionIdentifier = selectedPlacementOption;
+      const stateIdentifier = selectedApplicationState;
+      const surfaceIsOpen = ["simulation", "atlas", "review", "edit-selection"].includes(stateIdentifier);
+      let contextualMarkup = "";
+
+      if (optionIdentifier === "canvas-dock") contextualMarkup = renderCanvasDock(stateIdentifier);
+      if (optionIdentifier === "scope-ladder") contextualMarkup = renderScopeLadderControls(stateIdentifier);
+      if (optionIdentifier === "selection-lens") contextualMarkup = renderSelectionLensControls(optionIdentifier, stateIdentifier);
+      if (optionIdentifier === "command-fabric") contextualMarkup = renderSelectionLensControls(optionIdentifier, stateIdentifier) + renderCommandPalette(stateIdentifier);
+
+      const surfaceHeaderMarkup = surfaceIsOpen ? renderSurfaceHeader(stateIdentifier) : "";
+      const modeSurfaceMarkup = renderModeSurface(stateIdentifier);
+      const bodyContentMarkup = stateIdentifier === "atlas" || stateIdentifier === "review" || stateIdentifier === "edit-selection"
+        ? `${renderMapBoxes(stateIdentifier)}${modeSurfaceMarkup}`
+        : `${renderMapBoxes(stateIdentifier)}${renderLeftPanel(stateIdentifier)}${renderDetailPanel(optionIdentifier, stateIdentifier)}`;
+
+      previewFrame.dataset.viewport = selectedViewportSize;
+      previewFrame.innerHTML = `<div class="application state-${stateIdentifier} option-${optionIdentifier}">${renderGlobalBar(optionIdentifier, stateIdentifier)}<div class="app-body">${bodyContentMarkup}${contextualMarkup}${surfaceHeaderMarkup}</div></div>`;
+      bindMockApplicationControls();
+    }
+
+    function renderSelectionControls() {
+      stateSelection.innerHTML = applicationStates.map((applicationState) => `<button type="button" class="selection-button" data-state-identifier="${applicationState.identifier}" aria-pressed="${applicationState.identifier === selectedApplicationState}">${applicationState.label}</button>`).join("");
+      viewportSelection.innerHTML = viewportSizes.map((viewportSize) => `<button type="button" class="selection-button" data-viewport-identifier="${viewportSize.identifier}" aria-pressed="${viewportSize.identifier === selectedViewportSize}">${viewportSize.label}</button>`).join("");
+      optionSelection.innerHTML = placementOptions.map((placementOption) => `<button type="button" class="option-card" data-option-identifier="${placementOption.identifier}" aria-selected="${placementOption.identifier === selectedPlacementOption}"><span class="option-number">${placementOption.number}</span><span><strong>${placementOption.title}</strong><small>${placementOption.shortDescription}</small></span></button>`).join("");
+    }
+
+    function renderOptionNotes() {
+      const placementOption = getCurrentPlacementOption();
+      document.getElementById("option-title").textContent = `${placementOption.number} · ${placementOption.title}`;
+      document.getElementById("option-description").textContent = placementOption.description;
+      document.getElementById("option-benefit").textContent = placementOption.benefit;
+      document.getElementById("option-tradeoff").textContent = placementOption.tradeoff;
+      document.getElementById("recommendation").hidden = !placementOption.recommended;
+      document.getElementById("disruption-meter").innerHTML = Array.from({ length: 5 }, (_, index) => `<span class="${index < placementOption.disruption ? "filled" : ""}"></span>`).join("");
+    }
+
+    function bindStudyControls() {
+      document.querySelectorAll("[data-state-identifier]").forEach((stateButton) => {
+        stateButton.addEventListener("click", () => { selectedApplicationState = stateButton.dataset.stateIdentifier; renderStudy(); });
+      });
+      document.querySelectorAll("[data-viewport-identifier]").forEach((viewportButton) => {
+        viewportButton.addEventListener("click", () => { selectedViewportSize = viewportButton.dataset.viewportIdentifier; renderStudy(); });
+      });
+      document.querySelectorAll("[data-option-identifier]").forEach((optionButton) => {
+        optionButton.addEventListener("click", () => { selectedPlacementOption = optionButton.dataset.optionIdentifier; renderStudy(); });
+      });
+    }
+
+    function bindMockApplicationControls() {
+      previewFrame.querySelectorAll("[data-destination-state]").forEach((controlButton) => {
+        controlButton.addEventListener("click", () => {
+          selectedApplicationState = controlButton.dataset.destinationState;
+          renderStudy();
+        });
+      });
+    }
+
+    function renderStudy() {
+      renderSelectionControls();
+      renderApplication();
+      renderOptionNotes();
+      bindStudyControls();
+    }
+
+    renderStudy();
+  </script>
+</body>
+</html>

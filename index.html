@@ -85,6 +85,7 @@
   <link rel="stylesheet" href="assets/css/14-typeable-dropdown.css">
   <link rel="stylesheet" href="assets/css/16-atlas.css">
   <link rel="stylesheet" href="assets/css/17-review.css">
+  <link rel="stylesheet" href="assets/css/18-tutorial.css">
 </head>
 <body>
 
@@ -124,35 +125,18 @@
       <div id="search-results" class="search-results" hidden></div>
     </div>
 
-    <!-- Header actions, in FOUR GROUPS. The grouping is the spacing and nothing
-         else: 4px inside a group, 24px between them (.header-group in
-         03-app-shell.css). The two hairline dividers that used to fence these
-         are gone — they were trying to group against a gap that said every
-         button was equally unrelated to every other, and they lost.
-           1. Filters      — what the map is showing
-           2. File         — the map as a document, in and out
-           3. the reading tools — Simulate / Review / Atlas
-           4. the mode switch + the theme
-         Trigger classes / ids are unchanged, and every handler in 17-events.ts
-         binds by class at load, so moving a button into a menu changes nothing
-         about how it works. -->
-    <div class="header-group" id="filters-group">
-      <button id="filters-button" class="header-button" aria-expanded="false"
-              data-tooltip="Rows, columns, tags and link styles — what the map is showing.">Filters</button>
-    </div>
-
-    <!-- File keeps the import/export actions that remain useful in every mode.
-         Map-wide authoring actions surface directly when Edit is active. -->
-    <div class="header-group">
+    <!-- Only application-wide destinations live in the header. Controls that
+         affect the map, one selected box, or a temporary surface live beside
+         that scope below. -->
+    <div class="header-group header-document-actions" aria-label="Map files">
+      <button class="header-button create-map-trigger"
+              data-tooltip="Replace this map with an empty grid.">New map</button>
+      <button class="header-button import-data-trigger"
+              data-tooltip="Open a map spreadsheet — same as dragging one onto the window.">Import…</button>
       <div class="menu-wrap">
-        <button id="file-button" class="header-button" aria-haspopup="true" aria-expanded="false"
-                data-tooltip="The map as a file — start one, bring one in, or take one away.">File<span class="header-caret" aria-hidden="true">▾</span></button>
-        <div id="file-menu" class="menu" role="menu" hidden>
-          <button class="menu-item import-data-trigger" role="menuitem">
-            <b>Import…</b><span>Open a map spreadsheet — same as dragging one onto the window.</span>
-          </button>
-          <div class="menu-sep" role="separator"></div>
-          <div class="menu-head"><span>Export</span></div>
+        <button id="export-button" class="header-button" aria-haspopup="true" aria-expanded="false"
+                data-tooltip="Download this map for editing, review, presentation or sharing.">Export<span class="header-caret" aria-hidden="true">▾</span></button>
+        <div id="export-menu" class="menu" role="menu" hidden>
           <button class="menu-item save-data-trigger" role="menuitem">
             <b>Spreadsheet</b><span>A .csv you can edit in Excel or Sheets and load back in.</span>
           </button>
@@ -169,55 +153,15 @@
       </div>
     </div>
 
-    <!-- Editing replaces the reading tools with the actions an author needs
-         repeatedly. New map and Bulk edit used to be hidden one level down in
-         File, which made the mode reveal controls without revealing its two
-         map-wide actions. -->
-    <div class="header-group toolbar-edit-actions" id="toolbar-edit-actions">
-      <button class="header-button create-map-trigger">New map</button>
-      <button class="header-button edit-data-trigger">Bulk edit</button>
-    </div>
-
-    <!-- The three reading tools. One group because they answer the same kind of
-         question — help me understand this map — and because grouped, the three
-         of them read as a set rather than as three more buttons. -->
-    <div class="header-group" id="reading-tools-group">
-      <button id="toolbar-sim-reset" class="header-button toolbar-sim-reset">Reset sliders</button>
-      <button id="sim-toggle-button" class="header-button" data-tooltip="Turn on what-if mode — a slider on every adjustable input; its effects update live.">Simulate</button>
-      <!-- Review sits beside Simulate because it answers the question Simulate
-           raises: do I believe these numbers? Carries a count badge of the things
-           the loader flagged, so a map with problems never LOOKS clean — the
-           six-second toast this replaced was missable by design. It stays a named
-           button rather than folding in with Atlas: the badge is the whole reason
-           the panel gets opened, and a count you have to uncover is the toast
-           again. Hidden until a map is loaded (23-review-panel.ts). -->
-      <button id="review-button" class="header-button" aria-expanded="false" hidden
-              data-tooltip="Check the map: what the loader flagged, and what each adjustable input actually does.">Review</button>
-
-      <!-- Atlas. A reading tool, so it goes away while editing (.read-only).
-           Unlike Simulate, an atlas is always OF one box: with a box selected the
-           button opens straight into it, and with nothing selected it drops a
-           short list of the boxes worth starting from. A disabled button would
-           have been the easy answer and the wrong one — grey chrome is chrome
-           people stop seeing, and this control's whole job is to be seen. -->
-      <div class="menu-wrap read-only" id="atlas-control">
-        <button id="atlas-button" class="header-button" aria-haspopup="true" aria-expanded="false"
-                data-tooltip="Every pathway out of one box, as one picture you zoom into.">Atlas<span class="header-caret" aria-hidden="true">▾</span></button>
-        <div id="atlas-menu" class="menu" role="menu" hidden></div>
-      </div>
-    </div>
-
-    <div class="header-group toolbar-review-actions" id="toolbar-review-actions">
-      <button id="toolbar-review-next" class="header-button">Next issue</button>
-      <button id="toolbar-review-open-map" class="header-button">Open on map</button>
+    <!-- Learning is a stable destination rather than a document action. It
+         remains visible in every mode so a person can ask "how do I do this?"
+         without first leaving the surface they are trying to understand. -->
+    <div class="header-group" id="learn-group">
+      <button id="learn-button" class="header-button learn-trigger"
+              data-tooltip="Short interactive lessons using a temporary example map.">Learn</button>
     </div>
 
     <div class="header-group">
-      <button id="mode-toggle-button" class="header-button header-button--primary"
-              data-tooltip="Switch between reading the map and changing it.">Edit</button>
-      <button id="simulation-exit-button" class="header-button">Exit simulation</button>
-      <button id="atlas-exit-button" class="header-button">Close Atlas</button>
-      <button id="review-exit-button" class="header-button">Done reviewing</button>
       <button id="theme-toggle-button" class="header-button header-button--icon" data-tooltip="Switch between the light and dark theme. Your choice is remembered." aria-label="Switch theme">☀</button>
     </div>
   </header>
@@ -312,49 +256,85 @@
 
   <!-- ============== CENTER VISUALIZATION ============== -->
   <main class="viz-container" id="viz-container">
-    <!-- A slim copy of the stage headings appears once the SVG's own heading
-         row has scrolled out of view. Its buttons stay aligned with the map as
-         the viewport pans and retain the same collapse/expand behaviour. -->
+    <!-- Controls follow the scope they affect. Map-wide actions sit on the
+         canvas, Review is a map-health signal, selected-box actions live in
+         the detail panel, and Atlas owns its controls only while it is open. -->
+    <div class="map-bottom-dock" aria-label="Map controls">
+      <div class="map-primary-controls" aria-label="Review and map actions">
+        <div class="map-review-status" aria-label="Map health">
+          <button id="review-button" class="scope-button" aria-expanded="false" hidden
+                  data-tooltip="Check the map: what the loader flagged, and what each adjustable input actually does.">Review</button>
+        </div>
+
+        <div class="map-scope-bar" id="map-scope-bar" aria-label="Map actions">
+          <span class="map-scope-name map-scope-name--view">Map · View</span>
+          <span class="map-scope-name map-scope-name--edit">Map · Edit</span>
+          <span class="map-scope-name map-scope-name--simulation">Simulation</span>
+          <button id="filters-button" class="scope-button" aria-expanded="false"
+                  data-tooltip="Rows, columns, tags and link styles — what the map is showing.">Filters</button>
+          <button id="mode-toggle-button" class="scope-button scope-button--primary"
+                  data-tooltip="Switch between viewing the map and changing it.">Edit map</button>
+          <button id="sim-toggle-button" class="scope-button simulation-toggle-trigger"
+                  data-tooltip="Turn on what-if mode — a slider on every adjustable input; its effects update live.">Simulate</button>
+          <div class="toolbar-edit-actions" id="toolbar-edit-actions">
+            <button class="scope-button edit-data-trigger">Bulk edit</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- One navigation tool occupies one place in the dock. The mode switch
+           changes what the shared − / value / + controls operate. -->
+      <div class="viz-controls-cluster" id="viz-navigation-controls"
+           data-navigation-mode="zoom" aria-label="Map navigation: Zoom">
+        <div class="viz-navigation-mode-switch" role="group" aria-label="Navigation control">
+          <button class="viz-navigation-mode-button" id="viz-navigation-mode-zoom"
+                  type="button" aria-pressed="true">Zoom</button>
+          <button class="viz-navigation-mode-button" id="viz-navigation-mode-depth"
+                  type="button" aria-pressed="false">Depth</button>
+        </div>
+        <div class="viz-control-row">
+          <button class="viz-shared-control viz-shared-control--zoom viz-zoom-button"
+                  id="viz-zoom-out" data-tooltip="Zoom out (Ctrl+−)" aria-label="Zoom out">−</button>
+          <button class="viz-shared-control viz-shared-control--zoom viz-zoom-readout"
+                  id="viz-zoom-readout" data-fit-next="height" data-tooltip="Fit height next"
+                  aria-label="100%. Fit height next">100%</button>
+          <button class="viz-shared-control viz-shared-control--zoom viz-zoom-button"
+                  id="viz-zoom-in" data-tooltip="Zoom in (Ctrl+=)" aria-label="Zoom in">+</button>
+
+          <button class="viz-shared-control viz-shared-control--depth viz-depth-button"
+                  id="viz-depth-down" aria-label="Decrease highlight depth">−</button>
+          <span class="viz-shared-control viz-shared-control--depth viz-depth-readout"
+                id="viz-depth-readout" aria-live="polite">1</span>
+          <button class="viz-shared-control viz-shared-control--depth viz-depth-button"
+                  id="viz-depth-up" aria-label="Increase highlight depth">+</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="atlas-surface-bar" aria-label="Atlas actions">
+      <span class="map-scope-name">Atlas</span>
+      <div class="menu-wrap" id="atlas-control">
+        <button id="atlas-button" class="scope-button" aria-haspopup="true" aria-expanded="false"
+                data-tooltip="Choose a different box to start the atlas from.">Change starting box<span class="header-caret" aria-hidden="true">▾</span></button>
+        <div id="atlas-menu" class="menu" role="menu" hidden></div>
+      </div>
+      <button id="atlas-sim-toggle-button" class="scope-button simulation-toggle-trigger"
+              data-tooltip="Test how changed inputs travel through these pathways.">Simulate</button>
+      <button id="atlas-exit-button" class="scope-button">Close Atlas</button>
+    </div>
+
+    <!-- Fixed-screen copies of both map axes. At ordinary zoom they appear
+         after their SVG headings pan away and stay geometry-aligned. At low
+         zoom they become a readable overview index across the top and left. -->
     <div class="viz-sticky-columns" id="viz-sticky-columns" hidden
          aria-label="Map column headings"></div>
+    <div class="viz-sticky-rows" id="viz-sticky-rows" hidden
+         aria-label="Map row headings"></div>
 
     <!-- Scrollable area containing the rendered SVG. JS in 11-rendering.js
          writes the SVG contents on every render. -->
     <div class="viz-scroll" id="viz-scroll">
       <svg id="viz-svg" class="viz-svg" role="group" aria-label="Causal map. Tab through boxes, rows and columns; press Enter or Space to activate a focused item."></svg>
-    </div>
-
-    <!-- Map controls cluster (bottom-right): highlight-depth + zoom. Stacked
-         on narrow viewports, laid out side by side on widescreen. Each control
-         carries a title so the two are easy to tell apart. JS in 17-events.js
-         wires the −/+ buttons. -->
-    <div class="viz-controls-cluster">
-
-      <!-- Highlight-depth: how many connected levels light up when a node is
-           selected. -->
-      <div class="viz-depth-controls" id="viz-depth-controls"
-           data-tooltip="How many connected levels to highlight when a box is selected.">
-        <span class="viz-control-title">Highlight depth</span>
-        <div class="viz-control-row">
-          <button class="viz-depth-button" id="viz-depth-down" aria-label="Decrease highlight depth">−</button>
-          <span class="viz-depth-readout" id="viz-depth-readout">1</span>
-          <button class="viz-depth-button" id="viz-depth-up" aria-label="Increase highlight depth">+</button>
-        </div>
-      </div>
-
-      <!-- Zoom. -->
-      <div class="viz-zoom-controls" id="viz-zoom-controls"
-           data-tooltip="Zoom the map in and out.">
-        <span class="viz-control-title">Zoom</span>
-        <div class="viz-control-row">
-          <button class="viz-zoom-button" id="viz-zoom-out"  data-tooltip="Zoom out (Ctrl+−)" aria-label="Zoom out">−</button>
-          <button class="viz-zoom-readout" id="viz-zoom-readout"
-                  data-fit-next="height" data-tooltip="Fit height next"
-                  aria-label="100%. Fit height next">100%</button>
-          <button class="viz-zoom-button" id="viz-zoom-in"   data-tooltip="Zoom in (Ctrl+=)"  aria-label="Zoom in">+</button>
-        </div>
-      </div>
-
     </div>
 
     <!-- The pathway atlas — everything downstream of one box, drawn over the
@@ -430,6 +410,10 @@
 
 <!-- Build / Edit wizard overlay — filled by 16a-builder-panel.js when open. -->
 <div id="builder-overlay" class="builder-overlay"></div>
+
+<!-- First-open welcome and the compact guided-tour route card. The tutorial
+     map is temporary until the user explicitly chooses to keep it. -->
+<div id="tutorial-layer" class="tutorial-layer" hidden aria-live="polite"></div>
 
 <!-- ============================================================================
      JAVASCRIPT — a single ES-module entry point.

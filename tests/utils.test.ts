@@ -209,8 +209,27 @@ describe("pickTextColor", () => {
 
 describe("clone*ForUndo", () => {
   it("clones the documented edge fields", () => {
-    const edge: Edge = { from: "a", to: "b", effect: "increases", elasticity: 0.4, description: "d", id: "edge_0" };
-    expect(cloneEdgeForUndo(edge)).toEqual({ from: "a", to: "b", effect: "increases", elasticity: 0.4, description: "d" });
+    const edge: Edge = {
+      from: "a",
+      to: "b",
+      effect: "increases",
+      elasticity: 0.4,
+      description: "d",
+      style: "dashed",
+      evidence: { status: "supported", rationale: "Observed repeatedly" },
+      id: "edge_0",
+    };
+    const clone = cloneEdgeForUndo(edge);
+    expect(clone).toEqual({
+      from: "a",
+      to: "b",
+      effect: "increases",
+      elasticity: 0.4,
+      description: "d",
+      style: "dashed",
+      evidence: { status: "supported", rationale: "Observed repeatedly" },
+    });
+    expect(clone.evidence).not.toBe(edge.evidence);
   });
   it("shallow-clones a node", () => {
     const node = { id: "n", label: "N" } as GraphNode;

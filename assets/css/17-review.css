@@ -302,7 +302,7 @@ body.review-open .viz-controls-cluster { display: none; }
 .review-issue-banner {
   position: absolute;
   z-index: 4;
-  top: var(--space-3);
+  bottom: 132px;
   left: 50%;
   width: min(680px, calc(100% - var(--space-6)));
   transform: translateX(-50%);
@@ -348,7 +348,7 @@ body.review-open .viz-controls-cluster { display: none; }
 .review-issue-banner.is-resolved { border-color: color-mix(in srgb, var(--accent-green) 60%, var(--border-strong)); }
 
 @media (max-width: 600px) {
-  .review-issue-banner { top: var(--space-2); width: calc(100% - var(--space-3)); }
+  .review-issue-banner { bottom: 194px; width: calc(100% - var(--space-3)); }
   .review-banner-copy { display: block; }
   .review-banner-copy b,
   .review-banner-copy span { display: block; }
@@ -962,7 +962,6 @@ body.reading:not(.sim-mode).review-pass .app { --sidebar-w: var(--rail-w); }
   min-height: 0;
   overflow-y: auto;
   padding-bottom: var(--space-2);
-  scrollbar-width: thin;
 }
 
 .rail-empty {
@@ -1171,11 +1170,9 @@ body.reading:not(.sim-mode).review-pass .app { --sidebar-w: var(--rail-w); }
   .rail-foot-row { flex: 0 0 auto; margin-top: 0; }
   .rail-tray-toggle { display: block; }
 
-  /* The map's zoom cluster is bottom-right of the viz, which is exactly where
-   * the dock now is. Lift it by the dock's height rather than hiding it: the
-   * controls are how you get around a map too big for the window, and a review
-   * pass on a map that size is when you need them most. */
-  body.review-rail-open .viz-controls-cluster { bottom: calc(var(--dock-h) + 12px); }
+  /* Keep the shared map-control dock above the compact Review tray when the
+   * map is visible during a review handoff. */
+  body.review-rail-open .map-bottom-dock { bottom: calc(var(--dock-h) + 12px); }
 }
 
 /* ── The rule, on a box whose rule is not its arrows ─────────────────────
@@ -1280,3 +1277,65 @@ body.reading:not(.sim-mode).review-pass .app { --sidebar-w: var(--rail-w); }
   text-decoration: line-through;
   opacity: .45;
 }
+.review-evidence-head { margin-top: var(--space-5); }
+.review-evidence-filter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
+  font-weight: 650;
+}
+.review-evidence-filter select {
+  min-width: 150px;
+  padding: 6px 28px 6px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-interactive);
+  background: var(--bg-deep);
+  color: var(--text-primary);
+}
+.review-evidence-list { display: grid; gap: var(--space-2); }
+.review-evidence-item {
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-interactive);
+  background: var(--bg-mid);
+  cursor: pointer;
+}
+.review-evidence-item:hover { border-color: var(--text-tertiary); }
+.review-evidence-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.review-evidence-kind {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+.review-evidence-label {
+  margin-top: 6px;
+  color: var(--text-primary);
+  font-size: var(--fs-body);
+  font-weight: 700;
+}
+.review-evidence-detail {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-secondary);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.review-evidence-meta {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: var(--space-2);
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
+}
+.review-evidence-meta b { color: var(--text-tertiary); }

@@ -8,6 +8,15 @@
 
 // Size of each node (rectangle) drawn on the map, in pixels.
 export const NODE_WIDTH  = 220;
+// At deep overview zoom, a fixed-width column becomes too narrow on screen for
+// its heading. Expand the column lane just enough to preserve this screen
+// width; boxes themselves remain NODE_WIDTH and sit centred in the lane.
+export const OVERVIEW_COLUMN_MINIMUM_SCREEN_WIDTH = 104;
+
+export function nodeWidthForZoom(zoomLevel: number): number {
+  if (!zoomLevel || isNaN(zoomLevel) || zoomLevel <= 0) return NODE_WIDTH;
+  return Math.max(NODE_WIDTH, OVERVIEW_COLUMN_MINIMUM_SCREEN_WIDTH / zoomLevel);
+}
 // Minimum / default node-box height. Real nodes "grow to fit" their label —
 // the height is computed from how many lines the name wraps to (nodeBoxHeight
 // in 08-layout.js), floored at NODE_HEIGHT. A brand-new single-line node, the

@@ -490,6 +490,54 @@ describe("detail panel calculation-rule edit fields", () => {
       "Every box named here must also have an arrow into this box",
     );
   });
+
+  it("puts the multiplier-versus-formula decision at the editing point", () => {
+    const guide = document.querySelector(
+      "#detail-content .calculation-choice-guide",
+    ) as HTMLDetailsElement;
+    expect(guide).toBeTruthy();
+    expect(guide.open).toBe(false);
+    expect(guide.querySelector("summary")!.textContent).toBe(
+      "How should this box calculate?",
+    );
+    expect(guide.textContent).toContain("Link Strength");
+    expect(guide.textContent).toContain("Scenario multiplier");
+    expect(guide.textContent).toContain("Formula setup");
+
+    showPanel("b", { edit: false });
+    expect(document.querySelector("#detail-content .calculation-choice-guide")).toBeNull();
+  });
+
+  it("warns when an adjustable box overrides its incoming calculation", () => {
+    showPanel("a", { edit: true });
+    const lead = document.querySelector(
+      "#detail-content .calculation-choice-lead",
+    )!.textContent!;
+    expect(lead).toContain("adjustable");
+    expect(lead).toContain("formula and incoming calculation are ignored");
+  });
+
+  it("warns when a formula makes incoming Strength values descriptive", () => {
+    expect(loadDataFromCsv(FORMULA_CSV)).toBe(true);
+    showPanel("seizures", { edit: true });
+    expect(document.querySelector("#detail-content .calculation-choice-lead")!.textContent)
+      .toContain("Strength values are not used");
+
+    showPanel("traffic", { edit: true });
+    const formulaTargetRow = Array.from(
+      document.querySelectorAll("#detail-content [data-edge-open]"),
+    ).find((element) => element.textContent!.includes("Exam coverage")) as HTMLElement;
+    formulaTargetRow.click();
+    const strengthLabel = document.querySelector(
+      "#detail-content .edge-open .detail-quant-label[data-tooltip]",
+    )!;
+    expect(strengthLabel.getAttribute("data-tooltip")).toContain(
+      "uses a formula",
+    );
+    expect(strengthLabel.getAttribute("data-tooltip")).toContain(
+      "Strength is ignored",
+    );
+  });
 });
 
 // =============================================================================

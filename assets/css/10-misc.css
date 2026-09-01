@@ -25,11 +25,13 @@
   box-shadow: var(--shadow-float), 0 0 0 2px var(--accent-red);
 }
 
-/* === Undo toast (bottom-centre) ===
- * Shown briefly after a canvas-edit delete. Click "Undo" to restore. */
+/* === Undo toast (above the map-control dock) ===
+ * Shown briefly after a canvas-edit delete. Click "Undo" to restore. The
+ * clearance prevents it from covering the map mode controls it used to share
+ * the bottom centre with. */
 .undo-toast {
   position: fixed;
-  bottom: 22px;
+  bottom: 132px;
   left: 50%;
   transform: translateX(-50%);
   background: var(--bg-light);
@@ -75,7 +77,7 @@
  * doesn't overlap it. */
 .multi-select-bar {
   position: fixed;
-  bottom: 72px;
+  bottom: 184px;
   left: 50%;
   transform: translateX(-50%);
   background: var(--bg-light);
@@ -89,6 +91,11 @@
   box-shadow: var(--shadow-float), 0 0 0 1px var(--border-strong);
   z-index: 221;
   animation: undo-toast-slide-in var(--dur-slow) ease;
+}
+
+@media (max-width: 600px) {
+  .undo-toast { bottom: 194px; }
+  .multi-select-bar { bottom: 246px; }
 }
 
 .multi-select-bar .msb-count {
@@ -132,63 +139,60 @@ body.no-data .detail-panel {
   pointer-events: none;
 }
 
-/* === Map controls cluster (bottom-right): highlight-depth + zoom ===
- * z-index 50 so the controls stay visible (and clickable) even when an
- * unpinned sidebar/detail panel is hovered and expands as an overlay over
- * the viz — those panels live at z-index 30.
- *
- * Stacked vertically by default (narrow viewports); on widescreen the two
- * titled cards sit side by side instead of on top of each other. */
+/* === Shared map navigation control =======================================
+ * Zoom and highlight depth use the same compact − / value / + group. The
+ * segmented switch states the active meaning instead of duplicating controls. */
 .viz-controls-cluster {
-  position: absolute;
-  bottom: 12px;
-  right: 12px;
-  z-index: var(--z-chrome);
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: var(--gap-lg);
-}
-
-@media (min-width: 1024px) {
-  .viz-controls-cluster {
-    flex-direction: row;
-    align-items: flex-end;
-  }
-}
-
-/* Shared shell for both controls: a titled glass card with a button row.
- * Both share one fixed width so the cards line up exactly. */
-.viz-depth-controls,
-.viz-zoom-controls {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-0_5);
-  width: 120px;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 4px;
+  border-radius: var(--radius-surface);
   background: color-mix(in srgb, var(--bg-deep) 85%, transparent);
   backdrop-filter: blur(8px);
-  padding: var(--space-1) var(--space-1_5);   /* tight glass control, not a full card */
-  border-radius: var(--radius-surface);
 }
 
-/* Card title so the user can tell the two controls apart. An eyebrow, so sans:
- * mono used to come down from the card wrapper above and made it the one
- * capitalised label in the app rendered in a different family from its peers. */
-.viz-control-title {
+.viz-navigation-mode-switch {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-interactive);
+  background: color-mix(in srgb, var(--bg-deepest) 72%, transparent);
+}
+
+.viz-navigation-mode-button {
+  height: 26px;
+  padding: 0 var(--space-1_5);
+  border: 0;
+  border-radius: calc(var(--radius-interactive) - 2px);
+  background: transparent;
   color: var(--text-tertiary);
-  font-size: var(--fs-eyebrow);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-cap);
-  text-align: center;
-  white-space: nowrap;
+  font-size: var(--fs-cap);
+  cursor: pointer;
+  transition: background var(--dur-fast), color var(--dur-fast);
 }
 
-/* The −/readout/+ row inside each card. */
+.viz-navigation-mode-button:hover {
+  color: var(--text-primary);
+}
+
+.viz-navigation-mode-button[aria-pressed="true"] {
+  background: var(--act-tint);
+  color: var(--text-primary);
+}
+
 .viz-control-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-0_5);
+  min-width: 112px;
+}
+
+.viz-controls-cluster[data-navigation-mode="zoom"] .viz-shared-control--depth,
+.viz-controls-cluster[data-navigation-mode="depth"] .viz-shared-control--zoom {
+  display: none;
 }
 
 .viz-depth-button,

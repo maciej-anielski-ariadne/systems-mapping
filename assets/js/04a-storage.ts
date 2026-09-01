@@ -27,6 +27,20 @@ export const STORAGE_KEY_CSV     = "systems-map.csv";
 export const STORAGE_KEY_UI      = "systems-map.ui";
 export const STORAGE_KEY_BUILDER = "systems-map.builder";
 
+// Guided examples temporarily replace the live in-memory graph while keeping
+// the user's real map untouched. Suspending every storage writer here is safer
+// than teaching each tutorial action (selection, simulation, filters, builder)
+// that it is temporary. Reads remain available so the session can be restored.
+let storageWritesSuspended = false;
+export function setStorageWritesSuspended(suspended: boolean): void {
+  storageWritesSuspended = suspended;
+  if (suspended) cancelPendingStorageSavesWithoutFlushing();
+}
+
+export function storageWritesAreSuspended(): boolean {
+  return storageWritesSuspended;
+}
+
 // ───── Quota-failure surfacing ────────────────────────────────────────────
 // localStorage tops out around 5 MB per origin; a very large map (or the
 // wizard's working copy of one) can exceed that, and swallowing the
@@ -53,6 +67,7 @@ function warnStorageQuota(): void {
 
 // ───── CSV slot ───────────────────────────────────────────────────────────
 export function saveCsvToStorage(csv: string | null | undefined): boolean {
+  if (storageWritesSuspended) return true;
   try {
     localStorage.setItem(STORAGE_KEY_CSV, csv || "");
     return true;
@@ -73,6 +88,7 @@ const CSV_SAVE_DEBOUNCE_MS = 600;
 let _csvSaveTimer: ReturnType<typeof setTimeout> | null = null;
 let _pendingCsv: string | null = null;
 export function scheduleCsvSave(csv: string): void {
+  if (storageWritesSuspended) return;
   _pendingCsv = csv;
   if (_csvSaveTimer) clearTimeout(_csvSaveTimer);
   _csvSaveTimer = setTimeout(() => {
@@ -84,6 +100,10 @@ export function scheduleCsvSave(csv: string): void {
 // Write any debounced state out immediately (tab hidden / closing, or a code
 // path that must observe the write, e.g. right before clearing a slot).
 export function flushPendingSaves(): void {
+  if (storageWritesSuspended) {
+    cancelPendingStorageSavesWithoutFlushing();
+    return;
+  }
   if (_csvSaveTimer) { clearTimeout(_csvSaveTimer); _csvSaveTimer = null; }
   if (_pendingCsv !== null) { saveCsvToStorage(_pendingCsv); _pendingCsv = null; }
   if (_builderSaveTimer) { clearTimeout(_builderSaveTimer); _builderSaveTimer = null; saveBuilderToStorage(); }
@@ -126,6 +146,7 @@ export function clearCsvFromStorage(): void {
     _csvSaveTimer = null;
   }
   _pendingCsv = null;
+  if (storageWritesSuspended) return;
   try { localStorage.removeItem(STORAGE_KEY_CSV); } catch (_) {}
 }
 
@@ -133,6 +154,7 @@ export function clearCsvFromStorage(): void {
 // Captures only stuff that's meaningful to restore. Things like ancestorSet
 // are derived from selectedNodeId via selectNode(), so we don't store them.
 export function saveUiStateToStorage(): void {
+  if (storageWritesSuspended) return;
   try {
     const payload = {
       hiddenStreams:        Array.from(state.hiddenStreams),
@@ -171,6 +193,7 @@ export function saveUiStateToStorage(): void {
 // zoom and selection paths.
 let _uiSaveTimer: ReturnType<typeof setTimeout> | null = null;
 export function scheduleUiStateSave(): void {
+  if (storageWritesSuspended) return;
   if (_uiSaveTimer) clearTimeout(_uiSaveTimer);
   _uiSaveTimer = setTimeout(() => { _uiSaveTimer = null; saveUiStateToStorage(); }, 250);
 }
@@ -290,6 +313,7 @@ export function applyRestoredUiState(ui: any): void {
 const BUILDER_SAVE_DEBOUNCE_MS = 600;
 let _builderSaveTimer: ReturnType<typeof setTimeout> | null = null;
 export function scheduleBuilderSave(): void {
+  if (storageWritesSuspended) return;
   if (_builderSaveTimer) clearTimeout(_builderSaveTimer);
   _builderSaveTimer = setTimeout(() => {
     _builderSaveTimer = null;
@@ -298,6 +322,7 @@ export function scheduleBuilderSave(): void {
 }
 
 export function saveBuilderToStorage(): void {
+  if (storageWritesSuspended) return;
   try {
     if (!state.builder || !state.builder.open) return;
     const b = state.builder;
@@ -330,5 +355,6 @@ export function clearBuilderFromStorage(): void {
   // Cancel any debounced write first — a save landing AFTER the clear would
   // resurrect the wizard slot and make it auto-reopen on the next refresh.
   if (_builderSaveTimer) { clearTimeout(_builderSaveTimer); _builderSaveTimer = null; }
+  if (storageWritesSuspended) return;
   try { localStorage.removeItem(STORAGE_KEY_BUILDER); } catch (_) {}
 }

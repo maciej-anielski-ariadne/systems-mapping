@@ -22,12 +22,222 @@
   background: var(--bg-deepest);
   overflow: hidden;
   position: relative;
+  container-type: inline-size;
+  container-name: map-frame;
   /* Explicit grid placement so this always sits in the middle column even
    * when one of its siblings (sidebar / detail panel) is unpinned and
    * becomes position:absolute. Without this, auto-placement would shift
    * everything left. */
   grid-column: 2;
   grid-row: 2;
+}
+
+/* === Controls arranged by consequence =====================================
+ * The application header now holds only application-wide destinations. This
+ * quiet glass strip belongs to the map itself: View/Edit, Filters and
+ * Simulation affect the whole map, so they sit on it. Atlas gets the same
+ * strip only while its own surface is open; Review is a map-health signal at
+ * the lower edge rather than another permanent header destination. */
+.map-bottom-dock {
+  position: absolute;
+  bottom: var(--space-3);
+  left: 50%;
+  z-index: var(--z-chrome);
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  width: max-content;
+  max-width: calc(100% - 2 * var(--space-3));
+  padding: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  transform: translateX(-50%);
+  pointer-events: auto;
+  scrollbar-width: none;
+}
+
+.map-bottom-dock::-webkit-scrollbar { display: none; }
+
+.map-bottom-dock > * { flex: 0 0 auto; }
+
+.map-primary-controls {
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+  padding: var(--space-1);
+  border-radius: var(--radius-surface);
+  background: color-mix(in srgb, var(--bg-deep) 90%, transparent);
+  box-shadow: var(--shadow-float);
+  backdrop-filter: blur(10px);
+}
+
+.map-scope-bar,
+.atlas-surface-bar,
+.map-review-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  pointer-events: auto;
+}
+
+.map-scope-bar {
+  max-width: none;
+}
+
+.atlas-surface-bar {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  z-index: var(--z-chrome);
+  max-width: calc(100% - 2 * var(--space-3));
+}
+
+.atlas-surface-bar {
+  min-height: 38px;
+  padding: var(--space-1);
+  border-radius: var(--radius-surface);
+  background: color-mix(in srgb, var(--bg-deep) 90%, transparent);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-float);
+}
+
+.map-review-status {
+  min-height: 30px;
+}
+
+.map-review-status:has(.scope-button[hidden]) { display: none; }
+
+/* Review and map actions share one floating surface. A separator appears only
+ * when Review has something to show. */
+.map-review-status:not(:has(.scope-button[hidden])) + .map-scope-bar {
+  margin-left: var(--space-1);
+  padding-left: var(--space-1);
+  border-left: 1px solid var(--border-subtle);
+}
+
+.map-scope-name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1_5);
+  min-width: max-content;
+  padding: 0 var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--fs-cap);
+  font-weight: var(--fw-semibold);
+}
+
+.map-scope-name::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-green);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-green) 12%, transparent);
+}
+
+.map-scope-name--edit,
+.map-scope-name--simulation { display: none; }
+
+.scope-button {
+  min-height: 30px;
+  padding: var(--pad-button);
+  border: 0;
+  border-radius: var(--radius-interactive);
+  background: var(--bg-mid);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: var(--fs-cap);
+  white-space: nowrap;
+  transition: background var(--dur-fast), color var(--dur-fast), box-shadow var(--dur-fast);
+}
+
+.scope-button:hover {
+  background: var(--act-tint);
+  color: var(--text-primary);
+}
+
+.scope-button.active {
+  background: var(--act);
+  color: var(--bg-deepest);
+}
+
+.scope-button--primary {
+  background: var(--act);
+  color: var(--bg-deepest);
+  font-weight: var(--fw-semibold);
+}
+
+.scope-button--primary:hover {
+  background: var(--act-hi);
+  color: var(--bg-deepest);
+}
+
+.toolbar-edit-actions,
+.atlas-surface-bar { display: none; }
+
+body.editing .map-scope-name--view,
+body.sim-mode .map-scope-name--view { display: none; }
+body.editing .map-scope-name--edit,
+body.sim-mode .map-scope-name--simulation { display: inline-flex; }
+
+body.editing .toolbar-edit-actions { display: flex; gap: var(--space-1); }
+body.editing #filters-button,
+body.editing #sim-toggle-button,
+body.sim-mode #filters-button,
+body.sim-mode #mode-toggle-button { display: none; }
+
+/* Returning to View is intentionally quieter than entering Edit. */
+body.editing #mode-toggle-button {
+  background: var(--bg-mid);
+  color: var(--text-secondary);
+  font-weight: inherit;
+}
+
+body.atlas-open .map-bottom-dock,
+body.review-open .map-bottom-dock { display: none; }
+
+body.atlas-open:not(.review-open) .atlas-surface-bar { display: flex; }
+body.review-open .atlas-surface-bar { display: none; }
+
+.map-review-status .scope-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding-inline: var(--space-2);
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.map-review-status .scope-button::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  margin-right: var(--space-1_5);
+  border-radius: 50%;
+  background: var(--accent-amber);
+}
+
+.app.filters-open .map-primary-controls { display: none; }
+
+@media (max-width: 600px) {
+  .map-bottom-dock {
+    bottom: var(--space-2);
+    max-width: calc(100% - 2 * var(--space-2));
+  }
+
+  .atlas-surface-bar {
+    max-width: none;
+    overflow-x: auto;
+  }
+
+  .atlas-surface-bar { right: var(--space-2); left: var(--space-2); }
+
+  .atlas-surface-bar::-webkit-scrollbar { display: none; }
+
+  .map-bottom-dock .map-scope-name { display: none; }
 }
 
 /* The map is anchored to the top-left corner and stays there at every zoom.
@@ -50,14 +260,12 @@
   display: none;
 }
 
-/* Once the SVG's own column headings scroll away, keep a compact copy at the
- * top of the viewport. The container does not accept pointer events, so it
- * never blocks box selection or panning; only the individual stage buttons do.
- * Their left/width styles are synchronized with map zoom and horizontal pan by
- * 11-rendering.ts. */
+/* Fixed-screen map axes. At ordinary zoom each axis appears after its original
+ * SVG labels pan away and remains geometry-aligned. At overview zoom both axes
+ * stay present as a stable index, because scaled SVG text is no longer useful. */
 .viz-sticky-columns {
   position: absolute;
-  z-index: 6;
+  z-index: 8;
   inset: 0 0 auto;
   height: 32px;
   overflow: hidden;
@@ -67,7 +275,16 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.16);
 }
 
-.viz-sticky-columns[hidden] {
+.viz-sticky-columns.overview {
+  height: 48px;
+  /* Cover the top-left axis intersection as one continuous column band. The
+   * heading buttons include the row-rail offset in their calculated position,
+   * so they remain aligned with the map while this layer sits above the rail. */
+  left: 0;
+}
+
+.viz-sticky-columns[hidden],
+.viz-sticky-rows[hidden] {
   display: none;
 }
 
@@ -101,6 +318,91 @@
   color: var(--act-hi);
 }
 
+.viz-sticky-columns.overview .viz-sticky-column {
+  height: 48px;
+  padding: 4px 6px;
+  font-size: 10px;
+  line-height: 1.15;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.viz-sticky-rows {
+  position: absolute;
+  z-index: 7;
+  bottom: 0;
+  left: 0;
+  width: 72px;
+  overflow: hidden;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--bg-deep) 94%, transparent);
+  border-right: 1px solid var(--border-subtle);
+  box-shadow: 4px 0 12px rgba(0, 0, 0, 0.16);
+}
+
+.viz-sticky-rows.overview {
+  width: 88px;
+}
+
+.viz-sticky-row {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  min-height: 0;
+  padding: 2px 7px;
+  overflow: hidden;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-left: 4px solid var(--text-tertiary);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-cap);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-cap);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.viz-sticky-row:hover,
+.viz-sticky-row:focus-visible {
+  color: var(--text-primary);
+  background: var(--act-tint);
+}
+
+.viz-sticky-row.collapsed {
+  color: var(--act-hi);
+  opacity: 0.75;
+}
+
+/* Each axis has one visible representation at a time. Preserve the SVG groups
+ * in the layout so map geometry does not jump when its fixed copy takes over. */
+.viz-container.floating-columns .col-header-group,
+.viz-container.floating-rows .row-label-group {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* At overview zoom the fixed axes get real screen space instead of covering
+ * the tiny map. The scroller still owns an unchanged SVG origin, so panning,
+ * hit-testing and zoom anchoring keep using their normal coordinate system. */
+.viz-container.heading-overview .viz-scroll {
+  position: absolute;
+  inset: 48px 0 0 88px;
+  width: auto;
+  height: auto;
+}
+
+body.atlas-open .viz-sticky-columns,
+body.atlas-open .viz-sticky-rows,
+body.review-open .viz-sticky-columns,
+body.review-open .viz-sticky-rows {
+  display: none;
+}
+
 .viz-svg {
   display: block;
   background: transparent;
@@ -127,7 +429,16 @@ body.panning * {
   cursor: pointer;
 }
 
-.node-group:focus-visible .node-rect,
+/* Chromium draws its own two-tone focus outline around a focusable SVG <g>.
+ * That outline sits outside the box and duplicates the selected-node glow,
+ * producing a heavy blue-and-white frame while the browser window is active.
+ * Keep focus presentation on the rectangle below, where it follows the actual
+ * box shape; a selected box already has the intentional white glow. */
+.node-group:focus {
+  outline: none;
+}
+
+.node-group:focus-visible:not(.selected) .node-rect,
 .row-label-group:focus-visible .row-label-bg,
 .col-header-group:focus-visible .col-header-hit {
   stroke: var(--act-hi);

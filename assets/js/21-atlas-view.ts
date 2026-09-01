@@ -18,7 +18,7 @@
 // =============================================================================
 
 import { EDGES, NODES, nodeById, outgoingEdges, state } from "./03-state";
-import { escapeHtml, formatScalar } from "./04-utils";
+import { escapeHtml, formatScalar, measureLabelLines } from "./04-utils";
 import {
   EFFECT_FLOOR_PCT,
   formatNodeDelta,
@@ -446,6 +446,103 @@ export function closeAtlas(): void {
   if (stage) { stage.innerHTML = ""; stage.hidden = true; }
   syncAtlasButton();
   renderDetailPanel();
+}
+
+export interface AtlasSessionState {
+  startId: string;
+  reading: {
+    roots: string[];
+    open: Array<Array<string | null>>;
+    current: Array<string | null>;
+    lanes: Array<{ path: Array<string | null>; value: string }>;
+    trace: string | null;
+    traceKey: string | null;
+    inside: string | null;
+  };
+  wheelPick: string | null;
+  wheelLoop: number;
+  pickFromWheel: boolean;
+  showAllLoops: boolean;
+  viewBox: AtlasFrame | null;
+  movesOpen: Record<string, boolean>;
+  loopAnimationSpeed: number;
+}
+
+/** Capture the reader's deliberate Atlas choices so a temporary Learn lesson
+ * can borrow the surface and return it exactly. Hover and animation progress
+ * are intentionally transient; the chosen reading, wheel and frame are not. */
+export function captureAtlasSessionState(): AtlasSessionState | null {
+  if (!atlasIsOpen() || !START) return null;
+  return {
+    startId: START,
+    reading: {
+      roots: R.roots.slice(),
+      open: R.open.map(path => path.slice()),
+      current: R.current.slice(),
+      lanes: R.lanes.map(lane => ({ path: lane.path.slice(), value: lane.value })),
+      trace: R.trace,
+      traceKey: R.traceKey,
+      inside: R.inside,
+    },
+    wheelPick: WHEEL_PICK,
+    wheelLoop: WHEEL_LOOP,
+    pickFromWheel: PICK_FROM_WHEEL,
+    showAllLoops: SHOW_ALL_LOOPS,
+    viewBox: VB ? { ...VB } : null,
+    movesOpen: { ...MOVES_OPEN },
+    loopAnimationSpeed,
+  };
+}
+
+export function restoreAtlasSessionState(snapshot: AtlasSessionState | null): void {
+  if (!snapshot || !nodeById[snapshot.startId]) return;
+  openAtlas(snapshot.startId);
+  stopTour();
+  stopLoopAnimation();
+  if (snapshot.reading.inside && ATLAS?.nodes.get(snapshot.reading.inside)?.loop) {
+    enterTangle(snapshot.reading.inside, () => {});
+    stopTour();
+    stopLoopAnimation();
+  }
+  R.roots = snapshot.reading.roots.slice();
+  R.open = snapshot.reading.open.map(path => path.slice());
+  R.current = snapshot.reading.current.slice();
+  R.lanes = snapshot.reading.lanes.map(lane => ({ path: lane.path.slice(), value: lane.value }));
+  R.trace = snapshot.reading.trace;
+  R.traceKey = snapshot.reading.traceKey;
+  R.inside = snapshot.reading.inside;
+  WHEEL_PICK = snapshot.wheelPick;
+  WHEEL_LOOP = snapshot.wheelLoop;
+  PICK_FROM_WHEEL = snapshot.pickFromWheel;
+  SHOW_ALL_LOOPS = snapshot.showAllLoops;
+  MOVES_OPEN = { ...snapshot.movesOpen };
+  loopAnimationSpeed = snapshot.loopAnimationSpeed;
+  paintAtlas();
+  if (snapshot.viewBox) {
+    VB = { ...snapshot.viewBox };
+    setScale();
+  }
+  renderInspector();
+}
+
+/**
+ * Open the first real feedback tangle in the current atlas. The guided tour
+ * uses the same enterTangle path as the inspector's "Open feedback loops"
+ * control, without reaching into the Atlas module's private drawing state.
+ */
+export function openFirstFeedbackTangle(): boolean {
+  if (!ATLAS) return false;
+  for (const [elementIdentifier, element] of ATLAS.nodes) {
+    if (!element.loop) continue;
+    // The normal inspector path starts playback after the zoom animation. The
+    // tutorial needs the navigator and its playback controls to be available
+    // immediately beside its explanation, so begin the same tour now and make
+    // the zoom callback a no-op rather than starting it twice.
+    enterTangle(elementIdentifier, () => {});
+    playTour();
+    return true;
+  }
+  return false;
 }
 
 // ───── The ways in ────────────────────────────────────────────────────────
@@ -970,13 +1067,79 @@ function wholePicture(): AtlasFrame {
   return { x: b.x - (w - b.w) / 2, y: b.y - (h - b.h) / 2, w, h };
 }
 
+let wheelLabelMeasurementContext: CanvasRenderingContext2D | null = null;
+
+function wheelLabelMaximumLineWidthPixels(viewportWidth: number): number {
+  return Math.max(120, Math.min(220, viewportWidth * 0.34));
+}
+
+function wheelLabelLines(
+  identifier: AtlasElementIdentifier,
+  viewportWidth: number,
+): string[] {
+  return measureLabelLines(boxLabel(identifier), wheelLabelMaximumLineWidthPixels(viewportWidth));
+}
+
+function wheelLabelLineWidthPixels(line: string): number {
+  if (!wheelLabelMeasurementContext) {
+    wheelLabelMeasurementContext = document.createElement("canvas").getContext("2d");
+  }
+  if (!wheelLabelMeasurementContext) return line.length * 7;
+  wheelLabelMeasurementContext.font = "700 11px Arial, Helvetica, sans-serif";
+  return wheelLabelMeasurementContext.measureText(line).width;
+}
+
+function labelSafeFeedbackFrame(
+  identifier: AtlasElementIdentifier,
+  radius: number,
+  viewportWidth: number,
+  viewportHeight: number,
+): AtlasFrame | null {
+  const wheel = WHEELS.get(identifier);
+  if (!wheel || !wheelIsPositioned(wheel)) return null;
+  const allLabelLines = wheel.order.map(boxIdentifier =>
+    wheelLabelLines(boxIdentifier, viewportWidth));
+  const maximumLineWidthPixels = Math.max(
+    ...allLabelLines.flat().map(wheelLabelLineWidthPixels),
+    0,
+  );
+  const maximumLineCount = Math.max(...allLabelLines.map(lines => lines.length), 1);
+  const horizontalGutterPixels = maximumLineWidthPixels + 16;
+  const verticalGutterPixels = maximumLineCount * 6.5 + 16;
+  const drawableWidthPixels = Math.max(1, viewportWidth - horizontalGutterPixels * 2);
+  const drawableHeightPixels = Math.max(1, viewportHeight - verticalGutterPixels * 2);
+  const wheelDiameter = Math.max(1, (wheel.radius + 10) * 2);
+  const labelSafeScale = Math.max(
+    0.01,
+    Math.min(drawableWidthPixels / wheelDiameter, drawableHeightPixels / wheelDiameter),
+  );
+  const frameWidth = viewportWidth / labelSafeScale;
+  const frameHeight = viewportHeight / labelSafeScale;
+  const world = WORLD!;
+  const [centreX, centreY] = world.at.get(identifier)!;
+  const minimumHeight = Math.max(radius * 2.9, world.H * 0.12);
+  const aspect = viewportWidth / viewportHeight;
+  const height = Math.max(minimumHeight, frameHeight, frameWidth / aspect);
+  const width = height * aspect;
+  return { x: centreX - width / 2, y: centreY - height / 2, w: width, h: height };
+}
+
 function frameOn(identifier: AtlasElementIdentifier): AtlasFrame {
   const world = WORLD!;
   const [cx, cy] = world.at.get(identifier)!;
   const r = world.rOf.get(identifier)!;
   const svg = svgEl();
   const box = svg ? svg.getBoundingClientRect() : { width: 16, height: 9 };
-  const aspect = (box.width || 16) / (box.height || 9);
+  const viewportWidth = box.width || 800;
+  const viewportHeight = box.height || 450;
+  const aspect = viewportWidth / viewportHeight;
+  const labelSafeFrame = labelSafeFeedbackFrame(
+    identifier,
+    r,
+    viewportWidth,
+    viewportHeight,
+  );
+  if (labelSafeFrame) return labelSafeFrame;
   // Close in until the tangle owns the frame, but never so far that a small
   // one fills the screen with its two neighbours.
   const h = Math.max(r * 2.9, world.H * 0.12), w = h * aspect;
@@ -2548,10 +2711,12 @@ function wheelLabels(
   picked: AtlasElementIdentifier,
   cycle: AtlasElementIdentifier[],
   showEveryVisitedLabel = false,
+  placementCycle: AtlasElementIdentifier[] = cycle,
 ): string {
   const wheel = R.inside ? WHEELS.get(R.inside) : undefined;
   if (!wheel || !wheelIsPositioned(wheel)) return "";
   const boxCount = wheel.order.length;
+  const viewportWidth = svgEl()?.getBoundingClientRect().width || 800;
   const minimumPositionDistance = Math.max(2, Math.round(boxCount / 30));
   const displayedIdentifiers = [picked];
   for (const identifier of cycle) {
@@ -2565,17 +2730,90 @@ function wheelLabels(
     })) continue;
     displayedIdentifiers.push(identifier);
   }
-  return displayedIdentifiers.map((identifier, labelIndex) => {
-    const position = wheel.at.get(identifier);
-    if (!position) return "";
-    const angle = position[2];
-    const labelX = wheel.centre[0] + (wheel.radius + 6) * Math.cos(angle);
-    const labelY = wheel.centre[1] + (wheel.radius + 6) * Math.sin(angle);
-    const pointsLeft = Math.cos(angle) < -0.08;
-    return `<text class="bl${labelIndex === 0 ? " animation-current" : ""}" data-box="${escapeHtml(identifier)}"
-      x="${labelX.toFixed(1)}" y="${(labelY + 3).toFixed(1)}"
-      text-anchor="${pointsLeft ? "end" : Math.cos(angle) > 0.08 ? "start" : "middle"}"
-      >${escapeHtml(clip(boxLabel(identifier), 24))}</text>`;
+  const svg = svgEl();
+  const svgBounds = svg?.getBoundingClientRect();
+  const pixelsPerWorldUnit = VB && svgBounds
+    ? Math.min(svgBounds.width / VB.w, svgBounds.height / VB.h) || 1
+    : 1;
+  const worldUnitsPerPixel = 1 / pixelsPerWorldUnit;
+  const verticalGap = 4 * worldUnitsPerPixel;
+  const placementIdentifiers = showEveryVisitedLabel
+    ? [...new Set([picked, ...placementCycle])]
+    : displayedIdentifiers;
+  const placements = placementIdentifiers.map(identifier => {
+    const position = wheel.at.get(identifier)!;
+    const pointsLeft = Math.cos(position[2]) < 0;
+    const lines = wheelLabelLines(identifier, viewportWidth);
+    return {
+      identifier,
+      nodeX: position[0],
+      nodeY: position[1],
+      desiredY: position[1],
+      labelY: position[1],
+      labelHeight: lines.length * 13 * worldUnitsPerPixel,
+      labelX: wheel.centre[0] + (pointsLeft ? -1 : 1) * (wheel.radius + 8),
+      pointsLeft,
+      lines,
+    };
+  });
+  for (const pointsLeft of [true, false]) {
+    const sidePlacements = placements.filter(placement => placement.pointsLeft === pointsLeft)
+      .sort((firstPlacement, secondPlacement) =>
+        firstPlacement.desiredY - secondPlacement.desiredY);
+    if (!sidePlacements.length) continue;
+    const totalLabelHeight = sidePlacements.reduce(
+      (total, placement) => total + placement.labelHeight,
+      verticalGap * (sidePlacements.length - 1),
+    );
+    const halfAvailableHeight = Math.max(wheel.radius, totalLabelHeight / 2);
+    const top = wheel.centre[1] - halfAvailableHeight;
+    const bottom = wheel.centre[1] + halfAvailableHeight;
+    sidePlacements.forEach((placement, placementIndex) => {
+      const minimumY = placementIndex === 0
+        ? top + placement.labelHeight / 2
+        : sidePlacements[placementIndex - 1].labelY
+          + sidePlacements[placementIndex - 1].labelHeight / 2
+          + verticalGap
+          + placement.labelHeight / 2;
+      placement.labelY = Math.max(placement.desiredY, minimumY);
+    });
+    for (let placementIndex = sidePlacements.length - 1; placementIndex >= 0; placementIndex--) {
+      const placement = sidePlacements[placementIndex];
+      const maximumY = placementIndex === sidePlacements.length - 1
+        ? bottom - placement.labelHeight / 2
+        : sidePlacements[placementIndex + 1].labelY
+          - sidePlacements[placementIndex + 1].labelHeight / 2
+          - verticalGap
+          - placement.labelHeight / 2;
+      placement.labelY = Math.min(placement.labelY, maximumY);
+    }
+  }
+  const displayedIdentifierSet = new Set(displayedIdentifiers);
+  return placements.filter(placement => displayedIdentifierSet.has(placement.identifier)).map(placement => {
+    const {
+      identifier,
+      labelX,
+      labelY,
+      lines,
+      nodeX,
+      nodeY,
+      pointsLeft,
+    } = placement;
+    const firstLineOffsetEm = -((lines.length - 1) * 1.1) / 2;
+    const lineElements = lines.map((line, lineIndex) =>
+      `<tspan x="${labelX.toFixed(1)}" dy="${
+        lineIndex === 0 ? firstLineOffsetEm.toFixed(2) : "1.10"
+      }em">${escapeHtml(line)}</tspan>`).join("");
+    const leaderEndX = labelX + (pointsLeft ? 3 : -3) * worldUnitsPerPixel;
+    const leaderBendX = nodeX + (pointsLeft ? -5 : 5) * worldUnitsPerPixel;
+    return `<path class="bl-leader" d="M ${nodeX.toFixed(1)} ${nodeY.toFixed(1)} L ${
+      leaderBendX.toFixed(1)} ${nodeY.toFixed(1)} L ${leaderEndX.toFixed(1)} ${labelY.toFixed(1)}"></path>
+      <text class="bl${identifier === picked ? " animation-current" : ""}" data-box="${escapeHtml(identifier)}"
+      aria-label="${escapeHtml(boxLabel(identifier))}"
+      x="${labelX.toFixed(1)}" y="${labelY.toFixed(1)}"
+      dominant-baseline="middle"
+      text-anchor="${pointsLeft ? "end" : "start"}"
+      >${lineElements}</text>`;
   }).join("");
 }
 
@@ -2659,7 +2897,7 @@ function renderLoopNodeProgress(
     const labelKey = currentIdentifier + "\u0000" + labelIdentifiers.join("\u0000");
     if (labels.dataset.animationLabelKey !== labelKey) {
       labels.dataset.animationLabelKey = labelKey;
-      labels.innerHTML = wheelLabels(currentIdentifier, labelIdentifiers, true);
+      labels.innerHTML = wheelLabels(currentIdentifier, labelIdentifiers, true, loop.cycle);
     }
   }
   return currentIdentifier;
@@ -4133,8 +4371,16 @@ document.addEventListener("keydown", event => {
 
 addEventListener("resize", () => {
   if (!atlasIsOpen() || !VB || !WORLD) return;
-  // At rest the view IS the frame's shape, so a resize re-fits it; zoomed in or
-  // inside a tangle, the reader chose that frame and it is left alone.
-  if (!R.inside && VB.w >= wholePicture().w - 1) VB = wholePicture();
+  if (R.inside) {
+    VB = frameOn(R.inside);
+    paintAtlas(false);
+    loopAnimationPlayback?.render(loopAnimationPlayback.positionMilliseconds);
+    syncLoopAnimationControls();
+    return;
+  }
+  // At rest the view IS the frame's shape, so a resize re-fits it. A manually
+  // zoomed overview is left alone; feedback is re-fitted above because its
+  // fixed-size labels must be laid out for the new viewport.
+  if (VB.w >= wholePicture().w - 1) VB = wholePicture();
   setScale();
 });

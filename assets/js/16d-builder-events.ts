@@ -24,6 +24,11 @@
 import { state } from "./03-state";
 import { scheduleBuilderSave } from "./04a-storage";
 import {
+  evidenceStatusLabel,
+  normaliseEvidenceStatus,
+  updateEvidenceMetadata,
+} from "./07c-evidence";
+import {
   addBuilderRow,
   applyBuilderBulkField,
   applyBuilderToMap,
@@ -53,7 +58,7 @@ import {
   handleBuilderInputForOverflow,
   hideCellEditor,
 } from "./16c-builder-editor";
-import type { BuilderNode, BuilderSection } from "./types";
+import type { BuilderEdge, BuilderNode, BuilderSection, EvidenceMetadata } from "./types";
 
 // ───── Footer button rebind ──────────────────────────────────────────────
 // Two flavours of event wiring: full-render binding (attachBuilderEvents)
@@ -175,8 +180,41 @@ export function handleBuilderCellChange(event: Event): void {
   if      (t.matches("[data-rowselect]")) { handleBuilderRowSelect(event); return; }
   else if (t.matches("[data-selectall]")) { handleBuilderSelectAll(event); return; }
   else if (t.matches("[data-bulkfield]")) { handleBuilderBulkField(event); return; }
+  else if (t.matches("[data-evidence-section][data-evidence-field]")) {
+    handleBuilderEvidenceInput(event);
+    return;
+  }
   if      (t.matches("[data-section][data-field]")) handleBuilderInput(event);
   else if (t.matches("[data-default]"))             handleBuilderDefault(event);
+}
+
+export function handleBuilderEvidenceInput(event: Event): void {
+  const input = event.target as HTMLInputElement;
+  const section = input.getAttribute("data-evidence-section");
+  const field = input.getAttribute("data-evidence-field") as keyof EvidenceMetadata | null;
+  const index = parseInt(input.getAttribute("data-index") || "", 10);
+  if ((section !== "nodes" && section !== "edges") || !field || isNaN(index)) return;
+
+  if (section === "nodes") {
+    const node = state.builder.nodes[index] as BuilderNode | undefined;
+    if (!node) return;
+    node.formulaEvidence = updateEvidenceMetadata(node.formulaEvidence, field, input.value);
+  } else {
+    const edge = state.builder.edges[index] as BuilderEdge | undefined;
+    if (!edge) return;
+    edge.evidence = updateEvidenceMetadata(edge.evidence, field, input.value);
+  }
+  invalidateBuilderCaches();
+  scheduleBuilderSave();
+
+  if (field === "status") {
+    const status = normaliseEvidenceStatus(input.value);
+    const badge = input.closest(".evidence-editor")?.querySelector(".evidence-badge") as HTMLElement | null;
+    if (badge) {
+      badge.className = "evidence-badge evidence-" + status;
+      badge.textContent = evidenceStatusLabel(status);
+    }
+  }
 }
 
 // ───── Bulk multi-select handlers ────────────────────────────────────────

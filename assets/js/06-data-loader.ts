@@ -31,6 +31,7 @@ import {
   parseCsvDocument,
   parseNumericCell,
   parseBooleanCell,
+  parseEvidenceStatusCell,
 } from "./05-csv-parser";
 import {
   canonicalIdentifierGuidance,
@@ -610,7 +611,13 @@ function reportFormulaCyclesWithoutDelay(errors: Finding[]): void {
 }
 
 // Main entry point. Returns true on success, false on fatal validation errors.
-export function loadDataFromCsv(csvText: string): boolean {
+export interface LoadDataOptions {
+  /** False for a temporary preview whose CSV and reset UI must not be saved. */
+  persist?: boolean;
+}
+
+export function loadDataFromCsv(csvText: string, options?: LoadDataOptions): boolean {
+  const shouldPersist = options?.persist !== false;
   const sections = parseCsvDocument(csvText);
   const errors: Finding[] = [];
 
@@ -895,6 +902,22 @@ export function loadDataFromCsv(csvText: string): boolean {
     const formulaValue = (row.formula || "").trim();
     if (formulaValue !== "") node.formula = formulaValue;
 
+    // Formula provenance is informational only. It is deliberately loaded
+    // even when there is no formula yet, so evidence can be authored before
+    // the expression and every legacy row has an explicit unspecified status.
+    node.formulaEvidence = {
+      status: parseEvidenceStatusCell(row.formula_evidence_status),
+    };
+    if (row.formula_evidence_rationale) {
+      node.formulaEvidence.rationale = row.formula_evidence_rationale;
+    }
+    if (row.formula_evidence_source) {
+      node.formulaEvidence.source = row.formula_evidence_source;
+    }
+    if (row.formula_evidence_last_reviewed) {
+      node.formulaEvidence.lastReviewed = row.formula_evidence_last_reviewed;
+    }
+
     // Hard bounds, in the box's own units (not ratios). Applied after whichever
     // rule produced the value. An inverted pair is a data error, not a silently
     // impossible box, so we name it and drop both bounds.
@@ -971,7 +994,13 @@ export function loadDataFromCsv(csvText: string): boolean {
         to: row.to,
         effect: effect as Edge["effect"],
         description: row.description || "",
+        evidence: {
+          status: parseEvidenceStatusCell(row.evidence_status),
+        },
       };
+      if (row.evidence_rationale) edge.evidence!.rationale = row.evidence_rationale;
+      if (row.evidence_source) edge.evidence!.source = row.evidence_source;
+      if (row.evidence_last_reviewed) edge.evidence!.lastReviewed = row.evidence_last_reviewed;
       const elasticityValue = parseNumericCell(row.elasticity);
       if (elasticityValue !== undefined) edge.elasticity = elasticityValue;
       else if (!isBlankInput(row.elasticity)) {
@@ -1081,7 +1110,7 @@ export function loadDataFromCsv(csvText: string): boolean {
   // not touched. (18-main reads the UI slot before this runs, so the write here
   // can't clobber the restore that follows it.)
   state.userOverrides = createIdentifierRecord();
-  saveUiStateToStorage();
+  if (shouldPersist) saveUiStateToStorage();
   // A pass belongs to the map it was started on: the queue, the marks and the
   // rail are all about boxes that may not exist in the file just opened. Ending
   // it here is the same reasoning as closing the atlas below.
@@ -1233,7 +1262,7 @@ export function loadDataFromCsv(csvText: string): boolean {
 
   // Persist the CSV so the map survives a page refresh. Helper is a no-op
   // when localStorage is unavailable.
-  saveCsvToStorage(csvText);
+  if (shouldPersist) saveCsvToStorage(csvText);
   // Seed the undo "previous snapshot" with the CSV we just loaded — without
   // this, the very first mutation after a load has nothing to push onto
   // history.past. Also clear history unless we're mid-restore (undo/redo

@@ -287,9 +287,11 @@ export function _serializeShape(data: Partial<BuilderState>, options?: { compact
   lines.push("# combine: multiplicative (default) / additive / min — how the links into the box combine.");
   lines.push("# formula: an expression using box ids, param ids and + - * / ( ), e.g. min(demand, capacity).");
   lines.push("# min / max: hard limits on the box's value, in the box's own units.");
-  // The four calculation columns are ALWAYS written (blank when unset) so a
+  lines.push("# formula_evidence_*: informational support for the formula; status is unspecified / hypothesis / supported / calibrated / validated.");
+  // The calculation and evidence columns are ALWAYS written (blank when unset,
+  // except for the explicit unspecified status) so a
   // load → save round-trip produces a header of stable shape.
-  lines.push("id,label,description,stream,stage,category,baseline,unit,controllable,direction,slider_max,combine,formula,min,max");
+  lines.push("id,label,description,stream,stage,category,baseline,unit,controllable,direction,slider_max,combine,formula,min,max,formula_evidence_status,formula_evidence_rationale,formula_evidence_source,formula_evidence_last_reviewed");
   for (const node of builder.nodes || []) {
     lines.push(csvRow([
       node.id,
@@ -307,6 +309,10 @@ export function _serializeShape(data: Partial<BuilderState>, options?: { compact
       node.formula || "",
       node.minValue === undefined || node.minValue === null || node.minValue === "" ? "" : node.minValue,
       node.maxValue === undefined || node.maxValue === null || node.maxValue === "" ? "" : node.maxValue,
+      node.formulaEvidence?.status || "unspecified",
+      node.formulaEvidence?.rationale || "",
+      node.formulaEvidence?.source || "",
+      node.formulaEvidence?.lastReviewed || "",
     ]));
   }
   lines.push("");
@@ -320,16 +326,28 @@ export function _serializeShape(data: Partial<BuilderState>, options?: { compact
   lines.push("# elasticity   - OPTIONAL per-link override (strength). Blank = use the default for the effect.");
   lines.push("# style        - OPTIONAL line style: 'dashed', or blank for solid (default).");
   lines.push("# description  - explanation shown in the detail panel");
+  lines.push("# evidence_*   - informational status, rationale, source/citation and last-reviewed date for this causal link.");
   // Compact mode drops the two *_label companion columns — the header row is
   // what the parser keys on, so both shapes round-trip identically.
   lines.push(compact
-    ? "from,to,effect,elasticity,style,description"
-    : "from,from_label,to,to_label,effect,elasticity,style,description");
+    ? "from,to,effect,elasticity,style,description,evidence_status,evidence_rationale,evidence_source,evidence_last_reviewed"
+    : "from,from_label,to,to_label,effect,elasticity,style,description,evidence_status,evidence_rationale,evidence_source,evidence_last_reviewed");
   for (const edge of builder.edges || []) {
     const elasticityCell = edge.elasticity === undefined || edge.elasticity === null || edge.elasticity === "" ? "" : edge.elasticity;
     const styleCell = edge.style === "dashed" ? "dashed" : "";
     lines.push(csvRow(compact
-      ? [edge.from, edge.to, edge.effect, elasticityCell, styleCell, edge.description || ""]
+      ? [
+          edge.from,
+          edge.to,
+          edge.effect,
+          elasticityCell,
+          styleCell,
+          edge.description || "",
+          edge.evidence?.status || "unspecified",
+          edge.evidence?.rationale || "",
+          edge.evidence?.source || "",
+          edge.evidence?.lastReviewed || "",
+        ]
       : [
           edge.from,
           nodeLabelById[edge.from] || "",
@@ -339,6 +357,10 @@ export function _serializeShape(data: Partial<BuilderState>, options?: { compact
           elasticityCell,
           styleCell,
           edge.description || "",
+          edge.evidence?.status || "unspecified",
+          edge.evidence?.rationale || "",
+          edge.evidence?.source || "",
+          edge.evidence?.lastReviewed || "",
         ]));
   }
   lines.push("");

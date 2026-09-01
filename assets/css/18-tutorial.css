@@ -1,0 +1,511 @@
+/* =============================================================================
+ * FIRST-OPEN TUTORIAL
+ * -----------------------------------------------------------------------------
+ * A welcoming first-open choice and a compact route card that stays above the
+ * surface it is explaining. The purple thread and knots echo the Ariadne mark;
+ * blue remains the app's sole interactive and target-highlight colour.
+ * ========================================================================== */
+
+.tutorial-layer[hidden] { display: none; }
+
+.tutorial-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 520;
+  pointer-events: none;
+}
+
+.tutorial-welcome-backdrop {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--space-5);
+  background: color-mix(in srgb, var(--bg-deep) 72%, transparent);
+  backdrop-filter: blur(10px);
+  pointer-events: auto;
+}
+
+.tutorial-welcome {
+  width: min(560px, calc(100vw - 32px));
+  padding: clamp(24px, 5vw, 44px);
+  border-radius: var(--radius-surface);
+  background: var(--bg-light);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-float), 0 0 0 1px var(--border-strong);
+}
+
+.tutorial-welcome-mark {
+  width: 48px;
+  height: 28px;
+  color: var(--accent-purple);
+  margin-bottom: var(--space-4);
+}
+
+.tutorial-kicker {
+  color: var(--accent-purple);
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--tracking-cap);
+  text-transform: uppercase;
+}
+
+.tutorial-welcome h1,
+.tutorial-card h2 {
+  margin: var(--space-2) 0;
+  font-family: var(--font-display);
+  font-weight: 500;
+  line-height: 1.08;
+}
+
+.tutorial-welcome h1 { font-size: clamp(28px, 6vw, 44px); }
+.tutorial-welcome p,
+.tutorial-card p { color: var(--text-secondary); line-height: 1.55; }
+
+.tutorial-welcome-actions,
+.tutorial-card-actions,
+.tutorial-finish-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+}
+
+.tutorial-button {
+  padding: var(--pad-button);
+  border-radius: var(--radius-interactive);
+  background: var(--bg-dark);
+  color: var(--text-primary);
+  cursor: pointer;
+  font: inherit;
+}
+
+.tutorial-button:hover { background: var(--act-tint); }
+.tutorial-button--primary { background: var(--act); color: var(--bg-deep); }
+.tutorial-button--primary:hover { background: var(--act-hi); }
+.tutorial-button--quiet { margin-left: auto; color: var(--text-secondary); background: transparent; }
+
+.tutorial-card {
+  position: absolute;
+  left: 50%;
+  bottom: 132px;
+  transform: translateX(-50%);
+  width: min(520px, calc(100vw - 24px));
+  padding: var(--space-4);
+  border-radius: var(--radius-surface);
+  background: color-mix(in srgb, var(--bg-light) 96%, transparent);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-float), 0 0 0 1px var(--border-strong);
+  backdrop-filter: blur(12px);
+  pointer-events: auto;
+}
+
+.tutorial-card h2 { font-size: var(--fs-title); }
+.tutorial-card p { margin: 0; font-size: var(--fs-body); }
+
+.tutorial-step-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.tutorial-card-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-interactive);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: grab;
+  font: inherit;
+  font-size: var(--fs-small);
+  touch-action: none;
+}
+
+.tutorial-card-drag-handle:hover {
+  background: var(--act-tint);
+  color: var(--text-primary);
+}
+
+.tutorial-card.is-dragging,
+.tutorial-card.is-dragging .tutorial-card-drag-handle {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.tutorial-task {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-left: 2px solid var(--act);
+  background: var(--act-tint);
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
+  line-height: 1.45;
+}
+
+.tutorial-task b { color: var(--act); }
+.tutorial-task.is-complete { border-left-color: var(--status-good); }
+.tutorial-task.is-complete b { color: var(--status-good); }
+
+.tutorial-thread {
+  display: grid;
+  grid-template-columns: repeat(var(--tutorial-step-count), 1fr);
+  align-items: center;
+  position: relative;
+  margin-bottom: var(--space-3);
+}
+
+.tutorial-thread::before {
+  content: "";
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  top: 50%;
+  height: 2px;
+  background: var(--border-strong);
+}
+
+.tutorial-thread-progress {
+  position: absolute;
+  left: 4%;
+  top: 50%;
+  height: 2px;
+  width: var(--tutorial-progress);
+  background: var(--accent-purple);
+}
+
+.tutorial-thread-knot {
+  width: 10px;
+  height: 10px;
+  justify-self: center;
+  border-radius: 50%;
+  background: var(--bg-light);
+  box-shadow: 0 0 0 2px var(--border-strong);
+  z-index: 1;
+}
+
+.tutorial-thread-knot.is-complete,
+.tutorial-thread-knot.is-current {
+  background: var(--accent-purple);
+  box-shadow: 0 0 0 2px var(--accent-purple);
+}
+
+.tutorial-step-number {
+  color: var(--text-tertiary);
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--tracking-cap);
+  text-transform: uppercase;
+}
+
+.tutorial-step-number span { color: var(--accent-purple); }
+
+.learn-runner-link,
+.learn-restart-link {
+  border: 0;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.learn-runner-link:hover,
+.learn-restart-link:hover { color: var(--text-primary); }
+
+/* === Learn library =======================================================
+ * A curriculum, not a dashboard. One continuous purple thread carries
+ * progress across the whole library; cards stay typographic and quiet. */
+
+.learn-backdrop {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  background: color-mix(in srgb, var(--bg-deep) 76%, transparent);
+  backdrop-filter: blur(10px);
+  pointer-events: auto;
+}
+
+.learn-library {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  width: min(1120px, calc(100vw - 32px));
+  height: min(820px, calc(100vh - 32px));
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-surface);
+  background: var(--bg-light);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-float);
+}
+
+.learn-library-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-5);
+  padding: clamp(22px, 4vw, 38px) clamp(22px, 4vw, 44px) var(--space-4);
+}
+
+.learn-library-header h1 {
+  margin: var(--space-2) 0;
+  font-family: var(--font-display);
+  font-size: clamp(28px, 4vw, 42px);
+  font-weight: 500;
+  line-height: 1.05;
+}
+
+.learn-library-header p {
+  max-width: 650px;
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.learn-close {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 26px;
+  line-height: 1;
+}
+
+.learn-close:hover { color: var(--text-primary); background: var(--act-tint); }
+
+.learn-library-progress {
+  display: grid;
+  grid-template-columns: max-content minmax(220px, 1fr);
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) clamp(22px, 4vw, 44px);
+  border-block: 1px solid var(--border-subtle);
+  color: var(--text-tertiary);
+  font-size: var(--fs-small);
+}
+
+.learn-library-thread {
+  display: grid;
+  grid-template-columns: repeat(var(--learn-lesson-count, 28), 1fr);
+  position: relative;
+  align-items: center;
+}
+
+.learn-library-thread::before {
+  content: "";
+  position: absolute;
+  inset-inline: 4px;
+  height: 2px;
+  background: var(--border-strong);
+}
+
+.learn-library-knot {
+  width: 7px;
+  height: 7px;
+  justify-self: center;
+  z-index: 1;
+  border-radius: 50%;
+  background: var(--bg-light);
+  box-shadow: 0 0 0 2px var(--border-strong);
+}
+
+.learn-library-knot.is-complete {
+  background: var(--accent-purple);
+  box-shadow: 0 0 0 2px var(--accent-purple);
+}
+
+.learn-library-body {
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr);
+  min-height: 0;
+}
+
+.learn-curriculum-rail {
+  padding: var(--space-5) var(--space-4);
+  overflow-y: auto;
+  border-right: 1px solid var(--border-subtle);
+}
+
+.learn-rail-label {
+  margin-bottom: var(--space-3);
+  color: var(--text-tertiary);
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--tracking-cap);
+  text-transform: uppercase;
+}
+
+.learn-curriculum-rail a {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 9px 0;
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.learn-curriculum-rail a:hover { color: var(--act); }
+.learn-curriculum-rail small { color: var(--text-tertiary); white-space: nowrap; }
+.learn-curriculum-rail p { margin-top: var(--space-6); color: var(--text-tertiary); font-size: var(--fs-small); line-height: 1.5; }
+
+.learn-library-groups {
+  min-height: 0;
+  margin: 0;
+  padding: var(--space-5) clamp(20px, 4vw, 44px) 64px;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+}
+
+.learn-group + .learn-group {
+  margin-top: var(--space-6);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.learn-group-heading {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.55fr) minmax(260px, 1fr);
+  gap: var(--space-5);
+  align-items: baseline;
+  margin-bottom: var(--space-4);
+}
+
+.learn-group-heading h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-title);
+  font-weight: 500;
+}
+
+.learn-group-heading p { margin: 0; color: var(--text-tertiary); line-height: 1.45; }
+
+.learn-lesson-list { position: relative; padding-left: 24px; }
+
+.learn-lesson-list::before {
+  content: "";
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 5px;
+  width: 2px;
+  background: color-mix(in srgb, var(--accent-purple) 45%, var(--border-strong));
+}
+
+.learn-lesson-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(180px, 0.65fr) minmax(220px, 1fr) max-content;
+  grid-template-areas:
+    "status summary action"
+    "title summary meta";
+  gap: 3px var(--space-4);
+  align-items: center;
+  min-height: 78px;
+  padding: var(--space-3) 0;
+}
+
+.learn-lesson-card + .learn-lesson-card { border-top: 1px solid var(--border-subtle); }
+
+.learn-lesson-knot {
+  position: absolute;
+  left: -23px;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  background: var(--bg-light);
+  box-shadow: 0 0 0 2px var(--border-strong);
+}
+
+.learn-lesson-card.is-complete .learn-lesson-knot {
+  background: var(--accent-purple);
+  box-shadow: 0 0 0 2px var(--accent-purple);
+}
+
+.learn-lesson-status {
+  grid-area: status;
+  color: var(--text-tertiary);
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--tracking-cap);
+  text-transform: uppercase;
+}
+
+.learn-lesson-card h3 { grid-area: title; margin: 0; font-size: var(--fs-body); font-weight: var(--fw-semibold); }
+.learn-lesson-card p { grid-area: summary; margin: 0; color: var(--text-secondary); line-height: 1.45; }
+.learn-lesson-meta { grid-area: meta; color: var(--text-tertiary); font-size: var(--fs-small); text-align: right; }
+.learn-lesson-card > .tutorial-button { grid-area: action; justify-self: end; }
+.learn-lesson-card > .learn-restart-link { grid-area: meta; justify-self: end; }
+
+.tutorial-target-thread {
+  position: fixed;
+  z-index: 519;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 300ms ease-out;
+}
+
+.tutorial-target-thread.is-faded-over-target {
+  opacity: 0.08;
+  transition-duration: 520ms;
+  transition-timing-function: ease-in-out;
+}
+
+.tutorial-target-thread-path {
+  fill: none;
+  stroke: var(--accent-purple);
+  stroke-width: 2px;
+  stroke-linecap: round;
+  stroke-dasharray: 4 6;
+}
+
+.tutorial-target-thread-marker { fill: var(--accent-purple); }
+
+.tutorial-target:not(.node-group),
+.node-group.tutorial-target {
+  filter:
+    drop-shadow(0 0 7px color-mix(in srgb, var(--act) 58%, transparent))
+    drop-shadow(0 0 15px color-mix(in srgb, var(--act) 22%, transparent));
+}
+
+@media (max-width: 640px) {
+  .tutorial-card { bottom: 194px; padding: var(--space-3); }
+  .tutorial-card-actions { margin-top: var(--space-3); }
+  .tutorial-button--quiet { margin-left: 0; }
+
+  .learn-backdrop { padding: 0; }
+  .learn-library { width: 100vw; height: 100vh; border: 0; border-radius: 0; }
+  .learn-library-header { padding: var(--space-4); }
+  .learn-library-progress { grid-template-columns: 1fr; padding-inline: var(--space-4); }
+  .learn-library-body { display: block; overflow-y: auto; }
+  .learn-curriculum-rail { border-right: 0; border-bottom: 1px solid var(--border-subtle); overflow: visible; }
+  .learn-curriculum-rail p { display: none; }
+  .learn-library-groups { overflow: visible; padding: var(--space-4); }
+  .learn-group-heading { display: block; }
+  .learn-group-heading p { margin-top: var(--space-1); }
+  .learn-lesson-card {
+    grid-template-columns: 1fr auto;
+    grid-template-areas: "status meta" "title title" "summary summary" "action action";
+    gap: var(--space-1) var(--space-2);
+  }
+  .learn-lesson-card > .tutorial-button { justify-self: start; margin-top: var(--space-2); }
+  .learn-lesson-card > .learn-restart-link { grid-area: action; justify-self: end; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tutorial-target { animation: none !important; }
+}

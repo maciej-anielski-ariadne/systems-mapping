@@ -63,7 +63,8 @@ export const _labelLineCache = new Map<string, string[]>();
 export const LABEL_CACHE_MAX = 5000;
 const LABEL_CACHE_HARD_MAX = 50_000;
 let _labelCacheCap = LABEL_CACHE_MAX;
-export let _labelMeasureCtx: CanvasRenderingContext2D | null = null;
+export let _labelMeasureContext: CanvasRenderingContext2D | null = null;
+
 export function measureLabelLines(text: unknown, maxWidthPx: number): string[] {
   text = String(text == null ? "" : text);
   if (!text) return [""];
@@ -71,10 +72,10 @@ export function measureLabelLines(text: unknown, maxWidthPx: number): string[] {
   const cached = _labelLineCache.get(key);
   if (cached) return cached;
 
-  if (!_labelMeasureCtx) {
-    _labelMeasureCtx = document.createElement("canvas").getContext("2d");
+  if (!_labelMeasureContext) {
+    _labelMeasureContext = document.createElement("canvas").getContext("2d");
   }
-  _labelMeasureCtx!.font = "500 12px Arial, Helvetica, sans-serif";
+  _labelMeasureContext!.font = "500 12px Arial, Helvetica, sans-serif";
 
   const words = (text as string).split(/\s+/).filter(Boolean);
   const lines: string[] = [];
@@ -83,7 +84,7 @@ export function measureLabelLines(text: unknown, maxWidthPx: number): string[] {
     const trial = current ? current + " " + word : word;
     // Start a new line once adding the word would exceed the width — but never
     // on an empty line (a lone over-wide word stays whole and overflows).
-    if (current && _labelMeasureCtx!.measureText(trial).width > maxWidthPx) {
+    if (current && _labelMeasureContext!.measureText(trial).width > maxWidthPx) {
       lines.push(current);
       current = word;
     } else {
@@ -440,16 +441,21 @@ export function pickTextColor(bgHex: string): string {
   return luminance > 0.179 ? "#1c1917" : "#ffffff";
 }
 
-// Shallow clone of an edge object — used wherever we snapshot edges into an
-// undo entry. Centralised so adding a new edge field doesn't require hunting
-// through every undo path.
-export function cloneEdgeForUndo(edge: Edge): Pick<Edge, "from" | "to" | "effect" | "elasticity" | "description"> {
+// Clone of every meaningful edge field — used both by undo snapshots and the
+// before/after signatures that decide what flashes. Evidence is nested, so it
+// gets its own object: a later metadata edit must not mutate the earlier
+// signature in place and disappear from change detection.
+export function cloneEdgeForUndo(
+  edge: Edge,
+): Pick<Edge, "from" | "to" | "effect" | "elasticity" | "description" | "style" | "evidence"> {
   return {
     from: edge.from,
     to: edge.to,
     effect: edge.effect,
     elasticity: edge.elasticity,
     description: edge.description,
+    style: edge.style,
+    evidence: edge.evidence ? { ...edge.evidence } : undefined,
   };
 }
 

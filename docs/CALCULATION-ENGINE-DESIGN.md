@@ -140,6 +140,39 @@ Gauss-Seidel treatment and status reporting.
 Optional absolute clamps applied after any rule. Also upgrades today's "runaway loop
 overflowed to Infinity, fall back to baseline" behaviour into something explainable.
 
+### 3.6 Evidence status — causal claim versus mathematical fit
+
+The evidence assessment for a link and the evidence assessment for a formula answer two
+different questions:
+
+- **Link status is about causal evidence.** It records the author's assessment of the
+  claim that changing the source affects the target in the stated direction.
+- **Formula status is about mathematical-form and parameter evidence.** It records the
+  author's assessment of the equation's shape, constants and fitted values.
+
+Both use the shared labels **Unspecified**, **Hypothesis**, **Supported**, **Calibrated**
+and **Validated**. Their meanings depend on what is being assessed:
+
+| Status | Link: causal evidence | Formula: form and parameter evidence |
+|---|---|---|
+| Unspecified | No assessment recorded. | No assessment recorded. |
+| Hypothesis | A proposed causal direction for exploration. | A proposed equation or parameter set for exploration. |
+| Supported | Relevant evidence or domain reasoning supports the claim, without a validation claim. | Relevant evidence or domain reasoning supports the form or parameters, without a calibration or validation claim. |
+| Calibrated | The relationship's magnitude has been fitted or tuned to observations; fit alone does not establish causality. | The form or parameter values have been fitted or tuned to observed data. |
+| Validated | The causal claim has been assessed using the author's stated validation design. | The form and parameters have been assessed against separate data, cases or another stated validation check. |
+
+An empirically **Calibrated** or **Validated** formula can therefore coexist with a
+**Hypothesis** link. Predictive fit and causal identification are not the same claim.
+These labels are informational metadata only: they do not enable, disable or reweight a
+link or formula, and the calculation engine always runs every syntactically valid active
+rule. The application records the author's assessment; it does not certify the evidence
+or the validation method.
+
+An explicit formula does not have to be an already-known accounting identity. It may be a
+domain assumption, a theory-led functional form or an empirically fitted relationship.
+The model should state which of those it is, preserve compatible units and baseline
+behaviour, and avoid presenting mathematical fit as proof of the causal arrows.
+
 ## 4. Traceability
 
 Alongside `{nodeId → number}`, the engine records, per node, an **explanation**:
@@ -176,6 +209,14 @@ formulas) the offending token:
 
 - `nodes` section gains optional columns `combine`, `formula`, `min`, `max` — blank means
   today's behaviour.
+- `nodes` also carries optional formula-evidence metadata:
+  `formula_evidence_status`, `formula_evidence_rationale`, `formula_evidence_source`, and
+  `formula_evidence_last_reviewed`.
+- `edges` carries optional causal-evidence metadata: `evidence_status`,
+  `evidence_rationale`, `evidence_source`, and `evidence_last_reviewed`.
+- Both status fields accept `unspecified`, `hypothesis`, `supported`, `calibrated`, and
+  `validated`; a missing or unknown value loads as `unspecified`. These fields never
+  affect calculation.
 - New optional section `params` (`id,value,description`).
 - The parser already ignores unknown sections and columns, so new files degrade gracefully
   in older builds, and old files are untouched — **no migration step for existing maps**.

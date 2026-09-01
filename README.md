@@ -2,7 +2,7 @@
 
 Spreadsheet-driven, interactive causal maps. Written in TypeScript as ES modules and bundled with Vite; `npm run build` produces a **single standalone HTML file** with no runtime dependencies, server, or network access. Open that file, drop in a spreadsheet, and get a layered cause-and-effect diagram with live what-if simulation.
 
-Domain-agnostic — any system you can express as boxes-with-rows-and-columns plus signed links will render. The default sample spreadsheet is a small neutral worked example (a three-team product company — 12 boxes, 12 links) that exercises every feature of the app while staying small enough to grok at a glance. A second sample, `assets/data/advanced_sample.csv` (a parcel-delivery company — 16 boxes), demonstrates the optional [per-box calculation rules](#per-box-calculation-rules).
+Domain-agnostic — any system you can express as boxes-with-rows-and-columns plus signed links will render. The default sample spreadsheet is a small neutral worked example (a three-team product company — 12 boxes, 12 links) for learning the basic map. The first-open guided tour uses a separate community-workshop map that exercises every major feature, while `assets/data/advanced_sample.csv` (a parcel-delivery company — 16 boxes) remains the focused reference for optional [per-box calculation rules](#per-box-calculation-rules).
 
 ## What's in this repo
 
@@ -28,8 +28,8 @@ file to open.
 ## Quick start
 
 1. **To use the app:** run `npm install` once, then `npm run build`, and open the generated `dist/systems-map.html` in any modern browser. It is a single self-contained file — fully offline, fonts and code bundled in. (**To develop:** `npm run dev` starts a live-reloading server — see [Development & build](#development--build).)
-2. The app boots into an **empty 3×3 starter grid** — three rows, three columns, no boxes yet. From here you have three paths:
-   - **Build directly on the map** (recommended for non-technical users). Click any empty cell to add a box, then rename it in the right panel. Drag from the right edge of a box to another box to draw a link. Switch to **Edit** first — the left panel docks and grows its rename / reorder / **+ Add** affordances.
+2. On the first open, choose **Start guided tour** for the short Quick start on a temporary neutral example, or **Start blank** to enter the empty 3×3 starter grid. The Quick start remains available as the first lesson in **Learn**. The header's **Learn** section contains the complete six-course curriculum: 29 independent lessons for reading, navigation, Simulation, Atlas, formula choice, editing, Review, evidence, import and export. Lessons remember progress and temporarily borrow the tutorial map without replacing your own work. From the blank grid you have three paths:
+   - **Build directly on the map** (recommended for non-technical users). Click any empty cell to add a box, then rename it in the right panel. Drag from the right edge of a box to another box to draw a link. Switch to **Edit map** first — the left panel docks and grows its rename / reorder / **+ Add** affordances.
    - **Import an existing spreadsheet** — click **Import** in the header, or drag-drop a `.csv` onto the window.
    - **Bulk edit via the wizard** — switch to editing and click **Bulk edit** to open a seven-step form (rows → columns → categories → boxes → links → constants → review). Useful for big edits where the map is too fiddly. Hit **Apply to map** to re-render, or **Download CSV** to save a snapshot.
 3. Iterate freely. Every map edit auto-saves to your browser, so a page refresh restores everything. Use **Export → Spreadsheet** to download the current map.
@@ -38,14 +38,17 @@ file to open.
 
 The app opens in **reading mode**: the map has the screen to itself. There is no
 docked left panel (**Filters** slides it over the map when you want it), the
-right-hand detail panel stays closed until you select a box, and the header
-carries only what a reader reaches for — **Filters · File · Simulate · Review ·
-Atlas · Edit**, plus the theme switch.
+right-hand detail panel stays closed until you select a box. The header carries
+only application-wide destinations — **Search · New map · Import · Export · Learn · Theme**. A small
+bottom control row keeps the map-health signal with **Filters · Edit map · Simulate** in one
+shared Map group, beside the original titled **Highlight depth** and **Zoom** cards. On a
+compact map column the row swipes horizontally without showing a scrollbar, so its floating
+groups never stack or collide with the map's headings.
 
-**Edit** switches modes. Both side panels dock; **New map**, **Bulk edit** and
-**Review** replace the incompatible reading tools; and the sidebar grows its
-rename / recolour / reorder / **+ Add** affordances. **Done** goes back. The
-mode is remembered across a refresh.
+**Edit map** switches modes. Both side panels dock, the map bar keeps only
+**View map · Bulk edit**, and the sidebar grows its rename / recolour / reorder /
+**+ Add** affordances. **View map** goes back. **New map** and **Import** remain
+directly available in the header. The mode is remembered across a refresh.
 
 Direct manipulation on the map lives in **editing** only. Drag a box to move it
 or drag its right-edge handle to draw a link. Shift-click an insertion gap adds
@@ -59,20 +62,26 @@ the same happens in **simulation**: the sliders *are* the left panel, and you wo
 them against the map, so entering simulation docks the panel rather than leaving
 it as a drawer that would close the moment you clicked the map.
 
-The header keeps Search, File and Theme stable while the middle actions follow
-the current surface. Reading shows **Simulate · Review · Atlas**; editing shows
-**New map · Bulk edit · Review**; simulation surfaces **Reset sliders**; Review
-surfaces **Next issue · Open on map**; and Atlas surfaces **Change starting
-box**. Incompatible actions disappear rather than remaining disabled.
+Controls follow a scope ladder. The header owns the application. The map bar
+owns map-wide mode changes. Selecting a box adds **Atlas**, **Simulate input**
+and **Edit box** actions to that box's detail panel when they apply. Simulation
+keeps **Reset** with its sliders and turns the map's Simulate action into
+**Exit simulation**. Atlas replaces the map bar with its own **Change starting
+box · Simulate · Close** bar. Review keeps **Next issue**, **Open on map** and
+**Done** inside Review. Incompatible actions disappear rather than remaining
+disabled, and no command is duplicated in the header.
 
 - **Filters** opens the left panel as a drawer — columns, rows, tags, link types, line styles and highlighting options are all shown directly. Esc or a click on the map closes it. Hidden while editing, where the panel is docked.
-- **File** opens the document actions that remain useful in every mode:
-  - **Import…** loads a spreadsheet from disk — same as dragging one onto the window.
+- **New map** replaces the current document with an empty grid.
+- **Import…** loads a spreadsheet from disk — same as dragging one onto the window.
+- **Export** groups the output formats by what the recipient needs:
   - **Spreadsheet** downloads the current map as a `.csv` (re-importable). With a box selected, saves only its highlighted boxes and links.
+  - **Review log** downloads the assurance history as a `.csv` for governance and follow-up.
   - **Image** copies the map to your clipboard as a high-resolution PNG (rendered vector-sharp at up to 3× pixel density, backed off automatically to stay inside what browsers can allocate — one side at most 16384px, at most 64 megapixels total) and shows a "copied" toast — paste it straight into a doc, slide, or chat. It captures what's on screen, so zoom / pan to frame the part you want (only boxes overlapping the visible area are included, along with the links whose two ends are both on screen; if the whole map already fits, you get all of it). If a box is selected, only its highlighted boxes and links (out to the current **highlight depth**) are copied — rendered in the map's normal, un-highlighted style (the highlight only selects what to include). Either way the export is reflowed: empty columns and rows are dropped and the surviving rows reordered so connected boxes sit closer together. A map so large that even 1× exceeds those canvas limits still exports, but the toast tells you the percentage it came out at and suggests selecting a box to get that part at full quality; if the browser refuses the image outright, the toast says so rather than failing silently. (Clipboard image copy needs a secure context — works over http/localhost or https.)
   - **Web page** downloads `systems-map.html` — a self-contained, view-only page of the same framed map (same viewport / selection framing as **Image**) with pan / zoom / hover-for-details (no editing, importing, or simulating).
-- **New map** and **Bulk edit** appear directly in the toolbar while editing.
+- **Bulk edit** appears in the map bar while editing; **New map** stays in the global header because it replaces the whole document.
 - **Simulate** toggles simulation mode (sliders on adjustable boxes).
+- **Learn** opens 29 short lessons grouped into six courses. Each lesson can be resumed, restarted, reset or skipped; hands-on steps confirm the requested interaction before completion. The learning map is temporary, including the deliberately broken rule used by the automatic-Review lesson.
 - **Review** opens the [review panel](#review--checking-a-map-you-cannot-read-in-one-go) — everything the loader flagged, grouped by cause, what each adjustable box actually moves, and what nobody has checked yet. It carries a count badge whenever there is something to fix, so a map with problems never looks clean.
 - **Theme** (the ☀ / ☾ icon) switches between the light (Linen) and dark (Twilight) theme; your choice is remembered.
 
@@ -86,11 +95,13 @@ box**. Incompatible actions disappear rather than remaining disabled.
 - **Smart search** → fuzzy match across every box field — name, description, row, column, category, ID, and unit — ranked in that priority order (handles typos like "brder" → "Border" and word-initials like "bff" → "Border Force FTE"). So searching a row/column/category name surfaces every box in it. Top results show as a dropdown below the search box, with the matched text highlighted; matching boxes get an amber glow on the map. Press `/` from anywhere on the page to jump to the search box.
 - Detail panel → while reading, it opens on a selection and leads with the answer: **Causes**, then **Effects** (with per-link strengths and click-through navigation), then the numbers, and — while reading — the way into the atlas. While editing it keeps the authoring order and gains the **Edit box** toggle, which turns the panel into an edit form (every field as an input, per-row outgoing-link editor, delete button).
 - **Map direct edit** → Shift-click an insertion gap to add a box, drag from a box's right edge to another box to draw a link, press Delete on a selected box to remove it (with a 6-second undo toast). Rows / columns / categories are edited from the left sidebar (pencil to rename / re-colour, drag handle to reorder, **+ Add** at the bottom of each section).
-- **Build / Edit wizard** → optional seven-step in-app form (rows → columns → categories → boxes → links → constants → review) with dropdowns for every cross-reference, live validation, and round-trip with the current map. Switch to **Edit** and click **Bulk edit**. Useful for big changes where direct editing is too fiddly.
+- **Build / Edit wizard** → optional seven-step in-app form (rows → columns → categories → boxes → links → constants → review) with dropdowns for every cross-reference, live validation, and round-trip with the current map. Switch to **Edit map** and click **Bulk edit**. Useful for big changes where direct editing is too fiddly.
 - **Simulation mode** → sliders **and** typeable number inputs on every adjustable box, grouped by row. The values they affect recompute live (Cobb-Douglas propagation, plus any [per-box calculation rules](#per-box-calculation-rules) a box opts into). The selected box's `Current` value is also editable from the detail panel, and the panel shows a **"How this number is calculated"** breakdown for it.
+- **Learn library** → a visible, progress-aware curriculum rather than one long mandatory corridor. The six courses cover Read and navigate, Simulate and explore, Choose the maths, Build and edit, Review and assure, and Save and share. The neutral community-programme map has 21 boxes and 25 links, including worked proportional, additive, weakest-link, conversion, capacity, ratio, bounded, balance, joint-product and delayed-feedback examples.
 - Outcome boxes get green / red glow colouring when their direction-of-merit metric moves materially from its starting value.
-- **Collapsible side panels** → click the pin icon in either panel header to collapse it to a thin strip; hover the strip to peek the contents, click the pin again to re-pin.
-- **Zoom** → bottom-right `−` / `+` buttons, `Ctrl/Cmd` + scroll-wheel (or trackpad pinch), or `Ctrl/Cmd + =/-/0` to zoom in / out / reset. Pinching anchors on the cursor. Clicking the percentage **fits the whole map in the frame**. A map is also fitted when it loads, so you don't start cropped without knowing it — but only down to **40%**: past that, "all of it at once" stops being a picture, so a very large map opens cropped at a size you can read and you pan or fit by hand from there. Fitting only ever zooms out; a map smaller than the frame keeps its own size. The map is anchored to the **top-left** at every zoom, so the origin never moves under you.
+- **Collapsible side panels** → click the pin icon in either panel header to collapse it to a thin strip; hover the strip to peek the contents, click the pin again to re-pin. Long panels, Learn, Review and Bulk edit still scroll normally with wheel, touch and keyboard, but native scrollbar tracks stay hidden throughout the app.
+- **Zoom and highlight depth** → the bottom navigation control switches between **Zoom** and **Depth**, with one shared `−` / value / `+` row. In Zoom mode, the percentage alternates between fitting the map's height and width; `Ctrl/Cmd` + scroll-wheel (or trackpad pinch) and `Ctrl/Cmd + =/-/0` remain available. Discrete zoom and fit actions animate both scale and final viewport position, while reduced-motion preferences settle immediately. In Depth mode, `−` / `+` changes how many connected levels light up around the selected box. A map is also fitted when it loads, but only down to **40%** so very large maps open at a readable scale.
+- **Floating map headings** → column headings stay at the top after vertical panning and row headings stay at the left after horizontal panning. Below 70% zoom, fixed 48px/88px heading gutters remain visible and readable while the map uses the rest of the frame; both axes still collapse or expand their column or row when clicked.
 - **Pan** → click-and-drag any empty area of the map to pan around it. Plain scroll-wheel and trackpad two-finger scroll also pan.
 - **Survives a refresh** → the loaded spreadsheet, hidden filters, simulation mode + slider positions, selected box, zoom level, panel pin state, and any unsaved wizard work are all persisted in `localStorage`. Close the tab, reopen, keep going. (Loading a different spreadsheet via **Import Data** / applying the wizard replaces what's stored.)
 
@@ -131,8 +142,8 @@ and budgets the primary interactions; run `npm run test:browser` to reproduce it
 
 ## Review — checking a map you cannot read in one go
 
-A map of a dozen boxes is verified by looking at it. A map of ninety is not. **Review** (in
-the header, beside **Simulate**) answers the two questions that do not get easier by
+A map of a dozen boxes is verified by looking at it. A map of ninety is not. The map's
+**Review** health signal answers the two questions that do not get easier by
 staring harder, in two columns side by side.
 
 ### What the loader noticed
@@ -203,12 +214,11 @@ list can: **where have we not been?** `[` and `]` step the pass from the keyboar
 
 **A box whose rule is not its arrows shows its rule.** A formula box is computed from its
 expression *alone* — the arrows into it go descriptive and their strengths are ignored
-outright (18 of the 55 queue boxes on the border map are formula boxes). So the card shows
+outright. So the card shows
 the expression verbatim, the same rule again with the box ids resolved to the labels on the
-map (`hgv_arrivals` in an expression is *Lorry arrivals* in the list, and nothing else
+map (`hgv_arrivals` in an expression can resolve to *Lorry arrivals* in the list, and nothing else
 connects them — hovering a name in the expression says which box it is), and the constants
-it leans on — which appear on no map anywhere, and which
-13 of those 18 boxes depend on. Strengths the engine never reads are struck through rather
+it leans on — which appear on no map anywhere. Strengths the engine never reads are struck through rather
 than offered for judgement, and an arrow the rule never mentions is called out: the loader
 checks that every name in a formula has an arrow, but not that every arrow is read.
 Underneath, folded, is the working simulate mode already builds — every input and constant
@@ -222,8 +232,8 @@ away on the link rows, so the kinds are separated by weight, dimming and the sam
 chip a constant already wears in the breakdown. The one exception is a name resolving to
 nothing, which the loader flags as an error and which earns the red.
 
-The five boxes on that map with a non-default combine rule (4 additive, 1 weakest-link) get
-a line saying how their arrows add up. Their strengths still count, so nothing is struck.
+A box with a non-default combine rule gets a line saying how its arrows add up. Its
+strengths still count, so nothing is struck.
 
 **The queue docks beside the map for the length of the pass.** A 260px rail on the left
 lists every box that has something driving it, grouped by the map's own columns, each
@@ -269,7 +279,7 @@ is still dropped, so opening a different file can never attach somebody's verdic
 they never saw. From the row alone those two look identical, and the removal date is what
 tells them apart.
 
-**The log exports.** *File ▸ Export ▸ Review log*, or the button on the rail, writes a
+**The log exports.** *Export ▸ Review log*, or the button on the rail, writes a
 `.csv` with one row per box — **every box, not only the reviewed ones**, since a list of
 what was checked reads as a clean bill of health for a map nobody has touched. Each row
 carries: whether it is in the review queue, its state, who gave the verdict and when, the
@@ -300,7 +310,7 @@ Underneath, **the whole log** folds open — every box anyone has reviewed, agre
 included, with reviewer, date, note and current state. An audit trail is not only its
 exceptions.
 
-The header **Review** badge counts both kinds of unfinished business together, so a flag
+The map **Review** badge counts both kinds of unfinished business together, so a flag
 is visible without remembering to look for it.
 
 ### What each adjustable box does
@@ -428,6 +438,10 @@ orders_per_visit,0.04,Orders placed per website visit (the conversion rate)
 | `formula`      | no  | An expression in the boxes' own units that replaces the incoming links' maths, e.g. `min(orders_placed, fleet_capacity)`. |
 | `min`          | no  | Hard lower limit in the box's own units, applied after whichever rule ran. |
 | `max`          | no  | Hard upper limit, same. |
+| `formula_evidence_status` | no | Evidence assessment for the formula's mathematical form and parameter values: `unspecified`, `hypothesis`, `supported`, `calibrated`, or `validated`. Missing or unknown values load as `unspecified`. |
+| `formula_evidence_rationale` | no | Why that formula evidence status was assigned. |
+| `formula_evidence_source` | no | Citation, dataset, analysis or other provenance for the formula evidence. |
+| `formula_evidence_last_reviewed` | no | When the formula evidence assessment was last reviewed; `YYYY-MM-DD` is recommended. Other imported text is preserved. |
 
 *Without `baseline` + `unit` a box renders structurally but shows no value and doesn't participate in simulation.
 
@@ -447,9 +461,13 @@ depot_readiness,Depot readiness,…,0.95,share,…,,,0,1
 | `from`        | yes | Source box id. |
 | `to`          | yes | Target box id. |
 | `effect`      | yes | `enables` / `increases` / `decreases`. Determines arrow colour and default strength sign. |
-| `elasticity`  | no  | Per-link override (signed number). Blank = use the default for the effect type. |
+| `elasticity`  | no  | Per-link strength magnitude. Blank = use the default for the effect type; `effect` fixes the sign. |
 | `style`       | no  | `dashed` for a dashed link; blank is solid. |
 | `description` | no  | Shown in detail panel. |
+| `evidence_status` | no | Evidence assessment for the causal claim: `unspecified`, `hypothesis`, `supported`, `calibrated`, or `validated`. Missing or unknown values load as `unspecified`. |
+| `evidence_rationale` | no | Why that causal-evidence status was assigned. |
+| `evidence_source` | no | Citation, dataset, analysis or other provenance for the causal evidence. |
+| `evidence_last_reviewed` | no | When the causal-evidence assessment was last reviewed; `YYYY-MM-DD` is recommended. Other imported text is preserved. |
 
 ### `reviews` (audit record) — optional
 
@@ -472,7 +490,7 @@ dates remain consistent.
 
 ## Build / Edit wizard
 
-Switch to **Edit**, then click **Bulk edit** (or **New map** first if you want a
+Switch to **Edit map**, then click **Bulk edit** (or use **New map** first if you want a
 fresh start) to open a full-screen wizard that constructs the same spreadsheet
 without you typing any spreadsheet syntax. Direct editing is usually faster for
 small tweaks; the wizard suits bulk changes and seeing every field at once.
@@ -508,26 +526,38 @@ value_target = baseline_target × ∏ (current_source / baseline_source) ^ elast
 - Adjustable boxes (sliders): `value = baseline × user_multiplier`.
 - Every other box: value computed from its incoming links.
 - The solver sweeps boxes in dependency order and iterates to a fixed point. On an acyclic map a single sweep resolves every box, so results are exact. On a map with **feedback loops** it keeps sweeping — each pass feeds the loop's values back into itself — until they converge (or the 250-iteration safety cap is hit).
-- Output is always positive, smooth, handles compounding inputs naturally, degrades gracefully at extremes (a source ratio of 0 collapses targets through any positive strength).
-- The `effect` label sets the default strength sign; a per-link `elasticity` override always wins.
+- The default multiplicative rule stays positive and handles compounding inputs smoothly. Additive rules and formulas can produce zero or negative values; use justified bounds where the domain requires them.
+- The `effect` label fixes direction (`increases` / `enables` positive, `decreases` negative). A per-link `elasticity` override supplies magnitude; the engine normalises an opposite sign to the effect's direction.
 
 ### Per-box calculation rules
 
 That default rule is what a box uses when the `combine` / `formula` / `min` / `max` columns are blank — which is every box in an older spreadsheet, so old maps compute exactly as they always did. A box can opt into something else: `combine` changes how its incoming links aggregate (`additive` effects add instead of compounding, `min` lets the weakest input gate the box), a `formula` replaces that aggregation with an explicit expression in the boxes' own units (ratios, capacity limits, share splits, and — through `delay()` — well-defined feedback), `min` / `max` put hard limits on the result, and hidden `params` hold the constants those formulas need. The precedence is fixed: an adjustable box's slider beats its formula, a formula beats `combine`. Anything the loader can't square — a formula it can't read, a name that is neither box nor constant, a formula reading a box with no arrow drawn from it — comes back as a plain-language warning on load; the map still loads and still computes.
 
-In simulation mode the detail panel for the selected box shows a **"How this number is calculated"** breakdown: which rule ran, each input with its value and its share of the answer (constants marked as hidden, delayed reads marked "previous step", the gating input on a `min` box flagged), plus a note whenever a limit bit, something divided by zero, or a name couldn't be resolved. `assets/data/advanced_sample.csv` is a worked example of every rule; [`docs/CALCULATION-ENGINE-DESIGN.md`](docs/CALCULATION-ENGINE-DESIGN.md) has the full design and the maths.
+In Edit mode, **“How should this box calculate?”** explains the choice between an Adjustable scenario multiplier, proportional link Strength, Combine rules and an explicit formula at the point of authoring. In Simulation mode the detail panel then shows a **"How this number is calculated"** breakdown: which rule ran, each input with its value and its share of the answer (constants marked as hidden, delayed reads marked "previous step", the gating input on a `min` box flagged), plus a note whenever a limit bit, something divided by zero, or a name couldn't be resolved. `assets/data/tutorial_map.csv` is the neutral interactive formula lab used by the guided learning material: its named cases cover proportional links, rate conversion, Additive and Weakest-link combines, capacity, bounded shares, a joint product, a non-negative balance and delayed feedback. `assets/data/advanced_sample.csv` remains a compact calculation-rule fixture; [`docs/CALCULATION-ENGINE-DESIGN.md`](docs/CALCULATION-ENGINE-DESIGN.md) has the full design and the maths, and [`docs/formula-modelling-guide.html`](docs/formula-modelling-guide.html) provides scenario-led choice guidance.
+
+#### Evidence status does not change the maths
+
+Links and formulas record different evidence claims using the same five labels:
+**Unspecified**, **Hypothesis**, **Supported**, **Calibrated**, and **Validated**. A link's
+status concerns evidence for the causal claim that its source affects its target. A
+formula's status concerns evidence for the mathematical form and parameter values. An
+empirically Calibrated or Validated formula can therefore coexist with a Hypothesis link:
+fitting or predicting an association does not by itself establish causation.
+
+Statuses and their rationale, source and review date are informational metadata only.
+They do not enable, disable or reweight links or formulas; every syntactically valid active
+rule runs. The app records the author's assessment but does not certify its evidence or
+method. A formula may be an identity, a domain assumption, a theory-led form or an
+empirically fitted relationship—formula use is not restricted to identities already known
+to be true.
 
 ### Feedback loops
 
-Links may form loops — an output feeding back to affect a box that affects it. Negative-feedback loops settle quickly; a runaway positive loop (gain ≥ 1) can't settle, so its values are clamped to something finite and a warning is shown (at load and on the simulation panel). Lower the strengths on the loop to bring it back into a stable range.
+Links may form loops — an output feeding back to affect a box that affects it. Negative-feedback loops settle quickly; a runaway positive loop may not. The solver stops after its 250-iteration safety cap, keeps the final finite values (or applies a safety fallback to non-finite ones), and warns that the result may be unstable. Lower the strengths on the loop to bring it back into a stable range.
 
 ### A note on directional semantics
 
-The structural `effect` label describes the **cause-and-effect role** ("X is the cause of Y"). The strength describes the **direction and magnitude in simulation**. These can disagree.
-
-Example: in the UK border sample, `pcp_inspection → passenger_wait_time` is labelled `increases` because PCP processing is structurally the cause of wait time at the border, but the strength is **-0.55** because in the simulation `pcp_inspection` represents PCP throughput capacity — more capacity = less wait. The detail panel always shows the strength explicitly so this is auditable.
-
-This pattern recurs anywhere the cause is a capacity/intensity and the effect is a delay. Reasonable people will model the same link differently. Override the strength if you disagree with the included values.
+The structural `effect` label describes both the cause-and-effect role and its simulation direction: `increases` and `enables` are positive; `decreases` is negative. Strength supplies magnitude. If a source is a capacity whose increase should reduce a delay, label that link `decreases`; entering a negative Strength on an `increases` link does not reverse it because the engine normalises the sign to the effect.
 
 ## Validation
 
@@ -567,11 +597,13 @@ systems_mapping/
     │   ├── 13-search.css            Search dropdown + map-match halo
     │   ├── 14-typeable-dropdown.css Typable / filterable <select> replacement
     │   ├── 16-atlas.css             Pathway atlas: the picture, the wheel inside a tangle, the panel
-    │   └── 17-review.css            Review panel + the review rail / dock: cards, marks, the queue
+    │   ├── 17-review.css            Review panel + the review rail / dock: cards, marks, the queue
+    │   └── 18-tutorial.css          First-open welcome + Learn library, lesson runner and target highlight
     │                                (flat look = `border: 0` in 02-base.css;
     │                                 state shown via drop-shadow / box-shadow rings)
     ├── js/
     │   ├── 01-sample-data.ts        Embedded SAMPLE_CSV string (sample.csv copy)
+    │   ├── 01a-tutorial-map-data.ts Embedded TUTORIAL_MAP_CSV string (tutorial_map.csv copy)
     │   ├── 02-config.ts             Pixel sizes (NODE_WIDTH etc.) + shared option lists
     │   ├── 03-state.ts              Shared globals (state, NODES, EDGES, …)
     │   ├── 04-utils.ts              wrapLabel / escapeHtml / formatScalar / clone helpers
@@ -583,6 +615,8 @@ systems_mapping/
     │   ├── 06-data-loader.ts        loadDataFromCsv + rebuildIndexes
     │   ├── 07-simulation-engine.ts  Cobb-Douglas propagation + applySimMultiplier
     │   ├── 07a-formula.ts           Safe formula language for per-node rules (parser + evaluator, min/max/clamp/delay)
+    │   ├── 07b-calculation-guide.ts Shared in-app guidance for choosing multiplier, Strength, Combine or formula
+    │   ├── 07c-evidence.ts          Shared evidence statuses, badges and provenance editors
     │   ├── 08-layout.ts             Node positioning
     │   ├── 09-graph-selection.ts    Ancestor/descendant traversal + selectNode
     │   ├── 10-filters.ts            Stream / category visibility
@@ -617,6 +651,7 @@ systems_mapping/
     │   ├── 23-review-panel.ts       Review UI: the overlay, the cards, the header count badge
     │   ├── 24-review-record.ts      The review pass: the queue, verdicts, staleness, families
     │   ├── 25-review-rail.ts        The review queue docked beside the map, and the log export
+    │   ├── 26-tutorial.ts           Reversible Quick start + six-course Learn library across every surface
     │   └── types.ts                 Shared TypeScript types every module imports (the data model)
     └── data/
         ├── sample.csv               Small neutral example (3 rows, 12 boxes, 12 links).
@@ -624,13 +659,15 @@ systems_mapping/
         ├── advanced_sample.csv      Worked example of every calculation rule
         │                            (params, combine, formula, bounds, delay()).
         │                            Reference only — drag it in to load it.
+        ├── tutorial_map.csv         Neutral 21-box Learn map covering every formula shape,
+        │                            evidence status, simulation and a long feedback loop.
         └── empty_template.csv       Empty starter with structure + inline comments.
                                      Reference only — no button loads it.
 ```
 
 ### Why so many small files?
 
-The app was originally a single ~2,500-line HTML file. Splitting it into 45
+The app was originally a single ~2,500-line HTML file. Splitting it into 49
 focused, well-commented TypeScript modules plus component stylesheets makes it
 easier for:
 
@@ -663,6 +700,8 @@ The two biggest features are split across multiple files:
 | The list of valid edge effects, outcome directions, stream colour palette | `assets/js/02-config.ts` |
 | How nodes propagate values (combine rules, bounds, the solver) | `assets/js/07-simulation-engine.ts` |
 | The formula language (`min` / `max` / `clamp` / `delay`) | `assets/js/07a-formula.ts` |
+| The in-app calculation-choice guidance | `assets/js/07b-calculation-guide.ts` |
+| Evidence metadata, statuses and authoring controls | `assets/js/07c-evidence.ts`, `assets/js/types.ts`, `assets/css/06-detail-panel.css`, `assets/css/17-review.css` |
 | How nodes are positioned | `assets/js/08-layout.ts` |
 | How nodes/edges are drawn | `assets/js/11-rendering.ts` |
 | The right detail panel | `assets/js/15-detail-panel.ts` |
@@ -689,7 +728,8 @@ The two biggest features are split across multiple files:
 | When the map greys the outside instead of fading it | `assets/js/09-graph-selection.ts` (`applyFocusBreadth`), `assets/css/05-visualization.css` |
 | Search behaviour / fuzzy matching | `assets/js/17a-search.ts`, `assets/css/13-search.css` |
 | Button behaviour | `assets/js/17-events.ts` |
-| Sample data dataset | `assets/data/sample.csv` (starter) · `assets/data/advanced_sample.csv` (calculation rules) |
+| First-open guided tour | `assets/js/26-tutorial.ts`, `assets/css/18-tutorial.css`, `assets/data/tutorial_map.csv`, `assets/js/01a-tutorial-map-data.ts` |
+| Sample data datasets | `assets/data/sample.csv` (starter) · `assets/data/advanced_sample.csv` (calculation rules) · `assets/data/tutorial_map.csv` (guided tour) |
 | Colours, fonts &amp; design tokens (radius / spacing / motion scales) | `assets/css/01-variables.css` |
 | The flat look (no borders) | `border: 0` in `assets/css/02-base.css`; state shown as box-shadow rings in the component files |
 
@@ -748,11 +788,12 @@ build on every push (`.github/workflows/ci.yml`). CI also rejects a stale tracke
 
 ## Limitations
 
-- **Strengths in the sample are illustrative, not calibrated.** Plausible round figures, not regression coefficients. Defensible for direction-of-effect analysis, not policy costings. To calibrate: substitute real numbers and fit strengths on time-series data.
+- **Strengths in the sample are illustrative, not calibrated.** They are plausible round figures, not regression coefficients. They support exploring the model's stated directions, not treating those directions as established causes or using the results for policy costings. To calibrate, fit strengths on relevant observations and assess the causal claims separately.
+- **Evidence labels are not automatic assurance.** They report the author's assessment and never alter a result. In particular, a Calibrated or Validated formula status concerns mathematical form and parameters, not proof that its incoming links are causal.
 - **Few threshold non-linearities by default.** Cobb-Douglas is smooth and monotone, so the standard rule has no kinks. A box can opt into the sharp ones — `min` gating, `min(demand, capacity)`, `clamp(…)`, hard `min` / `max` bounds — but everything else (a queue blowing up non-linearly *near* capacity, say) still has to be approximated with strengths.
 - **No confidence intervals.** Point estimates only.
 - **No cost / budget side.** Sliders move physical inputs without cost constraints. Easy to add: an additional `unit_cost` box field summed to a budget readout in the simulation panel.
-- **Feedback loops settle, they don't oscillate dynamically.** The iterative solver finds the steady state of a loop, not its time-path. A runaway positive loop (gain ≥ 1) has no steady state; its values are clamped and flagged rather than simulated over time.
+- **Feedback loops settle, they don't oscillate dynamically.** The iterative solver seeks the steady state of a loop, not its time-path. A runaway positive loop may have no steady state; after 250 iterations its final finite values remain and are flagged as unstable, while non-finite results receive a safety fallback.
 - **Spreadsheet only.** No JSON or API ingestion. Both would be straightforward to add to the loader.
 - **Wizard row reordering** is supported for rows, columns, and categories (grab the `⋮⋮` handle on the left of any row to drag it up or down). Box and link order doesn't affect rendering, so the wizard doesn't expose handles there.
 - **`localStorage` only.** State persists in the browser, not in the cloud. Different browsers / private windows / incognito tabs all see their own independent state. Use **Download CSV** in the wizard to share a snapshot.

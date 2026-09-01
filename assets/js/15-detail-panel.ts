@@ -19,7 +19,7 @@
 // row so the user lands on the edge they wanted to edit.
 // =============================================================================
 
-import type { GraphNode, Edge, EffectKind, CalcRule, CombineMode, NodeExplanation, TraceInput } from "./types";
+import type { GraphNode, Edge, EffectKind, CalcRule, CombineMode, EvidenceMetadata, NodeExplanation, TraceInput } from "./types";
 import {
   STREAMS,
   STAGES,
@@ -52,11 +52,18 @@ import {
 import {
   isFormulaFunction, FORMULA_NUMBER_PATTERN_SOURCE, FORMULA_IDENTIFIER_PATTERN_SOURCE,
 } from "./07a-formula";
+import { renderCalculationChoiceGuide } from "./07b-calculation-guide";
+import {
+  evidenceStatusLabel,
+  normaliseEvidenceStatus,
+  renderEvidenceEditor,
+  updateEvidenceMetadata,
+} from "./07c-evidence";
 import { EFFECT_OPTIONS } from "./02-config";
 import { focusNode, scrollNodeIntoView } from "./09-graph-selection";
 import { render, renderSelectionChange } from "./11-rendering";
-import { applySimMultiplier, updateDetailPanelDeltaInline } from "./14-simulation-panel";
-import { applySelectionClass } from "./17-events";
+import { applySimMultiplier, toggleSimulationMode, updateDetailPanelDeltaInline } from "./14-simulation-panel";
+import { applySelectionClass, setUiMode } from "./17-events";
 import { atlasIsOpen, atlasPanelHtml, openAtlas, putScroll, takeScroll } from "./21-atlas-view";
 import { deleteEdgeById, commitNewEdge, deleteSelection } from "./16e-canvas-edit";
 import { applyCanvasMutation } from "./16f-canvas-mutations";
@@ -234,10 +241,7 @@ export function renderNodeSkeleton(node: GraphNode, editMode: boolean): string {
       + html
       + renderReviewAsk(node)
       + renderReviewRule(node)
-      + (directImpacts.length
-        ? '<div class="detail-atlas"><button class="detail-atlas-button" data-action="open-atlas">' +
-          '<b>ATLAS →</b><span>Every pathway out of this box, as one picture.</span></button></div>'
-        : "")
+      + renderSelectedBoxActions(node, directImpacts.length > 0)
       + renderEdgeList("Driven by", directInputs, "from",
           "Nothing drives this — it is a starting box.", reviewMarks)
       + renderReviewFamily(node)
@@ -247,17 +251,7 @@ export function renderNodeSkeleton(node: GraphNode, editMode: boolean): string {
   }
 
   if (reading) {
-    // The way into the atlas, first thing under the box's name — "what does
-    // this actually feed?" is the thought you have straight after clicking a
-    // box, and this is the answer to it. The card explains itself in a line:
-    // the header button says the same words, so meeting the name here teaches
-    // the one up there. Only offered where it has something to say — a box
-    // with nothing downstream would open a picture of one circle.
-    if (directImpacts.length) {
-      html += '<div class="detail-atlas"><button class="detail-atlas-button" ' +
-        'data-action="open-atlas"><b>ATLAS →</b>' +
-        '<span>Every pathway out of this box, as one picture.</span></button></div>';
-    }
+    html += renderSelectedBoxActions(node, directImpacts.length > 0);
     html += causes;
     html += effects;
     html += numbers;
@@ -277,6 +271,24 @@ export function renderNodeSkeleton(node: GraphNode, editMode: boolean): string {
   }
 
   return html;
+}
+
+/** Actions whose consequence begins with the selected box live together in
+ * its panel. Only useful actions are offered: Atlas needs a downstream route,
+ * and input simulation needs an adjustable box. */
+function renderSelectedBoxActions(node: GraphNode, hasDirectImpacts: boolean): string {
+  const actions: string[] = [];
+  if (hasDirectImpacts) {
+    actions.push('<button class="detail-scope-button detail-atlas-button" data-action="open-atlas">' +
+      '<b>Atlas</b><span>Follow every pathway out</span></button>');
+  }
+  if (node.controllable && !state.simulationMode) {
+    actions.push('<button class="detail-scope-button" data-action="simulate-box">' +
+      '<b>Simulate input</b><span>Test a change from here</span></button>');
+  }
+  actions.push('<button class="detail-scope-button" data-action="edit-box">' +
+    '<b>Edit box</b><span>Change fields and links</span></button>');
+  return '<div class="detail-scope-actions" aria-label="Actions for this box">' + actions.join("") + '</div>';
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -735,6 +747,11 @@ export function renderQuantFrame(node: GraphNode, editMode: boolean): string {
   // §3). They sit at the bottom of the quant block because they're the
   // "advanced" end of the same subject — how this box's number comes about.
   if (editMode) {
+    html += renderCalculationChoiceGuide({
+      adjustable: !!node.controllable,
+      hasFormula: !!node.formula,
+    });
+
     // Blank IS multiplicative, so the default option carries an empty value and
     // an explicit "multiplicative" in the CSV simply shows as the default (a
     // round-trip drops the redundant word; the maths is identical).
@@ -758,6 +775,7 @@ export function renderQuantFrame(node: GraphNode, editMode: boolean): string {
 
     html += row("Formula", '<input type="text" class="detail-edit-input detail-quant-input detail-quant-formula" data-field="formula" value="' + escapeHtml(node.formula || "") + '" placeholder="none" spellcheck="false">',
       "Overrides the arrows' maths — e.g. min(a, b), clamp(x, lo, hi), delay(x). Every box named here must also have an arrow into this box.");
+    html += renderEvidenceEditor({ metadata: node.formulaEvidence, scope: "formula" });
 
     html += row("Lowest allowed", '<input type="number" step="any" class="detail-edit-input detail-edit-number detail-quant-input" data-field="minValue" value="' + (node.minValue !== undefined && node.minValue !== null ? node.minValue : "") + '" placeholder="none">',
       "A hard floor in this box's own units — the number can never come out below it.");
@@ -1201,7 +1219,11 @@ export function renderOutgoingEdgesBlock(node: GraphNode): string {
         html +=   '<option value="' + eff + '"' + (edge.effect === eff ? " selected" : "") + '>' + eff + '</option>';
       }
       html +=   '</select></span></div>';
-      html +=   '<div class="detail-quant-row"><span class="detail-quant-label" data-tooltip="Leave blank for the default for this link type">Strength</span>' +
+      const targetFormulaIsActive = !!target && explainNode(target.id)?.rule === "formula";
+      const strengthTooltip = targetFormulaIsActive
+        ? "This target uses a formula, so the link still documents the causal input but its Strength is ignored."
+        : "Target percentage change per source percentage change. Effect sets direction; Strength sets magnitude. Use this for a proportional response, or leave blank for the default.";
+      html +=   '<div class="detail-quant-row"><span class="detail-quant-label" data-tooltip="' + escapeHtml(strengthTooltip) + '">Strength</span>' +
                 '<input type="number" step="any" class="detail-edit-input detail-edit-number detail-quant-input outgoing-edge-elasticity" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="elasticity" value="' + (edge.elasticity !== undefined && edge.elasticity !== null ? edge.elasticity : "") + '" placeholder="default ' + defaultElasticity + '"></div>';
       html +=   '<div class="detail-quant-row"><span class="detail-quant-label">Line</span>' +
                 '<span class="detail-quant-control"><select class="detail-edit-input detail-edit-select outgoing-edge-style" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="style">' +
@@ -1209,6 +1231,7 @@ export function renderOutgoingEdgesBlock(node: GraphNode): string {
                   '<option value="dashed"' + (edge.style === "dashed" ? " selected" : "") + '>Dashed</option>' +
                 '</select></span></div>';
       html +=   '<textarea class="detail-edit-input detail-edit-textarea outgoing-edge-description" data-edge-id="' + escapeHtml(edge.id) + '" data-edge-field="description" rows="2" placeholder="Optional description">' + escapeHtml(edge.description || "") + '</textarea>';
+      html +=   renderEvidenceEditor({ metadata: edge.evidence, scope: "edge" });
       html +=   '<div class="edge-open-actions">';
       html +=     '<button class="detail-edit-link" data-jump-node="' + escapeHtml(edge.to) + '">Go to this box →</button>';
       html +=     '<button class="detail-edit-link danger" data-edge-action="delete" data-edge-id="' + escapeHtml(edge.id) + '">Delete link</button>';
@@ -1280,6 +1303,22 @@ export function wireSharedHandlers(node: GraphNode, contentState: HTMLElement): 
     atlasButton.addEventListener("click", () => {
       if (typeof openAtlas === "function") openAtlas(node.id);
     });
+  }
+
+  const simulateBoxButton = contentState.querySelector("[data-action='simulate-box']");
+  if (simulateBoxButton) {
+    simulateBoxButton.addEventListener("click", () => {
+      if (!state.simulationMode) toggleSimulationMode();
+      const input = document.querySelector<HTMLInputElement>(
+        '.sim-pct-input[data-node-id="' + CSS.escape(node.id) + '"]',
+      );
+      if (input) input.focus();
+    });
+  }
+
+  const editBoxButton = contentState.querySelector("[data-action='edit-box']");
+  if (editBoxButton) {
+    editBoxButton.addEventListener("click", () => setUiMode("edit"));
   }
 
   // Edge stripes navigate to the connected node — in BOTH modes. In edit, the
@@ -1475,6 +1514,36 @@ export function wireEditModeHandlers(node: GraphNode, contentState: HTMLElement)
       applyEdgeFieldEdit(edgeId, field, input as HTMLInputElement);
     });
   });
+  contentState.querySelectorAll('[data-evidence-scope="formula"][data-evidence-field]').forEach(input => {
+    const field = input.getAttribute("data-evidence-field") as keyof EvidenceMetadata | null;
+    if (!field) return;
+    wireEvidenceInput(
+      input as EvidenceControl,
+      field,
+      (skipHistoryCapture) => applyFormulaEvidenceFieldEdit(
+        node,
+        field,
+        input as EvidenceControl,
+        skipHistoryCapture,
+      ),
+    );
+  });
+  contentState.querySelectorAll('.edge-open [data-evidence-scope="edge"][data-evidence-field]').forEach(input => {
+    const edgeEditor = input.closest(".edge-open");
+    const edgeId = edgeEditor?.getAttribute("data-edge-row-id");
+    const field = input.getAttribute("data-evidence-field") as keyof EvidenceMetadata | null;
+    if (!edgeId || !field) return;
+    wireEvidenceInput(
+      input as EvidenceControl,
+      field,
+      (skipHistoryCapture) => applyEdgeEvidenceFieldEdit(
+        edgeId,
+        field,
+        input as EvidenceControl,
+        skipHistoryCapture,
+      ),
+    );
+  });
   contentState.querySelectorAll("[data-jump-node]").forEach(btn => {
     btn.addEventListener("click", () => {
       const targetId = btn.getAttribute("data-jump-node")!;
@@ -1564,6 +1633,46 @@ export function wireEditModeHandlers(node: GraphNode, contentState: HTMLElement)
       if (typeof deleteSelection === "function") deleteSelection();
     });
   }
+}
+
+// Text provenance must reach the model on `input`, not only after blur: a tab
+// can be closed while the caret is still in the field. The first keystroke
+// captures the pre-edit undo snapshot; the rest of that focus session update
+// the same edit without adding one history entry per character. Every input
+// still refreshes the pending CSV, so pagehide can flush the latest text.
+type EvidenceControl = HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+
+const activeEvidenceTypingInputs = new WeakSet<EvidenceControl>();
+
+function wireEvidenceInput(
+  input: EvidenceControl,
+  field: keyof EvidenceMetadata,
+  applyEdit: (skipHistoryCapture: boolean) => void,
+): void {
+  const commitsWhileTyping = field === "rationale" || field === "source";
+  if (commitsWhileTyping) {
+    input.addEventListener("input", () => {
+      const continuingEdit = activeEvidenceTypingInputs.has(input);
+      activeEvidenceTypingInputs.add(input);
+      applyEdit(continuingEdit);
+    });
+    input.addEventListener("change", () => activeEvidenceTypingInputs.delete(input));
+    input.addEventListener("blur", () => activeEvidenceTypingInputs.delete(input));
+    return;
+  }
+  input.addEventListener("change", () => {
+    applyEdit(false);
+    syncEvidenceBadgeForInput(input);
+  });
+}
+
+function syncEvidenceBadgeForInput(input: HTMLElement): void {
+  if (input.getAttribute("data-evidence-field") !== "status") return;
+  const badge = input.closest(".evidence-editor")?.querySelector(".evidence-badge") as HTMLElement | null;
+  if (!badge) return;
+  const status = normaliseEvidenceStatus((input as HTMLInputElement).value);
+  badge.className = "evidence-badge evidence-" + status;
+  badge.textContent = evidenceStatusLabel(status);
 }
 
 // =============================================================================
@@ -1760,6 +1869,40 @@ export function applyEdgeFieldEdit(edgeId: string, field: string, input: HTMLInp
     return;
   }
   if (typeof applyCanvasMutation === "function") applyCanvasMutation();
+}
+
+export function applyFormulaEvidenceFieldEdit(
+  node: GraphNode,
+  field: keyof EvidenceMetadata,
+  input: EvidenceControl,
+  skipHistoryCapture = false,
+): void {
+  node.formulaEvidence = updateEvidenceMetadata(node.formulaEvidence, field, input.value);
+  if (typeof applyCanvasMutation === "function") {
+    applyCanvasMutation({
+      skipDetailRender: true,
+      impact: "presentation",
+      skipHistoryCapture,
+    });
+  }
+}
+
+export function applyEdgeEvidenceFieldEdit(
+  edgeId: string,
+  field: keyof EvidenceMetadata,
+  input: EvidenceControl,
+  skipHistoryCapture = false,
+): void {
+  const edge = edgeById[edgeId];
+  if (!edge) return;
+  edge.evidence = updateEvidenceMetadata(edge.evidence, field, input.value);
+  if (typeof applyCanvasMutation === "function") {
+    applyCanvasMutation({
+      skipDetailRender: true,
+      impact: "presentation",
+      skipHistoryCapture,
+    });
+  }
 }
 
 // =============================================================================

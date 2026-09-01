@@ -355,10 +355,10 @@ describe("raster density ceilings", () => {
 });
 
 describe("emitted coordinate precision", () => {
-  // Zoomed out past TEXT_SCALE_RATIO the layout grows boxes by 0.85/zoom, so
-  // every height, row offset and bezier control point becomes a repeating
-  // fraction — the export used to emit all 17 digits of them, several times per
-  // box and twice per edge.
+  // Zoomed out past TEXT_SCALE_RATIO the layout grows box heights with the text,
+  // so row offsets and bezier control points become repeating fractions — the
+  // export used to emit all 17 digits of them, several times per box and twice
+  // per edge.
   beforeEach(() => {
     mountAppDom();
     state.zoomLevel = 0.7;

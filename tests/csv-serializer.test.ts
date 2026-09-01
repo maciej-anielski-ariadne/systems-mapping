@@ -84,6 +84,56 @@ describe("serializeBuilderToCsv", () => {
     expect(csv).toContain("slider_max,combine,formula,min,max");
     const sections = parseCsvDocument(csv);
     expect(sections.nodes[0]).toMatchObject({ combine: "", formula: "", min: "", max: "" });
+    expect(sections.nodes[0]).toMatchObject({
+      formula_evidence_status: "unspecified",
+      formula_evidence_rationale: "",
+      formula_evidence_source: "",
+      formula_evidence_last_reviewed: "",
+    });
+    expect(sections.edges[0]).toMatchObject({
+      evidence_status: "unspecified",
+      evidence_rationale: "",
+      evidence_source: "",
+      evidence_last_reviewed: "",
+    });
+  });
+
+  it("round-trips formula and link evidence, including punctuation in sources", () => {
+    const evidenceBuilder = {
+      ...builder,
+      nodes: [{
+        ...builder.nodes![0],
+        formulaEvidence: {
+          status: "calibrated" as const,
+          rationale: "Coefficient fitted to observations",
+          source: "Dataset, table 4",
+          lastReviewed: "2026-08-31",
+        },
+      }],
+      edges: [{
+        ...builder.edges![0],
+        evidence: {
+          status: "validated" as const,
+          rationale: "Held outside the fitted sample",
+          source: 'Study "B"',
+          lastReviewed: "2026-08-30",
+        },
+      }],
+    };
+
+    const sections = parseCsvDocument(serializeBuilderToCsv(evidenceBuilder as BuilderState));
+    expect(sections.nodes[0]).toMatchObject({
+      formula_evidence_status: "calibrated",
+      formula_evidence_rationale: "Coefficient fitted to observations",
+      formula_evidence_source: "Dataset, table 4",
+      formula_evidence_last_reviewed: "2026-08-31",
+    });
+    expect(sections.edges[0]).toMatchObject({
+      evidence_status: "validated",
+      evidence_rationale: "Held outside the fitted sample",
+      evidence_source: 'Study "B"',
+      evidence_last_reviewed: "2026-08-30",
+    });
   });
 
   it("quotes a formula containing commas and quotes so it survives re-parsing", () => {
@@ -168,6 +218,63 @@ describe("serializeBuilderToCsv — params", () => {
 });
 
 describe("serializeLiveStateToCsv — round-trip of params and calculation columns", () => {
+  it("round-trips formula and link evidence through compact live-state snapshots", () => {
+    const evidenceBuilder: Partial<BuilderState> = {
+      streams: [{ id: "ops", label: "Operations", short: "OPS", color: "#60a5fa" }],
+      stages: [{ id: "s1", label: "One" }],
+      categories: [{ id: "cat", label: "General", color: "#a3a3a3", textColor: "#111111", class: "primary" }],
+      defaults: { enables: 0.3, increases: 0.25, decreases: -0.25 },
+      params: [],
+      nodes: [{
+        id: "a",
+        label: "A",
+        stream: "ops",
+        stage: "s1",
+        category: "cat",
+        baseline: 100,
+        controllable: true,
+        formulaEvidence: {
+          status: "calibrated",
+          rationale: "Fitted coefficient",
+          source: "Dataset 2026",
+          lastReviewed: "2026-08-31",
+        },
+      }],
+      edges: [{
+        from: "a",
+        to: "a",
+        effect: "increases",
+        evidence: {
+          status: "validated",
+          rationale: "Out-of-sample check",
+          source: "Validation run 2",
+          lastReviewed: "2026-08-30",
+        },
+      }],
+    };
+
+    expect(loadDataFromCsv(serializeBuilderToCsv(evidenceBuilder))).toBe(true);
+    const compactCsv = serializeLiveStateToCsv(null, { compact: true });
+    const compactSections = parseCsvDocument(compactCsv);
+    expect(compactSections.edges[0]).not.toHaveProperty("from_label");
+    expect(compactSections.edges[0].evidence_status).toBe("validated");
+
+    expect(loadDataFromCsv(compactCsv)).toBe(true);
+    expect(nodeById.a.formulaEvidence).toEqual({
+      status: "calibrated",
+      rationale: "Fitted coefficient",
+      source: "Dataset 2026",
+      lastReviewed: "2026-08-31",
+    });
+    expect(state.loadErrors).toEqual([]);
+    expect(parseCsvDocument(serializeLiveStateToCsv()).edges[0]).toMatchObject({
+      evidence_status: "validated",
+      evidence_rationale: "Out-of-sample check",
+      evidence_source: "Validation run 2",
+      evidence_last_reviewed: "2026-08-30",
+    });
+  });
+
   it("survives load → serialize → load unchanged", () => {
     expect(loadDataFromCsv(PARAMS_CSV)).toBe(true);
     const csv = serializeLiveStateToCsv();

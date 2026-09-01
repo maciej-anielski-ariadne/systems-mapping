@@ -59,6 +59,26 @@ export type CategoryMap = Record<string, Category>;
 //     these"), rather than any one input carrying it on its own.
 export type CombineMode = "multiplicative" | "additive" | "min";
 
+// ───── Evidence carried by a causal claim ─────────────────────────────────────
+// Evidence is descriptive provenance, not a simulation input. A link records
+// the support for that causal relationship; a formula records the support for
+// the rule itself. The loader materialises "unspecified" for legacy files, but
+// these properties remain optional at the type boundary so older programmatic
+// GraphNode / Edge object literals remain source-compatible.
+export type EvidenceStatus =
+  | "unspecified"
+  | "hypothesis"
+  | "supported"
+  | "calibrated"
+  | "validated";
+
+export interface EvidenceMetadata {
+  status: EvidenceStatus;
+  rationale?: string;
+  source?: string;
+  lastReviewed?: string;
+}
+
 // ───── A param = a named constant that never renders as a box ───────────────
 // Technical constants (route shares, detection rates, conversion factors) that
 // belong to the calculation model but would make the visual map unreadable if
@@ -100,6 +120,8 @@ export interface GraphNode {
   /** Raw expression text, e.g. "min(demand, capacity)". Stored verbatim from
    *  the CSV; parsing/validation happens in the calculation engine. */
   formula?: string;
+  /** Informational provenance for the authored formula; never changes maths. */
+  formulaEvidence?: EvidenceMetadata;
   /** Hard lower bound applied after the rule runs (absolute value, not a ratio). */
   minValue?: number;
   /** Hard upper bound applied after the rule runs (absolute value, not a ratio). */
@@ -118,6 +140,8 @@ export interface Edge {
   elasticity?: number;
   /** Only stored when "dashed"; absence means a solid line. */
   style?: "dashed";
+  /** Informational provenance for this causal link; never changes maths. */
+  evidence?: EvidenceMetadata;
 }
 
 // ───── Default elasticities by effect (the `defaults` CSV section) ──────────
@@ -407,6 +431,7 @@ export interface BuilderNode {
   // "Apply to map" / "Download CSV".
   combine?: string;
   formula?: string;
+  formulaEvidence?: EvidenceMetadata;
   minValue?: number | string;
   maxValue?: number | string;
 }
@@ -417,6 +442,7 @@ export interface BuilderEdge {
   elasticity?: number | string;
   style?: "dashed" | string;
   description?: string;
+  evidence?: EvidenceMetadata;
 }
 
 export type BuilderSection = "streams" | "stages" | "categories" | "nodes" | "edges" | "params";

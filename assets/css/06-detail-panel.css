@@ -118,50 +118,64 @@
   color: var(--text-secondary);
 }
 
-/* === The way into the atlas ===
- * A full-width card directly under the box's name, in reading mode only. It
- * carries its own line of explanation rather than a bare label: "Atlas" is a
- * name, and a name is no use to someone meeting it for the first time. The
- * line is what makes the header button's bare "Atlas" legible afterwards —
- * the two controls are one feature in two places, so they are worded the same.
- *
- * (This block was the View / Edit toggle. That button is gone: editing is a
- * mode you enter from the header now, not per box.) */
-.detail-atlas {
-  margin: var(--section-gap) 0;
+/* === Actions for the selected box =========================================
+ * Atlas, Simulate input and Edit box act from this box, so they appear here
+ * only when useful instead of occupying permanent application chrome. */
+.detail-scope-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: var(--space-2) 0 var(--section-gap);
 }
 
-.detail-atlas-button {
-  display: block;
+body.review-open .detail-scope-actions {
+  display: none;
+}
+
+.detail-scope-button {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--space-2);
   width: 100%;
-  text-align: left;
-  background: var(--bg-mid);
-  color: var(--text-primary);
+  min-width: 0;
+  min-height: 30px;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
   border-radius: var(--radius-interactive);
-  padding: var(--space-2) var(--space-3);
-  font-family: var(--font-ui);
-  cursor: pointer;
-  transition: background var(--dur-fast), color var(--dur-fast);
-}
-
-.detail-atlas-button:hover {
-  background: var(--act-tint);
-}
-
-.detail-atlas-button b {
-  display: block;
-  font-size: var(--fs-body);
-  font-weight: var(--fw-semibold);
-  letter-spacing: var(--tracking-cap);
-  color: var(--text-primary);
-}
-
-.detail-atlas-button span {
-  display: block;
-  margin-top: 2px;
-  font-size: var(--fs-body);
+  background: transparent;
   color: var(--text-secondary);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast), color var(--dur-fast), box-shadow var(--dur-fast);
+}
+
+.detail-scope-button:hover { background: var(--act-tint); }
+
+.detail-scope-button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.detail-scope-button b {
+  min-width: 0;
+  font-size: var(--fs-body);
+  font-weight: var(--fw-medium);
   line-height: 1.35;
+  color: var(--text-secondary);
+}
+
+.detail-scope-button:hover b { color: var(--text-primary); }
+
+.detail-scope-button span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: var(--fs-cap);
+  line-height: 1.35;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* === Tags row at the top of a selected node's details === */
@@ -487,6 +501,39 @@
   font-family: var(--font-mono);
   font-size: var(--fs-cap);
 }
+
+/* A collapsed modelling decision aid at the point where Combine / Formula are
+ * edited. It is deliberately text-first and uses the panel's existing rails —
+ * no modal or second navigation system for a choice made in this form. */
+.detail-panel .calculation-choice-guide {
+  margin: var(--space-2) 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-mid);
+  border-radius: var(--radius-surface);
+  color: var(--text-secondary);
+  font-size: var(--fs-cap);
+  line-height: 1.5;
+}
+
+.detail-panel .calculation-choice-guide summary {
+  color: var(--text-primary);
+  cursor: pointer;
+  font-weight: var(--fw-semibold);
+}
+
+.detail-panel .calculation-choice-guide-body { padding-top: var(--space-2); }
+.detail-panel .calculation-choice-guide p { margin: 0 0 var(--space-2); }
+.detail-panel .calculation-choice-guide p:last-child { margin-bottom: 0; }
+
+.detail-panel .calculation-choice-options {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+}
+
+.detail-panel .calculation-choice-options b,
+.detail-panel .calculation-choice-options span { display: block; }
+.detail-panel .calculation-choice-options span { color: var(--text-tertiary); }
 
 /* Editable current-value input shown in the "Current" row when the
  * selected node is a controllable input and sim mode is on. Typed values
@@ -1016,3 +1063,88 @@
   color: var(--text-secondary);
   cursor: pointer;
 }
+/* Evidence provenance stays folded in authoring surfaces. The status is the
+   only part that needs to be visible while scanning a long list of links or
+   formulas; rationale, citation and date open on request. */
+.evidence-editor {
+  margin: var(--space-2) 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-interactive);
+  background: color-mix(in srgb, var(--bg-mid) 74%, transparent);
+}
+
+.evidence-editor > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: 30px;
+  padding: 5px 8px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
+  font-weight: 650;
+  list-style: none;
+}
+
+.evidence-editor > summary::-webkit-details-marker { display: none; }
+.evidence-editor > summary::before {
+  content: "▸";
+  color: var(--text-tertiary);
+}
+.evidence-editor[open] > summary::before { content: "▾"; }
+.evidence-editor > summary > span:first-of-type { margin-right: auto; }
+
+.evidence-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 1px 7px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: .02em;
+  white-space: nowrap;
+}
+.evidence-unspecified { color: var(--text-tertiary); }
+.evidence-hypothesis { color: var(--accent-amber); }
+.evidence-supported { color: var(--accent-blue); }
+.evidence-calibrated { color: var(--accent-purple); }
+.evidence-validated { color: var(--accent-green); }
+
+.evidence-editor-body {
+  display: grid;
+  gap: var(--space-2);
+  padding: 4px 8px 9px;
+  border-top: 1px solid var(--border-subtle);
+}
+.evidence-editor-body > p {
+  margin: 2px 0;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.evidence-editor-body label {
+  display: grid;
+  gap: 3px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 650;
+}
+.evidence-editor-body input,
+.evidence-editor-body select,
+.evidence-editor-body textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-interactive);
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: 450;
+}
+.evidence-editor-body textarea { resize: vertical; }

@@ -8,7 +8,11 @@ import {
   endEdgeCycleSession,
 } from "../assets/js/16e-canvas-edit";
 import { applyCanvasMutation } from "../assets/js/16f-canvas-mutations";
-import { historyUndo } from "../assets/js/16g-canvas-undo";
+import {
+  _computeUndoFocus,
+  _snapshotSignatures,
+  historyUndo,
+} from "../assets/js/16g-canvas-undo";
 import { recordVerdict, saveReviewsNow } from "../assets/js/24-review-record";
 import { recomputeValues, solverGeneration } from "../assets/js/07-simulation-engine";
 import { applyEdgeFieldEdit, applyNodeFieldEdit } from "../assets/js/15-detail-panel";
@@ -102,6 +106,25 @@ describe("model history keeps the Review audit log", () => {
       verdict: "agreed",
       reviewer: "Ada Lovelace",
     });
+  });
+});
+
+describe("undo change signatures", () => {
+  it("marks style and evidence-only edge edits for flash and recenter", () => {
+    expect(loadDataFromCsv(LINEAR_CSV)).toBe(true);
+    const edgeId = EDGES[0].id!;
+    const before = _snapshotSignatures();
+
+    EDGES[0].style = "dashed";
+    EDGES[0].evidence = {
+      status: "supported",
+      rationale: "Observed repeatedly",
+    };
+    const focus = _computeUndoFocus(before, _snapshotSignatures());
+
+    expect(focus.flashEdgeIds).toEqual(new Set([edgeId]));
+    expect(focus.flashNodeIds).toEqual(new Set([EDGES[0].from, EDGES[0].to]));
+    expect(focus.focusNodeIds).toEqual(expect.arrayContaining([EDGES[0].from, EDGES[0].to]));
   });
 });
 

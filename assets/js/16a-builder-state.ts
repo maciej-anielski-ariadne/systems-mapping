@@ -20,6 +20,7 @@
 // =============================================================================
 
 import type {
+  BuilderState,
   BuilderSection,
   BuilderNode,
 } from "./types";
@@ -124,6 +125,42 @@ export function closeBuilder(): void {
   }
 }
 
+/**
+ * The guided tour temporarily borrows the shared builder overlay. Keep a fully
+ * detached copy of the user's working draft so tutorial seeding cannot mutate
+ * or replace it. The builder contains nested category and evidence arrays plus
+ * a Set, so a shallow object spread is not sufficient here.
+ */
+export function cloneBuilderState(source: BuilderState): BuilderState {
+  const sort: BuilderState["sort"] = {};
+  for (const section of Object.keys(source.sort || {}) as BuilderSection[]) {
+    const sectionSort = source.sort[section];
+    sort[section] = sectionSort ? { ...sectionSort } : null;
+  }
+  return {
+    open: source.open,
+    step: source.step,
+    streams: source.streams.map(stream => ({ ...stream })),
+    stages: source.stages.map(stage => ({ ...stage })),
+    categories: source.categories.map(category => ({ ...category })),
+    defaults: { ...source.defaults },
+    nodes: source.nodes.map(node => ({
+      ...node,
+      categoryIds: node.categoryIds ? node.categoryIds.slice() : undefined,
+      formulaEvidence: node.formulaEvidence ? { ...node.formulaEvidence } : undefined,
+    })),
+    edges: source.edges.map(edge => ({
+      ...edge,
+      evidence: edge.evidence ? { ...edge.evidence } : undefined,
+    })),
+    params: source.params?.map(parameter => ({ ...parameter })),
+    selected: new Set(source.selected),
+    _lastRenderedStep: source._lastRenderedStep,
+    focusAfterRender: source.focusAfterRender ? { ...source.focusAfterRender } : null,
+    sort,
+  };
+}
+
 // ───── Seed helpers ───────────────────────────────────────────────────────
 export function seedBuilderEmpty(): void {
   state.builder.streams    = [];
@@ -178,6 +215,7 @@ export function seedBuilderFromLiveData(): void {
     // and a round-trip through the wizard never invents a value.
     combine: n.combine || "",
     formula: n.formula || "",
+    formulaEvidence: n.formulaEvidence ? { ...n.formulaEvidence } : undefined,
     minValue: n.minValue !== undefined ? n.minValue : "",
     maxValue: n.maxValue !== undefined ? n.maxValue : "",
   }));
@@ -186,6 +224,7 @@ export function seedBuilderFromLiveData(): void {
     elasticity: e.elasticity !== undefined ? e.elasticity : "",
     style: e.style === "dashed" ? "dashed" : "",
     description: e.description || "",
+    evidence: e.evidence ? { ...e.evidence } : undefined,
   }));
   // The map's hidden calculation constants, edited on step 6 (Constants) and
   // written back out on apply. Cloned, like every other section, so Cancel

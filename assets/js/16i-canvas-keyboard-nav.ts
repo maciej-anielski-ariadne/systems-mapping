@@ -212,7 +212,8 @@ export function scrollCellIntoView(streamId: string, stageId: string, slotIndex:
   const slotTop    = topLayout! * zoom;
   const slotBottom = slotTop + slotH * zoom;
   const cellLeft   = x * zoom;
-  const cellRight  = cellLeft + NODE_WIDTH  * zoom;
+  const cellWidth = layout.colWidths[stageId] || NODE_WIDTH;
+  const cellRight  = cellLeft + cellWidth * zoom;
   const viewLeft   = scrollEl.scrollLeft;
   const viewTop    = scrollEl.scrollTop;
   const viewRight  = viewLeft + scrollEl.clientWidth;

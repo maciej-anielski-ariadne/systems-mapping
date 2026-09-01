@@ -27,6 +27,28 @@ import {
 } from "./fixtures/graphs";
 import { findings, kinds, text } from "./helpers/findings";
 
+const EVIDENCE_CSV = `# SECTION: streams
+id,label,short,color
+ops,Operations,OPS,#60a5fa
+
+# SECTION: stages
+id,label
+first,First
+
+# SECTION: categories
+id,label,color,text_color
+general,General,#a3a3a3,#111111
+
+# SECTION: nodes
+id,label,description,stream,stage,category,baseline,unit,controllable,direction,slider_max,combine,formula,min,max,formula_evidence_status,formula_evidence_rationale,formula_evidence_source,formula_evidence_last_reviewed
+a,A,,ops,first,general,10,units,true,,2,,,,,unspecified,,,
+b,B,,ops,first,general,20,units,,,,,a * 2,,,Supported,Observed proportional rule,"Dataset, table 4",2026-08-31
+
+# SECTION: edges
+from,to,effect,elasticity,description,evidence_status,evidence_rationale,evidence_source,evidence_last_reviewed
+a,b,increases,1,Connection,validated,Repeated controlled tests,Study A,2026-08-30
+`;
+
 describe("loadDataFromCsv — happy path (linear chain)", () => {
   beforeEach(() => {
     expect(loadDataFromCsv(LINEAR_CSV)).toBe(true);
@@ -211,6 +233,41 @@ describe("loadDataFromCsv — legacy CSV regression", () => {
     expect(PARAMS).toEqual([]);
     expect(NODES.every((n) => n.combine === undefined && n.formula === undefined)).toBe(true);
     expect(NODES.every((n) => n.minValue === undefined && n.maxValue === undefined)).toBe(true);
+    expect(NODES.every((node) => node.formulaEvidence?.status === "unspecified")).toBe(true);
+    expect(EDGES.every((edge) => edge.evidence?.status === "unspecified")).toBe(true);
+  });
+});
+
+describe("loadDataFromCsv — informational evidence metadata", () => {
+  it("loads formula and link evidence without changing calculation behaviour", () => {
+    expect(loadDataFromCsv(EVIDENCE_CSV)).toBe(true);
+
+    expect(nodeById.a.formulaEvidence).toEqual({ status: "unspecified" });
+    expect(nodeById.b.formulaEvidence).toEqual({
+      status: "supported",
+      rationale: "Observed proportional rule",
+      source: "Dataset, table 4",
+      lastReviewed: "2026-08-31",
+    });
+    expect(EDGES[0].evidence).toEqual({
+      status: "validated",
+      rationale: "Repeated controlled tests",
+      source: "Study A",
+      lastReviewed: "2026-08-30",
+    });
+    expect(state.computedValues.b).toBe(20);
+    expect(state.loadErrors).toEqual([]);
+  });
+
+  it("normalises an unknown status to unspecified without making evidence affect Review", () => {
+    const unknownStatusCsv = EVIDENCE_CSV
+      .replace(",Supported,Observed proportional rule", ",not-a-status,Observed proportional rule")
+      .replace(",validated,Repeated controlled tests", ",not-a-status,Repeated controlled tests");
+
+    expect(loadDataFromCsv(unknownStatusCsv)).toBe(true);
+    expect(nodeById.b.formulaEvidence?.status).toBe("unspecified");
+    expect(EDGES[0].evidence?.status).toBe("unspecified");
+    expect(state.loadErrors).toEqual([]);
   });
 });
 

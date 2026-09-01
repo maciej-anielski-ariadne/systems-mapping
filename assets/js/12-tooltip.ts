@@ -99,8 +99,14 @@ function positionTooltip(clientX: number, clientY: number): void {
   let y = clientY + offset;
 
   const size = tooltipSize();
+  // The map-wide actions now share a collision-free dock along the bottom.
+  // Treat that dock as unavailable space too: a tooltip that technically fits
+  // in the viewport can still cover the controls the user is about to reach.
+  const bottomControlClearance = window.innerWidth <= 600 ? 206 : 142;
+  const bottomLimit = window.innerHeight - bottomControlClearance;
   if (x + size.w > window.innerWidth  - 10) x = clientX - size.w - offset;
-  if (y + size.h > window.innerHeight - 10) y = clientY - size.h - offset;
+  if (y + size.h > bottomLimit) y = clientY - size.h - offset;
+  if (y < 10) y = 10;
 
   tooltip.style.left = x + "px";
   tooltip.style.top  = y + "px";

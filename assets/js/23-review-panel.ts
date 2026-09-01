@@ -22,8 +22,15 @@
 // Review step is a different job (are the fields filled in), and it stays.
 // =============================================================================
 
-import { state, NODES, nodeById } from "./03-state";
+import { state, EDGES, NODES, nodeById } from "./03-state";
 import { escapeHtml, formatScalar } from "./04-utils";
+import {
+  EVIDENCE_STATUSES,
+  evidenceBadgeHtml,
+  evidenceMetadataOrDefault,
+  evidenceStatusLabel,
+  normaliseEvidenceStatus,
+} from "./07c-evidence";
 import { focusNode, scrollNodeIntoView } from "./09-graph-selection";
 import { setUiMode } from "./17-events";
 import {
@@ -41,7 +48,7 @@ import {
 import { downloadReviewLog } from "./25-review-rail";
 import type { LogRow } from "./24-review-record";
 import type { FindingGroup, ReviewSummary, Sweep, SweepException, SweepRow } from "./22-review";
-import type { Finding, FindingSeverity } from "./types";
+import type { EvidenceMetadata, EvidenceStatus, Finding, FindingSeverity } from "./types";
 import type { ReviewFixOperation, ReviewProposal, ReviewProposalPreview } from "./types";
 import {
   captureReviewModelSnapshot,
@@ -56,6 +63,7 @@ import { applyConfirmedReviewProposal } from "./22b-review-apply";
 // answer is on screen before the panel has finished opening. (Thirty-three
 // boxes on a ninety-box map came in under a tenth of a second.)
 const SWEEP_AUTORUN_LIMIT = 60;
+const EVIDENCE_PREVIEW_LIMIT = 100;
 
 // "The user asked for the sweep on a map this big" — stamped with the map it was
 // asked about, not a bare flag. A flag would carry the permission across a map
@@ -70,6 +78,8 @@ let pinnedIssueKey: string | null = null;
 let pinnedIssueFallback: Finding | null = null;
 let pinnedIssueExpanded = false;
 let resolvedIssueLabel: string | null = null;
+let evidenceStatusFilter: EvidenceStatus | "all" = "all";
+let evidenceVisibleLimit = EVIDENCE_PREVIEW_LIMIT;
 const selectedProposalIdentifierByIssueKey = new Map<string, string>();
 const editedProposalByIssueKey = new Map<string, ReviewProposal>();
 
@@ -155,10 +165,10 @@ export function toggleReview(): void {
   else openReview();
 }
 
-// ───── The header button ──────────────────────────────────────────────────
+// ───── The map-health signal ──────────────────────────────────────────────
 // The count is the point. A panel you have to remember to open is a panel
 // nobody opens, and the six-second toast this replaces proved it — so the
-// number rides in the header, where it is visible without being asked for.
+// number rides on the map, where it is visible without being asked for.
 // Counted in CAUSES, not findings: seventeen would be a lie about how much
 // work there is.
 export function syncReviewButton(): void {
@@ -242,13 +252,115 @@ export function renderReview(): void {
 
   html += '<div class="review-body">';
   html +=   '<div class="review-column">' + renderIssuesSection(summary) +
-            renderFlaggedSection() + '</div>';
+            renderFlaggedSection() + renderEvidenceSection() + '</div>';
   html +=   '<div class="review-column">' + renderInputsSection() +
             renderCoverageSection() + '</div>';
   html += '</div>';
 
   stage.innerHTML = html;
-  syncReviewToolbarActions();
+}
+
+export interface ReviewEvidenceItem {
+  id: string;
+  kind: "link" | "formula";
+  label: string;
+  detail: string;
+  boxId: string;
+  edgeId?: string;
+  metadata: EvidenceMetadata;
+}
+
+/** Evidence is inventory, not an error list: no status contributes to the
+ * Review badge or changes a calculation. */
+export function reviewEvidenceItems(): ReviewEvidenceItem[] {
+  const items: ReviewEvidenceItem[] = [];
+  for (const edge of EDGES) {
+    const source = nodeById[edge.from];
+    const target = nodeById[edge.to];
+    items.push({
+      id: "link:" + edge.from + ":" + edge.to + ":" + (edge.id || ""),
+      kind: "link",
+      label: (source?.label || edge.from) + " → " + (target?.label || edge.to),
+      detail: "Evidence for this causal relationship",
+      // Link provenance is authored from the source box's outgoing-link list,
+      // so Review must return the reader there rather than to the target.
+      boxId: edge.from,
+      edgeId: edge.id,
+      metadata: evidenceMetadataOrDefault(edge.evidence),
+    });
+  }
+  for (const node of NODES) {
+    const formulaEvidence = evidenceMetadataOrDefault(node.formulaEvidence);
+    const hasRecordedFormulaEvidence = formulaEvidence.status !== "unspecified" ||
+      !!formulaEvidence.rationale || !!formulaEvidence.source || !!formulaEvidence.lastReviewed;
+    // Let authors record the provenance decision before the expression is
+    // ready. Truly empty Unspecified metadata remains out of the inventory;
+    // anything somebody deliberately recorded must remain findable.
+    if (!node.formula && !hasRecordedFormulaEvidence) continue;
+    items.push({
+      id: "formula:" + node.id,
+      kind: "formula",
+      label: node.label,
+      detail: node.formula || "Formula not set",
+      boxId: node.id,
+      metadata: formulaEvidence,
+    });
+  }
+  return items;
+}
+
+export function renderEvidenceSection(): string {
+  const allItems = reviewEvidenceItems();
+  if (!allItems.length) return "";
+  const matchingItems = evidenceStatusFilter === "all"
+    ? allItems
+    : allItems.filter(item => normaliseEvidenceStatus(item.metadata.status) === evidenceStatusFilter);
+  const visibleItems = matchingItems.slice(0, evidenceVisibleLimit);
+
+  let html = '<div class="review-section-head review-evidence-head">';
+  html += '<span class="review-section-title">Evidence provenance</span>';
+  html += '<span class="review-section-count">' + allItems.length + '</span></div>';
+  html += '<div class="review-hint">The status of each causal link and formula. These are informational records: they do not change the model\'s calculations.</div>';
+  html += '<label class="review-evidence-filter"><span>Show</span><select id="review-evidence-filter">';
+  html += '<option value="all"' + (evidenceStatusFilter === "all" ? " selected" : "") + '>All statuses</option>';
+  for (const status of EVIDENCE_STATUSES) {
+    html += '<option value="' + status + '"' + (evidenceStatusFilter === status ? " selected" : "") + '>' +
+      escapeHtml(evidenceStatusLabel(status)) + '</option>';
+  }
+  html += '</select></label>';
+
+  if (!matchingItems.length) {
+    html += '<div class="review-empty"><b>No matching evidence records.</b> Choose another status to see the rest.</div>';
+    return html;
+  }
+  html += '<div class="review-evidence-list">';
+  for (const item of visibleItems) {
+    html += '<div class="review-evidence-item" data-review-box="' + escapeHtml(item.boxId) + '"' +
+      (item.edgeId ? ' data-review-evidence-edge="' + escapeHtml(item.edgeId) + '"' : "") + '>';
+    html += '<div class="review-evidence-item-head"><span class="review-evidence-kind">' +
+      (item.kind === "formula" ? "Formula" : "Causal link") + '</span>' +
+      evidenceBadgeHtml(item.metadata) + '</div>';
+    html += '<div class="review-evidence-label">' + escapeHtml(item.label) + '</div>';
+    html += '<code class="review-evidence-detail">' + escapeHtml(item.detail) + '</code>';
+    if (item.metadata.rationale) {
+      html += '<div class="review-evidence-meta"><b>Rationale</b><span>' + escapeHtml(item.metadata.rationale) + '</span></div>';
+    }
+    if (item.metadata.source) {
+      html += '<div class="review-evidence-meta"><b>Source</b><span>' + escapeHtml(item.metadata.source) + '</span></div>';
+    }
+    if (item.metadata.lastReviewed) {
+      html += '<div class="review-evidence-meta"><b>Last reviewed</b><span>' + escapeHtml(item.metadata.lastReviewed) + '</span></div>';
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+  if (visibleItems.length < matchingItems.length) {
+    const remainingItemCount = matchingItems.length - visibleItems.length;
+    const nextBatchCount = Math.min(EVIDENCE_PREVIEW_LIMIT, remainingItemCount);
+    html += '<button class="review-fold-toggle" id="review-evidence-more">Show ' +
+      nextBatchCount + ' more · ' + remainingItemCount + ' remaining</button>';
+  }
+  return html;
 }
 
 // Counted in CARDS and in CONSEQUENCES, never in findings. One box can be wrong
@@ -483,14 +595,6 @@ function currentReviewFinding(): Finding | undefined {
     Number(!!fixableFindingInGroup(right, snapshot)) - Number(!!fixableFindingInGroup(left, snapshot)),
   )[0];
   return firstGroup ? fixableFindingInGroup(firstGroup, snapshot) || firstGroup.causes[0] : undefined;
-}
-
-function syncReviewToolbarActions(): void {
-  const finding = currentReviewFinding();
-  const nextButton = document.getElementById("toolbar-review-next") as HTMLButtonElement | null;
-  const openMapButton = document.getElementById("toolbar-review-open-map") as HTMLButtonElement | null;
-  if (nextButton) nextButton.disabled = !finding;
-  if (openMapButton) openMapButton.disabled = !finding || !finding.boxId;
 }
 
 function openFindingOnMap(finding: Finding): void {
@@ -849,7 +953,7 @@ function renderCoverageSection(): string {
   }
 
   // Taking the record out of the app. Offered here, beside the coverage it
-  // reports on, as well as in File ▸ Export — a log you can only read on the
+  // reports on, as well as in Export — a log you can only read on the
   // screen it was made on is not much of a record, and this is the point in the
   // panel where somebody is already thinking about how far the review has got.
   html += '<button class="review-fold-toggle" id="review-export-log" ' +
@@ -919,30 +1023,6 @@ export function initReviewStage(): void {
         renderPinnedIssueBanner();
       }
     });
-  }
-
-  const toolbarNextIssueButton = document.getElementById("toolbar-review-next");
-  if (toolbarNextIssueButton && !toolbarNextIssueButton.dataset.wired) {
-    toolbarNextIssueButton.dataset.wired = "1";
-    toolbarNextIssueButton.addEventListener("click", () => {
-      resolvedIssueLabel = null;
-      openNextReviewIssue();
-    });
-  }
-
-  const toolbarOpenMapButton = document.getElementById("toolbar-review-open-map");
-  if (toolbarOpenMapButton && !toolbarOpenMapButton.dataset.wired) {
-    toolbarOpenMapButton.dataset.wired = "1";
-    toolbarOpenMapButton.addEventListener("click", () => {
-      const finding = currentReviewFinding();
-      if (finding) openFindingOnMap(finding);
-    });
-  }
-
-  const reviewExitButton = document.getElementById("review-exit-button");
-  if (reviewExitButton && !reviewExitButton.dataset.wired) {
-    reviewExitButton.dataset.wired = "1";
-    reviewExitButton.addEventListener("click", closeReview);
   }
 
   const stage = stageEl();
@@ -1026,6 +1106,26 @@ export function initReviewStage(): void {
     if (target.closest("#review-log-toggle")) {
       logOpen = !logOpen;
       renderReview();
+      return;
+    }
+
+    if (target.closest("#review-evidence-more")) {
+      evidenceVisibleLimit += EVIDENCE_PREVIEW_LIMIT;
+      renderReview();
+      return;
+    }
+
+    const evidenceLink = target.closest("[data-review-evidence-edge]") as HTMLElement | null;
+    if (evidenceLink) {
+      const edgeId = evidenceLink.getAttribute("data-review-evidence-edge")!;
+      const sourceBoxId = evidenceLink.getAttribute("data-review-box")!;
+      closeReview();
+      setUiMode("edit");
+      state.canvasEdit.openEdgeId = edgeId;
+      if (nodeById[sourceBoxId]) {
+        focusNode(sourceBoxId);
+        scrollNodeIntoView(sourceBoxId);
+      }
       return;
     }
 
@@ -1130,6 +1230,15 @@ export function initReviewStage(): void {
 
   stage.addEventListener("change", event => {
     const target = event.target as HTMLElement;
+    if (target.id === "review-evidence-filter") {
+      const filterValue = (target as HTMLSelectElement).value;
+      evidenceStatusFilter = filterValue === "all"
+        ? "all"
+        : normaliseEvidenceStatus(filterValue);
+      evidenceVisibleLimit = EVIDENCE_PREVIEW_LIMIT;
+      renderReview();
+      return;
+    }
     const operationIndexText = target.getAttribute && target.getAttribute("data-review-operation");
     const proposalIssueKey = target.getAttribute && target.getAttribute("data-review-issue-key");
     if (operationIndexText !== null && proposalIssueKey) {

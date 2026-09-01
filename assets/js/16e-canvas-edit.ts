@@ -38,7 +38,16 @@
 // Edge / node clone helpers (cloneEdgeForUndo, cloneNodeForUndo) live in 04-utils.js.
 // =============================================================================
 
-import type { GraphNode, Edge, EffectKind } from "./types";
+import type {
+  CategoryMap,
+  Edge,
+  EffectKind,
+  ElasticityDefaults,
+  GraphNode,
+  Param,
+  Stage,
+  Stream,
+} from "./types";
 import {
   state,
   STREAMS,
@@ -417,22 +426,38 @@ export function initCanvasEdit(): void {
 // Boot the app with an empty 3×3 starter grid. Called from 18-main.js when
 // there is no saved CSV to restore. The user can immediately start clicking
 // cells to add nodes — no drop-zone overlay, no wizard needed.
-export function bootEmptyStateGrid(): void {
-  setStreams([
+export interface EmptyMapGridSnapshot {
+  streams: Stream[];
+  stages: Stage[];
+  categories: CategoryMap;
+  params: Param[];
+  defaultElasticityByEffect: ElasticityDefaults;
+}
+
+export function bootEmptyStateGrid(snapshot?: EmptyMapGridSnapshot): void {
+  const streams = snapshot?.streams || [
     { id: "row_1", label: "Row 1", short: "R1", color: STREAM_COLOR_PALETTE[0] },
     { id: "row_2", label: "Row 2", short: "R2", color: STREAM_COLOR_PALETTE[1] },
     { id: "row_3", label: "Row 3", short: "R3", color: STREAM_COLOR_PALETTE[2] },
-  ]);
-  setStages([
+  ];
+  const stages = snapshot?.stages || [
     { id: "stage_1", label: "Column 1" },
     { id: "stage_2", label: "Column 2" },
     { id: "stage_3", label: "Column 3" },
-  ]);
-  setCategories({});
+  ];
+  const categories: CategoryMap = {};
+  for (const [identifier, category] of Object.entries(snapshot?.categories || {})) {
+    categories[identifier] = { ...category };
+  }
+  setStreams(streams.map(stream => ({ ...stream })));
+  setStages(stages.map(stage => ({ ...stage })));
+  setCategories(categories);
   setNodes([]);
   setEdges([]);
-  setParams([]);
-  setDefaultElasticityByEffect({ enables: 0.30, increases: 0.25, decreases: -0.25 });
+  setParams((snapshot?.params || []).map(parameter => ({ ...parameter })));
+  setDefaultElasticityByEffect(snapshot
+    ? { ...snapshot.defaultElasticityByEffect }
+    : { enables: 0.30, increases: 0.25, decreases: -0.25 });
 
   state.dataLoaded = true;
   // A new map has nothing wrong with it yet, and nothing to sweep. Both the

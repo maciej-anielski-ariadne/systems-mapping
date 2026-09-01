@@ -400,15 +400,16 @@ export function updateSimScaleNote(): void {
 // by recalculating values over and over until they stop changing ("converge").
 // If a loop amplifies itself each time round — its "gain" is 1 or more (see
 // docs/GLOSSARY.md) — the values never settle and grow without limit, so the
-// solver gives up and reports `converged: false`. We cap those values so the UI
-// doesn't show infinity, but they shouldn't be trusted. Dragging a slider is the
+// solver gives up and reports `converged: false`. Finite values from the final
+// allowed sweep remain visible, while non-finite values receive the engine's
+// fallback; neither should be trusted. Dragging a slider is the
 // most likely way a user pushes a loop into that runaway state, so we surface
 // the warning right here, inline.
 export function updateSimSolverBadge(): void {
   const badge = document.getElementById("sim-solver-badge");
   if (!badge) return;
   if (state.solverStatus && !state.solverStatus.converged) {
-    badge.textContent = "⚠ A feedback loop did not settle — values capped. Lower the strength on the loop's links.";
+    badge.textContent = "⚠ A feedback loop did not settle — values may be unstable. Lower the strength on the loop's links.";
     badge.style.display = "block";
   } else {
     badge.style.display = "none";
@@ -515,11 +516,10 @@ export function toggleSimulationMode(): void {
   if (!state.simulationMode && state.uiMode === "edit") setUiMode("read");
   state.simulationMode = !state.simulationMode;
 
-  const button = document.getElementById("sim-toggle-button");
-  if (button) {
-    button.classList.toggle("active", state.simulationMode);
-    button.textContent = state.simulationMode ? "Exit sim" : "Simulate";
-  }
+  document.querySelectorAll<HTMLElement>(".simulation-toggle-trigger").forEach(simulationToggleButton => {
+    simulationToggleButton.classList.toggle("active", state.simulationMode);
+    simulationToggleButton.textContent = state.simulationMode ? "Exit simulation" : "Simulate";
+  });
 
   // The sliders ARE the left panel, so entering simulation has to bring it
   // out: pinned open while editing (leaving the pin choice alone on exit),
@@ -543,14 +543,4 @@ export function toggleSimulationMode(): void {
   render();
   renderDetailPanel();
   saveUiStateToStorage();
-}
-
-const toolbarSimulationResetButton = document.getElementById("toolbar-sim-reset");
-if (toolbarSimulationResetButton) toolbarSimulationResetButton.addEventListener("click", resetSimulation);
-
-const simulationExitButton = document.getElementById("simulation-exit-button");
-if (simulationExitButton) {
-  simulationExitButton.addEventListener("click", () => {
-    if (state.simulationMode) toggleSimulationMode();
-  });
 }

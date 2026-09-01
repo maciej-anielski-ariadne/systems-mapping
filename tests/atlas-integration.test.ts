@@ -101,24 +101,22 @@ describe("the way in", () => {
   });
 });
 
-// The atlas was reachable from exactly one control, in one panel, in one mode.
-// A feature nobody can find is a feature nobody has. These pin the three ways
-// in — and, just as importantly, that all three are shut while editing, so the
-// separation of the modes is not quietly undone by the way into a reading tool.
+// Atlas starts from the selected box, so its entry belongs with that box. Once
+// open, changing the start and leaving Atlas belong to the Atlas surface.
 describe("the ways in", () => {
-  it("the header button opens the atlas on the selected box", () => {
+  it("the selected-box action opens the atlas on that box", () => {
     loadDataFromCsv(sampleCsv);
     const start = firstInput();
     selectNode(start);
-    atlasButton().click();
+    renderDetailPanel();
+    (panel().querySelector("[data-action='open-atlas']") as HTMLButtonElement).click();
     expect(atlasIsOpen()).toBe(true);
     expect(state.atlas!.startId).toBe(start);
   });
 
-  it("the header button changes the starting box and the contextual exit closes Atlas", () => {
+  it("the Atlas surface changes the starting box and closes itself", () => {
     loadDataFromCsv(sampleCsv);
-    selectNode(firstInput());
-    atlasButton().click();
+    openAtlas(firstInput());
     atlasButton().click();
     expect(atlasIsOpen()).toBe(true);
     expect(atlasMenu().hidden).toBe(false);
@@ -126,14 +124,15 @@ describe("the ways in", () => {
     expect(atlasIsOpen()).toBe(false);
   });
 
-  it("with nothing selected it offers the boxes the most of the map hangs off", () => {
+  it("offers high-reach boxes when changing the Atlas start", () => {
     loadDataFromCsv(sampleCsv);
+    openAtlas(firstInput());
     atlasButton().click();
 
     expect(atlasMenu().hidden).toBe(false);
     const picks = [...atlasMenu().querySelectorAll("[data-atlas-start]")];
     expect(picks.length).toBeGreaterThan(0);
-    expect(atlasIsOpen()).toBe(false);   // a list, not a guess
+    expect(atlasIsOpen()).toBe(true);
 
     // Ranked by how much lies downstream, biggest first.
     const reach = atlasStartCandidates().map(c => c.reach);
@@ -147,8 +146,7 @@ describe("the ways in", () => {
   it("keeps Simulation active while Atlas opens and closes", () => {
     loadDataFromCsv(sampleCsv);
     if (!state.simulationMode) toggleSimulationMode();
-    selectNode(firstInput());
-    atlasButton().click();
+    openAtlas(firstInput());
     expect(atlasIsOpen()).toBe(true);
     expect(state.simulationMode).toBe(true);
 
@@ -160,6 +158,7 @@ describe("the ways in", () => {
 
   it("picking from that list opens the atlas there", () => {
     loadDataFromCsv(sampleCsv);
+    openAtlas(firstInput());
     atlasButton().click();
     const pick = atlasMenu().querySelector("[data-atlas-start]") as HTMLElement;
     pick.click();
@@ -187,10 +186,6 @@ describe("the ways in", () => {
     const start = firstInput();
     selectNode(start);
     setUiMode("edit");
-
-    // The header control is hidden by CSS, so what is pinned here is the class
-    // that hides it — the markup's half of the bargain.
-    expect(atlasButton().closest(".read-only")).not.toBeNull();
 
     renderDetailPanel();
     expect(panel().querySelector("[data-action='open-atlas']")).toBeNull();
@@ -1171,6 +1166,8 @@ describe("feedback", () => {
     const speedSelect = animationControls.querySelector<HTMLSelectElement>("[data-loop-animation-speed]")!;
     const scrubber = animationControls.querySelector<HTMLInputElement>("[data-loop-animation-scrub]")!;
     const status = animationControls.querySelector<HTMLOutputElement>("#atlas-loop-animation-status")!;
+    const atlasSvg = document.querySelector("#atlas-stage svg.atlas") as SVGSVGElement;
+    const stableWheelFrame = atlasSvg.getAttribute("viewBox");
     expect(animationControls.hidden).toBe(false);
     expect(scrubber.max).toBe("18");
     expect(toggleButton.textContent).toBe("Pause");
@@ -1188,6 +1185,13 @@ describe("feedback", () => {
     expect(halfwayNodes).toBeLessThanOrEqual(10);
     expect(document.querySelectorAll("#atlas-stage g.n.focus .bl")).toHaveLength(halfwayNodes);
     expect(status.textContent).toContain("Box 10 of 18");
+    expect(atlasSvg.getAttribute("viewBox")).toBe(stableWheelFrame);
+    const halfwayLabelPositions = new Map(
+      [...atlasSvg.querySelectorAll<SVGTextElement>("g.n.focus .bl")].map(label => [
+        label.getAttribute("aria-label"),
+        `${label.getAttribute("x")},${label.getAttribute("y")}`,
+      ]),
+    );
 
     const pathwayRow = panel().querySelector("[data-fork]") as HTMLButtonElement;
     pathwayRow.click();
@@ -1203,13 +1207,34 @@ describe("feedback", () => {
     expect(document.querySelectorAll("#atlas-stage g.n.focus .bl")).toHaveLength(18);
     expect(status.textContent).toContain("Complete · 18 boxes");
     expect(toggleButton.textContent).toBe("Replay");
+    expect(atlasSvg.getAttribute("viewBox")).toBe(stableWheelFrame);
+    for (const label of atlasSvg.querySelectorAll<SVGTextElement>("g.n.focus .bl")) {
+      const earlierPosition = halfwayLabelPositions.get(label.getAttribute("aria-label"));
+      if (earlierPosition) {
+        expect(`${label.getAttribute("x")},${label.getAttribute("y")}`).toBe(earlierPosition);
+      }
+    }
   });
 
   it("keeps automatic motion off while reduced motion is enabled", () => {
     const originalMatchMedia = globalThis.matchMedia;
+    const originalSvgBoundingClientRect = SVGSVGElement.prototype.getBoundingClientRect;
+    let testViewportWidth = 800;
+    let testViewportHeight = 900;
     Object.defineProperty(globalThis, "matchMedia", {
       configurable: true,
       value: (() => ({ matches: true })) as unknown as typeof globalThis.matchMedia,
+    });
+    SVGSVGElement.prototype.getBoundingClientRect = () => ({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: testViewportWidth,
+      bottom: testViewportHeight,
+      width: testViewportWidth,
+      height: testViewportHeight,
+      toJSON: () => ({}),
     });
     try {
       loadDataFromCsv(borderForceCsv);
@@ -1232,6 +1257,61 @@ describe("feedback", () => {
       expect(scrubber.value).toBe(scrubber.max);
       expect(document.querySelectorAll("#atlas-stage g.n.focus .nd.on")).toHaveLength(18);
 
+      const atlasSvg = document.querySelector("#atlas-stage svg.atlas") as SVGSVGElement;
+      const [viewX, viewY, viewWidth, viewHeight] = atlasSvg.getAttribute("viewBox")!
+        .split(/\s+/).map(Number);
+      const horizontalScale = 800 / viewWidth;
+      const verticalScale = 900 / viewHeight;
+      const labels = [...atlasSvg.querySelectorAll<SVGTextElement>("g.n.focus .bl")];
+      const verticalIntervalsBySide = new Map<string, Array<{ top: number; bottom: number }>>();
+      expect(labels).toHaveLength(18);
+      for (const label of labels) {
+        const identifier = label.dataset.box!;
+        expect(label.getAttribute("aria-label")).toBe(nodeById[identifier].label);
+        const screenX = (Number(label.getAttribute("x")) - viewX) * horizontalScale;
+        const screenY = (Number(label.getAttribute("y")) - viewY) * verticalScale;
+        const lineWidths = [...label.querySelectorAll("tspan")]
+          .map(line => (line.textContent || "").length * 7);
+        const maximumLineWidth = Math.max(...lineWidths, 0);
+        const halfTextHeight = lineWidths.length * 6.5;
+        const textAnchor = label.getAttribute("text-anchor");
+        const leftEdge = textAnchor === "start"
+          ? screenX
+          : textAnchor === "end"
+            ? screenX - maximumLineWidth
+            : screenX - maximumLineWidth / 2;
+        const rightEdge = textAnchor === "start"
+          ? screenX + maximumLineWidth
+          : textAnchor === "end"
+            ? screenX
+            : screenX + maximumLineWidth / 2;
+        expect(leftEdge).toBeGreaterThanOrEqual(0);
+        expect(rightEdge).toBeLessThanOrEqual(800);
+        expect(screenY - halfTextHeight).toBeGreaterThanOrEqual(0);
+        expect(screenY + halfTextHeight).toBeLessThanOrEqual(900);
+        const sideIntervals = verticalIntervalsBySide.get(textAnchor || "") || [];
+        sideIntervals.push({
+          top: screenY - halfTextHeight,
+          bottom: screenY + halfTextHeight,
+        });
+        verticalIntervalsBySide.set(textAnchor || "", sideIntervals);
+      }
+      for (const sideIntervals of verticalIntervalsBySide.values()) {
+        sideIntervals.sort((firstInterval, secondInterval) => firstInterval.top - secondInterval.top);
+        for (let intervalIndex = 1; intervalIndex < sideIntervals.length; intervalIndex++) {
+          expect(sideIntervals[intervalIndex].top)
+            .toBeGreaterThanOrEqual(sideIntervals[intervalIndex - 1].bottom);
+        }
+      }
+
+      const wideViewBox = atlasSvg.getAttribute("viewBox");
+      testViewportWidth = 600;
+      testViewportHeight = 900;
+      window.dispatchEvent(new Event("resize"));
+      expect(atlasSvg.getAttribute("viewBox")).not.toBe(wideViewBox);
+      expect(atlasSvg.querySelectorAll("g.n.focus .bl")).toHaveLength(18);
+      expect(toggleButton.textContent).toBe("Motion off");
+
       previousButton.click();
       expect(scrubber.value).toBe("17");
       expect(toggleButton.textContent).toBe("Motion off");
@@ -1240,6 +1320,60 @@ describe("feedback", () => {
         configurable: true,
         value: originalMatchMedia,
       });
+      SVGSVGElement.prototype.getBoundingClientRect = originalSvgBoundingClientRect;
+    }
+  });
+
+  it("restores a paused automatic tour after the feedback frame is resized", () => {
+    const originalMatchMedia = globalThis.matchMedia;
+    const originalSvgBoundingClientRect = SVGSVGElement.prototype.getBoundingClientRect;
+    let testViewportWidth = 800;
+    Object.defineProperty(globalThis, "matchMedia", {
+      configurable: true,
+      value: (() => ({ matches: true })) as unknown as typeof globalThis.matchMedia,
+    });
+    SVGSVGElement.prototype.getBoundingClientRect = () => ({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: testViewportWidth,
+      bottom: 900,
+      width: testViewportWidth,
+      height: 900,
+      toJSON: () => ({}),
+    });
+    try {
+      loadDataFromCsv(borderForceCsv);
+      const start = NODES.find(node => node.label === "Analyst capacity")!;
+      openAtlas(start.id);
+      const tangle = document.querySelector("#atlas-stage g.n[data-loop]") as SVGElement;
+      tangle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+
+      const status = document.getElementById("atlas-loop-animation-status")!;
+      const statusBeforeResize = status.textContent;
+      const labelsBeforeResize = [...document.querySelectorAll<SVGTextElement>(
+        "#atlas-stage g.n.focus .bl",
+      )].map(label => label.getAttribute("aria-label"));
+      const activeNodeCountBeforeResize = document.querySelectorAll(
+        "#atlas-stage g.n.focus .nd.on",
+      ).length;
+      expect(labelsBeforeResize.length).toBeGreaterThan(0);
+      expect(activeNodeCountBeforeResize).toBeGreaterThan(0);
+
+      testViewportWidth = 600;
+      window.dispatchEvent(new Event("resize"));
+      expect(status.textContent).toBe(statusBeforeResize);
+      expect([...document.querySelectorAll<SVGTextElement>("#atlas-stage g.n.focus .bl")]
+        .map(label => label.getAttribute("aria-label"))).toEqual(labelsBeforeResize);
+      expect(document.querySelectorAll("#atlas-stage g.n.focus .nd.on"))
+        .toHaveLength(activeNodeCountBeforeResize);
+    } finally {
+      Object.defineProperty(globalThis, "matchMedia", {
+        configurable: true,
+        value: originalMatchMedia,
+      });
+      SVGSVGElement.prototype.getBoundingClientRect = originalSvgBoundingClientRect;
     }
   });
 });

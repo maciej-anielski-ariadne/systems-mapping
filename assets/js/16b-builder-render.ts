@@ -19,6 +19,8 @@
 import { COMBINE_OPTIONS, DIRECTION_OPTIONS, EFFECT_OPTIONS } from "./02-config";
 import { state } from "./03-state";
 import { escapeHtml } from "./04-utils";
+import { renderCalculationChoiceGuide } from "./07b-calculation-guide";
+import { renderEvidenceEditor } from "./07c-evidence";
 import { scheduleBuilderSave } from "./04a-storage";
 import { setLazySelectPreparer, upgradeSelectsIn, upgradeSelectsLazilyIn } from "./04b-typeable-dropdown";
 import {
@@ -286,6 +288,10 @@ export function renderBuilder(): void {
     _virtualTable = null;   // its rows, and its scroll listener, are gone
     return;
   }
+  // The builder normally relies on its open class, but Learn and test hosts can
+  // park shared surfaces with the native hidden attribute. Opening the builder
+  // must make the targetable surface visible regardless of its prior owner.
+  overlay.hidden = false;
 
   // Preserve the table's scroll position across re-renders. A full innerHTML
   // replace below destroys the old .builder-step-scroll (scrollTop → 0). We
@@ -774,22 +780,9 @@ export function renderBuilderNodesStep(): string {
           'Tick <b>adjustable</b> to expose a slider in Simulation mode. ' +
           '<b>direction</b> sets outcome colouring on metric boxes (higher_better / lower_better).' +
           '</div>';
-  // The four calculation columns at the far right of the table are the opt-in
-  // half of the model — a map that leaves them blank behaves exactly as it did
-  // before they existed, so they get their own note rather than crowding the
-  // one above. Everything here is checked properly on "Apply to map"; the
-  // wizard only states the rules.
-  html += '<div class="builder-step-help">' +
-          '<b>Optional calculation rules</b> (last four columns, scroll right). ' +
-          '<b>combine</b> — how the links pointing INTO this box add up: ' +
-          '<i>multiplicative</i> (the default: effects compound), <i>additive</i> (effects add, so related ' +
-          'inputs don\'t overstate the result), or <i>min</i> (the weakest input gates the outcome). ' +
-          '<b>formula</b> — an expression in the boxes\' own units, e.g. <code>min(demand, capacity)</code>, ' +
-          'using box ids, constant ids from Step 6, <code>+ − * / ( )</code> and ' +
-          '<code>min / max / clamp / delay</code>. A formula <b>wins over combine</b>, and a box with an ' +
-          'adjustable slider ignores both. Every box a formula names must also have a link drawn from it. ' +
-          '<b>min / max</b> — hard limits in the box\'s own units (not multipliers), applied after the rule runs.' +
-          '</div>';
+  // The same choice guide lives in the everyday editor. Reusing its renderer
+  // keeps precedence and setup advice consistent across both authoring routes.
+  html += renderCalculationChoiceGuide();
 
   if (state.builder.streams.length === 0 || state.builder.stages.length === 0 || state.builder.categories.length === 0) {
     html += '<div class="builder-validation errors">' +
@@ -832,6 +825,7 @@ export function renderBuilderNodesStep(): string {
               sortableTh("nodes", "formula",  "Formula", ' style="width:200px"' +
                 ' data-tooltip="Expression in the boxes\' own units, e.g. min(demand, capacity). Beats combine,' +
                 ' and is ignored on a slider box. Every box id it names also needs a link drawn from that box."') +
+              '<th style="width:150px" data-tooltip="Evidence for the mathematical form and its parameter values. This never changes the calculation.">Formula evidence</th>' +
               sortableTh("nodes", "minValue", "Min",     ' style="width:80px"' +
                 ' data-tooltip="Hard lower limit in this box\'s own units (not a multiplier), applied after the rule runs."') +
               sortableTh("nodes", "maxValue", "Max",     ' style="width:80px"' +
@@ -840,9 +834,9 @@ export function renderBuilderNodesStep(): string {
             '</tr></thead><tbody>';
 
   if (state.builder.nodes.length === 0) {
-    html += tableEmptyRow(17, 'No boxes yet. Click "+ Add box" to create one.');
+    html += tableEmptyRow(18, 'No boxes yet. Click "+ Add box" to create one.');
   } else {
-    html += renderBuilderRows("nodes", sortedBuilderIndices("nodes"), 17, (i) => {
+    html += renderBuilderRows("nodes", sortedBuilderIndices("nodes"), 18, (i) => {
       const n = state.builder.nodes[i];
       const idInvalid       = !n.id || v.dupNodes.has(n.id) || v.invalidIdentifiers.has(n.id) ? ' invalid' : '';
       const streamInvalid   = !v.streamIds.has(n.stream)      ? ' invalid' : '';
@@ -875,6 +869,12 @@ export function renderBuilderNodesStep(): string {
                   ).join("") +
                 '</select></td>';
       row +=   '<td><input type="text" data-section="nodes" data-field="formula" data-index="' + i + '" value="' + escapeHtml(n.formula) + '" placeholder="min(demand, capacity)" /></td>';
+      row +=   '<td class="builder-evidence-cell">' + renderEvidenceEditor({
+                  metadata: n.formulaEvidence,
+                  scope: "formula",
+                  builderSection: "nodes",
+                  builderIndex: i,
+                }) + '</td>';
       row +=   '<td><input type="number" step="any" data-section="nodes" data-field="minValue" data-index="' + i + '" value="' + escapeHtml(n.minValue === undefined ? "" : n.minValue) + '" placeholder="no limit" /></td>';
       row +=   '<td><input type="number" step="any" data-section="nodes" data-field="maxValue" data-index="' + i + '" value="' + escapeHtml(n.maxValue === undefined ? "" : n.maxValue) + '" placeholder="no limit" /></td>';
       row +=   rowActionsHtml("nodes", i);
@@ -903,9 +903,9 @@ export function renderBuilderEdgesStep(): string {
   // .builder-edges-config in 11-builder.css.
   html += '<div class="builder-edges-config">';
   html +=   '<div class="builder-step-help">' +
-              '<b>Defaults below</b> — used when the strength column is left blank. ' +
-              'Strength = % change in target value per % change in source value. ' +
-              'For <i>decreases</i> effects the default is negative.' +
+              '<b>Use Strength for proportional effects.</b> It is the target % change per source % change; ' +
+              'leave it blank to use the default below. For <i>decreases</i> effects the default is negative. ' +
+              'If the target has a formula, the arrow remains visible but its Strength is ignored.' +
             '</div>';
   html +=   '<div class="builder-defaults">' +
               '<label>elasticity_enables<input type="number" step="any" data-default="enables"   value="' + state.builder.defaults.enables   + '" /></label>' +
@@ -931,15 +931,16 @@ export function renderBuilderEdgesStep(): string {
               sortableTh("edges", "to",          "To",          ' style="width:200px"') +
               sortableTh("edges", "effect",      "Effect",      ' style="width:130px"') +
               sortableTh("edges", "elasticity",  "Strength",  ' style="width:110px"') +
+              '<th style="width:150px" data-tooltip="Evidence that this causal relationship exists. This never changes the calculation.">Evidence</th>' +
               '<th style="width:96px">Style</th>' +
               sortableTh("edges", "description", "Description", "") +
               '<th style="width:90px"></th>' +
             '</tr></thead><tbody>';
 
   if (state.builder.edges.length === 0) {
-    html += tableEmptyRow(8, 'No links yet. Click "+ Add link".');
+    html += tableEmptyRow(9, 'No links yet. Click "+ Add link".');
   } else {
-    html += renderBuilderRows("edges", sortedBuilderIndices("edges"), 8, (i) => {
+    html += renderBuilderRows("edges", sortedBuilderIndices("edges"), 9, (i) => {
       const e = state.builder.edges[i];
       const fromInvalid = !v.nodeIds.has(e.from) ? ' invalid' : '';
       const toInvalid   = !v.nodeIds.has(e.to)   ? ' invalid' : '';
@@ -954,6 +955,12 @@ export function renderBuilderEdgesStep(): string {
                   ).join("") +
                 '</select></td>';
       row +=   '<td><input type="number" step="any" data-section="edges" data-field="elasticity" data-index="' + i + '" value="' + escapeHtml(e.elasticity === undefined ? "" : e.elasticity) + '" placeholder="(default)" /></td>';
+      row +=   '<td class="builder-evidence-cell">' + renderEvidenceEditor({
+                  metadata: e.evidence,
+                  scope: "edge",
+                  builderSection: "edges",
+                  builderIndex: i,
+                }) + '</td>';
       row +=   '<td><select data-section="edges" data-field="style" data-index="' + i + '">' +
                   '<option value="solid"'  + (e.style === "dashed" ? "" : " selected") + '>Solid</option>' +
                   '<option value="dashed"' + (e.style === "dashed" ? " selected" : "") + '>Dashed</option>' +

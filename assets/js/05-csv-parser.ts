@@ -1,4 +1,5 @@
 import { parseStrictFiniteNumber } from "./05b-input-validation";
+import type { EvidenceStatus } from "./types";
 
 // =============================================================================
 // CSV PARSER — multi-section format with `# SECTION: <name>` delimiters
@@ -187,4 +188,21 @@ export function parseBooleanCell(raw: unknown): boolean {
 // Interpret a CSV cell as a number. Returns `undefined` if empty / not a number.
 export function parseNumericCell(raw: unknown): number | undefined {
   return parseStrictFiniteNumber(raw);
+}
+
+// Evidence status is deliberately informational: an absent or unrecognised
+// value cannot affect loading or simulation. Normalise recognised spelling to
+// the canonical stored form and make every legacy blank explicitly
+// "unspecified" in the runtime model.
+const EVIDENCE_STATUS_BY_LOWERCASE: Record<string, EvidenceStatus> = {
+  unspecified: "unspecified",
+  hypothesis: "hypothesis",
+  supported: "supported",
+  calibrated: "calibrated",
+  validated: "validated",
+};
+
+export function parseEvidenceStatusCell(raw: unknown): EvidenceStatus {
+  if (raw === undefined || raw === null) return "unspecified";
+  return EVIDENCE_STATUS_BY_LOWERCASE[String(raw).trim().toLowerCase()] || "unspecified";
 }

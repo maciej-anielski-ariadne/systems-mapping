@@ -182,6 +182,37 @@
 
 .builder-step-help b { color: var(--text-secondary); }
 
+/* Shared with the direct box editor: one source of truth for deciding between
+ * a scenario multiplier, proportional link strengths, and an explicit formula. */
+.builder-step-static > .calculation-choice-guide {
+  max-width: 760px;
+  margin-bottom: var(--section-gap);
+  padding: var(--pad-card);
+  background: var(--bg-mid);
+  border-radius: var(--radius-surface);
+  color: var(--text-tertiary);
+  font-size: var(--fs-body);
+  line-height: 1.5;
+}
+
+.builder-step-static > .calculation-choice-guide summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-weight: var(--fw-semibold);
+}
+
+.builder-step-static > .calculation-choice-guide .calculation-choice-guide-body { padding-top: var(--space-2); }
+.builder-step-static > .calculation-choice-guide p { margin: 0 0 var(--space-2); }
+.builder-step-static > .calculation-choice-guide .calculation-choice-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: var(--space-3);
+  margin: var(--space-2) 0;
+}
+.builder-step-static > .calculation-choice-guide .calculation-choice-options b,
+.builder-step-static > .calculation-choice-guide .calculation-choice-options span { display: block; }
+.builder-step-static > .calculation-choice-guide .calculation-choice-options b { color: var(--text-secondary); }
+
 /* ───── Form table (rows for streams / stages / categories / nodes / edges) ───── */
 .builder-table {
   width: 100%;
@@ -710,3 +741,9 @@
 .builder-bulk-input:focus,
 .builder-bulk-target:focus,
 .builder-defaults input:focus { background: var(--act-on); color: var(--text-primary); }
+.builder-evidence-cell {
+  min-width: 150px;
+  vertical-align: top;
+}
+.builder-evidence-cell .evidence-editor { margin: 0; }
+.builder-evidence-cell .evidence-editor-body { min-width: 240px; }

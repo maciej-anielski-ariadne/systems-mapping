@@ -41,4 +41,78 @@ describe("machine-verifiable documentation contracts", () => {
     expect(readme).toContain("npm run test:browser");
     expect(readme).toContain("dist/systems-map.html");
   });
+
+  it("keeps the scenario-led formula report honest about the shipped border model", () => {
+    const report = readProjectFile("docs/formula-modelling-guide.html");
+    expect(report).toContain("300 boxes");
+    expect(report).toContain("850 links");
+    expect(report).toContain("180</b><span>of those boxes actively use Additive");
+    expect(report).toContain("currently use formulas, Weakest link, constants or hard bounds");
+    expect(report).toContain("proposed modelling scenario");
+    expect(report).toContain("Analyst capacity is Adjustable");
+    expect(report).toContain("Those incoming Strengths do not calculate it");
+  });
+
+  it("documents formula precedence and every supported function in the report", () => {
+    const report = readProjectFile("docs/formula-modelling-guide.html");
+    expect(report).toContain("Adjustable scenario value → Formula → Combine / link strengths");
+    for (const functionName of ["min", "max", "clamp", "delay"]) {
+      expect(report).toContain(`<code>${functionName}`);
+    }
+    expect(report).toContain("previous solver pass—not last month");
+    expect(report).toContain("Its answer must equal the target’s starting value");
+  });
+
+  it("ties every formula-choice lesson to a worked neutral tutorial example", () => {
+    const report = readProjectFile("docs/formula-modelling-guide.html");
+    for (const tutorialBoxLabel of [
+      "Workshop readiness",
+      "People reached",
+      "Community confidence",
+      "Delivery capacity",
+      "Registrations",
+      "Registration share",
+      "Completed follow-ups",
+      "Unserved participant interest",
+      "Confidence feedback",
+    ]) {
+      expect(report).toContain(`<strong>${tutorialBoxLabel}</strong>`);
+    }
+    expect(report).toContain("no general <code>if/else</code>");
+    expect(report).toContain("Open <strong>Learn</strong> and start the first lesson");
+  });
+
+  it("separates causal evidence from formula evidence without gating calculations", () => {
+    const readme = readProjectFile("README.md");
+    const report = readProjectFile("docs/formula-modelling-guide.html");
+    const calculationDesign = readProjectFile("docs/CALCULATION-ENGINE-DESIGN.md");
+    const combinedDocumentation = [readme, report, calculationDesign].join("\n");
+
+    for (const evidenceStatus of [
+      "Unspecified", "Hypothesis", "Supported", "Calibrated", "Validated",
+    ]) {
+      expect(report).toContain(`<strong>${evidenceStatus}</strong>`);
+    }
+
+    for (const evidenceField of [
+      "formula_evidence_status",
+      "formula_evidence_rationale",
+      "formula_evidence_source",
+      "formula_evidence_last_reviewed",
+      "evidence_status",
+      "evidence_rationale",
+      "evidence_source",
+      "evidence_last_reviewed",
+    ]) {
+      expect(combinedDocumentation).toContain(evidenceField);
+    }
+
+    expect(combinedDocumentation).toContain("causal claim");
+    expect(combinedDocumentation).toContain("mathematical form and parameter values");
+    expect(combinedDocumentation).toContain("Calibrated or Validated formula");
+    expect(combinedDocumentation).toContain("Hypothesis link");
+    expect(combinedDocumentation).toContain("informational metadata only");
+    expect(combinedDocumentation).toContain("missing or unknown value loads as `unspecified`");
+    expect(combinedDocumentation).toContain("empirically fitted relationship");
+  });
 });

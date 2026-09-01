@@ -56,6 +56,7 @@ import "./22-review";
 import "./23-review-panel";
 import "./24-review-record";
 import "./25-review-rail";
+import "./26-tutorial";
 
 // ───── Named imports for the boot sequence ──────────────────────────────────
 import { state } from "./03-state";
@@ -73,6 +74,7 @@ import { applyUiMode } from "./17-events";
 import { initAtlasStage } from "./21-atlas-view";
 import { initReviewStage, syncReviewButton } from "./23-review-panel";
 import { initReviewRail } from "./25-review-rail";
+import { showFirstOpenTutorialWelcome } from "./26-tutorial";
 
 console.log("Ariadne Maps — canvas-edit ready");
 console.log(
@@ -136,3 +138,8 @@ if (savedBuilder) {
   Object.assign(state.builder, savedBuilder, { open: true });
   renderBuilder();
 }
+
+// A first-open choice is shown only when there is no saved map and this
+// version of the tutorial has never been completed or dismissed. The same
+// tour remains available later as the first lesson in Learn.
+showFirstOpenTutorialWelcome(restored);

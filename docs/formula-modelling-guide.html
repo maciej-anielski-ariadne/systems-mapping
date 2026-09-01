@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Choosing the maths for a causal map — Ariadne Maps</title>
+  <style>
+    :root {
+      --ink: #172033;
+      --muted: #5d6878;
+      --paper: #f6f4ef;
+      --surface: #ffffff;
+      --line: #d9d5ca;
+      --blue: #2457c5;
+      --blue-soft: #e9f0ff;
+      --teal: #0f766e;
+      --teal-soft: #e7f6f3;
+      --amber: #9a5a06;
+      --amber-soft: #fff4dc;
+      --red: #a33a36;
+      --red-soft: #fff0ee;
+      --shadow: 0 18px 50px rgba(38, 42, 51, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font: 16px/1.62 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    a { color: var(--blue); }
+    code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+    code { font-size: 0.92em; }
+    h1, h2, h3 { line-height: 1.15; letter-spacing: -0.025em; }
+    h1 { margin: 0; font-size: clamp(2.4rem, 6vw, 5.2rem); max-width: 12ch; }
+    h2 { margin: 0 0 1rem; font-size: clamp(1.8rem, 3vw, 2.7rem); }
+    h3 { margin: 0 0 0.55rem; font-size: 1.2rem; }
+    p { margin: 0 0 1rem; }
+
+    .hero {
+      padding: clamp(3rem, 8vw, 7rem) max(1.25rem, calc((100vw - 1180px) / 2));
+      background:
+        radial-gradient(circle at 88% 18%, rgba(36, 87, 197, 0.17), transparent 24rem),
+        linear-gradient(145deg, #14213a 0%, #1d3158 68%, #23436e 100%);
+      color: white;
+    }
+    .eyebrow { margin-bottom: 1rem; color: #a9c7ff; font-size: 0.78rem; font-weight: 800; letter-spacing: 0.15em; text-transform: uppercase; }
+    .standfirst { margin: 1.5rem 0 0; max-width: 64ch; color: #dbe7fb; font-size: clamp(1.05rem, 2vw, 1.3rem); }
+    .hero-meta { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 2rem; }
+    .hero-meta span { padding: 0.35rem 0.7rem; border: 1px solid rgba(255,255,255,0.22); border-radius: 999px; color: #dbe7fb; font-size: 0.84rem; }
+
+    .layout { display: grid; grid-template-columns: 250px minmax(0, 860px); gap: 4rem; max-width: 1180px; margin: 0 auto; padding: 3rem 1.25rem 6rem; }
+    nav { position: sticky; top: 1.25rem; align-self: start; padding: 1.1rem; background: rgba(255,255,255,0.72); border: 1px solid var(--line); border-radius: 14px; backdrop-filter: blur(12px); }
+    nav strong { display: block; margin-bottom: 0.65rem; font-size: 0.78rem; letter-spacing: 0.11em; text-transform: uppercase; }
+    nav a { display: block; padding: 0.32rem 0; color: var(--muted); text-decoration: none; font-size: 0.9rem; }
+    nav a:hover { color: var(--blue); }
+    main { min-width: 0; }
+    section { scroll-margin-top: 1rem; margin-bottom: 4.8rem; }
+
+    .notice, .callout { padding: 1.2rem 1.35rem; border-radius: 14px; }
+    .notice { margin-bottom: 2rem; background: var(--amber-soft); border-left: 5px solid var(--amber); }
+    .notice strong, .callout strong { color: inherit; }
+    .evidence-grid, .rule-grid, .formula-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+    .evidence-card, .rule-card, .formula-card { padding: 1.25rem; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
+    .evidence-card b { display: block; font-size: 1.75rem; line-height: 1; color: var(--blue); }
+    .evidence-card span { color: var(--muted); font-size: 0.88rem; }
+
+    .decision { counter-reset: decision; display: grid; gap: 0.8rem; }
+    .decision li { counter-increment: decision; display: grid; grid-template-columns: 2.2rem 1fr; gap: 0.9rem; padding: 1rem 1.1rem; list-style: none; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+    .decision li::before { content: counter(decision); display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: 50%; background: var(--blue); color: white; font-weight: 800; }
+    .decision b { display: block; }
+    .decision span { color: var(--muted); }
+
+    .tag { display: inline-block; margin-bottom: 0.8rem; padding: 0.25rem 0.55rem; border-radius: 999px; background: var(--blue-soft); color: var(--blue); font-size: 0.72rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+    .tag.proposed { background: var(--amber-soft); color: var(--amber); }
+    .why { color: var(--muted); }
+    .formula { margin: 0.85rem 0 1rem; padding: 0.85rem 1rem; overflow-x: auto; background: #182238; color: #e9f1ff; border-radius: 10px; font-size: 0.87rem; line-height: 1.55; white-space: pre-wrap; }
+    .setup { margin: 0.8rem 0 0; padding-left: 1.2rem; color: var(--muted); }
+    .setup li { margin: 0.35rem 0; }
+    .verdict { margin-top: 1rem; padding-top: 0.9rem; border-top: 1px solid var(--line); font-size: 0.9rem; }
+    .verdict b { color: var(--teal); }
+
+    .callout { margin: 1.3rem 0; background: var(--teal-soft); border-left: 5px solid var(--teal); }
+    .callout.warning { background: var(--red-soft); border-color: var(--red); }
+    .versus { display: grid; grid-template-columns: 1fr auto 1fr; gap: 1rem; align-items: stretch; margin: 1.5rem 0; }
+    .versus > div:not(.versus-mark) { padding: 1rem; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+    .versus-mark { align-self: center; color: var(--muted); font-weight: 800; }
+
+    table { width: 100%; border-collapse: collapse; background: var(--surface); border-radius: 14px; overflow: hidden; box-shadow: var(--shadow); }
+    th, td { padding: 0.85rem 1rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { background: #edf1f7; font-size: 0.78rem; letter-spacing: 0.07em; text-transform: uppercase; }
+    td { font-size: 0.92rem; }
+    tr:last-child td { border-bottom: 0; }
+    .checklist { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem 1.2rem; padding: 0; }
+    .checklist li { position: relative; padding: 0.9rem 1rem 0.9rem 2.6rem; list-style: none; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+    .checklist li::before { content: "✓"; position: absolute; left: 0.9rem; color: var(--teal); font-weight: 900; }
+    .footnote { color: var(--muted); font-size: 0.86rem; }
+
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; gap: 2rem; }
+      nav { position: static; columns: 2; }
+    }
+    @media (max-width: 650px) {
+      .evidence-grid, .rule-grid, .formula-grid, .checklist { grid-template-columns: 1fr; }
+      .versus { grid-template-columns: 1fr; }
+      .versus-mark { justify-self: center; }
+      nav { columns: 1; }
+      th:nth-child(3), td:nth-child(3) { display: none; }
+    }
+    @media print {
+      body { background: white; font-size: 10pt; }
+      .hero { padding: 2rem; background: white; color: black; border-bottom: 2px solid black; }
+      .hero .standfirst, .hero-meta span { color: #333; }
+      .layout { display: block; max-width: none; padding: 2rem; }
+      nav { display: none; }
+      section { break-inside: avoid; margin-bottom: 2rem; }
+      .evidence-card, .rule-card, .formula-card, table { box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="eyebrow">Ariadne Maps · modelling guide</div>
+    <h1>Choosing the maths for a causal map</h1>
+    <p class="standfirst">A scenario-led guide to link strengths, combine rules, explicit formulas and bounds—using the shipped 300-box Border Force map for context and the neutral tutorial map for worked, interactive examples.</p>
+    <div class="hero-meta"><span>300 boxes</span><span>850 links</span><span>Engine-verified syntax</span><span>Prepared 1 September 2026</span></div>
+  </header>
+
+  <div class="layout">
+    <nav aria-label="Report sections">
+      <strong>Contents</strong>
+      <a href="#evidence">What is in the model</a>
+      <a href="#evidence-status">Evidence status</a>
+      <a href="#decision">The decision in one minute</a>
+      <a href="#tutorial-lab">Tutorial formula lab</a>
+      <a href="#multipliers">Multipliers and strengths</a>
+      <a href="#combine">Combine rules</a>
+      <a href="#formulas">Formula patterns</a>
+      <a href="#syntax">Supported syntax</a>
+      <a href="#setup">Setup checklist</a>
+      <a href="#limitations">Limitations</a>
+    </nav>
+
+    <main>
+      <section id="evidence">
+        <h2>Start with what the model actually contains</h2>
+        <div class="notice"><strong>Scope:</strong> the Border Force map is illustrative. It is not operational intelligence, a forecast, or an assessment of current policy effectiveness. The scenarios below explain modelling choices; they do not claim empirical relationships.</div>
+        <div class="evidence-grid">
+          <div class="evidence-card"><b>250</b><span>boxes have at least one incoming link</span></div>
+          <div class="evidence-card"><b>180</b><span>of those boxes actively use Additive</span></div>
+          <div class="evidence-card"><b>10 + 60</b><span>actively use Standard + are Adjustable and pinned</span></div>
+          <div class="evidence-card"><b>0</b><span>currently use formulas, Weakest link, constants or hard bounds</span></div>
+        </div>
+        <p class="footnote">The other 50 boxes have no incoming link. The 60 Adjustable capability boxes may still have incoming arrows, but their scenario values are supplied directly, so those incoming Strengths are not calculated. Formula and Weakest-link scenarios are clearly marked as possible redesigns.</p>
+      </section>
+
+      <section id="evidence-status">
+        <h2>Two evidence questions, recorded separately</h2>
+        <p>A link and a formula can refer to the same interaction while making different claims. The <strong>link status</strong> records evidence for the causal claim—whether the source really affects the target in the stated direction. The <strong>formula status</strong> records evidence for the mathematical form and its parameter values—whether this equation, shape and calibration reproduce the relationship usefully.</p>
+        <div class="callout"><strong>These statuses are informational only.</strong> They communicate the author’s evidence assessment; they do not enable, disable, weight or otherwise change a calculation. Every syntactically valid active rule runs regardless of its status.</div>
+        <table>
+          <thead><tr><th>Status</th><th>For a link</th><th>For a formula</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Unspecified</strong></td><td>No causal-evidence assessment has been recorded.</td><td>No assessment of the mathematical form or parameters has been recorded.</td></tr>
+            <tr><td><strong>Hypothesis</strong></td><td>The causal direction is proposed for exploration and still needs support.</td><td>The equation or its parameters are a modelling hypothesis chosen for exploration.</td></tr>
+            <tr><td><strong>Supported</strong></td><td>Relevant evidence or domain reasoning supports the causal claim, without claiming full validation.</td><td>Evidence or domain reasoning supports the mathematical form or parameter choices, without claiming calibration or validation.</td></tr>
+            <tr><td><strong>Calibrated</strong></td><td>The relationship’s magnitude has been fitted or tuned to observations; that fit alone does not establish causality.</td><td>The mathematical form or parameter values have been fitted or tuned to observed data.</td></tr>
+            <tr><td><strong>Validated</strong></td><td>The causal claim has been assessed using the author’s stated validation design.</td><td>The form and parameters have been assessed against separate data, cases or another stated validation check.</td></tr>
+          </tbody>
+        </table>
+        <div class="notice"><strong>Important:</strong> an empirically <strong>Calibrated</strong> or <strong>Validated</strong> formula may coexist with a <strong>Hypothesis</strong> link. A model can predict an association well without demonstrating that changing the source causes the target to change. The app records the distinction; it does not judge the quality of the evidence or the validation design.</div>
+        <p>The CSV keeps the assessments separate. Formula evidence uses <code>formula_evidence_status</code>, <code>formula_evidence_rationale</code>, <code>formula_evidence_source</code> and <code>formula_evidence_last_reviewed</code> on a box. Causal evidence uses <code>evidence_status</code>, <code>evidence_rationale</code>, <code>evidence_source</code> and <code>evidence_last_reviewed</code> on a link. Use <code>YYYY-MM-DD</code> for review dates where possible; other imported text is preserved. Missing or unrecognised status values load as <strong>Unspecified</strong>.</p>
+      </section>
+
+      <section id="decision">
+        <h2>The decision in one minute</h2>
+        <ol class="decision">
+          <li><div><b>Is this a what-if input the user should move?</b><span>Make the box Adjustable. Its scenario multiplier sets the box directly; it is not a causal equation.</span></div></li>
+          <li><div><b>Is proportional sensitivity the right mathematical form?</b><span>Use links and Strength. Strength says how many percent the target changes when the source changes by 1%; it may be hypothesised or empirically fitted, while the link’s causal status is recorded separately.</span></div></li>
+          <li><div><b>Should proportional effects compound?</b><span>Use Standard for independent effects; use Additive when their deviations should sum without compounding.</span></div></li>
+          <li><div><b>Should the least-ready proportional prerequisite gate the target?</b><span>Use Weakest link (<code>combine=min</code>).</span></div></li>
+          <li><div><b>Does the interaction need an explicit shape in compatible absolute units?</b><span>Use a formula for conversion, allocation, ratios, capacity, balances, thresholds, joint requirements or delayed feedback. The form may be an identity, a domain assumption or an empirically fitted relationship; record its evidence status honestly.</span></div></li>
+          <li><div><b>Must every route respect a hard floor or ceiling?</b><span>Use the box’s Lowest / Highest allowed values. Use <code>clamp()</code> when the bound belongs inside one formula.</span></div></li>
+        </ol>
+        <div class="callout"><strong>Precedence:</strong> Adjustable scenario value → Formula → Combine / link strengths. A higher-precedence choice makes the lower one inactive.</div>
+      </section>
+
+      <section id="tutorial-lab">
+        <h2>A worked formula lab in the neutral tutorial map</h2>
+        <p>Open <strong>Learn</strong> and start the first lesson to load the temporary example and use Simulation during the lesson. For open-ended practice afterward, choose <strong>Keep example</strong> at the end; otherwise exiting restores your own map. Each case starts at its stated baseline, so resetting the scenario returns every calculated box to its starting value. The examples are modelling lessons, not empirical claims about a real community programme.</p>
+        <table>
+          <thead><tr><th>When this is the scenario</th><th>Inspect this box</th><th>Why this rule fits</th></tr></thead>
+          <tbody>
+            <tr><td>A cause should produce a stable percentage response around the baseline.</td><td><strong>Workshop readiness</strong></td><td>No formula is needed. <strong>Volunteer time</strong> uses Link Strength <code>0.35</code>; move its Simulation control and inspect the proportional response.</td></tr>
+            <tr><td>Absolute activity is converted by a defensible rate.</td><td><strong>People reached</strong><br><code>outreach_effort * people_reached_per_hour * feedback_uplift</code></td><td>Hours/month × people/hour gives people/month. The named Constant makes the assumed or fitted rate reviewable.</td></tr>
+            <tr><td>Related relative effects should add without compounding.</td><td><strong>Community confidence</strong></td><td>Its Additive Combine rule sums weighted deviations from baseline. This differs from adding the source values themselves.</td></tr>
+            <tr><td>The scarcest proportional prerequisite should govern readiness.</td><td><strong>Delivery capacity</strong></td><td>Weakest link compares normalised facilitator and venue capacity; raise only one to see the other continue to gate the result.</td></tr>
+            <tr><td>An absolute flow cannot exceed either demand or capacity.</td><td><strong>Registrations</strong><br><code>min(outreach_reach * registration_rate, delivery_capacity * seats_per_workshop)</code></td><td><code>min()</code> creates a hard same-unit capacity ceiling that Link Strength cannot express.</td></tr>
+            <tr><td>A part-to-whole share must remain between zero and one.</td><td><strong>Registration share</strong><br><code>clamp(registrations / outreach_reach, 0, 1)</code></td><td>Division creates the share; <code>clamp()</code> expresses the formula-local range, while the box also demonstrates Lowest / Highest allowed bounds.</td></tr>
+            <tr><td>Every requirement must be present for an output to occur.</td><td><strong>Completed follow-ups</strong><br><code>attendees_served * completion_share * follow_up_readiness</code></td><td>This joint product has one people/month flow and two dimensionless shares. Set either share to zero and the output becomes zero.</td></tr>
+            <tr><td>Demand above available places should never be negative.</td><td><strong>Unserved participant interest</strong><br><code>max(registrations + walk_in_interest - delivery_capacity * seats_per_workshop, 0)</code></td><td>Addition and subtraction express the balance; <code>max(..., 0)</code> is the supported threshold condition that floors it at zero. Set Walk-in interest to zero to see the floor engage.</td></tr>
+            <tr><td>A feedback rule must read the preceding solver sweep.</td><td><strong>Confidence feedback</strong><br><code>1 + confidence_feedback_strength * (delay(community_confidence) / confidence_reference - 1)</code></td><td><code>delay()</code> makes the loop well-defined. It means previous solver pass, not a real-world month unless the modeller gives one pass that meaning.</td></tr>
+          </tbody>
+        </table>
+        <div class="notice"><strong>Conditional formulas:</strong> the safe formula language deliberately has no general <code>if/else</code>. Use <code>max(x - threshold, 0)</code> for “only the excess,” <code>min(...)</code> for a ceiling, and <code>clamp(...)</code> for a bounded range. If a scenario cannot be expressed clearly with those shapes, document it as a current engine limitation rather than disguising it as Link Strength.</div>
+      </section>
+
+      <section id="multipliers">
+        <h2>When “just add a multiplier” is—and is not—appropriate</h2>
+        <p>There are three different ideas that can sound like a multiplier. Keeping them separate prevents a plausible-looking but incorrect model.</p>
+        <div class="rule-grid">
+          <article class="rule-card">
+            <span class="tag">Scenario input</span>
+            <h3>Adjustable multiplier</h3>
+            <p class="why"><code>150%</code> means “set this external input to 1.5 times its starting value.” Use it to ask what-if questions about Analyst capacity, Port scanner capacity or another controllable input.</p>
+            <div class="verdict"><b>Appropriate when:</b> the user is choosing a scenario level. It does not describe how one box causes another.</div>
+          </article>
+          <article class="rule-card">
+            <span class="tag">Causal sensitivity</span>
+            <h3>Link Strength (elasticity)</h3>
+            <p class="why">A Strength of <code>0.35</code> means a 10% source increase produces roughly a 3.5% target increase around the baseline—not “multiply the target by 0.35.”</p>
+            <div class="verdict"><b>Appropriate when:</b> the response is proportional around the baseline, whether hypothesised or fitted. It is poor for fixed capacities, shares, subtraction, thresholds or saturation.</div>
+          </article>
+          <article class="rule-card">
+            <span class="tag proposed">Inside a formula</span>
+            <h3>Fixed rate or conversion</h3>
+            <p class="why"><code>questioning_operations * detection_rate</code> is appropriate only if the rate has a defensible unit such as detections per operation.</p>
+            <div class="verdict"><b>Appropriate when:</b> it is a measured, assumed or fitted conversion, share or unit factor. Store the rate as a named Constant, document its provenance, and record the formula’s evidence status.</div>
+          </article>
+          <article class="rule-card">
+            <span class="tag proposed">Use a formula instead</span>
+            <h3>Shape-changing relationship</h3>
+            <p class="why">A multiplier cannot express “whichever is smaller,” “part divided by whole,” “subtract removals,” “only above a threshold,” or “read the previous pass.”</p>
+            <div class="verdict"><b>Formula required when:</b> the causal rule changes shape, units or timing rather than merely sensitivity.</div>
+          </article>
+        </div>
+
+        <h3 style="margin-top:2rem">Two shipped examples with different jobs</h3>
+        <p><strong>Analyst capacity is Adjustable.</strong> Its incoming arrows from Trafficking threat volume and Route volatility remain visible in Atlas, but Simulation pins Analyst capacity to its chosen scenario multiplier. Those incoming Strengths do not calculate it.</p>
+        <p><strong>Trafficking threat volume actively uses Standard.</strong> The adaptive link from Illicit drug availability has Strength <code>0.12</code>, so the current rule is:</p>
+        <pre class="formula">80 × (illicit_drug_availability / 136)^0.12</pre>
+        <p>This is sensible if the claim is a relative sensitivity around the baseline. It is not an accounting identity. If a sum, rate or other fitted absolute-value form better represents the available evidence, use that formula instead and keep the causal-evidence claim on the link separate.</p>
+      </section>
+
+      <section id="combine">
+        <h2>When a one-word Combine rule is enough</h2>
+        <div class="rule-grid">
+          <article class="rule-card">
+            <span class="tag">Current option</span>
+            <h3>Standard / multiplicative</h3>
+            <pre class="formula">baseline × ∏ (source / source_baseline)^strength</pre>
+            <p>Use for independent relative effects that compound. Trafficking threat volume currently uses Standard for its adaptive input from Illicit drug availability. The present target has one active input, so no compounding occurs there.</p>
+            <p class="why">Avoid when the intended or empirically fitted relationship is better represented as a count, flow, rate, share, threshold or physical constraint.</p>
+          </article>
+          <article class="rule-card">
+            <span class="tag">Current option</span>
+            <h3>Additive</h3>
+            <pre class="formula">baseline × (1 + Σ strength × (source_ratio − 1))</pre>
+            <p>Use when related percentage effects should contribute without compounding. Air-border seizure volume currently uses this rule for Air-border detections (<code>0.35</code>) plus four supporting inputs (<code>0.16</code> each).</p>
+            <p class="why">This does not add detections, referrals, operations and capacity indices. It adds their weighted deviations from baseline.</p>
+          </article>
+          <article class="rule-card">
+            <span class="tag proposed">Possible redesign</span>
+            <h3>Weakest link</h3>
+            <pre class="formula">baseline × min((source / source_baseline)^strength, …)</pre>
+            <p>Operational skills training could be gated by Border officer headcount and Specialist training places if both are genuine prerequisites and the scarcest relative capacity should dominate.</p>
+            <p class="why">The shipped target is currently Additive. Use Weakest link when “weakest prerequisite” is the intended causal story, and record whether that story is a Hypothesis, Supported or more strongly evidenced.</p>
+          </article>
+          <article class="rule-card">
+            <span class="tag">Current example</span>
+            <h3>Primary versus supporting strengths</h3>
+            <p>Maritime drug seizures currently responds to Vessel rummage at <code>0.35</code>, plus Coastal patrol and Port scanner capacity at <code>0.16</code>.</p>
+            <p class="why">This says Vessel rummage is more influential in the scenario model. None of the strengths is a raw rate of seizures per activity.</p>
+          </article>
+        </div>
+
+        <div class="versus">
+          <div><b><code>combine=min</code></b><p>Compares elasticity-adjusted source ratios and then scales the target’s own baseline. Different source units can be compared because each is normalised first.</p></div>
+          <div class="versus-mark">≠</div>
+          <div><b><code>min(a, b)</code></b><p>Compares absolute values. The arguments must have compatible units and meaning.</p></div>
+        </div>
+      </section>
+
+      <section id="formulas">
+        <h2>Formula patterns: identities, assumptions and fitted relationships</h2>
+        <p>Every card below is a <strong>proposed modelling scenario</strong>, not current logic in the Border Force map. A scenario can be implemented as a clearly labelled Hypothesis, or its form and parameters can be empirically Calibrated or Validated. Implementation does not itself establish the causal claim shown by its links.</p>
+        <div class="formula-grid">
+          <article class="formula-card">
+            <span class="tag proposed">Conversion product</span>
+            <h3>Operations into detections</h3>
+            <pre class="formula">air_passenger_activities_03
+* questioning_detection_rate</pre>
+            <p>Passenger questioning (operations/month) × detections per operation = Air-border detections (detections/month).</p>
+            <ul class="setup"><li>Add a named rate Constant with its source, assumption or calibration method.</li><li>Keep the incoming arrow from Passenger questioning.</li><li>Resolve existing canine, scanner and profile arrows: include them in the formula or remove them.</li><li>Record formula evidence separately from the causal status of the incoming link.</li></ul>
+          </article>
+
+          <article class="formula-card">
+            <span class="tag proposed">Joint requirement</span>
+            <h3>Volume needs readiness and reliability</h3>
+            <pre class="formula">interventions
+* officer_readiness_share
+* intelligence_reliability_share</pre>
+            <p>Use multiplication when every factor is required and shares lie between 0 and 1. A zero factor produces zero output.</p>
+            <ul class="setup"><li>Output has the same unit as interventions.</li><li>Readiness and reliability must be dimensionless shares.</li><li>Use bounds of 0–1 on those share boxes.</li></ul>
+          </article>
+
+          <article class="formula-card">
+            <span class="tag proposed">Ratio + clamp</span>
+            <h3>Examination coverage</h3>
+            <pre class="formula">clamp(passengers_examined
+/ total_air_passengers, 0, 1)</pre>
+            <p>A part divided by the matching whole gives a share. The current map has Passengers examined but lacks total air passengers.</p>
+            <ul class="setup"><li>Add a denominator covering the same population and period.</li><li>Do not substitute International flight connectivity: it is a pressure index.</li><li>Decide how zero traffic should be interpreted; the engine fallback is 0.</li></ul>
+          </article>
+
+          <article class="formula-card">
+            <span class="tag proposed">Capacity constraint</span>
+            <h3>Targets that can actually be boarded</h3>
+            <pre class="formula">min(credible_vessel_targets,
+vessel_boarding_capacity)</pre>
+            <p>The smaller same-unit quantity is the realised throughput. Link Strength alone cannot create a hard capacity ceiling.</p>
+            <ul class="setup"><li>Both inputs must use vessels/month.</li><li>The current map does not contain these two absolute quantities.</li><li>Do not directly compare capacity indices with operations/month.</li></ul>
+          </article>
+
+          <article class="formula-card">
+            <span class="tag proposed">Allocation</span>
+            <h3>Split attempted importation by route</h3>
+            <pre class="formula">attempted_importation
+* share_air</pre>
+            <p>Use a share Constant to allocate one flow to a route. Parallel route shares should sum to 1 if they exhaust the total.</p>
+            <ul class="setup"><li>Add a same-period total flow box.</li><li>Add named route-share Constants.</li><li>Test that allocated routes sum back to the total.</li></ul>
+          </article>
+
+          <article class="formula-card">
+            <span class="tag proposed">Flow balance</span>
+            <h3>Examined passengers without a detection</h3>
+            <pre class="formula">passengers_examined
+- air_border_detections</pre>
+            <p>Subtraction is valid only if detections are formally a subset of examined passengers over the same period.</p>
+            <ul class="setup"><li>Confirm the semantic subset relationship.</li><li>Harmonise units and reporting windows.</li><li>Use <code>max(result, 0)</code> only if a negative result is impossible by definition.</li></ul>
+          </article>
+
+          <article class="formula-card">
+            <span class="tag proposed">Threshold / floor</span>
+            <h3>Work above routine capacity</h3>
+            <pre class="formula">max(container_scan_demand
+- routine_scan_capacity, 0)</pre>
+            <p>Use <code>max()</code> when nothing should happen below a threshold and only the excess matters.</p>
+            <ul class="setup"><li>Demand and capacity must share units.</li><li>Document a floor Constant as a policy value, domain assumption or fitted parameter—not a silent tuning patch.</li><li>Add a new “excess demand” box rather than changing the meaning of Container scanning.</li></ul>
+          </article>
+
+          <article class="formula-card">
+            <span class="tag proposed">Delayed feedback</span>
+            <h3>Availability affects later price pressure</h3>
+            <pre class="formula">base_street_price
+* (1 + price_sensitivity
+* (delay(drug_market_outcomes_outcomes_01)
+/ baseline_availability - 1))</pre>
+            <p>This could express a lagged influence from Illicit drug availability to Street drug price.</p>
+            <ul class="setup"><li>Add baseline and sensitivity Constants.</li><li>Draw the missing incoming arrow from availability to price.</li><li><code>delay()</code> means previous solver pass—not last month—and does not guarantee convergence.</li></ul>
+          </article>
+        </div>
+
+        <div class="callout warning"><strong>Baseline invariant:</strong> evaluate the proposed formula using every box’s starting value. Its answer must equal the target’s starting value. If it does not, the model will visibly jump before the user changes a scenario.</div>
+      </section>
+
+      <section id="syntax">
+        <h2>Syntax the engine actually supports</h2>
+        <table>
+          <thead><tr><th>Feature</th><th>Supported form</th><th>Important restriction</th></tr></thead>
+          <tbody>
+            <tr><td>Values</td><td>Numbers, box IDs, Constant IDs</td><td>Formula box reads are absolute values, not ratios.</td></tr>
+            <tr><td>Arithmetic</td><td><code>+ - * /</code> and parentheses</td><td><code>*</code> and <code>/</code> bind tighter. Division by zero falls back to 0 with a diagnostic.</td></tr>
+            <tr><td>Negation</td><td><code>-value</code></td><td>Unary plus is not supported.</td></tr>
+            <tr><td>Minimum</td><td><code>min(a, b, …)</code></td><td>At least two arguments; values should have compatible units.</td></tr>
+            <tr><td>Maximum</td><td><code>max(a, b, …)</code></td><td>At least two arguments; values should have compatible units.</td></tr>
+            <tr><td>Bound</td><td><code>clamp(value, lower, upper)</code></td><td>Exactly three arguments.</td></tr>
+            <tr><td>Delay</td><td><code>delay(identifier)</code></td><td>Exactly one bare box or Constant ID; an expression is not allowed.</td></tr>
+            <tr><td>Hard bounds</td><td>Lowest / Highest allowed</td><td>Applied after the active rule; adjustable scenario inputs are pinned directly.</td></tr>
+          </tbody>
+        </table>
+        <div class="callout"><strong>Three different “minimums”:</strong> Weakest link compares normalised causal inputs; <code>min(a,b)</code> chooses the smaller absolute formula input; Lowest allowed prevents the final result from falling below a hard floor.</div>
+      </section>
+
+      <section id="setup">
+        <h2>Formula setup and review checklist</h2>
+        <ul class="checklist">
+          <li>Why is an explicit mathematical form preferable here: identity, constraint, domain assumption, theory or empirical fit?</li>
+          <li>Are the formula status (form and parameters) and link status (causal claim) recorded separately?</li>
+          <li>Does the formula reproduce the target starting value at baseline?</li>
+          <li>Are addition, subtraction, comparison and division using compatible units?</li>
+          <li>Do numerator and denominator cover the same population and period?</li>
+          <li>Is every conversion rate or route share a named Constant with a description?</li>
+          <li>Does every referenced box have an incoming arrow to the formula target?</li>
+          <li>Are extra incoming arrows removed, or deliberately documented as descriptive?</li>
+          <li>Do shares that partition a total sum to 1?</li>
+          <li>Do bounds represent real constraints rather than arbitrary stabilisers?</li>
+          <li>Is <code>delay()</code> understood as solver state rather than calendar time?</li>
+          <li>Have low, baseline and high scenarios been checked for direction and scale?</li>
+          <li>Does the calculation breakdown in Simulation tell the intended causal story?</li>
+        </ul>
+      </section>
+
+      <section id="limitations">
+        <h2>Limitations and owner decisions</h2>
+        <div class="notice"><strong>The current index-based map does not yet contain empirical formulas.</strong> It supplies illustrative elasticities, indices and causal links, but no fitted formula forms or parameters. That is a description of this map, not a rule against empirical formulas: a future formula may be Calibrated or Validated from observations even while the corresponding causal link remains a Hypothesis.</div>
+        <ul>
+          <li>The current map mixes pressure indices, capacity indices, operations/month, outputs/month and outcome indices. Link aggregation tolerates mixed source units because it works with ratios; direct formulas usually do not.</li>
+          <li>A formula target ignores incoming Strength values. Arrows still document its causal inputs, and every referenced box must still have an arrow.</li>
+          <li>Malformed or causally unlinked formulas are deactivated with load findings. An unknown identifier remains active but reads as 0; a referenced box without a starting value also reads as 0.</li>
+          <li>Division by zero produces 0 with a diagnostic trace. That is an engine safety fallback, not a domain assumption.</li>
+          <li>The effect label fixes direction: increases and enables are positive; decreases is negative. An explicit Strength supplies magnitude, and an opposite sign is normalised to the effect’s direction.</li>
+          <li>Sixty capability inputs are Adjustable, so the 120 links entering them affect map structure and Atlas exploration but not Simulation values while those boxes remain pinned.</li>
+          <li><code>delay()</code> removes same-pass ordering ambiguity in a formula loop. It does not model real time and does not guarantee a stable loop.</li>
+          <li>Evidence statuses are author-supplied metadata. They do not change calculation order, formula precedence, link Strength or solver results.</li>
+        </ul>
+        <p class="footnote">Evidence basis: the shipped <code>border_force_drug_trafficking_300.csv</code>, formula parser, simulation engine, loader validation, advanced worked sample and calculation-engine design documentation in this repository.</p>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
