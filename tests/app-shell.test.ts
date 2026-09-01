@@ -16,9 +16,10 @@ import { loadDataFromCsv } from "../assets/js/06-data-loader";
 import { LINEAR_CSV } from "./fixtures/graphs";
 import { renderSidebar } from "../assets/js/13-sidebar";
 import { renderDetailPanel } from "../assets/js/15-detail-panel";
-import { NODES, state } from "../assets/js/03-state";
+import { NODES, STAGES, state } from "../assets/js/03-state";
 import { deselectAll, refreshTraceForSelection, selectNode } from "../assets/js/09-graph-selection";
 import { initCanvasEdit, setShiftHeld } from "../assets/js/16e-canvas-edit";
+import { renderStickyColumnHeadings, syncStickyColumnHeadings } from "../assets/js/11-rendering";
 import { toggleSimulationMode } from "../assets/js/14-simulation-panel";
 import { applyRestoredUiState, saveUiStateToStorage, loadUiStateFromStorage } from "../assets/js/04a-storage";
 import {
@@ -108,6 +109,31 @@ describe("the filters drawer", () => {
     setFiltersOpen(true);
     expect(state.filtersOpen).toBe(false);
     expect(app().classList.contains("filters-open")).toBe(false);
+  });
+
+  it("describes show and hide actions without edit guidance in View mode", () => {
+    loadDataFromCsv(sampleCsv);
+    setUiMode("read");
+    renderSidebar();
+
+    for (const filterKind of ["stage", "stream"]) {
+      const filterRow = document.querySelector(
+        `.sidebar-edit-row[data-kind="${filterKind}"]`,
+      ) as HTMLElement;
+      const filterLabel = filterRow.querySelector(".filter-label") as HTMLElement;
+      expect(filterRow.dataset.tooltip).toMatch(/Click to (show|hide)/);
+      expect(filterRow.dataset.tooltip).not.toMatch(/rename|edit/i);
+      expect(filterLabel.dataset.tooltip).toMatch(/Click to (show|hide)/);
+      expect(filterLabel.dataset.tooltip).not.toMatch(/rename|edit/i);
+    }
+
+    const streamShortLabel = document.querySelector(
+      '.sidebar-edit-row[data-kind="stream"] .sidebar-short-chip',
+    ) as HTMLElement | null;
+    if (streamShortLabel) {
+      expect(streamShortLabel.dataset.tooltip).toMatch(/Click to (show|hide)/);
+      expect(streamShortLabel.dataset.tooltip).not.toMatch(/rename|edit/i);
+    }
   });
 });
 
@@ -300,6 +326,34 @@ describe("opening zoom", () => {
     expect(fit).toBeGreaterThan(0);
   });
 
+  it("can fit width and height independently", () => {
+    loadDataFromCsv(sampleCsv);
+    frameOf(600, 400);
+
+    const widthFit = fitZoomLevel("width")!;
+    const heightFit = fitZoomLevel("height")!;
+    expect(widthFit).toBeGreaterThan(0);
+    expect(heightFit).toBeGreaterThan(0);
+    expect(fitZoomLevel()).toBe(Math.min(widthFit, heightFit));
+  });
+
+  it("toggles the centre button between fit height and fit width", () => {
+    loadDataFromCsv(sampleCsv);
+    frameOf(600, 400);
+    const readout = document.getElementById("viz-zoom-readout") as HTMLButtonElement;
+    readout.dataset.fitNext = "height";
+
+    readout.click();
+    expect(state.zoomLevel).toBe(fitZoomLevel("height"));
+    expect(readout.dataset.fitNext).toBe("width");
+    expect(readout.dataset.tooltip).toBe("Fit width next");
+
+    readout.click();
+    expect(state.zoomLevel).toBe(fitZoomLevel("width"));
+    expect(readout.dataset.fitNext).toBe("height");
+    expect(readout.dataset.tooltip).toBe("Fit height next");
+  });
+
   it("stops shrinking at the floor on load — cropped beats unreadable", () => {
     loadDataFromCsv(sampleCsv);
     frameOf(120, 90);                       // absurdly small: the true fit is tiny
@@ -320,6 +374,29 @@ describe("opening zoom", () => {
     loadDataFromCsv(sampleCsv);
     frameOf(0, 0);
     expect(fitZoomLevel()).toBeNull();
+  });
+});
+
+describe("sticky column headings", () => {
+  it("appears only after the original headings scroll away and stays actionable", () => {
+    loadDataFromCsv(sampleCsv);
+    const scroller = document.getElementById("viz-scroll")!;
+    const stickyHeadings = document.getElementById("viz-sticky-columns")!;
+    scroller.scrollTop = 200;
+    renderStickyColumnHeadings();
+
+    expect(stickyHeadings.hidden).toBe(false);
+    expect(stickyHeadings.querySelectorAll("[data-stage-id]")).toHaveLength(STAGES.length);
+
+    const firstStageButton = stickyHeadings.querySelector<HTMLButtonElement>("[data-stage-id]")!;
+    const firstStageId = firstStageButton.dataset.stageId!;
+    firstStageButton.click();
+    expect(state.hiddenStages.has(firstStageId)).toBe(true);
+    expect(stickyHeadings.querySelector('[data-stage-id="' + CSS.escape(firstStageId) + '"]')?.classList.contains("collapsed")).toBe(true);
+
+    scroller.scrollTop = 0;
+    syncStickyColumnHeadings();
+    expect(stickyHeadings.hidden).toBe(true);
   });
 });
 

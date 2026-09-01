@@ -30,6 +30,61 @@ import { attachCanvasEditHandlers } from "./16e-canvas-edit";
 
 // Single grabbed reference to the SVG element we draw into.
 export const svg = document.getElementById("viz-svg") as unknown as SVGSVGElement;
+const stickyColumnHeadings = document.getElementById("viz-sticky-columns");
+
+// Keep a compact HTML copy of the stage headings above the scroller once the
+// SVG's own header band has moved out of view. HTML is intentional here: an SVG
+// child cannot be position:sticky relative to the surrounding scroll frame.
+// The buttons are rebuilt only with a full map render; ordinary pan events just
+// adjust six or so left/width styles through syncStickyColumnHeadings().
+export function renderStickyColumnHeadings(): void {
+  if (!stickyColumnHeadings) return;
+  if (!state.dataLoaded || !layout) {
+    stickyColumnHeadings.hidden = true;
+    stickyColumnHeadings.innerHTML = "";
+    return;
+  }
+
+  stickyColumnHeadings.innerHTML = STAGES.map(stage => {
+    const isCollapsed = state.hiddenStages.has(stage.id);
+    const action = isCollapsed ? "Expand" : "Collapse";
+    return '<button type="button" class="viz-sticky-column' + (isCollapsed ? " collapsed" : "") +
+      '" data-stage-id="' + escapeHtml(stage.id) + '" data-tooltip="' +
+      escapeHtml(action + " " + stage.label + " on the map.") + '" aria-expanded="' +
+      String(!isCollapsed) + '" aria-label="' + escapeHtml(action + " column " + stage.label) + '">' +
+      (isCollapsed ? "+ " : "") + escapeHtml(stage.label) + "</button>";
+  }).join("");
+  syncStickyColumnHeadings();
+}
+
+export function syncStickyColumnHeadings(): void {
+  if (!stickyColumnHeadings || !state.dataLoaded || !layout) return;
+  const scroller = document.getElementById("viz-scroll");
+  if (!scroller) return;
+
+  const zoomLevel = state.zoomLevel;
+  const originalHeaderBottom = (SVG_PADDING_TOP + COL_HEADER_HEIGHT) * zoomLevel;
+  stickyColumnHeadings.hidden = scroller.scrollTop < originalHeaderBottom;
+  if (stickyColumnHeadings.hidden) return;
+
+  stickyColumnHeadings.querySelectorAll<HTMLElement>("[data-stage-id]").forEach(button => {
+    const stageId = button.dataset.stageId;
+    if (!stageId) return;
+    const columnLeft = layout!.colX[stageId];
+    const columnWidth = layout!.colWidths?.[stageId] || NODE_WIDTH;
+    button.style.left = String(columnLeft * zoomLevel - scroller.scrollLeft) + "px";
+    button.style.width = String(columnWidth * zoomLevel) + "px";
+  });
+}
+
+stickyColumnHeadings?.addEventListener("click", event => {
+  const eventTarget = event.target instanceof Element ? event.target : null;
+  const button = eventTarget?.closest<HTMLElement>("[data-stage-id]");
+  const stageId = button?.dataset.stageId;
+  if (!stageId) return;
+  toggleStage(stageId);
+  stickyColumnHeadings.querySelector<HTMLElement>('[data-stage-id="' + CSS.escape(stageId) + '"]')?.focus();
+});
 
 // ───── Delegated SVG interaction — bound ONCE, never per render ────────────
 // This uses "event delegation" (see docs/GLOSSARY.md): instead of giving every
@@ -1028,6 +1083,7 @@ export function render(): void {
     svg.setAttribute("width", String(0));
     svg.setAttribute("height", String(0));
     svg.innerHTML = "";
+    renderStickyColumnHeadings();
     return;
   }
 
@@ -1433,6 +1489,7 @@ export function render(): void {
   _drawnNodesLength = NODES.length;
   _drawnEdgesLength = EDGES.length;
   _drawnGeometryRevision = layoutGeometryRevision();
+  renderStickyColumnHeadings();
 }
 
 // ───── Incremental selection repaint ──────────────────────────────────────

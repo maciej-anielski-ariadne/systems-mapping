@@ -20,6 +20,7 @@ import {
   renderSelectionChange,
   scheduleLayoutRender,
   setMapTextScaleVar,
+  syncStickyColumnHeadings,
 } from "./11-rendering";
 import { hideTooltip } from "./12-tooltip";
 import { toggleSimulationMode } from "./14-simulation-panel";
@@ -510,11 +511,17 @@ function writeZoomToSvg(): void {
     setMapTextScaleVar(svgEl as SVGSVGElement, getMapTextScale(state.zoomLevel));
   }
   updateZoomReadout(readout);
+  syncStickyColumnHeadings();
 }
 
 function updateZoomReadout(readout?: HTMLElement | null): void {
   const el = readout || _zoomReadEl || document.getElementById("viz-zoom-readout");
-  if (el) el.textContent = Math.round(state.zoomLevel * 100) + "%";
+  if (!el) return;
+  const percentage = Math.round(state.zoomLevel * 100) + "%";
+  const nextFitAxis = el.dataset.fitNext === "width" ? "width" : "height";
+  el.textContent = percentage;
+  el.dataset.tooltip = "Fit " + nextFitAxis + " next";
+  el.setAttribute("aria-label", percentage + ". Fit " + nextFitAxis + " next");
 }
 
 // The two follow-ups a settled zoom owes: re-wrap labels if the text-scale band
@@ -636,6 +643,7 @@ export function commitZoomGesture(flushRender = true): void {
   if (sc) {
     sc.scrollLeft = scrollLeft - tx;
     sc.scrollTop  = scrollTop  - ty;
+    syncStickyColumnHeadings();
   }
   afterZoomSettled();
   // The size write above and whatever afterZoomSettled queued (a band relayout,
@@ -786,18 +794,29 @@ export const FIT_PADDING = 32;
 // — you asked for the whole map, so you get the whole map.
 export const FIT_MIN_ZOOM = 0.4;
 
-export function fitZoomLevel(): number | null {
+export type FitAxis = "both" | "width" | "height";
+
+export function fitZoomLevel(axis: FitAxis = "both"): number | null {
   const scroll = document.getElementById("viz-scroll");
   if (!scroll || !layout) return null;
-  const mapW = layout.totalWidth, mapH = layout.totalHeight;
-  const frameW = scroll.clientWidth, frameH = scroll.clientHeight;
-  if (!mapW || !mapH || !frameW || !frameH) return null;
-  const fit = Math.min((frameW - FIT_PADDING) / mapW, (frameH - FIT_PADDING) / mapH, 1);
-  return clampZoom(fit);
+  const mapWidth = layout.totalWidth;
+  const mapHeight = layout.totalHeight;
+  const frameWidth = scroll.clientWidth;
+  const frameHeight = scroll.clientHeight;
+  if (!mapWidth || !mapHeight || !frameWidth || !frameHeight) return null;
+
+  const widthFit = (frameWidth - FIT_PADDING) / mapWidth;
+  const heightFit = (frameHeight - FIT_PADDING) / mapHeight;
+  const fit = axis === "width"
+    ? widthFit
+    : axis === "height"
+      ? heightFit
+      : Math.min(widthFit, heightFit);
+  return clampZoom(Math.min(fit, 1));
 }
 
-export function fitMapToFrame(options: { floor?: boolean } = {}): void {
-  const level = fitZoomLevel();
+export function fitMapToFrame(options: { floor?: boolean; axis?: FitAxis } = {}): void {
+  const level = fitZoomLevel(options.axis);
   if (level === null) return;
   setZoom(options.floor ? Math.max(level, FIT_MIN_ZOOM) : level);
 }
@@ -807,7 +826,14 @@ export const zoomOutButton = document.getElementById("viz-zoom-out");
 export const zoomReadout   = document.getElementById("viz-zoom-readout");
 if (zoomInButton)  zoomInButton.addEventListener("click",  () => setZoom(state.zoomLevel + ZOOM_STEP));
 if (zoomOutButton) zoomOutButton.addEventListener("click", () => setZoom(state.zoomLevel - ZOOM_STEP));
-if (zoomReadout)   zoomReadout.addEventListener("click",   () => fitMapToFrame());
+if (zoomReadout) {
+  zoomReadout.addEventListener("click", () => {
+    const fitAxis = zoomReadout.dataset.fitNext === "width" ? "width" : "height";
+    fitMapToFrame({ axis: fitAxis });
+    zoomReadout.dataset.fitNext = fitAxis === "width" ? "height" : "width";
+    updateZoomReadout(zoomReadout);
+  });
+}
 
 // ───── Highlight-depth control ────────────────────────────────────────────
 // How many connected levels light up when a node is selected (1 = direct
@@ -907,6 +933,7 @@ if (vizScroll) {
   // lands between frames instead of stealing one from the pan.
   vizScroll.addEventListener("scroll", () => {
     maybeRenderForViewport(true);
+    syncStickyColumnHeadings();
   }, { passive: true });
 }
 
@@ -922,19 +949,19 @@ document.addEventListener("keydown", event => {
 });
 
 // ───── Map drag-to-pan ──────────────────────────────────────────────────
-// Click-and-drag on empty SVG background pans the map by adjusting the
-// scrollLeft / scrollTop of #viz-scroll. Two key UX details:
+// Click-and-drag on the SVG pans the map by adjusting the scrollLeft /
+// scrollTop of #viz-scroll. Two key UX details:
 //
 //   • A small drag threshold means a still-mouse click still counts as a
 //     click — only past the threshold do we lock in "panning" mode and
 //     swallow the trailing click (so a pan that happens to end on a node
 //     does not also select it).
-//   • mousedown directly over a .node-group is ignored — node clicks must
-//     still select. The user pans by grabbing empty SVG space (the grid,
-//     column dividers, row labels) OR by dragging from an edge (so that
-//     dense edge-laden areas don't trap the user). A still-click on an
-//     edge still selects it — only a drag past the threshold pans, and the
-//     trailing click is swallowed so the pan-end doesn't also select.
+//   • In View mode, a node body participates in that same click-or-pan
+//     threshold: a still click selects it, while a drag pans. In Edit mode,
+//     node bodies remain reserved for moving boxes. Interactive controls,
+//     row labels, empty-cell edit targets, and edge handles keep their own
+//     gestures. A still-click on an edge still selects it; only a drag past
+//     the threshold pans, and the trailing click is swallowed.
 //
 // mousemove + mouseup are bound to window so the gesture survives the
 // cursor leaving the SVG (and even leaving the browser viewport).
@@ -947,7 +974,11 @@ if (_vizSvgEl && vizScrollEl) {
   _vizSvgEl.addEventListener("mousedown", event => {
     if (event.button !== 0) return;                            // left button only
     if (event.shiftKey) return;                                // shift+drag = marquee select (16e), not pan
-    if ((event.target as Element).closest && (event.target as Element).closest(".node-group, .row-label-group, .ghost-cell, .edge-handle")) return;
+    const eventTarget = event.target instanceof Element ? event.target : null;
+    if (!eventTarget) return;
+    if (eventTarget.closest("input, button, select, textarea, [contenteditable='true']")) return;
+    if (eventTarget.closest(".row-label-group, .ghost-cell, .edge-handle")) return;
+    if (state.uiMode === "edit" && eventTarget.closest(".node-group")) return;
     panStart = {
       clientX:    event.clientX,
       clientY:    event.clientY,

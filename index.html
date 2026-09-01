@@ -312,6 +312,12 @@
 
   <!-- ============== CENTER VISUALIZATION ============== -->
   <main class="viz-container" id="viz-container">
+    <!-- A slim copy of the stage headings appears once the SVG's own heading
+         row has scrolled out of view. Its buttons stay aligned with the map as
+         the viewport pans and retain the same collapse/expand behaviour. -->
+    <div class="viz-sticky-columns" id="viz-sticky-columns" hidden
+         aria-label="Map column headings"></div>
+
     <!-- Scrollable area containing the rendered SVG. JS in 11-rendering.js
          writes the SVG contents on every render. -->
     <div class="viz-scroll" id="viz-scroll">
@@ -342,7 +348,9 @@
         <span class="viz-control-title">Zoom</span>
         <div class="viz-control-row">
           <button class="viz-zoom-button" id="viz-zoom-out"  data-tooltip="Zoom out (Ctrl+−)" aria-label="Zoom out">−</button>
-          <button class="viz-zoom-readout" id="viz-zoom-readout" data-tooltip="Fit the whole map in the frame">100%</button>
+          <button class="viz-zoom-readout" id="viz-zoom-readout"
+                  data-fit-next="height" data-tooltip="Fit height next"
+                  aria-label="100%. Fit height next">100%</button>
           <button class="viz-zoom-button" id="viz-zoom-in"   data-tooltip="Zoom in (Ctrl+=)"  aria-label="Zoom in">+</button>
         </div>
       </div>

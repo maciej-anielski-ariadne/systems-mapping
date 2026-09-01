@@ -774,12 +774,19 @@ function renderLogRow(row: LogRow): string {
 // score and hand you the next one.
 function renderCoverageSection(): string {
   const done = coverage();
+  const sourceBoxCount = Math.max(0, NODES.length - done.total);
+  const scopeExplanation = NODES.length === 0
+    ? "There are no boxes on this map."
+    : sourceBoxCount
+      ? sourceBoxCount + " source box" + (sourceBoxCount === 1 ? " has" : "es have") +
+        " no incoming links, so there is nothing feeding " + (sourceBoxCount === 1 ? "it" : "them") +
+        " to judge. " + (sourceBoxCount === 1 ? "It is" : "They are") + " excluded from the pass."
+      : "Every box has at least one incoming link, so every box is included.";
   if (done.total === 0) {
     return '<div class="review-section-head">' +
       '<span class="review-section-title">What nobody has checked yet</span></div>' +
       '<div class="review-empty"><b>Nothing to check.</b> A review pass asks, box by box, ' +
-      'whether the links feeding it are right and complete — so it needs a map with links ' +
-      'on it.</div>';
+      'whether the links feeding it are right and complete. ' + escapeHtml(scopeExplanation) + '</div>';
   }
 
   const settled = done.agreed + done.flagged;
@@ -795,6 +802,9 @@ function renderCoverageSection(): string {
   html += '<div class="review-hint">One box at a time, causes before effects: <i>is this ' +
           'everything that drives this box?</i> The verdict, who gave it and why are kept in the ' +
           'map\'s own spreadsheet, so a pass survives a refresh and travels with the file.</div>';
+
+  html += '<div class="review-scope-note"><b>Why ' + done.total + ' of ' + NODES.length + '?</b> ' +
+          escapeHtml(scopeExplanation) + '</div>';
 
   html += '<div class="review-cov">';
   html +=   '<div class="review-cov-bar">';

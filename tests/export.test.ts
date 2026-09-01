@@ -129,6 +129,44 @@ describe("interactive published HTML (A → B → C)", () => {
     expect(node("c").classList.contains("dim")).toBe(false);
   });
 
+  it("pans from a box without also selecting it", () => {
+    const model = buildExportModel({ allEdges: true })!;
+    const palette = exportPalette();
+    const { svg, width, height, nodeInfo } = renderExportSvg(model, { pal: palette });
+    const html = buildPublishHtml(svg, width, height, nodeInfo, palette, model.edges);
+    document.body.innerHTML = html.slice(html.indexOf("<body>") + "<body>".length, html.indexOf("<script>"));
+    new Function(viewerScript(html))();
+
+    const scrollContainer = document.getElementById("mv-scroll")!;
+    const firstNode = document.querySelector('.xnode[data-node-id="a"]')!;
+    firstNode.dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true, button: 0, clientX: 500, clientY: 300 }),
+    );
+    window.dispatchEvent(
+      new MouseEvent("mousemove", { bubbles: true, button: 0, clientX: 380, clientY: 300 }),
+    );
+    window.dispatchEvent(
+      new MouseEvent("mouseup", { bubbles: true, button: 0, clientX: 380, clientY: 300 }),
+    );
+    firstNode.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, button: 0, clientX: 380, clientY: 300 }),
+    );
+
+    expect(scrollContainer.scrollLeft).toBe(120);
+    expect(firstNode.classList.contains("sel")).toBe(false);
+
+    firstNode.dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true, button: 0, clientX: 500, clientY: 300 }),
+    );
+    window.dispatchEvent(
+      new MouseEvent("mouseup", { bubbles: true, button: 0, clientX: 500, clientY: 300 }),
+    );
+    firstNode.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, button: 0, clientX: 500, clientY: 300 }),
+    );
+    expect(firstNode.classList.contains("sel")).toBe(true);
+  });
+
   it("moves the trace straight from one box to another (incremental update)", () => {
     // The viewer only mutates the classes that actually change between two
     // highlight states, so switching selection WITHOUT deselecting first — the

@@ -146,6 +146,18 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.sim-slider-name:hover { color: var(--text-primary); }
+.sim-slider-name:focus-visible {
+  outline: none;
+  color: var(--text-primary);
+  box-shadow: var(--focus-ring);
 }
 .sim-slider-row.moved .sim-slider-name { color: var(--text-primary); }
 

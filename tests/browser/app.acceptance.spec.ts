@@ -160,6 +160,45 @@ test("300-box browser interaction budget", async ({ page }) => {
     },
   );
 
+  const viewModePanBox = page.locator('.node-group[data-node-id="box_0"]');
+  const boxPanScrollPositionBeforeInteraction = await page
+    .locator("#viz-scroll")
+    .evaluate((element) => {
+      element.scrollLeft = 0;
+      return element.scrollLeft;
+    });
+  await viewModePanBox.evaluate((element) => {
+    element.dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true, button: 0, clientX: 500, clientY: 300 }),
+    );
+    window.dispatchEvent(
+      new MouseEvent("mousemove", { bubbles: true, button: 0, clientX: 380, clientY: 300 }),
+    );
+    window.dispatchEvent(
+      new MouseEvent("mouseup", { bubbles: true, button: 0, clientX: 380, clientY: 300 }),
+    );
+    element.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, button: 0, clientX: 380, clientY: 300 }),
+    );
+  });
+  await expect
+    .poll(() => page.locator("#viz-scroll").evaluate((element) => element.scrollLeft))
+    .toBeGreaterThan(boxPanScrollPositionBeforeInteraction);
+  await expect(viewModePanBox).toHaveAttribute("aria-pressed", "false");
+
+  await viewModePanBox.evaluate((element) => {
+    element.dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true, button: 0, clientX: 500, clientY: 300 }),
+    );
+    window.dispatchEvent(
+      new MouseEvent("mouseup", { bubbles: true, button: 0, clientX: 500, clientY: 300 }),
+    );
+    element.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, button: 0, clientX: 500, clientY: 300 }),
+    );
+  });
+  await expect(viewModePanBox).toHaveAttribute("aria-pressed", "true");
+
   const zoomReadoutBeforeInteraction = await page.locator("#viz-zoom-readout").textContent();
   const zoomMilliseconds = await measureBrowserInteraction(
     page,

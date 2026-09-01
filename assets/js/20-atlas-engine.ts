@@ -676,14 +676,19 @@ export function analyseTangle<EdgeType extends AtlasGraphEdge>(
 // listing them fails. The links that must be cut to make it acyclic are far
 // fewer. The second number is the one you can draw.
 //
-// The ordering is the greedy feedback-arc-set of Eades, Lin and Smyth: peel
+// The first pass is the greedy feedback-arc-set of Eades, Lin and Smyth: peel
 // sinks off the back and sources off the front, and when neither exists take
-// the box with the biggest out-minus-in. Linear, and in practice within a hair
-// of the smallest possible set of back links.
+// the box with the biggest out-minus-in. A bounded second pass can then improve
+// the circular reading of known loops. It favours loop members following their
+// causal order around the rim and being spread across it, while penalising new
+// back links and large moves away from the causal first pass. Overlapping loops
+// can demand incompatible orders, so this is deliberately a stable best fit,
+// not a promise that every loop becomes a regular polygon.
 // ---------------------------------------------------------------------------
 export function orderTangle(
   boxes: readonly AtlasIdentifier[],
   links: readonly AtlasLink[],
+  feedbackCycles: readonly (readonly AtlasIdentifier[])[] = [],
 ): AtlasIdentifier[] {
   const outgoingDegree = new Map<AtlasIdentifier, number>();
   const incomingDegree = new Map<AtlasIdentifier, number>();
@@ -740,7 +745,154 @@ export function orderTangle(
     if (best === null) throw new Error("Tangle ordering could not select a remaining box.");
     left.push(best); drop(best);
   }
-  return left.concat(right);
+  const causalOrder = left.concat(right);
+  return optimiseTangleLoopOrder(causalOrder, links, feedbackCycles);
+}
+
+function circularIndexDistance(firstIndex: number, secondIndex: number, itemCount: number): number {
+  const directDistance = Math.abs(firstIndex - secondIndex);
+  return Math.min(directDistance, itemCount - directDistance);
+}
+
+function normaliseFeedbackCycles(
+  order: readonly AtlasIdentifier[],
+  feedbackCycles: readonly (readonly AtlasIdentifier[])[],
+): AtlasIdentifier[][] {
+  const availableIdentifiers = new Set(order);
+  const seenCycleKeys = new Set<string>();
+  const cycles: AtlasIdentifier[][] = [];
+  for (const feedbackCycle of feedbackCycles) {
+    if (feedbackCycle.some(identifier => !availableIdentifiers.has(identifier))) continue;
+    const cycle = [...feedbackCycle];
+    if (cycle.length < 2 || new Set(cycle).size !== cycle.length) continue;
+    const cycleKey = canonicalCycle(cycle);
+    if (seenCycleKeys.has(cycleKey)) continue;
+    seenCycleKeys.add(cycleKey);
+    cycles.push(cycle);
+  }
+  return cycles;
+}
+
+function loopPolygonPenalty(
+  cycle: readonly AtlasIdentifier[],
+  positionByIdentifier: ReadonlyMap<AtlasIdentifier, number>,
+  itemCount: number,
+): number {
+  const clockwiseGaps: number[] = [];
+  const anticlockwiseGaps: number[] = [];
+  for (let cycleIndex = 0; cycleIndex < cycle.length; cycleIndex++) {
+    const currentPosition = positionByIdentifier.get(cycle[cycleIndex]);
+    const nextPosition = positionByIdentifier.get(cycle[(cycleIndex + 1) % cycle.length]);
+    if (currentPosition === undefined || nextPosition === undefined) return 0;
+    clockwiseGaps.push((nextPosition - currentPosition + itemCount) % itemCount);
+    anticlockwiseGaps.push((currentPosition - nextPosition + itemCount) % itemCount);
+  }
+
+  const idealGap = itemCount / cycle.length;
+  const orientationPenalty = (gaps: readonly number[]) => {
+    const turnsAroundCircle = gaps.reduce((sum, gap) => sum + gap, 0) / itemCount;
+    const spacingError = gaps.reduce((sum, gap) => sum + Math.abs(gap - idealGap), 0) / itemCount;
+    // More than one turn means the loop sequence doubles back around the rim
+    // and its straight sides must cross. Spacing is secondary: it turns a
+    // non-crossing loop into a broad triangle, square, hexagon, and so on.
+    return Math.max(0, turnsAroundCircle - 1) * 36 + spacingError * 8;
+  };
+  return Math.min(orientationPenalty(clockwiseGaps), orientationPenalty(anticlockwiseGaps));
+}
+
+function tangleLoopOrderPenalty(
+  order: readonly AtlasIdentifier[],
+  links: readonly AtlasLink[],
+  feedbackCycles: readonly (readonly AtlasIdentifier[])[],
+  causalPositionByIdentifier: ReadonlyMap<AtlasIdentifier, number>,
+): number {
+  const itemCount = order.length;
+  const positionByIdentifier = new Map(order.map((identifier, index) => [identifier, index]));
+  let backwardLinkCount = 0;
+  for (const link of links) {
+    const sourcePosition = positionByIdentifier.get(link.from);
+    const targetPosition = positionByIdentifier.get(link.to);
+    if (sourcePosition === undefined || targetPosition === undefined || sourcePosition === targetPosition) continue;
+    if (targetPosition < sourcePosition) backwardLinkCount++;
+  }
+
+  let movementDistance = 0;
+  for (const [identifier, position] of positionByIdentifier) {
+    const causalPosition = causalPositionByIdentifier.get(identifier);
+    if (causalPosition !== undefined) {
+      movementDistance += circularIndexDistance(position, causalPosition, itemCount);
+    }
+  }
+
+  const polygonPenalty = feedbackCycles.reduce(
+    (sum, cycle) => sum + loopPolygonPenalty(cycle, positionByIdentifier, itemCount),
+    0,
+  );
+  return polygonPenalty + backwardLinkCount * 7 + movementDistance * 0.2;
+}
+
+function moveTangleIdentifier(
+  order: readonly AtlasIdentifier[],
+  fromIndex: number,
+  toIndex: number,
+): AtlasIdentifier[] {
+  const candidateOrder = [...order];
+  const [identifier] = candidateOrder.splice(fromIndex, 1);
+  candidateOrder.splice(toIndex, 0, identifier);
+  return candidateOrder;
+}
+
+function optimiseTangleLoopOrder(
+  causalOrder: readonly AtlasIdentifier[],
+  links: readonly AtlasLink[],
+  feedbackCycles: readonly (readonly AtlasIdentifier[])[],
+): AtlasIdentifier[] {
+  if (causalOrder.length < 3 || feedbackCycles.length === 0) return [...causalOrder];
+  const cycles = normaliseFeedbackCycles(causalOrder, feedbackCycles);
+  if (cycles.length === 0) return [...causalOrder];
+
+  const causalPositionByIdentifier = new Map(
+    causalOrder.map((identifier, index) => [identifier, index]),
+  );
+  let bestOrder = [...causalOrder];
+  let bestPenalty = tangleLoopOrderPenalty(
+    bestOrder,
+    links,
+    cycles,
+    causalPositionByIdentifier,
+  );
+  const fullSearch = causalOrder.length <= 72;
+  const searchRadius = fullSearch ? causalOrder.length : 8;
+  const maximumImprovements = Math.min(24, Math.max(4, Math.ceil(causalOrder.length / 2)));
+
+  for (let improvement = 0; improvement < maximumImprovements; improvement++) {
+    let nextOrder: AtlasIdentifier[] | null = null;
+    let nextPenalty = bestPenalty;
+    for (let fromIndex = 0; fromIndex < bestOrder.length; fromIndex++) {
+      const firstTargetIndex = fullSearch ? 0 : Math.max(0, fromIndex - searchRadius);
+      const lastTargetIndex = fullSearch
+        ? bestOrder.length - 1
+        : Math.min(bestOrder.length - 1, fromIndex + searchRadius);
+      for (let toIndex = firstTargetIndex; toIndex <= lastTargetIndex; toIndex++) {
+        if (toIndex === fromIndex) continue;
+        const candidateOrder = moveTangleIdentifier(bestOrder, fromIndex, toIndex);
+        const candidatePenalty = tangleLoopOrderPenalty(
+          candidateOrder,
+          links,
+          cycles,
+          causalPositionByIdentifier,
+        );
+        if (candidatePenalty < nextPenalty - 1e-9) {
+          nextOrder = candidateOrder;
+          nextPenalty = candidatePenalty;
+        }
+      }
+    }
+    if (!nextOrder) break;
+    bestOrder = nextOrder;
+    bestPenalty = nextPenalty;
+  }
+  return bestOrder;
 }
 
 // Everything the wheel is drawn from. Computed when a tangle is opened rather
@@ -770,6 +922,7 @@ export interface AtlasWheel {
 export interface AtlasWheelTangle {
   boxes: readonly string[];
   links: readonly AtlasWheelEdge[];
+  loops?: readonly { cycle: readonly string[] }[];
 }
 
 export function wheelOf(tangle: AtlasWheelTangle): AtlasWheel {
@@ -777,7 +930,11 @@ export function wheelOf(tangle: AtlasWheelTangle): AtlasWheel {
   const boxIdentifierSet = new Set(boxIdentifiers);
   const links = tangle.links.filter(edge =>
     boxIdentifierSet.has(edge.from) && boxIdentifierSet.has(edge.to));
-  const order = orderTangle(boxIdentifiers, links);
+  const order = orderTangle(
+    boxIdentifiers,
+    links,
+    tangle.loops?.map(loop => loop.cycle) || [],
+  );
   const positionByBoxIdentifier = new Map<string, number>(
     order.map((boxIdentifier, index) => [boxIdentifier, index]),
   );

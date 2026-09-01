@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { loadDataFromCsv } from "../assets/js/06-data-loader";
 import { render } from "../assets/js/11-rendering";
 import {
@@ -548,5 +548,51 @@ describe("the value and the percentage", () => {
   it("has no track to drag any more", () => {
     expect(document.querySelectorAll(".sim-slider").length).toBe(0);
     expect(document.querySelectorAll('#simulation-panel input[type="range"]').length).toBe(0);
+  });
+});
+
+describe("simulation row navigation", () => {
+  beforeEach(() => {
+    loadDataFromCsv(LINEAR_CSV);
+    state.simulationMode = true;
+    state.userOverrides = {};
+    recomputeValues();
+    renderSimulationPanel();
+    render();
+  });
+
+  it("exposes each row name as a native button that selects and scrolls to its box", () => {
+    const rowNameButton = document.querySelector(
+      '.sim-slider-name[data-node-id="a"]',
+    ) as HTMLButtonElement;
+    const visualizationScroller = document.getElementById("viz-scroll")!;
+    const scrollTo = vi.fn();
+    visualizationScroller.scrollTo = scrollTo;
+
+    expect(rowNameButton.tagName).toBe("BUTTON");
+    expect(rowNameButton.type).toBe("button");
+    expect(rowNameButton.getAttribute("aria-label")).toBe("Show Input A on the map");
+    rowNameButton.focus();
+    expect(document.activeElement).toBe(rowNameButton);
+
+    rowNameButton.click();
+
+    expect(state.selectedNodeId).toBe("a");
+    expect(state.selectedNodeIds).toEqual(new Set(["a"]));
+    expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ behavior: "smooth" }));
+  });
+
+  it("does not navigate when the adjacent value controls are used", () => {
+    selectNode("c");
+    const percentageInput = document.querySelector(
+      '.sim-pct-input[data-node-id="a"]',
+    ) as HTMLInputElement;
+
+    percentageInput.click();
+
+    expect(state.selectedNodeId).toBe("c");
+    expect(document.activeElement).not.toBe(
+      document.querySelector('.sim-slider-name[data-node-id="a"]'),
+    );
   });
 });

@@ -18,7 +18,16 @@
 // uses.
 // =============================================================================
 import { describe, expect, expectTypeOf, it } from "vitest";
-import { buildGraph, buildAtlas, detectLanes, END, familyLabel, strands } from "../assets/js/20-atlas-engine";
+import {
+  buildGraph,
+  buildAtlas,
+  detectLanes,
+  END,
+  familyLabel,
+  orderTangle,
+  strands,
+  wheelOf,
+} from "../assets/js/20-atlas-engine";
 import type {
   AtlasGraphEdge,
   AtlasGraphNode,
@@ -271,6 +280,61 @@ describe("feedback loops", () => {
     const atlas = engine.buildAtlas(engine.buildGraph(map), "start");
     expect(atlas.loops).toHaveLength(0);
     expect(atlas.shapes).toBeGreaterThan(0n);
+  });
+});
+
+describe("feedback wheel ordering", () => {
+  function polygonPenalty(order: readonly string[], cycle: readonly string[]): number {
+    const positionByIdentifier = new Map(order.map((identifier, index) => [identifier, index]));
+    const itemCount = order.length;
+    const idealGap = itemCount / cycle.length;
+    const clockwiseGaps = cycle.map((identifier, cycleIndex) => {
+      const currentPosition = positionByIdentifier.get(identifier)!;
+      const nextPosition = positionByIdentifier.get(cycle[(cycleIndex + 1) % cycle.length])!;
+      return (nextPosition - currentPosition + itemCount) % itemCount;
+    });
+    const anticlockwiseGaps = clockwiseGaps.map(gap => itemCount - gap);
+    const orientationPenalty = (gaps: readonly number[]) => {
+      const turns = gaps.reduce((sum, gap) => sum + gap, 0) / itemCount;
+      const spacingError = gaps.reduce((sum, gap) => sum + Math.abs(gap - idealGap), 0) / itemCount;
+      return Math.max(0, turns - 1) * 36 + spacingError * 8;
+    };
+    return Math.min(orientationPenalty(clockwiseGaps), orientationPenalty(anticlockwiseGaps));
+  }
+
+  it("spreads a loop around the rim without requiring a perfect polygon", () => {
+    const boxes = Array.from({ length: 12 }, (_, index) => `box-${index}`);
+    const cycle = ["box-0", "box-3", "box-6", "box-9"];
+    const links = cycle.map((identifier, cycleIndex) => E(
+      identifier,
+      cycle[(cycleIndex + 1) % cycle.length],
+    ));
+    const causalOrder = orderTangle(boxes, links);
+    const polygonOrder = orderTangle(boxes, links, [cycle]);
+
+    expect(polygonOrder).toHaveLength(boxes.length);
+    expect(new Set(polygonOrder)).toEqual(new Set(boxes));
+    expect(polygonPenalty(polygonOrder, cycle)).toBeLessThan(polygonPenalty(causalOrder, cycle));
+  });
+
+  it("keeps a long loop readable and deterministic", () => {
+    const boxes = Array.from({ length: 18 }, (_, index) => `box-${index}`);
+    const cycle = [
+      "box-0", "box-5", "box-10", "box-15", "box-2", "box-7",
+      "box-12", "box-17", "box-4", "box-9", "box-14", "box-1",
+      "box-6", "box-11", "box-16", "box-3", "box-8", "box-13",
+    ];
+    const links = cycle.map((identifier, cycleIndex) => E(
+      identifier,
+      cycle[(cycleIndex + 1) % cycle.length],
+    ));
+    const firstWheel = wheelOf({ boxes, links, loops: [{ cycle }] });
+    const secondWheel = wheelOf({ boxes, links, loops: [{ cycle }] });
+
+    expect(firstWheel.order).toEqual(secondWheel.order);
+    expect(firstWheel.order).toHaveLength(18);
+    expect(new Set(firstWheel.order)).toEqual(new Set(boxes));
+    expect(polygonPenalty(firstWheel.order, cycle)).toBe(0);
   });
 });
 

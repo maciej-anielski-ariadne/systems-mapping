@@ -328,6 +328,17 @@ describe("working through the queue", () => {
 });
 
 describe("what these surfaces refuse to do", () => {
+  it("explains why source boxes are outside the review-pass denominator", () => {
+    openReview();
+
+    const scope = document.querySelector(".review-scope-note") as HTMLElement;
+    expect(scope.textContent).toContain("Why 3 of 5?");
+    expect(scope.textContent).toContain("2 source boxes have no incoming links");
+    expect(scope.textContent).toContain("excluded from the pass");
+
+    closeReview();
+  });
+
   it("will not start a pass until there is a name to sign it with", () => {
     state.reviewer = "";
     openReview();

@@ -214,6 +214,21 @@ body.no-data .detail-panel {
   transition: background var(--dur-fast), color var(--dur-fast);
 }
 
+/* The percentage remains the primary readout. A small axis glyph makes the
+ * centre button's next action visible: horizontal = fit width, vertical = fit
+ * height. The full wording is also kept in its tooltip and accessible name. */
+.viz-zoom-readout::after {
+  content: "↕";
+  margin-left: 4px;
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 11px;
+}
+
+.viz-zoom-readout[data-fit-next="width"]::after {
+  content: "↔";
+}
+
 /* Readouts stretch to fill the space between the −/+ buttons. They are figures,
  * so they are the part of this card that keeps mono — the −/+ glyphs beside
  * them are fixed-width buttons and need no help from the font. */
@@ -254,4 +269,3 @@ body.no-data .detail-panel {
   color: var(--text-secondary);
   background: transparent;
 }
-

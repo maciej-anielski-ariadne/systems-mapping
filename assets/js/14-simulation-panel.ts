@@ -22,6 +22,7 @@ import { patchDetailPanelValues, renderDetailPanel } from "./15-detail-panel";
 import { saveUiStateToStorage, scheduleUiStateSave } from "./04a-storage";
 import { renderSidebar } from "./13-sidebar";
 import { applyPanelPinnedClasses, setFiltersOpen, setUiMode } from "./17-events";
+import { focusNode, scrollNodeIntoView } from "./09-graph-selection";
 import { atlasIsOpen, refreshAtlasValues } from "./21-atlas-view";
 import { syncReviewRail } from "./25-review-rail";
 
@@ -97,7 +98,7 @@ export function renderSimulationPanel(): void {
       const maxPct = Math.round(ceiling * 100);
       const moved = Math.abs(userMultiplier - 1) > 0.0005;
       html += '<div class="sim-slider-row' + (moved ? " moved" : "") + '" data-node-id="' + escapeHtml(node.id) + '">';
-      html +=   '<span class="sim-slider-name" title="' + escapeHtml(node.label) + '">' + escapeHtml(node.label) + '</span>';
+      html +=   '<button type="button" class="sim-slider-name" data-node-id="' + escapeHtml(node.id) + '" data-tooltip="' + escapeHtml(node.label) + '" aria-label="Show ' + escapeHtml(node.label) + ' on the map">' + escapeHtml(node.label) + '</button>';
       html +=   '<input type="number" class="sim-value-input" step="any" min="0" max="' + formatScalarInput(maxValue) + '" value="' + formatScalarInput(currentValue) + '" data-node-id="' + escapeHtml(node.id) + '" aria-label="Value of ' + escapeHtml(node.label) + ' in ' + escapeHtml(unit || "units") + '. Drag sideways or type. Up to ' + formatScalarInput(maxValue) + '." />';
       html +=   '<span class="sim-slider-unit">' + escapeHtml(unit) + '</span>';
       html +=   '<span class="sim-pct-field">';
@@ -237,6 +238,14 @@ function bindSimPanelHandlers(simPanel: HTMLElement): void {
   simPanel.addEventListener("click", event => {
     const target = event.target as Element;
     if (!target || typeof target.closest !== "function") return;
+    const rowNameButton = target.closest(".sim-slider-name[data-node-id]") as HTMLElement | null;
+    if (rowNameButton && simPanel.contains(rowNameButton)) {
+      const nodeId = rowNameButton.getAttribute("data-node-id");
+      if (!nodeId) return;
+      focusNode(nodeId);
+      scrollNodeIntoView(nodeId);
+      return;
+    }
     if (!target.closest("#sim-reset-button")) return;
     resetSimulation();
   });

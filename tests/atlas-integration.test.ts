@@ -44,6 +44,10 @@ describe("blocked-link propagation", () => {
 const here = dirname(fileURLToPath(import.meta.url));
 const sampleCsv = readFileSync(resolve(here, "../assets/data/sample.csv"), "utf-8");
 const advancedCsv = readFileSync(resolve(here, "../assets/data/advanced_sample.csv"), "utf-8");
+const borderForceCsv = readFileSync(
+  resolve(here, "../assets/data/border_force_drug_trafficking_300.csv"),
+  "utf-8",
+);
 
 const panel = (): HTMLElement => document.getElementById("detail-content") as HTMLElement;
 const firstInput = (): string => {
@@ -941,6 +945,143 @@ describe("it never outlives its map", () => {
 });
 
 describe("feedback", () => {
+  it("retains the originating box and exposes one consistent loop count", () => {
+    loadDataFromCsv(borderForceCsv);
+    const start = NODES.find(node => node.label === "Analyst capacity")!;
+    openAtlas(start.id);
+
+    expect(panel().querySelector("header")?.textContent).toContain("Atlas of Analyst capacity");
+    const tangle = document.querySelector("#atlas-stage g.n[data-loop]") as SVGElement;
+    const tangleBubble = tangle.querySelector(".bub") as SVGCircleElement;
+    expect(tangleBubble.classList.contains("start")).toBe(true);
+    expect(tangleBubble.classList.contains("loop")).toBe(true);
+    tangle.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+
+    const openFeedback = panel().querySelector("[data-open-feedback]") as HTMLButtonElement;
+    const disclosedLoopCount = Number(openFeedback.querySelector(".m")?.textContent?.match(/\d+/)?.[0]);
+    expect(disclosedLoopCount).toBeGreaterThan(12);
+    expect(tangle.querySelector("text")?.textContent).toContain(`${disclosedLoopCount} loops`);
+  });
+
+  it("shows loop navigation immediately and discloses truncated loop lists", () => {
+    loadDataFromCsv(borderForceCsv);
+    const start = NODES.find(node => node.label === "Analyst capacity")!;
+    openAtlas(start.id);
+
+    const tangle = document.querySelector("#atlas-stage g.n[data-loop]") as SVGElement;
+    tangle.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    const openFeedback = panel().querySelector("[data-open-feedback]") as HTMLButtonElement;
+    const disclosedLoopCount = Number(openFeedback.querySelector(".m")?.textContent?.match(/\d+/)?.[0]);
+    openFeedback.click();
+
+    const navigator = panel().querySelector(".feedback-navigator") as HTMLElement;
+    expect(navigator).not.toBeNull();
+    expect(navigator.textContent).toContain(`${disclosedLoopCount} loops`);
+    expect(navigator.querySelectorAll("[data-loopidx]")).toHaveLength(12);
+    const showAllLoops = navigator.querySelector("[data-toggle-all-loops]") as HTMLButtonElement;
+    expect(showAllLoops.textContent).toContain(`Show all ${disclosedLoopCount} loops`);
+
+    showAllLoops.click();
+    const expandedLoopCards = [...panel().querySelectorAll<HTMLElement>(
+      ".feedback-navigator [data-loopidx]",
+    )];
+    const expandedNavigator = panel().querySelector(".feedback-navigator") as HTMLElement;
+    expect(expandedLoopCards).toHaveLength(disclosedLoopCount);
+    expect(new Set(expandedLoopCards.map(card => card.dataset.strengthTier))).toEqual(
+      new Set(["strongest", "medium", "lower"]),
+    );
+    expect(expandedNavigator.textContent).not.toContain("≈0");
+    expect(expandedNavigator.textContent).toContain(
+      "Strength compares loops within this feedback group",
+    );
+    for (const card of expandedLoopCards) {
+      expect(card.querySelector(".strength-tier")?.textContent).toMatch(/Strongest|Medium|Lower/);
+      expect(card.dataset.tooltip).toContain("exact calculated gain");
+      expect(card.getAttribute("aria-label")).toContain("Exact calculated gain:");
+    }
+  });
+
+  it("uses a picked rim box to filter the persistent loop navigator", () => {
+    loadDataFromCsv(borderForceCsv);
+    const start = NODES.find(node => node.label === "Analyst capacity")!;
+    openAtlas(start.id);
+
+    const tangle = document.querySelector("#atlas-stage g.n[data-loop]") as SVGElement;
+    tangle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+    (panel().querySelector("[data-toggle-all-loops]") as HTMLButtonElement).click();
+    const strengthTierByLoopIndex = new Map(
+      [...panel().querySelectorAll<HTMLElement>(".feedback-navigator [data-loopidx]")]
+        .map(card => [card.dataset.loopidx!, card.dataset.strengthTier!]),
+    );
+    const rimBox = document.querySelector("#atlas-stage g.n.focus .nd") as SVGElement;
+    rimBox.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+
+    const navigator = panel().querySelector(".feedback-navigator") as HTMLElement;
+    const chosenBoxName = nodeById[rimBox.dataset.box!].label;
+    expect(navigator.textContent).toContain(`through ${chosenBoxName}`);
+    expect(navigator.querySelector("[data-clear-wheel-pick]")).not.toBeNull();
+    expect(navigator.querySelectorAll("[data-loopidx]").length).toBeGreaterThan(0);
+    for (const card of navigator.querySelectorAll<HTMLElement>("[data-loopidx]")) {
+      expect(card.dataset.strengthTier).toBe(strengthTierByLoopIndex.get(card.dataset.loopidx!));
+    }
+
+    (navigator.querySelector("[data-clear-wheel-pick]") as HTMLButtonElement).click();
+    expect(panel().querySelector(".feedback-navigator")?.textContent).not.toContain(`through ${chosenBoxName}`);
+  });
+
+  it("keeps the feedback wheel framed while pathway rows are opened", () => {
+    const originalMatchMedia = globalThis.matchMedia;
+    Object.defineProperty(globalThis, "matchMedia", {
+      configurable: true,
+      value: (() => ({ matches: true })) as unknown as typeof globalThis.matchMedia,
+    });
+    try {
+      loadDataFromCsv(borderForceCsv);
+      const start = NODES.find(node => node.label === "Analyst capacity")!;
+      openAtlas(start.id);
+
+      const tangle = document.querySelector("#atlas-stage g.n[data-loop]") as SVGElement;
+      tangle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+      const atlasSvg = document.querySelector("#atlas-stage svg.atlas") as SVGSVGElement;
+      const wheelFrame = atlasSvg.getAttribute("viewBox");
+      const pathwayRow = panel().querySelector("[data-fork]") as HTMLButtonElement;
+      expect(pathwayRow).not.toBeNull();
+
+      pathwayRow.click();
+      expect(atlasSvg.getAttribute("viewBox")).toBe(wheelFrame);
+    } finally {
+      Object.defineProperty(globalThis, "matchMedia", {
+        configurable: true,
+        value: originalMatchMedia,
+      });
+    }
+  });
+
+  it("shows tooltips only for actual rim boxes once inside a feedback wheel", () => {
+    loadDataFromCsv(advancedCsv);
+    const start = NODES.find(node => node.label === "Website visits") || NODES[0];
+    openAtlas(start.id);
+
+    const tangle = document.querySelector("#atlas-stage g.n[data-loop]") as SVGElement;
+    tangle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+    const tooltip = document.getElementById("tooltip") as HTMLElement;
+    const rimBox = tangle.querySelector(".nd") as SVGElement;
+    const rimBoxName = nodeById[rimBox.dataset.box!].label;
+
+    rimBox.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    expect(tooltip.classList.contains("visible")).toBe(true);
+    expect(tooltip.textContent).toContain(rimBoxName);
+    expect(tooltip.textContent).not.toContain("feedback tangle");
+
+    const feedbackChord = tangle.querySelector(".ch") as SVGElement;
+    feedbackChord.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    expect(tooltip.classList.contains("visible")).toBe(false);
+
+    const tangleBackground = tangle.querySelector(".bub") as SVGElement;
+    tangleBackground.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    expect(tooltip.classList.contains("visible")).toBe(false);
+  });
+
   it("draws a knot of feedback as a wheel you can go into", () => {
     // The parcel-delivery sample has a real loop in it.
     loadDataFromCsv(advancedCsv);
@@ -955,7 +1096,40 @@ describe("feedback", () => {
     expect(tangles[0].querySelectorAll(".ch").length).toBeGreaterThan(0);
   });
 
-  it("lights the exact wheel chords after a rim box is picked", () => {
+  it("keeps single click as selection and offers a named way into the selected feedback group", () => {
+    loadDataFromCsv(advancedCsv);
+    const start = NODES.find(node => node.label === "Website visits") || NODES[0];
+    openAtlas(start.id);
+
+    const tangle = document.querySelector("#atlas-stage g.n[data-loop]") as SVGElement;
+    tangle.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+
+    const atlasSvg = document.querySelector("#atlas-stage svg.atlas")!;
+    expect(atlasSvg.classList.contains("inside")).toBe(false);
+    const openFeedback = panel().querySelector("[data-open-feedback]") as HTMLButtonElement;
+    expect(openFeedback).not.toBeNull();
+    expect(openFeedback.textContent).toContain("Open feedback loops");
+    const feedbackName = openFeedback.querySelector("small") as HTMLElement;
+    expect(feedbackName.textContent).not.toContain("…");
+    expect(feedbackName.textContent).not.toMatch(/\d+\s+loops?/i);
+
+    openFeedback.click();
+    expect(atlasSvg.classList.contains("inside")).toBe(true);
+    expect(tangle.classList.contains("focus")).toBe(true);
+  });
+
+  it("describes selection and the explicit feedback action before mentioning the shortcut", () => {
+    loadDataFromCsv(advancedCsv);
+    const start = NODES.find(node => node.label === "Website visits") || NODES[0];
+    openAtlas(start.id);
+
+    const legend = document.querySelector(".atlas-legend")!;
+    expect(legend.textContent).toContain("select");
+    expect(legend.textContent).toContain("Open feedback loops");
+    expect(legend.textContent).toContain("double-click is a shortcut");
+  });
+
+  it("progressively lights the exact wheel route after a rim box is picked", () => {
     loadDataFromCsv(advancedCsv);
     const start = NODES.find(node => node.label === "Website visits") || NODES[0];
     openAtlas(start.id);
@@ -966,7 +1140,106 @@ describe("feedback", () => {
     expect(rimBox).not.toBeNull();
     rimBox.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
 
+    const animationControls = document.getElementById("atlas-loopctl") as HTMLElement;
+    const scrubber = animationControls.querySelector<HTMLInputElement>("[data-loop-animation-scrub]")!;
+    expect(animationControls.hidden).toBe(false);
+    expect(document.querySelectorAll("#atlas-stage g.n.focus .nd.on")).toHaveLength(1);
+
+    scrubber.value = "1";
+    scrubber.dispatchEvent(new Event("input", { bubbles: true }));
     const selectedChords = document.querySelectorAll("#atlas-stage g.n.focus .ch.on");
     expect(selectedChords.length).toBeGreaterThan(0);
+    expect(document.querySelectorAll("#atlas-stage g.n.focus .nd.on").length).toBeGreaterThan(1);
+    expect(document.querySelectorAll("#atlas-stage g.n.focus .bl.animation-current")).toHaveLength(1);
+  });
+
+  it("pauses, changes speed and scrubs through a long feedback loop", () => {
+    loadDataFromCsv(borderForceCsv);
+    const start = NODES.find(node => node.label === "Analyst capacity")!;
+    openAtlas(start.id);
+
+    const tangle = document.querySelector("#atlas-stage g.n[data-loop]") as SVGElement;
+    tangle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+    (panel().querySelector("[data-toggle-all-loops]") as HTMLButtonElement).click();
+    const longLoopCard = [...panel().querySelectorAll<HTMLButtonElement>("[data-loopidx]")]
+      .find(card => card.getAttribute("aria-label")?.includes("through 18 boxes"));
+    expect(longLoopCard).toBeDefined();
+    longLoopCard!.click();
+
+    const animationControls = document.getElementById("atlas-loopctl") as HTMLElement;
+    const toggleButton = animationControls.querySelector<HTMLButtonElement>("[data-loop-animation-toggle]")!;
+    const speedSelect = animationControls.querySelector<HTMLSelectElement>("[data-loop-animation-speed]")!;
+    const scrubber = animationControls.querySelector<HTMLInputElement>("[data-loop-animation-scrub]")!;
+    const status = animationControls.querySelector<HTMLOutputElement>("#atlas-loop-animation-status")!;
+    expect(animationControls.hidden).toBe(false);
+    expect(scrubber.max).toBe("18");
+    expect(toggleButton.textContent).toBe("Pause");
+
+    toggleButton.click();
+    expect(toggleButton.textContent).toBe("Play");
+    speedSelect.value = "2";
+    speedSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(speedSelect.value).toBe("2");
+
+    scrubber.value = "9";
+    scrubber.dispatchEvent(new Event("input", { bubbles: true }));
+    const halfwayNodes = document.querySelectorAll("#atlas-stage g.n.focus .nd.on").length;
+    expect(halfwayNodes).toBeGreaterThan(1);
+    expect(halfwayNodes).toBeLessThanOrEqual(10);
+    expect(document.querySelectorAll("#atlas-stage g.n.focus .bl")).toHaveLength(halfwayNodes);
+    expect(status.textContent).toContain("Box 10 of 18");
+
+    const pathwayRow = panel().querySelector("[data-fork]") as HTMLButtonElement;
+    pathwayRow.click();
+    expect(scrubber.value).toBe("9");
+    expect(toggleButton.textContent).toBe("Play");
+    expect(status.textContent).toContain("Box 10 of 18");
+    expect(document.querySelectorAll("#atlas-stage g.n.focus .nd.on")).toHaveLength(halfwayNodes);
+    expect(document.querySelectorAll("#atlas-stage g.n.focus .bl")).toHaveLength(halfwayNodes);
+
+    scrubber.value = scrubber.max;
+    scrubber.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(document.querySelectorAll("#atlas-stage g.n.focus .nd.on")).toHaveLength(18);
+    expect(document.querySelectorAll("#atlas-stage g.n.focus .bl")).toHaveLength(18);
+    expect(status.textContent).toContain("Complete · 18 boxes");
+    expect(toggleButton.textContent).toBe("Replay");
+  });
+
+  it("keeps automatic motion off while reduced motion is enabled", () => {
+    const originalMatchMedia = globalThis.matchMedia;
+    Object.defineProperty(globalThis, "matchMedia", {
+      configurable: true,
+      value: (() => ({ matches: true })) as unknown as typeof globalThis.matchMedia,
+    });
+    try {
+      loadDataFromCsv(borderForceCsv);
+      const start = NODES.find(node => node.label === "Analyst capacity")!;
+      openAtlas(start.id);
+
+      const tangle = document.querySelector("#atlas-stage g.n[data-loop]") as SVGElement;
+      tangle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+      (panel().querySelector("[data-toggle-all-loops]") as HTMLButtonElement).click();
+      const longLoopCard = [...panel().querySelectorAll<HTMLButtonElement>("[data-loopidx]")]
+        .find(card => card.getAttribute("aria-label")?.includes("through 18 boxes"));
+      longLoopCard!.click();
+
+      const controls = document.getElementById("atlas-loopctl") as HTMLElement;
+      const toggleButton = controls.querySelector<HTMLButtonElement>("[data-loop-animation-toggle]")!;
+      const previousButton = controls.querySelector<HTMLButtonElement>("[data-loop-animation-step='-1']")!;
+      const scrubber = controls.querySelector<HTMLInputElement>("[data-loop-animation-scrub]")!;
+      expect(toggleButton.disabled).toBe(true);
+      expect(toggleButton.textContent).toBe("Motion off");
+      expect(scrubber.value).toBe(scrubber.max);
+      expect(document.querySelectorAll("#atlas-stage g.n.focus .nd.on")).toHaveLength(18);
+
+      previousButton.click();
+      expect(scrubber.value).toBe("17");
+      expect(toggleButton.textContent).toBe("Motion off");
+    } finally {
+      Object.defineProperty(globalThis, "matchMedia", {
+        configurable: true,
+        value: originalMatchMedia,
+      });
+    }
   });
 });

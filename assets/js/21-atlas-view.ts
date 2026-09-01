@@ -78,6 +78,7 @@ type AtlasTangle = EngineAtlasTangle<AtlasGraphEdge>;
 type AtlasNode = EngineAtlasElement<AtlasGraphEdge>;
 type AtlasData = AtlasResult<AtlasGraphEdge>;
 type AtlasLoop = Pick<AtlasWheelLoop, "links" | "cycle" | "reinforcing" | "gain">;
+type LoopStrengthTier = "strongest" | "medium" | "lower";
 
 interface AtlasWorld {
   W: number;
@@ -199,7 +200,24 @@ let WHEEL_TANGLE: AtlasTangle | null = null; // the tangle that box belongs to
 // Whether the current pick came from the wheel or from a row in the list. Only
 // a pick made on the wheel means "show me the loops through this box".
 let PICK_FROM_WHEEL = false;
-let traceRAF = 0;
+let SHOW_ALL_LOOPS = false;
+type LoopAnimationKind = "tour" | "trace";
+interface LoopAnimationPlayback {
+  kind: LoopAnimationKind;
+  identity: string;
+  positionMilliseconds: number;
+  durationMilliseconds: number;
+  stepMilliseconds: number;
+  stepCount: number;
+  stepPositionsMilliseconds?: number[];
+  paused: boolean;
+  lastFrameTimestamp: number | null;
+  render: (positionMilliseconds: number) => void;
+  describe: (positionMilliseconds: number) => string;
+}
+let loopAnimationPlayback: LoopAnimationPlayback | null = null;
+let loopAnimationFrameRequest = 0;
+let loopAnimationSpeed = 1;
 const CARD_MAX = 12;                  // loop diagrams listed in the panel
 
 // ───── One strand at a time ───────────────────────────────────────────────
@@ -299,8 +317,15 @@ const plural = (n: number, one: string, many?: string): string => (n === 1 ? one
 const clip = (s: string, n: number): string => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 const pct = (f: number): string =>
   (f >= 0.1 ? (f * 100).toFixed(0) : f >= 0.001 ? (f * 100).toFixed(1) : "<0.1") + "%";
-const labelOf = (identifier: ForkIdentifier): string =>
-  identifier === null ? "" : ATLAS?.nodes.get(identifier)?.label || identifier;
+function labelOf(identifier: ForkIdentifier): string {
+  if (identifier === null) return "";
+  const node = ATLAS?.nodes.get(identifier);
+  if (!node) return identifier;
+  if (!node.loop) return node.label;
+  const feedbackGroupName = node.label.replace(/\s*·\s*\d+\s+loops?$/i, "");
+  const loopCount = tangleLoops(identifier).length;
+  return `${feedbackGroupName} · ${loopCount} ${plural(loopCount, "loop")}`;
+}
 const boxLabel = (identifier: string): string => nodeById[identifier]?.label || identifier;
 const stageEl = (): HTMLElement | null => document.getElementById("atlas-stage");
 const eventTargetElement = (target: EventTarget | null): Element | null =>
@@ -395,12 +420,14 @@ export function openAtlas(startId: string): void {
   PAIR_GAIN.clear();
   PATHS_THROUGH.clear();
   WHEEL_PICK = null; WHEEL_LOOP = 0; WHEEL_TANGLE = null; PICK_FROM_WHEEL = false;
+  SHOW_ALL_LOOPS = false;
   MOVES_OPEN = {};
   R.roots = []; R.open = []; R.current = []; R.lanes = [];
   R.trace = null; R.traceKey = null; R.inside = null;
   POINTED = null; TRACE_OF = null; TRACE_CACHE = null;
   STRAND_CACHE = null; VB = null; WORLD = null;
   stopTour();
+  stopLoopAnimation();
   document.body.classList.add("atlas-open");
   syncAtlasButton();
   renderAtlas();
@@ -409,7 +436,7 @@ export function openAtlas(startId: string): void {
 export function closeAtlas(): void {
   if (!state.atlas) return;
   stopTour();
-  cancelAnimationFrame(traceRAF);
+  stopLoopAnimation();
   state.atlas = null;
   START = null; ATLAS = null; GRAPH = null; WORLD = null; VB = null;
   R.inside = null; R.roots = []; R.open = []; R.current = []; R.lanes = []; POINTED = null;
@@ -621,7 +648,7 @@ const REVEAL = 900;           // how long the picture takes to draw itself in
 
 let WORLD: AtlasWorld | null = null; // where everything is, in world coordinates
 let VB: AtlasFrame | null = null;    // the frame we are looking through
-let vbRAF = 0, tourRAF = 0, tourAt = -1;
+let vbRAF = 0, tourAt = -1;
 
 const reduced = () =>
   typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -743,12 +770,12 @@ function viewAtlas(A: AtlasData, M: AtlasMeasurement): string {
   }
   for (const id of used.flat()) {
     const node = A.nodes.get(id)!, r = rOf.get(id)!, [cx, cy] = at.get(id)!;
-    const cls = "bub" + (id === A.start ? " start" : node.loop ? " loop" : "");
+    const bubbleClassName = `bub${id === A.start ? " start" : ""}${node.loop ? " loop" : ""}`;
     parts.push(`<g class="n${node.loop ? " tangle" : ""}" data-el="${escapeHtml(id)}"${
         node.loop ? ' data-loop="1"' : ""} tabindex="0" role="button"
-        aria-label="${escapeHtml(node.label)}, ${pct(M.weight(id))} of everything${
-          node.loop ? ". Feedback — opens as a wheel" : ""}">` +
-      `<circle class="${cls}" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}"></circle>` +
+        aria-label="${escapeHtml(labelOf(id))}, ${pct(M.weight(id))} of everything${
+          node.loop ? ". Feedback group — select to trace it, then use Open feedback loops; double-click is a shortcut" : ""}">` +
+      `<circle class="${bubbleClassName}" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}"></circle>` +
       // The gate. A bar drawn across the way IN — the side the effect arrives
       // from — so it reads as the flow meeting something rather than as a badge
       // stuck on the circle. Hidden unless the box is actually held; see .held
@@ -757,7 +784,7 @@ function viewAtlas(A: AtlasData, M: AtlasMeasurement): string {
         x2="${(cx - r - 5).toFixed(1)}" y2="${(cy + Math.max(7, r * 0.55)).toFixed(1)}"></line>` +
       (node.loop ? tangleWheel(node, cx, cy, r) : "") +
       `<text x="${cx.toFixed(1)}" y="${(cy + r + 15).toFixed(1)}" text-anchor="middle">${
-        node.loop ? "↻ " : ""}${escapeHtml(clip(node.label, 30))}${
+        node.loop ? "↻ " : ""}${escapeHtml(clip(labelOf(id), 30))}${
         node.boxes.length > 1 && !node.loop ? " ×" + node.boxes.length : ""}` +
       // The move goes in the LABEL, not on the disc. A tangle's disc already
       // has its wheel drawn inside it, and the smallest circles here are a few
@@ -779,7 +806,7 @@ function viewAtlas(A: AtlasData, M: AtlasMeasurement): string {
 
   return `<div class="atlas-legend">
       <span><i class="sw sw-el"></i>an element — its <b>area</b> is the share of readings through it</span>
-      <span><i class="sw sw-loop"></i>↻ feedback — click to go inside it</span>
+      <span><i class="sw sw-loop"></i>↻ feedback — <b>select</b> to trace it, then choose <b>Open feedback loops</b> · double-click is a shortcut</span>
       <span class="sim-only"><i class="sw sw-good"></i>colour is what <b>simulating</b> did to it —
         red worse, green better, amber moved · grey has not moved · size still says how much
         runs through</span>
@@ -791,12 +818,29 @@ function viewAtlas(A: AtlasData, M: AtlasMeasurement): string {
     </div>
     <div class="atlaswrap">
       <svg class="atlas" viewBox="0 0 ${W} ${H}" style="--z:1" role="application"
-        aria-label="Atlas of ${escapeHtml(labelOf(A.start))} — every pathway out of it">${parts.join("")}</svg>
+        aria-label="Atlas of ${escapeHtml(START ? boxLabel(START) : labelOf(A.start))} — every pathway out of it">${parts.join("")}</svg>
       <div class="atlas-controls">
-        <button class="atlas-btn" type="button" data-atlas-close>← Back to the map</button>
         <div class="zoomctl" id="atlas-zoomctl" hidden>
           <button class="atlas-btn" type="button" data-zoomout>Fit to width</button>
-          <button class="atlas-btn" type="button" data-replay>Replay the loops</button>
+          <button class="atlas-btn" type="button" data-replay>Replay feedback loops</button>
+        </div>
+        <div class="atlas-loopctl" id="atlas-loopctl" role="group" aria-label="Feedback loop animation" hidden>
+          <button class="atlas-btn" type="button" data-loop-animation-step="-1">Previous</button>
+          <button class="atlas-btn" type="button" data-loop-animation-toggle>Pause</button>
+          <button class="atlas-btn" type="button" data-loop-animation-step="1">Next</button>
+          <label class="atlas-loop-speed">Speed
+            <select data-loop-animation-speed aria-label="Feedback loop animation speed">
+              <option value="0.5">0.5×</option>
+              <option value="1" selected>1×</option>
+              <option value="2">2×</option>
+            </select>
+          </label>
+          <label class="atlas-loop-scrubber">
+            <span class="sr-only">Feedback loop animation position</span>
+            <input type="range" min="0" max="1" step="1" value="0" data-loop-animation-scrub
+              aria-label="Feedback loop animation position">
+          </label>
+          <output id="atlas-loop-animation-status" aria-live="polite"></output>
         </div>
       </div>
       <div class="atlas-zoom" role="group" aria-label="Zoom the atlas">
@@ -881,13 +925,25 @@ function setScale() {
     // The way back is offered whenever there is somewhere to come back FROM —
     // inside a tangle, or simply zoomed in past the whole picture.
     ctl.hidden = !zoomedIn && !R.inside;
-    const out = ctl.querySelector<HTMLElement>("[data-zoomout]");
-    if (out) out.textContent = R.inside ? "Back out" : "Fit to width";
-    const rp = ctl.querySelector<HTMLElement>("[data-replay]");
-    if (rp) rp.hidden = !R.inside;
+    const zoomOutButton = ctl.querySelector<HTMLElement>("[data-zoomout]");
+    if (zoomOutButton) {
+      zoomOutButton.textContent = R.inside ? "Return to pathway overview" : "Fit to width";
+    }
+    const replayButton = ctl.querySelector<HTMLElement>("[data-replay]");
+    if (replayButton) {
+      replayButton.hidden = !R.inside;
+      if (R.inside) {
+        const replayedLoopCount = tourLoops().length;
+        const totalLoopCount = tangleLoops().length;
+        replayButton.textContent = replayedLoopCount === totalLoopCount
+          ? `Replay all ${totalLoopCount} ${plural(totalLoopCount, "loop")}`
+          : `Replay ${replayedLoopCount} strongest of ${totalLoopCount}`;
+      }
+    }
   }
   const readout = document.getElementById("atlas-zoom-readout");
   if (readout) readout.textContent = Math.round(atlasZoomPercent() * 100) + "%";
+  syncLoopAnimationControls();
 }
 
 // The frame the picture rests in: the whole of it across the width, filling
@@ -1307,7 +1363,10 @@ function syncStrandToOpen(reframe: boolean): void {
   // out in traceEl(), and letting go of an explicit trace cannot disturb it.)
   dropTrace();
   paintAtlas();
-  if (!reframe) return;
+  // Opening pathway rows while the feedback wheel is the subject must not
+  // throw that subject into a corner. The list can change without moving the
+  // camera; leaving the tangle remains the explicit way back to the overview.
+  if (!reframe || R.inside) return;
   const paths = drawn();
   const f = paths ? frameOnStrand(paths.flat()) : wholePicture();
   if (f) zoomTo(f);
@@ -1691,26 +1750,62 @@ function strandsHtml(): string {
   const last = els.length ? els[els.length - 1] : null;
   const picked = last && ATLAS && ATLAS.nodes.has(last) ? ATLAS.nodes.get(last) : null;
 
+  const feedbackNavigatorHtml = (): string => {
+    if (!picked?.loop || !last) return "";
+    const allLoops = tangleLoops(last);
+    if (!allLoops.length) return "";
+    const indexedLoops = allLoops.map((loop, index) => ({
+      loop,
+      index,
+      strengthTier: loopStrengthTier(index, allLoops),
+    }));
+    const loopsForSelectedBox = PICK_FROM_WHEEL && WHEEL_PICK
+      ? indexedLoops.filter(({ loop }) => loop.cycle.includes(WHEEL_PICK!))
+      : indexedLoops;
+    const visibleLoops = SHOW_ALL_LOOPS
+      ? loopsForSelectedBox
+      : loopsForSelectedBox.slice(0, CARD_MAX);
+    const selectedBoxName = PICK_FROM_WHEEL && WHEEL_PICK ? boxLabel(WHEEL_PICK) : null;
+    const showingEveryLoop = visibleLoops.length === loopsForSelectedBox.length;
+    const summary = selectedBoxName
+      ? `${loopsForSelectedBox.length} of ${allLoops.length} through ${selectedBoxName}`
+      : `${allLoops.length} ${plural(allLoops.length, "loop")}`;
+    return `<section class="feedback-navigator" aria-label="Feedback loop navigator">
+      <div class="feedback-navigator-head">
+        <span><b>Feedback loops</b><small>${escapeHtml(summary)}</small>
+          <small>Strength compares loops within this feedback group</small></span>
+        ${selectedBoxName
+          ? `<button type="button" class="feedback-navigator-action" data-clear-wheel-pick>Show all boxes</button>`
+          : ""}
+      </div>
+      <div class="loopcards" aria-label="Feedback loops in ${escapeHtml(labelOf(last))}">${visibleLoops.map(({ loop, index, strengthTier }) =>
+        loopCard(loop, index, isDrawnLoop(loop), false, strengthTier, allLoops.length)).join("")}</div>
+      ${!showingEveryLoop
+        ? `<button type="button" class="feedback-navigator-action feedback-navigator-more" data-toggle-all-loops>
+            Show all ${loopsForSelectedBox.length} loops
+          </button>`
+        : loopsForSelectedBox.length > CARD_MAX
+          ? `<button type="button" class="feedback-navigator-action feedback-navigator-more" data-toggle-all-loops>
+              Show strongest ${CARD_MAX}
+            </button>`
+          : ""}
+    </section>`;
+  };
+
   // The top row is the whole map's pathways and stays that way, whatever is
   // picked — it is the way back to nothing chosen.
-  let html = `<button type="button" class="pathall${
+  let html = feedbackNavigatorHtml() + `<button type="button" class="pathall${
     R.current.length || els.length ? "" : " cur"}" data-crumb="0">` +
     `<span class="dname">All pathways</span><span class="m">×${res.list.length}</span></button>`;
 
-  // What a picked circle has to say that its pathways cannot: the loops it
-  // contains, and the boxes it stands for — the way back out to the map. Drawn
-  // once, under the first output the circle turns up in.
+  // What a picked circle has to say that its pathways cannot: the boxes it
+  // stands for — the way back out to the map. Feedback loops live in the
+  // stable navigator above instead of disappearing under the first open output.
   const asideHtml = (): string => {
     if (!picked) return "";
-    const loops = tangleLoops(last);
     const boxes = picked.boxes.length > 1 ? picked.boxes : [];
-    if (!loops.length && !boxes.length) return "";
-    return `<div class="pathaside">${
-      loops.length
-        ? `<div class="loopcards">${loops.slice(0, CARD_MAX).map((loop, index) =>
-            loopCard(loop, index, isDrawnLoop(loop), false)).join("")}</div>`
-        : ""}${
-      boxes.map(boxIdentifier =>
+    if (!boxes.length) return "";
+    return `<div class="pathaside">${boxes.map(boxIdentifier =>
         `<button type="button" class="atlas-boxrow" data-atlas-box="${escapeHtml(boxIdentifier)}">` +
         `<span class="bn">${escapeHtml(clip(boxLabel(boxIdentifier), 30))}</span>` +
         `<span class="go">open ↗</span></button>`).join("")}</div>`;
@@ -1932,8 +2027,10 @@ function selectEl(identifier: AtlasElementIdentifier): void {
 function enterTangle(identifier: AtlasElementIdentifier, then?: () => void): void {
   if (R.inside === identifier) { if (then) then(); return; }
   stopTour();
+  stopLoopAnimation();
   R.inside = identifier; R.roots = [identifier]; WHEEL_PICK = null; WHEEL_LOOP = 0;
   PICK_FROM_WHEEL = false;
+  SHOW_ALL_LOOPS = false;
   seedOpenForRoots();
   WHEEL_TANGLE = WORLD!.A.nodes.get(identifier)!.tangles[0];
   paintAtlas();
@@ -1943,9 +2040,10 @@ function enterTangle(identifier: AtlasElementIdentifier, then?: () => void): voi
 function leaveTangle(quiet: boolean): void {
   if (!R.inside) return;
   stopTour();
+  stopLoopAnimation();
   const svg = svgEl();
   if (svg) { const tr = svg.querySelector("g.n.focus .trace"); if (tr) tr.innerHTML = ""; }
-  R.inside = null; WHEEL_PICK = null; PICK_FROM_WHEEL = false;
+  R.inside = null; WHEEL_PICK = null; PICK_FROM_WHEEL = false; SHOW_ALL_LOOPS = false;
   if (!quiet) R.roots = [];
   paintAtlas();
   if (!quiet) zoomTo(wholePicture());
@@ -1958,9 +2056,178 @@ function leaveTangle(quiet: boolean): void {
 // stays, faded, while the next one draws. What builds up is the answer to the
 // question a list of loops cannot answer — how they sit on top of each other.
 // ---------------------------------------------------------------------------
-function stopTour() {
-  cancelAnimationFrame(tourRAF);
-  tourRAF = 0; tourAt = -1;
+function syncLoopAnimationControls(): void {
+  const controls = document.getElementById("atlas-loopctl");
+  const playback = loopAnimationPlayback;
+  if (!controls) return;
+  controls.hidden = !R.inside || !playback;
+  if (!playback) return;
+
+  const toggleButton = controls.querySelector<HTMLButtonElement>("[data-loop-animation-toggle]");
+  const speedSelect = controls.querySelector<HTMLSelectElement>("[data-loop-animation-speed]");
+  const scrubber = controls.querySelector<HTMLInputElement>("[data-loop-animation-scrub]");
+  const status = controls.querySelector<HTMLOutputElement>("#atlas-loop-animation-status");
+  const atEnd = playback.positionMilliseconds >= playback.durationMilliseconds;
+  const motionIsReduced = reduced();
+  if (toggleButton) {
+    toggleButton.disabled = motionIsReduced;
+    toggleButton.textContent = motionIsReduced
+      ? "Motion off"
+      : atEnd
+        ? "Replay"
+        : playback.paused
+          ? "Play"
+          : "Pause";
+    toggleButton.setAttribute("aria-label", motionIsReduced
+      ? "Automatic feedback loop animation is off because reduced motion is enabled"
+      : atEnd
+        ? "Replay feedback loop animation"
+        : playback.paused
+          ? "Play feedback loop animation"
+          : "Pause feedback loop animation");
+  }
+  if (speedSelect) speedSelect.value = String(loopAnimationSpeed);
+  if (scrubber) {
+    const stepPositions = playback.stepPositionsMilliseconds;
+    const animationStep = stepPositions
+      ? stepPositions.reduce((closestStep, position, stepIndex) =>
+        Math.abs(position - playback.positionMilliseconds)
+          < Math.abs(stepPositions[closestStep] - playback.positionMilliseconds)
+          ? stepIndex
+          : closestStep, 0)
+      : Math.min(
+        playback.stepCount,
+        Math.round(playback.positionMilliseconds / playback.stepMilliseconds),
+      );
+    scrubber.max = String(playback.stepCount);
+    scrubber.value = String(animationStep);
+    scrubber.setAttribute("aria-valuetext", playback.describe(playback.positionMilliseconds));
+  }
+  if (status) status.textContent = playback.describe(playback.positionMilliseconds);
+}
+
+function stopLoopAnimation(kind?: LoopAnimationKind): void {
+  if (kind && loopAnimationPlayback?.kind !== kind) return;
+  cancelAnimationFrame(loopAnimationFrameRequest);
+  loopAnimationFrameRequest = 0;
+  loopAnimationPlayback = null;
+  syncLoopAnimationControls();
+}
+
+function renderLoopAnimationFrame(timestamp: number): void {
+  const playback = loopAnimationPlayback;
+  if (!playback || playback.paused) {
+    loopAnimationFrameRequest = 0;
+    return;
+  }
+  if (playback.lastFrameTimestamp === null) playback.lastFrameTimestamp = timestamp;
+  const elapsedMilliseconds = Math.max(0, timestamp - playback.lastFrameTimestamp);
+  playback.lastFrameTimestamp = timestamp;
+  playback.positionMilliseconds = Math.min(
+    playback.durationMilliseconds,
+    playback.positionMilliseconds + elapsedMilliseconds * loopAnimationSpeed,
+  );
+  playback.render(playback.positionMilliseconds);
+  if (playback.positionMilliseconds >= playback.durationMilliseconds) {
+    playback.paused = true;
+    loopAnimationFrameRequest = 0;
+    syncLoopAnimationControls();
+    return;
+  }
+  syncLoopAnimationControls();
+  loopAnimationFrameRequest = requestAnimationFrame(renderLoopAnimationFrame);
+}
+
+function startLoopAnimation(playback: LoopAnimationPlayback): void {
+  stopLoopAnimation();
+  loopAnimationPlayback = playback;
+  playback.positionMilliseconds = 0;
+  playback.lastFrameTimestamp = null;
+  if (reduced()) {
+    playback.positionMilliseconds = playback.durationMilliseconds;
+    playback.paused = true;
+    playback.render(playback.positionMilliseconds);
+    syncLoopAnimationControls();
+    return;
+  }
+  playback.paused = false;
+  playback.render(0);
+  syncLoopAnimationControls();
+  loopAnimationFrameRequest = requestAnimationFrame(renderLoopAnimationFrame);
+}
+
+function toggleLoopAnimation(): void {
+  const playback = loopAnimationPlayback;
+  if (!playback || reduced()) return;
+  if (playback.positionMilliseconds >= playback.durationMilliseconds) {
+    playback.positionMilliseconds = 0;
+    playback.render(0);
+  }
+  playback.paused = !playback.paused;
+  playback.lastFrameTimestamp = null;
+  cancelAnimationFrame(loopAnimationFrameRequest);
+  loopAnimationFrameRequest = 0;
+  if (!playback.paused) {
+    loopAnimationFrameRequest = requestAnimationFrame(renderLoopAnimationFrame);
+  }
+  syncLoopAnimationControls();
+}
+
+function seekLoopAnimationStep(animationStep: number): void {
+  const playback = loopAnimationPlayback;
+  if (!playback) return;
+  playback.paused = true;
+  playback.lastFrameTimestamp = null;
+  cancelAnimationFrame(loopAnimationFrameRequest);
+  loopAnimationFrameRequest = 0;
+  const boundedStep = Math.max(0, Math.min(playback.stepCount, animationStep));
+  const stepPosition = playback.stepPositionsMilliseconds?.[boundedStep]
+    ?? boundedStep * playback.stepMilliseconds;
+  playback.positionMilliseconds = Math.min(playback.durationMilliseconds, stepPosition);
+  playback.render(playback.positionMilliseconds);
+  syncLoopAnimationControls();
+}
+
+function stepLoopAnimation(direction: number): void {
+  const playback = loopAnimationPlayback;
+  if (!playback) return;
+  const stepPositions = playback.stepPositionsMilliseconds
+    ?? Array.from(
+      { length: playback.stepCount + 1 },
+      (_, stepIndex) => Math.min(
+        playback.durationMilliseconds,
+        stepIndex * playback.stepMilliseconds,
+      ),
+    );
+  const boundaryToleranceMilliseconds = 0.5;
+  let targetStep = -1;
+  if (direction > 0) {
+    targetStep = stepPositions.findIndex(position =>
+      position > playback.positionMilliseconds + boundaryToleranceMilliseconds);
+  } else {
+    for (let stepIndex = stepPositions.length - 1; stepIndex >= 0; stepIndex--) {
+      if (stepPositions[stepIndex]
+        < playback.positionMilliseconds - boundaryToleranceMilliseconds) {
+        targetStep = stepIndex;
+        break;
+      }
+    }
+  }
+  seekLoopAnimationStep(targetStep < 0 ? (direction > 0 ? playback.stepCount : 0) : targetStep);
+}
+
+function setLoopAnimationSpeed(speed: number): void {
+  if (![0.5, 1, 2].includes(speed)) return;
+  loopAnimationSpeed = speed;
+  if (loopAnimationPlayback) loopAnimationPlayback.lastFrameTimestamp = null;
+  syncLoopAnimationControls();
+}
+
+function stopTour(): void {
+  stopLoopAnimation("tour");
+  const wheelGroup = svgEl()?.querySelector<SVGGElement>("g.n.focus");
+  if (wheelGroup) wheelGroup.classList.remove("touring");
+  tourAt = -1;
 }
 
 function tourLoops(): AtlasWheelLoop[] {
@@ -1989,6 +2256,8 @@ function playTour() {
     }).join("")}</g>`).join("");
 
   const groups = [...g.querySelectorAll<SVGGElement>("g.tl")];
+  const wheelGroup = g.closest<SVGGElement>("g.n.focus");
+  if (wheelGroup) wheelGroup.classList.add("touring");
   const lens = groups.map(gg => [...gg.querySelectorAll<SVGPathElement>("path")].map(p =>
     typeof p.getTotalLength === "function" ? p.getTotalLength() : 0));
   groups.forEach((gg, i) => [...gg.querySelectorAll<SVGPathElement>("path")].forEach((p, j) => {
@@ -1996,42 +2265,87 @@ function playTour() {
     p.style.strokeDashoffset = String(lens[i][j]);
   }));
 
-  if (reduced()) {
-    groups.forEach(gg => {
-      gg.classList.add("done");
-      [...gg.querySelectorAll<SVGPathElement>("path")].forEach(p => { p.style.strokeDashoffset = "0"; });
-    });
-    tourAt = loops.length;
-    renderInspector();
-    return;
-  }
-
-  const DRAW = 620, HOLD = 260, PER = DRAW + HOLD;
-  const t0 = performance.now();
-  const tick = (now: number) => {
-    const t = now - t0;
-    const i = Math.min(loops.length - 1, Math.floor(t / PER));
-    if (i !== tourAt) { tourAt = i; renderInspector(); }
-    groups.forEach((gg, gi) => {
-      const local = (t - gi * PER) / DRAW;
-      const f = Math.max(0, Math.min(1, local));
-      gg.classList.toggle("done", local >= 1);
-      gg.classList.toggle("live", local >= 0 && local < 1);
-      [...gg.querySelectorAll<SVGPathElement>("path")].forEach((p, j) => {
-        const per = 1 / lens[gi].length;
-        const fj = Math.max(0, Math.min(1, (f - j * per) / per));
-        p.style.strokeDashoffset = (lens[gi][j] * (1 - fj)).toFixed(2);
+  const drawMillisecondsPerLink = 420;
+  const holdMilliseconds = 260;
+  let accumulatedMilliseconds = 0;
+  const loopTimings = loops.map(loop => {
+    const startMilliseconds = accumulatedMilliseconds;
+    const drawMilliseconds = Math.max(1, loop.links.length) * drawMillisecondsPerLink;
+    const endMilliseconds = startMilliseconds + drawMilliseconds + holdMilliseconds;
+    accumulatedMilliseconds = endMilliseconds;
+    return { startMilliseconds, drawMilliseconds, endMilliseconds };
+  });
+  const totalDurationMilliseconds = accumulatedMilliseconds;
+  const renderTour = (positionMilliseconds: number) => {
+    const activeLoopIndex = loopTimings.findIndex(timing =>
+      positionMilliseconds < timing.endMilliseconds);
+    const boundedActiveLoopIndex = activeLoopIndex < 0 ? loops.length - 1 : activeLoopIndex;
+    if (boundedActiveLoopIndex !== tourAt) {
+      tourAt = boundedActiveLoopIndex;
+      renderInspector();
+    }
+    groups.forEach((group, groupIndex) => {
+      const timing = loopTimings[groupIndex];
+      const localProgress = (positionMilliseconds - timing.startMilliseconds)
+        / timing.drawMilliseconds;
+      const loopProgress = Math.max(0, Math.min(1, localProgress));
+      group.classList.toggle("done", localProgress >= 1);
+      group.classList.toggle("live", localProgress >= 0 && localProgress < 1);
+      [...group.querySelectorAll<SVGPathElement>("path")].forEach((path, pathIndex) => {
+        const pathShare = 1 / lens[groupIndex].length;
+        const pathProgress = Math.max(
+          0,
+          Math.min(1, (loopProgress - pathIndex * pathShare) / pathShare),
+        );
+        path.style.strokeDashoffset = (lens[groupIndex][pathIndex] * (1 - pathProgress)).toFixed(2);
       });
     });
-    if (t < loops.length * PER) { tourRAF = requestAnimationFrame(tick); return; }
-    groups.forEach((gg, gi) => {
-      gg.classList.remove("live"); gg.classList.add("done");
-      [...gg.querySelectorAll<SVGPathElement>("path")].forEach(p => { p.style.strokeDashoffset = "0"; });
-    });
-    tourAt = loops.length; tourRAF = 0;
-    renderInspector();
+    if (wheelGroup) {
+      const timing = loopTimings[boundedActiveLoopIndex];
+      const loopProgress = Math.max(
+        0,
+        Math.min(
+          1,
+          (positionMilliseconds - timing.startMilliseconds) / timing.drawMilliseconds,
+        ),
+      );
+      const loop = loops[boundedActiveLoopIndex];
+      renderLoopNodeProgress(wheelGroup, loop, loopProgress * loop.links.length);
+    }
+    if (positionMilliseconds >= totalDurationMilliseconds) {
+      groups.forEach(group => {
+        group.classList.remove("live"); group.classList.add("done");
+        [...group.querySelectorAll<SVGPathElement>("path")].forEach(path => {
+          path.style.strokeDashoffset = "0";
+        });
+      });
+      if (tourAt !== loops.length) {
+        tourAt = loops.length;
+        renderInspector();
+      }
+    }
   };
-  tourRAF = requestAnimationFrame(tick);
+  startLoopAnimation({
+    kind: "tour",
+    identity: loops.map(loop => canonicalCycle(loop.cycle)).join("\u0001"),
+    positionMilliseconds: 0,
+    durationMilliseconds: totalDurationMilliseconds,
+    stepMilliseconds: 1,
+    stepCount: loops.length,
+    stepPositionsMilliseconds: [
+      ...loopTimings.map(timing => timing.startMilliseconds),
+      totalDurationMilliseconds,
+    ],
+    paused: false,
+    lastFrameTimestamp: null,
+    render: renderTour,
+    describe: positionMilliseconds => {
+      const activeLoopIndex = loopTimings.findIndex(timing =>
+        positionMilliseconds < timing.endMilliseconds);
+      const loopNumber = activeLoopIndex < 0 ? loops.length : activeLoopIndex + 1;
+      return `Loop ${loopNumber} of ${loops.length}`;
+    },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -2039,7 +2353,8 @@ function playTour() {
 // ---------------------------------------------------------------------------
 export function atlasPanelHtml(): string {
   if (!WORLD) return "";
-  const A = WORLD.A, start = labelOf(A.start);
+  const atlasData = WORLD.A;
+  const originatingBoxName = START ? boxLabel(START) : labelOf(atlasData.start);
 
   // ONE panel. It used to be three — the run, a picked circle's own page, and a
   // tangle's own page — each with its own title, its own numbers and its own
@@ -2053,9 +2368,26 @@ export function atlasPanelHtml(): string {
   // There is no prose: the picture teaches itself, and the space belongs to the
   // thing the picture cannot say.
   return `<div class="ins">
-      <header><b>Atlas of ${escapeHtml(start)}</b><span class="m">${
-        A.elements} elements · ${formatCount(A.shapes)} readings</span></header>
-      ${runEffectHtml() + pathwaysLabel() + strandsHtml()}</div>`;
+      <header><b>Atlas of ${escapeHtml(originatingBoxName)}</b><span class="m">${
+        atlasData.elements} elements · ${formatCount(atlasData.shapes)} readings</span></header>
+      ${runEffectHtml() + pathwaysLabel() + selectedFeedbackActionHtml() + strandsHtml()}</div>`;
+}
+
+function selectedFeedbackActionHtml(): string {
+  const elementIdentifier = R.roots[R.roots.length - 1];
+  if (!elementIdentifier || R.inside === elementIdentifier) return "";
+  const node = ATLAS?.nodes.get(elementIdentifier);
+  if (!node?.loop) return "";
+  const loopCount = tangleLoops(elementIdentifier).length;
+  // Generated tangle labels already include the engine's core-loop count. The
+  // inspector deliberately shows the union of engine and wheel loops, which
+  // can be one larger; strip the embedded number so the action never presents
+  // two contradictory counts side by side.
+  const feedbackGroupName = node.label.replace(/\s*·\s*\d+\s+loops?$/i, "");
+  return `<button type="button" class="open-feedback-loops" data-open-feedback="${escapeHtml(elementIdentifier)}">
+      <span class="feedback-action-copy"><span>Open feedback loops</span><small>${escapeHtml(feedbackGroupName)}</small></span>
+      <span class="m">${loopCount} ${plural(loopCount, "loop")} →</span>
+    </button>`;
 }
 
 // The tangle an element contains, if it is one. A circle can stand for a knot
@@ -2091,7 +2423,32 @@ function tangleLoops(elementIdentifier: AtlasElementIdentifier | null = R.inside
 // in the list was saying the same shape twice, and cost five times the height.
 // A real <button> rather than a div with role=button, so Enter and Space work
 // without a keydown handler of our own.
-function loopCard(loop: AtlasLoop, index: number, drawn: boolean, related: boolean): string {
+function loopStrengthTier(index: number, allLoops: AtlasLoop[]): LoopStrengthTier {
+  if (!allLoops.length) return "lower";
+  const strongestBoundaryIndex = Math.max(0, Math.ceil(allLoops.length * 0.2) - 1);
+  const mediumBoundaryIndex = Math.max(strongestBoundaryIndex, Math.ceil(allLoops.length * 0.6) - 1);
+  const strongestGainBoundary = allLoops[strongestBoundaryIndex].gain;
+  const mediumGainBoundary = allLoops[mediumBoundaryIndex].gain;
+  const gain = allLoops[index]?.gain ?? 0;
+  if (gain >= strongestGainBoundary) return "strongest";
+  if (gain >= mediumGainBoundary) return "medium";
+  return "lower";
+}
+
+function exactLoopGain(gain: number): string {
+  if (!Number.isFinite(gain) || gain === 0) return "0";
+  if (Math.abs(gain) < 0.001 || Math.abs(gain) >= 1000) return gain.toExponential(2);
+  return gain.toPrecision(3);
+}
+
+function loopCard(
+  loop: AtlasLoop,
+  index: number,
+  drawn: boolean,
+  related: boolean,
+  strengthTier: LoopStrengthTier,
+  totalLoopCount: number,
+): string {
   const names = loop.cycle.map(identifier => boxLabel(identifier));
   // Whole names, and one ellipsis at the end of the row rather than one per
   // box. Cutting every name to a fixed width made a run of stumps — "Attempts
@@ -2101,15 +2458,19 @@ function loopCard(loop: AtlasLoop, index: number, drawn: boolean, related: boole
   const chain = names.map((nm: string, j: number) =>
     (j ? `<i>\u203a</i>` : "") + escapeHtml(nm)).join("");
   const kind = loop.reinforcing ? "Reinforcing" : "Balancing";
+  const strengthLabel = strengthTier[0].toUpperCase() + strengthTier.slice(1);
+  const exactGain = exactLoopGain(loop.gain);
+  const strengthExplanation = `${strengthLabel} within all ${totalLoopCount} loops in this feedback group · exact calculated gain ${exactGain}`;
   return `<button type="button" class="loopcard ${loop.reinforcing ? "r" : "b"}${
       drawn ? " sel" : ""}${related && !drawn ? " rel" : ""}"
-      data-loopidx="${index}" aria-pressed="${drawn}"
+      data-loopidx="${index}" data-strength-tier="${strengthTier}"
+      data-tooltip="${escapeHtml(strengthExplanation)}" aria-pressed="${drawn}"
       aria-label="${kind} loop through ${loop.cycle.length} ${
         plural(loop.cycle.length, "box", "boxes")}: ${
-        escapeHtml(names.join(", then "))}. Follow it round the wheel.">
+        escapeHtml(names.join(", then "))}. Relative strength: ${strengthLabel}. Exact calculated gain: ${exactGain}. Follow it round the wheel.">
     <span class="pol">${loop.reinforcing ? "R" : "B"}</span>
     <span class="lbl">${chain}</span>
-    <span class="m">${loop.gain < 0.0005 ? "\u22480" : loop.gain.toFixed(3)}</span></button>`;
+    <span class="m strength-tier">${strengthLabel}</span></button>`;
 }
 
 // Clicking a card draws that loop. The wheel already knows how to draw "the
@@ -2118,6 +2479,8 @@ function loopCard(loop: AtlasLoop, index: number, drawn: boolean, related: boole
 function selectLoopCard(i: number) {
   const loop = tangleLoops()[i];
   if (!loop) return;
+  stopTour();
+  stopLoopAnimation("trace");
   const box = loop.cycle[0];
   WHEEL_PICK = box;
   PICK_FROM_WHEEL = false;
@@ -2142,55 +2505,77 @@ function paintWheel() {
   const loop = through.length ? rotateTo(through[WHEEL_LOOP % through.length], picked!) : null;
   const onCycle = new Set<AtlasElementIdentifier>(loop ? loop.cycle : picked ? [picked] : []);
   const onLink = new Set<WheelEdgeKey>((loop ? loop.links : []).map(wheelEdgeKey));
-  if (picked) for (const edge of w.touching.get(picked) || []) onLink.add(wheelEdgeKey(edge));
+  if (picked && !loop) for (const edge of w.touching.get(picked) || []) onLink.add(wheelEdgeKey(edge));
 
   for (const el of g.querySelectorAll<SVGElement>(".ch")) {
     const edgeKey = parseWheelEdgeKey(el.dataset.k);
-    el.classList.toggle("on", edgeKey !== null && onLink.has(edgeKey));
+    const belongsToLoop = edgeKey !== null && onLink.has(edgeKey);
+    el.classList.toggle("route", belongsToLoop);
+    el.classList.toggle("on", !!picked && !loop && belongsToLoop);
   }
   for (const el of g.querySelectorAll<SVGElement>(".nd")) {
     const mine = el.dataset.box === picked;
-    el.classList.toggle("on", onCycle.has(el.dataset.box || ""));
+    const belongsToLoop = onCycle.has(el.dataset.box || "");
+    el.classList.toggle("route", belongsToLoop);
+    el.classList.toggle("on", mine);
     el.classList.toggle("sel", mine);
+    el.classList.remove("animation-current");
+    el.style.removeProperty("opacity");
   }
-  g.querySelector<SVGGElement>(".labs")!.innerHTML = picked ? wheelLabels(picked, [...onCycle]) : "";
+  const labelsGroup = g.querySelector<SVGGElement>(".labs")!;
+  labelsGroup.innerHTML = picked ? wheelLabels(picked, [picked]) : "";
+  delete labelsGroup.dataset.animationLabelKey;
 
   const trace = g.querySelector<SVGGElement>(".trace");
   if (!trace) return;
-  if (picked) {
+  if (picked && loop) {
     trace.innerHTML = `<g class="tl live">${(loop ? loop.links : []).map(edge => {
       const [x1, y1] = w.at.get(edge.from)!, [x2, y2] = w.at.get(edge.to)!;
       const backwards = (w.pos.get(edge.to) || 0) <= (w.pos.get(edge.from) || 0);
       return `<path d="${chordPath(x1, y1, x2, y2, w.centre[0], w.centre[1], backwards ? 0.22 : 0.3)}"
         stroke="${loop && loop.reinforcing ? "var(--c1)" : "var(--c2)"}"></path>`;
     }).join("")}</g>`;
-    runTrace(trace);
-  } else if (!tourRAF && tourAt < 0) {
+    runTrace(trace, loop);
+  } else if (loopAnimationPlayback?.kind !== "tour" && tourAt < 0) {
+    stopLoopAnimation("trace");
     trace.innerHTML = "";
   }
 }
 
 // Names on adjacent rim positions overprint, so they are spaced — and the box
 // being explained is always one of them.
-function wheelLabels(picked: AtlasElementIdentifier, cycle: AtlasElementIdentifier[]): string {
-  const w = R.inside ? WHEELS.get(R.inside) : undefined;
-  if (!w || !wheelIsPositioned(w)) return "";
-  const n = w.order.length, apart = Math.max(2, Math.round(n / 30));
-  const out = [picked];
-  for (const b of cycle) {
-    if (out.length >= 9) break;
-    if (out.some(o => Math.abs((w.pos.get(o) || 0) - (w.pos.get(b) || 0)) < apart)) continue;
-    out.push(b);
+function wheelLabels(
+  picked: AtlasElementIdentifier,
+  cycle: AtlasElementIdentifier[],
+  showEveryVisitedLabel = false,
+): string {
+  const wheel = R.inside ? WHEELS.get(R.inside) : undefined;
+  if (!wheel || !wheelIsPositioned(wheel)) return "";
+  const boxCount = wheel.order.length;
+  const minimumPositionDistance = Math.max(2, Math.round(boxCount / 30));
+  const displayedIdentifiers = [picked];
+  for (const identifier of cycle) {
+    if (displayedIdentifiers.includes(identifier)) continue;
+    if (!showEveryVisitedLabel && displayedIdentifiers.length >= 9) break;
+    if (!showEveryVisitedLabel && displayedIdentifiers.some(existingIdentifier => {
+      const directDistance = Math.abs(
+        (wheel.pos.get(existingIdentifier) || 0) - (wheel.pos.get(identifier) || 0),
+      );
+      return Math.min(directDistance, boxCount - directDistance) < minimumPositionDistance;
+    })) continue;
+    displayedIdentifiers.push(identifier);
   }
-  return out.map(b => {
-    const p = w.at.get(b);
-    if (!p) return "";
-    const a = p[2], lx = w.centre[0] + (w.radius + 6) * Math.cos(a),
-          ly = w.centre[1] + (w.radius + 6) * Math.sin(a);
-    const left = Math.cos(a) < -0.08;
-    return `<text class="bl" x="${lx.toFixed(1)}" y="${(ly + 3).toFixed(1)}"
-      text-anchor="${left ? "end" : Math.cos(a) > 0.08 ? "start" : "middle"}"
-      >${escapeHtml(clip(boxLabel(b), 24))}</text>`;
+  return displayedIdentifiers.map((identifier, labelIndex) => {
+    const position = wheel.at.get(identifier);
+    if (!position) return "";
+    const angle = position[2];
+    const labelX = wheel.centre[0] + (wheel.radius + 6) * Math.cos(angle);
+    const labelY = wheel.centre[1] + (wheel.radius + 6) * Math.sin(angle);
+    const pointsLeft = Math.cos(angle) < -0.08;
+    return `<text class="bl${labelIndex === 0 ? " animation-current" : ""}" data-box="${escapeHtml(identifier)}"
+      x="${labelX.toFixed(1)}" y="${(labelY + 3).toFixed(1)}"
+      text-anchor="${pointsLeft ? "end" : Math.cos(angle) > 0.08 ? "start" : "middle"}"
+      >${escapeHtml(clip(boxLabel(identifier), 24))}</text>`;
   }).join("");
 }
 
@@ -2220,34 +2605,143 @@ function rotateTo(loop: AtlasLoop, box: AtlasElementIdentifier): AtlasLoop {
     links: loop.links.slice(i).concat(loop.links.slice(0, i)) };
 }
 
-// The loop draws itself, link by link, and starts again. Watching the line come
-// back round is the part a still picture cannot do — so if the reader has asked
-// for less motion, the whole loop is simply drawn at once instead.
-function runTrace(group: SVGGElement): void {
-  cancelAnimationFrame(traceRAF);
+function renderLoopNodeProgress(
+  wheelGroup: SVGGElement,
+  loop: AtlasLoop,
+  exactStep: number,
+): AtlasElementIdentifier {
+  const boundedStep = Math.max(0, Math.min(loop.links.length, exactStep));
+  const completedLinkCount = Math.floor(boundedStep);
+  const activeLinkIndex = Math.min(loop.links.length - 1, completedLinkCount);
+  const activeLinkProgress = Math.max(0, Math.min(1, boundedStep - completedLinkCount));
+  const activeLink = loop.links[activeLinkIndex];
+  const visitedIdentifiers = new Set<AtlasElementIdentifier>([loop.cycle[0]]);
+  for (let linkIndex = 0; linkIndex < completedLinkCount; linkIndex++) {
+    visitedIdentifiers.add(loop.links[linkIndex].to);
+  }
+  const activeDestination = completedLinkCount < loop.links.length ? activeLink.to : null;
+  const currentIdentifier = boundedStep >= loop.links.length
+    ? loop.cycle[0]
+    : activeLinkProgress >= 0.5
+      ? activeLink.to
+      : activeLink.from;
+
+  const loopLinkKeys = new Set(loop.links.map(wheelEdgeKey));
+  const revealedLinkKeys = new Set<WheelEdgeKey>();
+  for (let linkIndex = 0; linkIndex < completedLinkCount; linkIndex++) {
+    revealedLinkKeys.add(wheelEdgeKey(loop.links[linkIndex]));
+  }
+  if (activeLinkProgress > 0 && completedLinkCount < loop.links.length) {
+    revealedLinkKeys.add(wheelEdgeKey(activeLink));
+  }
+  for (const chord of wheelGroup.querySelectorAll<SVGElement>(".ch")) {
+    const edgeKey = parseWheelEdgeKey(chord.dataset.k);
+    chord.classList.toggle("route", edgeKey !== null && loopLinkKeys.has(edgeKey));
+    chord.classList.toggle("on", edgeKey !== null && revealedLinkKeys.has(edgeKey));
+  }
+
+  const loopIdentifiers = new Set(loop.cycle);
+  for (const node of wheelGroup.querySelectorAll<SVGElement>(".nd")) {
+    const identifier = node.dataset.box || "";
+    node.classList.toggle("route", loopIdentifiers.has(identifier));
+    node.classList.toggle("on", visitedIdentifiers.has(identifier));
+    node.classList.toggle("animation-current", identifier === currentIdentifier);
+    node.style.removeProperty("opacity");
+    if (activeDestination === identifier && !visitedIdentifiers.has(identifier)) {
+      node.style.opacity = (0.18 + activeLinkProgress * 0.77).toFixed(2);
+    }
+  }
+
+  const labels = wheelGroup.querySelector<SVGGElement>(".labs");
+  if (labels) {
+    const labelIdentifiers = [...visitedIdentifiers];
+    if (!labelIdentifiers.includes(currentIdentifier)) labelIdentifiers.push(currentIdentifier);
+    const labelKey = currentIdentifier + "\u0000" + labelIdentifiers.join("\u0000");
+    if (labels.dataset.animationLabelKey !== labelKey) {
+      labels.dataset.animationLabelKey = labelKey;
+      labels.innerHTML = wheelLabels(currentIdentifier, labelIdentifiers, true);
+    }
+  }
+  return currentIdentifier;
+}
+
+// The loop draws itself link by link. The route remains accumulated on screen,
+// and each destination circle and label arrives with its link, so the reader
+// can follow a long loop without having to remember which anonymous dot came
+// next. Playback stops at the completed loop; replay, pause, step and scrubbing
+// all operate on the same deterministic timeline.
+function runTrace(group: SVGGElement, loop: AtlasLoop): void {
   const paths = [...group.querySelectorAll<SVGPathElement>("path")];
-  if (!paths.length || typeof paths[0].getTotalLength !== "function") return;
-  const lens = paths.map(p => p.getTotalLength());
-  paths.forEach((p, i) => { p.style.strokeDasharray = String(lens[i]); });
-  if (reduced()) {
-    paths.forEach(p => { p.style.strokeDashoffset = "0"; });
+  if (!paths.length || !loop.links.length) return;
+  const pathLengths = paths.map(path =>
+    typeof path.getTotalLength === "function" ? Math.max(1, path.getTotalLength()) : 1);
+  paths.forEach((path, pathIndex) => {
+    path.style.strokeDasharray = String(pathLengths[pathIndex]);
+    path.style.strokeDashoffset = String(pathLengths[pathIndex]);
+  });
+  const stepMilliseconds = 560;
+  const durationMilliseconds = loop.links.length * stepMilliseconds;
+  const traceIdentity = loop.links.map(wheelEdgeKey).join("\u0001");
+  const wheelGroup = group.closest<SVGGElement>("g.n.focus");
+  if (!wheelGroup) return;
+
+  const renderTrace = (positionMilliseconds: number) => {
+    const exactStep = Math.min(loop.links.length, positionMilliseconds / stepMilliseconds);
+    paths.forEach((path, pathIndex) => {
+      const linkProgress = Math.max(0, Math.min(1, exactStep - pathIndex));
+      path.style.strokeDashoffset = (pathLengths[pathIndex] * (1 - linkProgress)).toFixed(2);
+    });
+    renderLoopNodeProgress(wheelGroup, loop, exactStep);
+  };
+
+  const describeTrace = (positionMilliseconds: number) => {
+    if (positionMilliseconds >= durationMilliseconds) {
+      return `Complete · ${loop.cycle.length} ${plural(loop.cycle.length, "box", "boxes")}`;
+    }
+    const exactStep = positionMilliseconds / stepMilliseconds;
+    const linkIndex = Math.min(loop.links.length - 1, Math.floor(exactStep));
+    const linkProgress = exactStep - linkIndex;
+    const currentIndex = (linkIndex + (linkProgress >= 0.5 ? 1 : 0)) % loop.cycle.length;
+    return `Box ${currentIndex + 1} of ${loop.cycle.length} · ${clip(boxLabel(loop.cycle[currentIndex]), 22)}`;
+  };
+  const existingPlayback = loopAnimationPlayback;
+  if (existingPlayback?.kind === "trace" && existingPlayback.identity === traceIdentity) {
+    existingPlayback.durationMilliseconds = durationMilliseconds;
+    existingPlayback.stepMilliseconds = stepMilliseconds;
+    existingPlayback.stepCount = loop.links.length;
+    existingPlayback.stepPositionsMilliseconds = undefined;
+    existingPlayback.positionMilliseconds = Math.min(
+      existingPlayback.positionMilliseconds,
+      durationMilliseconds,
+    );
+    existingPlayback.lastFrameTimestamp = null;
+    existingPlayback.render = renderTrace;
+    existingPlayback.describe = describeTrace;
+    renderTrace(existingPlayback.positionMilliseconds);
+    if (!existingPlayback.paused && !loopAnimationFrameRequest && !reduced()) {
+      loopAnimationFrameRequest = requestAnimationFrame(renderLoopAnimationFrame);
+    }
+    syncLoopAnimationControls();
     return;
   }
-  const STEP = 340, HOLD = 900, total = paths.length * STEP + HOLD;
-  const t0 = performance.now();
-  const tick = (now: number) => {
-    const t = (now - t0) % total;
-    paths.forEach((p, i) => {
-      const f = Math.max(0, Math.min(1, (t - i * STEP) / STEP));
-      p.style.strokeDashoffset = (lens[i] * (1 - f)).toFixed(2);
-    });
-    traceRAF = requestAnimationFrame(tick);
-  };
-  traceRAF = requestAnimationFrame(tick);
+
+  startLoopAnimation({
+    kind: "trace",
+    identity: traceIdentity,
+    positionMilliseconds: 0,
+    durationMilliseconds,
+    stepMilliseconds,
+    stepCount: loop.links.length,
+    paused: false,
+    lastFrameTimestamp: null,
+    render: renderTrace,
+    describe: describeTrace,
+  });
 }
 
 function pickWheelBox(box: AtlasElementIdentifier | null | undefined): void {
   stopTour();
+  stopLoopAnimation("trace");
   WHEEL_PICK = box && box !== WHEEL_PICK ? box : null;
   WHEEL_LOOP = 0;
   PICK_FROM_WHEEL = !!WHEEL_PICK;
@@ -3267,6 +3761,7 @@ export function atlasZoomPercent(): number {
 export function atlasFitWidth(): void {
   if (!WORLD) return;
   stopTour();
+  stopLoopAnimation();
   R.inside = null;
   paintAtlas();
   zoomTo(wholePicture());
@@ -3381,6 +3876,15 @@ export function initAtlasStage(): void {
     if (!target) return;
 
     if (target.closest("[data-atlas-close]")) { closeAtlas(); return; }
+    if (target.closest("[data-loop-animation-toggle]")) {
+      toggleLoopAnimation();
+      return;
+    }
+    const animationStepButton = closestHtmlElement(target, "[data-loop-animation-step]");
+    if (animationStepButton) {
+      stepLoopAnimation(Number(animationStepButton.dataset.loopAnimationStep));
+      return;
+    }
     const zoomBtn = closestHtmlElement(target, "[data-atlas-zoom]");
     if (zoomBtn) {
       const which = zoomBtn.dataset.atlasZoom;
@@ -3401,6 +3905,20 @@ export function initAtlasStage(): void {
     const g = closestSvgElement(target, "svg.atlas g.n");
     if (!g) return;
     if (g.dataset.el) selectEl(g.dataset.el);
+  });
+
+  stage.addEventListener("input", event => {
+    const target = eventTargetElement(event.target);
+    const scrubber = target?.closest<HTMLInputElement>("[data-loop-animation-scrub]");
+    if (!scrubber) return;
+    seekLoopAnimationStep(Number(scrubber.value));
+  });
+
+  stage.addEventListener("change", event => {
+    const target = eventTargetElement(event.target);
+    const speedSelect = target?.closest<HTMLSelectElement>("[data-loop-animation-speed]");
+    if (!speedSelect) return;
+    setLoopAnimationSpeed(Number(speedSelect.value));
   });
 
   // Double-click closes the frame in on any element — and on a tangle, closing
@@ -3451,17 +3969,25 @@ export function initAtlasStage(): void {
     }
     const g = closestSvgElement(target, "svg.atlas g.n");
     const elementIdentifier = g?.dataset.el;
+    // Once the reader is inside a feedback wheel, the parent tangle is the
+    // canvas rather than another item to inspect. Letting its tooltip appear
+    // over every chord and empty patch made those areas look like more boxes
+    // named "feedback tangle". Only the actual rim boxes speak here.
+    if (R.inside && elementIdentifier === R.inside) {
+      tip.classList.remove("visible");
+      return;
+    }
     if (!elementIdentifier || !ATLAS || !ATLAS.nodes.has(elementIdentifier)) {
       tip.classList.remove("visible");
       return;
     }
     const node = ATLAS.nodes.get(elementIdentifier)!;
     const M = measure(ATLAS);
-    tip.innerHTML = `<div class="tooltip-title">${escapeHtml(node.label)}</div>` +
+    tip.innerHTML = `<div class="tooltip-title">${escapeHtml(labelOf(elementIdentifier))}</div>` +
       tipEffect(node.boxes, plural(node.boxes.length, "box", "boxes")) +
       `<div class="tooltip-text">${pct(M.weight(elementIdentifier))} of all readings pass through · ` +
       `${node.boxes.length} ${plural(node.boxes.length, "box", "boxes")}` +
-      `${node.loop ? " · double-click to go inside" : ""}</div>`;
+      `${node.loop ? " · select to trace · Open feedback loops in the inspector, or double-click" : ""}</div>`;
     tip.classList.add("visible");
   });
 
@@ -3493,6 +4019,21 @@ export function initAtlasStage(): void {
       // The panel carries its own copies of the atlas controls, and a click on
       // one of them never reached the stage's handler — so they are wired here.
       if (t && atlasIsOpen()) {
+        const openFeedback = closestHtmlElement(t, "[data-open-feedback]");
+        if (openFeedback) {
+          const elementIdentifier = openFeedback.dataset.openFeedback;
+          if (elementIdentifier && ATLAS?.nodes.get(elementIdentifier)?.loop) enterTangle(elementIdentifier);
+          return;
+        }
+        if (t.closest("[data-toggle-all-loops]")) {
+          SHOW_ALL_LOOPS = !SHOW_ALL_LOOPS;
+          renderInspector();
+          return;
+        }
+        if (t.closest("[data-clear-wheel-pick]")) {
+          pickWheelBox(null);
+          return;
+        }
         const card = closestHtmlElement(t, "[data-loopidx]");
         if (card) {
           const i = Number(card.dataset.loopidx);

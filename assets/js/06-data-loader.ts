@@ -1196,7 +1196,7 @@ export function loadDataFromCsv(csvText: string): boolean {
   // small betrayal — so the fit is skipped while restoring, as is the history
   // clear below.
   if (typeof isUndoCaptureSuspended === "function" && !isUndoCaptureSuspended()) {
-    if (typeof fitMapToFrame === "function") fitMapToFrame({ floor: true });
+    if (typeof fitMapToFrame === "function") fitMapToFrame({ floor: true, axis: "width" });
   }
 
   // Only surface a toast when something went wrong. Successful loads are

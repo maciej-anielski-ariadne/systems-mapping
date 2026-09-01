@@ -23,7 +23,91 @@ import { render } from "./11-rendering";
 import { renderSidebar } from "./13-sidebar";
 import { saveUiStateToStorage } from "./04a-storage";
 import { refreshTraceForSelection } from "./09-graph-selection";
-import { isNodeVisibleWithFilters } from "./04-utils";
+import {
+  isNodeVisibleWithFilters,
+  nodeCategoryIds,
+  splitCategoriesByClass,
+} from "./04-utils";
+
+export interface FilterVisibilitySnapshot {
+  hiddenStreams: Set<string>;
+  hiddenStages: Set<string>;
+  hiddenCategories: Set<string>;
+}
+
+// Search can take the user to a box whose row, column, or category class has
+// been hidden. Keep this snapshot deliberately limited to the three filters
+// that decide whether a box exists on the map; edge and trace filters do not
+// affect whether the search target can be shown.
+export function captureFilterVisibilitySnapshot(): FilterVisibilitySnapshot {
+  return {
+    hiddenStreams: new Set(state.hiddenStreams),
+    hiddenStages: new Set(state.hiddenStages),
+    hiddenCategories: new Set(state.hiddenCategories),
+  };
+}
+
+function refreshAfterFilterVisibilityChange(layoutChanged: boolean): void {
+  if (layoutChanged) setLayout(computeLayout());
+  render();
+  renderSidebar();
+  saveUiStateToStorage();
+}
+
+// Reveal only what is required for this box. A category class hides a box only
+// when every category in that class is hidden, so restoring the first category
+// in a fully-hidden class is sufficient and preserves the user's other category
+// choices. Returns whether any filter changed, so the caller can offer Undo
+// only when it has something real to restore.
+export function revealNodeByRestoringRequiredFilters(node: GraphNode): boolean {
+  let layoutChanged = false;
+  let filterChanged = false;
+
+  if (state.hiddenStreams.delete(node.stream)) {
+    layoutChanged = true;
+    filterChanged = true;
+  }
+  if (state.hiddenStages.delete(node.stage)) {
+    layoutChanged = true;
+    filterChanged = true;
+  }
+
+  const categoriesByClass = splitCategoriesByClass(nodeCategoryIds(node));
+  for (const categoryClass of [categoriesByClass.primary, categoriesByClass.secondary]) {
+    if (categoryClass.length > 0 && categoryClass.every(categoryId => state.hiddenCategories.has(categoryId))) {
+      state.hiddenCategories.delete(categoryClass[0]);
+      filterChanged = true;
+    }
+  }
+
+  if (filterChanged) refreshAfterFilterVisibilityChange(layoutChanged);
+  return filterChanged;
+}
+
+// Undo for a search reveal restores the exact three filter Sets. If that makes
+// the selected search result invisible again, retire the selection as normal
+// filter toggles do so the detail panel never points at a missing box.
+export function restoreFilterVisibilitySnapshot(snapshot: FilterVisibilitySnapshot): void {
+  state.hiddenStreams = new Set(snapshot.hiddenStreams);
+  state.hiddenStages = new Set(snapshot.hiddenStages);
+  state.hiddenCategories = new Set(snapshot.hiddenCategories);
+
+  const selectedNode = state.selectedNodeId ? nodeById[state.selectedNodeId] : undefined;
+  if (selectedNode && !isNodeVisible(selectedNode)) {
+    state.selectedNodeId = null;
+    state.selectedNodeIds = new Set();
+    state.selectedEdgeId = null;
+    state.ancestorSet = new Set();
+    state.descendantSet = new Set();
+    state.highlightedEdgeIds = new Set();
+  }
+
+  setLayout(computeLayout());
+  render();
+  renderSidebar();
+  renderDetailPanel();
+  saveUiStateToStorage();
+}
 
 // Hide / show a layout-affecting "dimension" — streams collapse their row,
 // stages collapse their column. Flips the id's membership in `hiddenSet`, clears

@@ -129,6 +129,13 @@ export function hideTooltip(): void {
   _pendingMove = null;
 }
 
+// A click commits the action under the pointer, so the hover hint has finished
+// its job. Hide it even when the control stops the click from bubbling (menus
+// do this), which is why this listener runs during capture. The active hover
+// target deliberately stays intact: small pointer movement over the same
+// control must not immediately resurrect a hint the user just dismissed.
+document.addEventListener("click", hideTooltip, { capture: true });
+
 // ───── Generic UI tooltip ────────────────────────────────────────────────
 // For buttons / filter rows / row labels / anything that isn't a node. The
 // same #tooltip element is reused so we don't pay for an extra DOM node

@@ -28,6 +28,13 @@ import { escapeHtml } from "./04-utils";
 import { CATEGORIES, NODES, stageById, state, streamById } from "./03-state";
 import { deselectNode, scrollNodeIntoView, selectNode } from "./09-graph-selection";
 import { dataRevision } from "./06-data-loader";
+import {
+  captureFilterVisibilitySnapshot,
+  type FilterVisibilitySnapshot,
+  restoreFilterVisibilitySnapshot,
+  revealNodeByRestoringRequiredFilters,
+} from "./10-filters";
+import { showUndoToast } from "./16g-canvas-undo";
 
 export const SEARCH_MAX_RESULTS = 8;
 // Every text-bearing field on a node is searchable. Weights set the priority
@@ -304,7 +311,11 @@ export function renderSearchDropdown(): void {
   dropdown.querySelectorAll(".search-result").forEach(el => {
     el.addEventListener("mouseenter", () => {
       const idx = parseInt(el.getAttribute("data-index")!, 10);
-      if (!isNaN(idx)) commitSearchFocus(idx);
+      // Hover moves the preview/focus only. A dropdown can appear underneath a
+      // stationary pointer while the user types; treating that incidental
+      // mouseenter as a committed choice would unexpectedly dismantle filters.
+      // Click, Enter, or an arrow-key choice remains the explicit reveal.
+      if (!isNaN(idx)) commitSearchFocus(idx, { typing: true });
     });
     el.addEventListener("mousedown", event => {
       // mousedown (not click) so the input doesn't blur before we react.
@@ -345,6 +356,35 @@ export function clearSearch(): void {
 // markup already carries the right classes.
 let _appliedMatchIds: Set<string> = new Set();
 
+// Successive arrow/click choices can reveal more than one result while the
+// search Undo toast is active. Keep the first snapshot so one Undo restores
+// the complete filter state from before search navigation began, rather than
+// restoring only the last incremental reveal.
+let searchFilterRevealSnapshot: FilterVisibilitySnapshot | null = null;
+let searchFilterUndoFunction: (() => void) | null = null;
+
+function revealSearchTargetThroughFilters(targetNode: GraphNode): void {
+  const existingSearchUndoIsActive = searchFilterUndoFunction !== null &&
+    state.canvasEdit.toast?.undoFn === searchFilterUndoFunction;
+  if (!existingSearchUndoIsActive) {
+    searchFilterRevealSnapshot = captureFilterVisibilitySnapshot();
+  }
+
+  const filtersChanged = revealNodeByRestoringRequiredFilters(targetNode);
+  if (!filtersChanged) {
+    if (!existingSearchUndoIsActive) searchFilterRevealSnapshot = null;
+    return;
+  }
+
+  const snapshotToRestore = searchFilterRevealSnapshot!;
+  searchFilterUndoFunction = () => {
+    restoreFilterVisibilitySnapshot(snapshotToRestore);
+    searchFilterRevealSnapshot = null;
+    searchFilterUndoFunction = null;
+  };
+  showUndoToast("Filters changed to show " + targetNode.label, searchFilterUndoFunction);
+}
+
 export function resetSearchMatchClassMemo(): void {
   _appliedMatchIds = new Set(state.searchMatches.map((m: SearchMatch) => m.node.id));
 }
@@ -376,7 +416,12 @@ export function commitSearchFocus(index: number, options?: { typing?: boolean })
   if (!state.searchMatches.length) return;
   const clamped = Math.max(0, Math.min(index, state.searchMatches.length - 1));
   state.searchFocusIndex = clamped;
-  const targetId = state.searchMatches[clamped].node.id;
+  const targetNode = state.searchMatches[clamped].node;
+  const targetId = targetNode.id;
+  // Typeahead focus remains non-destructive. Only a discrete navigation action
+  // (arrow, click, hover, or Enter) restores filters to put the chosen result
+  // back on the map.
+  if (!options?.typing) revealSearchTargetThroughFilters(targetNode);
   // selectNode repaints the selection (a class/attribute patch on the drawn
   // slice — 11-rendering's renderSelectionChange) and the detail panel.
   // scrollNodeIntoView brings the node on screen.
@@ -451,6 +496,7 @@ export function handleSearchKeydown(event: KeyboardEvent): void {
     commitSearchFocus(state.searchFocusIndex - 1);
   } else if (event.key === "Enter") {
     event.preventDefault();
+    if (state.searchMatches.length > 0) commitSearchFocus(state.searchFocusIndex);
     hideSearchDropdown();
     const input = document.getElementById("search-input") as HTMLInputElement | null;
     if (input) input.blur();
@@ -489,6 +535,8 @@ export function cancelPendingSearchWorkWithoutFlushing(): void {
     clearTimeout(_searchBlurTimer);
     _searchBlurTimer = null;
   }
+  searchFilterRevealSnapshot = null;
+  searchFilterUndoFunction = null;
 }
 
 export function handleSearchInputDebounced(): void {

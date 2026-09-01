@@ -50,6 +50,57 @@
   display: none;
 }
 
+/* Once the SVG's own column headings scroll away, keep a compact copy at the
+ * top of the viewport. The container does not accept pointer events, so it
+ * never blocks box selection or panning; only the individual stage buttons do.
+ * Their left/width styles are synchronized with map zoom and horizontal pan by
+ * 11-rendering.ts. */
+.viz-sticky-columns {
+  position: absolute;
+  z-index: 6;
+  inset: 0 0 auto;
+  height: 32px;
+  overflow: hidden;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--bg-deep) 94%, transparent);
+  border-bottom: 1px solid var(--border-subtle);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.16);
+}
+
+.viz-sticky-columns[hidden] {
+  display: none;
+}
+
+.viz-sticky-column {
+  position: absolute;
+  top: 0;
+  height: 32px;
+  min-width: 24px;
+  padding: 0 8px;
+  overflow: hidden;
+  border: 0;
+  border-right: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--fs-cap);
+  font-weight: 650;
+  letter-spacing: var(--tracking-cap);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.viz-sticky-column:hover,
+.viz-sticky-column:focus-visible {
+  color: var(--text-primary);
+  background: var(--act-tint);
+}
+
+.viz-sticky-column.collapsed {
+  color: var(--act-hi);
+}
+
 .viz-svg {
   display: block;
   background: transparent;

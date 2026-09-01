@@ -203,8 +203,12 @@ svg.atlas.panning { cursor: grabbing; }
 .atlas .ch { fill: none; vector-effect: non-scaling-stroke; transition: opacity var(--dur-base) ease; }
 .atlas .ch.fw { stroke: var(--text-tertiary); opacity: 0.2; stroke-width: 0.7; }
 .atlas .ch.bk { opacity: 0.55; }
-.atlas g.n.picked .ch { opacity: 0.07; }
-.atlas g.n.picked .ch.on { opacity: 0.5; }
+.atlas g.n.picked .ch,
+.atlas g.n.touring .ch { opacity: 0.07; }
+.atlas g.n.picked .ch.route,
+.atlas g.n.touring .ch.route { opacity: 0.12; }
+.atlas g.n.picked .ch.on,
+.atlas g.n.touring .ch.on { opacity: 0.5; }
 
 .atlas .nd {
   fill: var(--accent-amber);
@@ -223,9 +227,13 @@ svg.atlas.panning { cursor: grabbing; }
 
 .atlas g.n.focus .nd { pointer-events: auto; cursor: pointer; }
 .atlas g.n.focus .nd:hover { fill: var(--text-primary); opacity: 1; }
-.atlas g.n.picked .nd { opacity: 0.18; }
-.atlas g.n.picked .nd.on { opacity: 0.95; }
+.atlas g.n.picked .nd,
+.atlas g.n.touring .nd { opacity: 0.18; }
+.atlas g.n.picked .nd.on,
+.atlas g.n.touring .nd.on { opacity: 0.95; }
 .atlas g.n.picked .nd.sel { fill: var(--text-primary); opacity: 1; }
+.atlas g.n.picked .nd.animation-current,
+.atlas g.n.touring .nd.animation-current { fill: var(--text-primary); opacity: 1; }
 
 /* Rim labels: named because you asked for THIS box, so they override the
  * "nothing is named until you point at it" default above. */
@@ -239,7 +247,10 @@ svg.atlas.panning { cursor: grabbing; }
   stroke-linejoin: round;
   opacity: 1;
   pointer-events: none;
+  transition: opacity var(--dur-fast) ease;
 }
+
+.atlas .bl.animation-current { opacity: 1; font-weight: var(--fw-bold); }
 
 /* A loop being drawn round, and the ones already drawn sitting under it. */
 .atlas .trace path,
@@ -264,12 +275,63 @@ svg.atlas.panning { cursor: grabbing; }
   top: var(--space-2);
   left: var(--space-2);
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   gap: var(--space-1_5);
   z-index: 2;
 }
 
 .atlas-controls .zoomctl { display: flex; gap: var(--space-1_5); }
 .atlas-controls .zoomctl[hidden] { display: none; }
+
+.atlas-loopctl {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1_5);
+  max-width: min(780px, calc(100vw - var(--space-6)));
+  padding: var(--space-1_5);
+  border-radius: var(--radius-interactive);
+  background: color-mix(in srgb, var(--bg-mid) 94%, transparent);
+  box-shadow: var(--shadow-float);
+}
+
+.atlas-loopctl[hidden] { display: none; }
+
+.atlas-loop-speed {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--fs-cap);
+}
+
+.atlas-loop-speed select {
+  min-height: 30px;
+  padding-inline: var(--space-1_5);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-interactive);
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.atlas-loop-scrubber {
+  display: inline-flex;
+  align-items: center;
+}
+
+.atlas-loop-scrubber input {
+  width: clamp(110px, 18vw, 220px);
+  accent-color: var(--act);
+}
+
+#atlas-loop-animation-status {
+  min-width: 9em;
+  color: var(--text-secondary);
+  font-size: var(--fs-cap);
+  font-variant-numeric: tabular-nums;
+}
 
 .atlas-btn {
   font-size: var(--fs-cap);
@@ -477,6 +539,51 @@ body.sim-mode .atlas-legend .sim-only { display: inline; }
   margin-top: var(--space-2);
 }
 
+.feedback-navigator {
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.feedback-navigator-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.feedback-navigator-head > span { min-width: 0; }
+.feedback-navigator-head b,
+.feedback-navigator-head small { display: block; }
+.feedback-navigator-head b {
+  color: var(--text-primary);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+}
+.feedback-navigator-head small {
+  margin-top: 2px;
+  color: var(--text-tertiary);
+  font-size: var(--fs-cap);
+  line-height: 1.35;
+}
+
+.feedback-navigator-action {
+  flex: none;
+  border: 0;
+  background: none;
+  color: var(--act-hi);
+  font: inherit;
+  font-size: var(--fs-cap);
+  cursor: pointer;
+  padding: 2px 0;
+}
+.feedback-navigator-action:hover { color: var(--text-primary); }
+.feedback-navigator-action:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.feedback-navigator-more {
+  display: block;
+  margin-top: var(--space-2);
+}
+
 .loopcard {
   --c1: var(--accent-amber);   /* reinforcing */
   --c2: var(--act);            /* balancing */
@@ -565,6 +672,16 @@ body.sim-mode .atlas-legend .sim-only { display: inline; }
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+.loopcard .strength-tier {
+  min-width: 54px;
+  text-align: right;
+}
+.loopcard[data-strength-tier="strongest"] .strength-tier {
+  color: var(--text-primary);
+  font-weight: var(--fw-semibold);
+}
+.loopcard[data-strength-tier="medium"] .strength-tier { color: var(--text-secondary); }
 
 /* === Strands: one reading, left edge to right ============================
  * A row is one line — where the strand arrives, and how many steps it took.
@@ -881,6 +998,52 @@ body.atlas-open .ins { display: flex; flex-direction: column; height: 100%; }
  * and the boxes it stands for. A level of the list rather than a block beside
  * it — indented like any other level, because that is what it is. */
 .pathaside { padding-left: 11px; }
+
+/* Single click keeps its established meaning — select and trace. Going inside
+ * feedback is a separate, named action beside the selected group, with the
+ * double-click left as an accelerator rather than the only discoverable door. */
+.open-feedback-loops {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  margin: var(--space-2) 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--accent-amber) 48%, var(--border-subtle));
+  border-radius: var(--radius-interactive);
+  background: color-mix(in srgb, var(--accent-amber) 13%, var(--bg-deep));
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: var(--fw-semibold);
+  text-align: left;
+  cursor: pointer;
+}
+
+.open-feedback-loops:hover {
+  border-color: var(--accent-amber);
+  background: color-mix(in srgb, var(--accent-amber) 20%, var(--bg-deep));
+}
+
+.open-feedback-loops:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.feedback-action-copy { min-width: 0; }
+.feedback-action-copy > span,
+.feedback-action-copy > small { display: block; }
+.feedback-action-copy > small {
+  margin-top: 2px;
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-regular);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.open-feedback-loops .m {
+  flex: none;
+  color: var(--accent-amber);
+  font-family: var(--font-mono);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-regular);
+}
 
 /* The boxes a FOLDED row stands for — four Seizure boxes behind one "◇ Seizure".
  * Chips rather than rows: they are alternatives to choose between, not steps to

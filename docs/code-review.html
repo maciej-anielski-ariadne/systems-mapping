@@ -503,12 +503,12 @@
         </div>
         <div class="number-strip" aria-label="Review totals">
           <div class="number-cell"><span class="number-value">30 + 1</span><span class="number-label">Closed + mitigated</span></div>
-          <div class="number-cell"><span class="number-value">925</span><span class="number-label">Tests green in normal order</span></div>
+          <div class="number-cell"><span class="number-value">939</span><span class="number-label">Tests green in normal order</span></div>
           <div class="number-cell"><span class="number-value">0</span><span class="number-label">Tests red when shuffled</span></div>
           <div class="number-cell"><span class="number-value">75.65%</span><span class="number-label">Line coverage</span></div>
         </div>
         <div class="positive-panel" style="margin-top: 22px;">
-          <p><b>Resolution evidence.</b> The built artifact now has a Chromium acceptance suite for boot, persistence, CSV import/export, search, keyboard operation, and mode transitions. At 390×844 the page is contained and header actions remain reachable. Under the isolated Node 26 runner, the 300-box fixture measured a 128.0 ms import, 228.9 ms pan, 487.2 ms settled zoom, 9.4 ms p95 selection-to-frame, 117.7 ms slider scrub, 96.0/120.9 ms read/edit transitions, 192.3 ms Atlas open, and 130.2 ms Bulk edit open.</p>
+          <p><b>Resolution evidence.</b> The built artifact now has a Chromium acceptance suite for boot, persistence, CSV import/export, search, keyboard operation, and mode transitions. At 390×844 the page is contained and header actions remain reachable. Under the isolated Node 26 runner, the 300-box fixture measured a 71.8 ms import, 68.8 ms pan, 680.3 ms settled zoom, 9.5 ms p95 selection-to-frame, 96.8 ms slider scrub, 84.2/63.5 ms read/edit transitions, 163.5 ms Atlas open, and 87.1 ms Bulk edit open.</p>
         </div>
       </section>
 
@@ -833,13 +833,13 @@
         <table class="verification-table">
           <thead><tr><th>Check</th><th>Result</th><th>Interpretation</th></tr></thead>
           <tbody>
-            <tr><td><code>npm run check</code></td><td class="status-pass">Passed on Node 26</td><td>Typecheck, 40 files / 925 tests, lint, and the production build all pass under the declared runtime.</td></tr>
-            <tr><td>Shuffled tests, seed 303</td><td class="status-pass">925 passed</td><td>The fixed shuffled order is now a CI gate; the five deterministic leaks are repaired.</td></tr>
+            <tr><td><code>npm run check</code></td><td class="status-pass">Passed on Node 26</td><td>Typecheck, 41 files / 939 tests, lint, and the production build all pass under the declared runtime.</td></tr>
+            <tr><td>Shuffled tests, seed 303</td><td class="status-pass">939 passed</td><td>The fixed shuffled order is now a CI gate; the five deterministic leaks are repaired.</td></tr>
             <tr><td>V8 coverage</td><td class="status-pass">75.65% lines</td><td>71.35% statements, 59.70% branches, and 73.32% functions. Search is 81.78%; inline rename is 71.79%.</td></tr>
             <tr><td>Built-artifact browser acceptance</td><td class="status-pass">3 passed</td><td>Boot, restore, CSV round-trip, search, keyboard access, mode transitions, compact layout, and scale run against <code>dist/systems-map.html</code>.</td></tr>
             <tr><td>Chromium, 390×844</td><td class="status-pass">Contained</td><td>No body overflow; header actions remain reachable through the action rail.</td></tr>
             <tr><td>Chromium, 300 boxes</td><td class="status-pass">All interactions inside budget</td><td>128.0 ms import; 228.9 ms pan; 487.2 ms settled zoom; 9.4 ms p95 selection-to-frame; 117.7 ms slider scrub; 96.0/120.9 ms read/edit; 192.3 ms Atlas open; 130.2 ms Bulk edit open. CI gates are respectively 5000, 750, 1500, 500, 1500, 1500/1500, 5000, and 3000 ms.</td></tr>
-            <tr><td>Production bundle</td><td class="status-pass">Current</td><td>Tracked single-file output is 742KB and CI fails if a build changes it. Vite retains one ignored-option warning.</td></tr>
+            <tr><td>Production bundle</td><td class="status-pass">Current</td><td>Tracked single-file output is 749KB and CI fails if a build changes it. Vite retains one ignored-option warning.</td></tr>
             <tr><td>Retired material</td><td class="status-pass">Removed</td><td>Standalone analysis pages, design mockups, their references, and standalone-page tests are gone; maintained Atlas engine coverage remains.</td></tr>
           </tbody>
         </table>

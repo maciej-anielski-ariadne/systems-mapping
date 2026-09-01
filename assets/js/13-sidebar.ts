@@ -90,7 +90,8 @@ export function renderStagesList(): void {
     const stage = STAGES[i];
     const count = stageNodeCount[stage.id] || 0;
     const isHidden = state.hiddenStages.has(stage.id);
-    const tip = (isHidden ? "Click to show " : "Click to hide ") + stage.label + " — " + count + " box" + (count === 1 ? "" : "es") + " on the map. Click the name to rename.";
+    const editingGuidance = state.uiMode === "edit" ? " Click the name to rename." : "";
+    const tip = (isHidden ? "Click to show " : "Click to hide ") + stage.label + " — " + count + " box" + (count === 1 ? "" : "es") + " on the map." + editingGuidance;
     // No colour on a column, so no dot and no slot held open for one: these
     // names sit flush on the same left edge as the eyebrow above them.
     html += editRowHtml({
@@ -121,7 +122,8 @@ export function renderStreamsList(): void {
     const count = streamNodeCount[stream.id] || 0;
     const short = stream.short || (typeof deriveShortLabel === "function" ? deriveShortLabel(stream.label) : "");
 
-    const tip = (isHidden ? "Click to show " : "Click to hide ") + stream.label + " — " + count + " box" + (count === 1 ? "" : "es") + " on the map. Click the name to rename.";
+    const editingGuidance = state.uiMode === "edit" ? " Click the name to rename." : "";
+    const tip = (isHidden ? "Click to show " : "Click to hide ") + stream.label + " — " + count + " box" + (count === 1 ? "" : "es") + " on the map." + editingGuidance;
     html += editRowHtml({
       kind: "stream", id: stream.id, index: i, label: stream.label, tip: tip,
       color: stream.color, short: short, count: count,
@@ -434,6 +436,9 @@ export function editRowHtml(opts: {
   color?: string | null; count?: number | null; short?: string | null;
   extra?: string; disabled?: boolean; deleteTitle?: string | null;
 }): string {
+  const filterActionTooltip = (opts.disabled ? "Click to show " : "Click to hide ") + opts.label;
+  const labelTooltip = state.uiMode === "edit" ? "Click to rename" : filterActionTooltip;
+  const shortLabelTooltip = state.uiMode === "edit" ? "Click to edit the short label" : filterActionTooltip;
   let h = '<div class="sidebar-edit-row filter-row' + (opts.disabled ? " disabled" : "") + '"' +
     ' data-kind="' + escapeHtml(opts.kind) + '" data-id="' + escapeHtml(opts.id) + '"' +
     ' data-index="' + opts.index + '" data-tooltip="' + escapeHtml(opts.tip) + '" draggable="true">';
@@ -442,10 +447,10 @@ export function editRowHtml(opts: {
       '" data-tooltip="Colour" aria-label="Colour">';
   }
   h += '<span class="filter-label sidebar-inline-edit" data-field="label"' +
-    ' data-tooltip="Click to rename">' + escapeHtml(opts.label) + '</span>';
+    ' data-tooltip="' + escapeHtml(labelTooltip) + '">' + escapeHtml(opts.label) + '</span>';
   if (opts.short != null) {
     h += '<span class="sidebar-short-chip sidebar-inline-edit" data-field="short"' +
-      ' data-tooltip="Click to edit the short label">' + escapeHtml(opts.short) + '</span>';
+      ' data-tooltip="' + escapeHtml(shortLabelTooltip) + '">' + escapeHtml(opts.short) + '</span>';
   }
   h += opts.extra || "";
   if (opts.count != null) h += '<span class="sidebar-count">' + opts.count + '</span>';

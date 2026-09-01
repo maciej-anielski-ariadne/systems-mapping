@@ -1000,7 +1000,7 @@ export function buildPublishHtml(
     'scroll.addEventListener("wheel",function(e){var mod=e.ctrlKey||e.metaKey;var mw=!mod&&looksLikeMouseWheel(e);if(!mod&&!mw)return;' +
       'e.preventDefault();var dy=e.deltaMode===1?e.deltaY*16:e.deltaY;var s=mw?0.0015:0.0035;zoomTo(z*Math.exp(-dy*s),e.clientX,e.clientY);},{passive:false});' +
     'var pan=null,moved=false;' +
-    'scroll.addEventListener("mousedown",function(e){if(e.button!==0)return;moved=false;if(e.target.closest&&e.target.closest(".xnode"))return;pan={x:e.clientX,y:e.clientY,l:scroll.scrollLeft,t:scroll.scrollTop};document.body.style.cursor="grabbing";});' +
+    'scroll.addEventListener("mousedown",function(e){if(e.button!==0)return;moved=false;pan={x:e.clientX,y:e.clientY,l:scroll.scrollLeft,t:scroll.scrollTop};document.body.style.cursor="grabbing";});' +
     'window.addEventListener("mousemove",function(e){if(pan){if(Math.abs(e.clientX-pan.x)+Math.abs(e.clientY-pan.y)>3)moved=true;scroll.scrollLeft=pan.l-(e.clientX-pan.x);scroll.scrollTop=pan.t-(e.clientY-pan.y);}});' +
     'window.addEventListener("mouseup",function(){pan=null;document.body.style.cursor="";});' +
     // ── trace (BFS up/down to `depth` hops) ──
