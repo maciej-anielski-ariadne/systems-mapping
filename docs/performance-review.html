@@ -1,0 +1,843 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Ariadne Maps — older-hardware performance remediation, 2 September 2026</title>
+  <style>
+    :root {
+      --colour-paper: #f1f2ed;
+      --colour-paper-raised: #fbfcf8;
+      --colour-text: #17201e;
+      --colour-text-muted: #5f6b67;
+      --colour-line: #c7ceca;
+      --colour-line-strong: #8e9b96;
+      --colour-forest: #214f46;
+      --colour-forest-bright: #2d7667;
+      --colour-lime: #c9dc78;
+      --colour-blue: #315f7a;
+      --colour-purple: #705886;
+      --colour-amber: #b06c19;
+      --colour-red: #b34435;
+      --colour-code-background: #e4e8e3;
+      --colour-positive-background: #e6f0e9;
+      --colour-warning-background: #f5ead8;
+      --shadow-raised: 0 20px 55px rgba(33, 62, 55, 0.10);
+      --content-maximum-width: 1180px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--colour-text);
+      background:
+        linear-gradient(rgba(33, 79, 70, 0.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(33, 79, 70, 0.045) 1px, transparent 1px),
+        var(--colour-paper);
+      background-size: 30px 30px;
+      font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+
+    a { color: var(--colour-blue); text-underline-offset: 0.18em; }
+    a:hover { color: var(--colour-forest-bright); }
+    a:focus-visible, summary:focus-visible {
+      outline: 3px solid rgba(45, 118, 103, 0.45);
+      outline-offset: 4px;
+      border-radius: 3px;
+    }
+    code {
+      padding: 0.08rem 0.28rem;
+      background: var(--colour-code-background);
+      border-radius: 3px;
+      font: 0.87em/1.4 ui-monospace, "SFMono-Regular", Consolas, monospace;
+      overflow-wrap: anywhere;
+    }
+    strong { font-weight: 700; }
+
+    .report-header {
+      position: relative;
+      overflow: hidden;
+      padding: 62px 24px 48px;
+      color: #f8fbf7;
+      background: var(--colour-forest);
+    }
+    .report-header::before,
+    .report-header::after {
+      content: "";
+      position: absolute;
+      border: 1px solid rgba(201, 220, 120, 0.28);
+      border-radius: 50%;
+    }
+    .report-header::before {
+      width: 560px;
+      height: 560px;
+      right: -190px;
+      top: -270px;
+      box-shadow: 0 0 0 56px rgba(201, 220, 120, 0.08), 0 0 0 112px rgba(201, 220, 120, 0.035);
+    }
+    .report-header::after {
+      width: 14px;
+      height: 14px;
+      right: 245px;
+      top: 120px;
+      background: var(--colour-lime);
+      box-shadow: 95px 58px 0 3px rgba(201, 220, 120, 0.72), 178px -18px 0 1px rgba(201, 220, 120, 0.46);
+    }
+    .header-content {
+      position: relative;
+      z-index: 1;
+      max-width: var(--content-maximum-width);
+      margin: 0 auto;
+    }
+    .eyebrow {
+      margin: 0 0 12px;
+      color: var(--colour-forest-bright);
+      font: 750 0.74rem/1.2 ui-monospace, "SFMono-Regular", Consolas, monospace;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+    }
+    .report-header .eyebrow { color: var(--colour-lime); }
+    h1, h2, h3, .metric-value {
+      font-family: Charter, "Iowan Old Style", Georgia, serif;
+    }
+    h1 {
+      max-width: 900px;
+      margin: 0;
+      font-size: clamp(2.7rem, 7vw, 5.7rem);
+      font-weight: 500;
+      line-height: 0.98;
+      letter-spacing: -0.05em;
+    }
+    .header-summary {
+      max-width: 790px;
+      margin: 24px 0 0;
+      color: #dce8e3;
+      font-size: clamp(1rem, 2vw, 1.22rem);
+    }
+    .header-metadata {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 24px;
+      margin-top: 30px;
+      color: #b8cbc4;
+      font: 650 0.77rem/1.4 ui-monospace, "SFMono-Regular", Consolas, monospace;
+    }
+
+    .report-layout {
+      display: grid;
+      grid-template-columns: 195px minmax(0, 1fr);
+      gap: 46px;
+      max-width: var(--content-maximum-width);
+      margin: 0 auto;
+      padding: 44px 24px 96px;
+    }
+    .report-navigation {
+      position: sticky;
+      top: 24px;
+      align-self: start;
+      padding-top: 8px;
+    }
+    .navigation-label {
+      margin: 0 0 12px;
+      color: var(--colour-text-muted);
+      font: 700 0.68rem/1.3 ui-monospace, "SFMono-Regular", Consolas, monospace;
+      letter-spacing: 0.11em;
+      text-transform: uppercase;
+    }
+    .navigation-link {
+      display: grid;
+      grid-template-columns: 24px 1fr;
+      gap: 10px;
+      align-items: center;
+      min-height: 42px;
+      color: var(--colour-text);
+      text-decoration: none;
+      font-size: 0.8rem;
+      font-weight: 700;
+    }
+    .navigation-marker {
+      display: grid;
+      width: 24px;
+      height: 24px;
+      place-items: center;
+      color: white;
+      background: var(--colour-forest);
+      border-radius: 50%;
+      font: 700 0.6rem/1 ui-monospace, "SFMono-Regular", Consolas, monospace;
+    }
+    .navigation-marker.priority-one { background: var(--colour-red); }
+    .navigation-marker.priority-two { background: var(--colour-amber); }
+    .navigation-marker.evidence { background: var(--colour-purple); }
+    .navigation-marker.roadmap { background: var(--colour-blue); }
+    .navigation-note {
+      margin: 18px 0 0;
+      color: var(--colour-text-muted);
+      font-size: 0.72rem;
+      line-height: 1.48;
+    }
+
+    main { min-width: 0; }
+    section { margin-bottom: 58px; scroll-margin-top: 24px; }
+    h2 {
+      margin: 0 0 18px;
+      font-size: clamp(1.9rem, 4vw, 3.15rem);
+      font-weight: 500;
+      line-height: 1.08;
+      letter-spacing: -0.03em;
+    }
+    h3 {
+      margin: 0 0 10px;
+      font-size: 1.35rem;
+      line-height: 1.16;
+    }
+    p { margin: 0 0 14px; }
+    .section-introduction {
+      max-width: 800px;
+      margin-bottom: 24px;
+      color: var(--colour-text-muted);
+      font-size: 1.02rem;
+    }
+
+    .verdict-panel {
+      padding: 30px;
+      background: var(--colour-paper-raised);
+      border-left: 6px solid var(--colour-red);
+      box-shadow: var(--shadow-raised);
+    }
+    .verdict-panel p:last-child { margin-bottom: 0; }
+    .verdict-lead {
+      font-family: Charter, "Iowan Old Style", Georgia, serif;
+      font-size: 1.45rem;
+      line-height: 1.35;
+    }
+    .verdict-lead strong { color: var(--colour-red); }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      margin-top: 22px;
+      border-top: 1px solid var(--colour-line);
+      border-bottom: 1px solid var(--colour-line);
+    }
+    .metric-cell {
+      padding: 20px 18px;
+      border-right: 1px solid var(--colour-line);
+    }
+    .metric-cell:last-child { border-right: 0; }
+    .metric-value {
+      display: block;
+      font-size: 2.25rem;
+      line-height: 1;
+      letter-spacing: -0.045em;
+    }
+    .metric-label {
+      display: block;
+      margin-top: 8px;
+      color: var(--colour-text-muted);
+      font-size: 0.72rem;
+      font-weight: 750;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .callout {
+      margin-top: 18px;
+      padding: 18px 20px;
+      background: var(--colour-positive-background);
+      border: 1px solid #bed1c4;
+    }
+    .callout.warning {
+      background: var(--colour-warning-background);
+      border-color: #dbc39e;
+    }
+    .callout p:last-child { margin-bottom: 0; }
+
+    .chart-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .chart-card {
+      padding: 22px;
+      background: var(--colour-paper-raised);
+      border: 1px solid var(--colour-line);
+    }
+    .chart-card h3 { font-size: 1.12rem; }
+    .bar-row {
+      display: grid;
+      grid-template-columns: 132px minmax(0, 1fr) 66px;
+      gap: 10px;
+      align-items: center;
+      margin-top: 12px;
+      font-size: 0.78rem;
+    }
+    .bar-track {
+      height: 11px;
+      overflow: hidden;
+      background: #dfe5e0;
+      border-radius: 999px;
+    }
+    .bar-fill { height: 100%; background: var(--colour-forest-bright); border-radius: inherit; }
+    .bar-fill.warning { background: var(--colour-amber); }
+    .bar-fill.problem { background: var(--colour-red); }
+    .bar-value { text-align: right; font-weight: 750; font-variant-numeric: tabular-nums; }
+    .chart-note { margin: 16px 0 0; color: var(--colour-text-muted); font-size: 0.75rem; }
+
+    .table-wrapper {
+      overflow-x: auto;
+      background: var(--colour-paper-raised);
+      border: 1px solid var(--colour-line);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.86rem;
+    }
+    th, td {
+      padding: 12px 14px;
+      text-align: left;
+      vertical-align: top;
+      border-bottom: 1px solid var(--colour-line);
+    }
+    th {
+      color: var(--colour-text-muted);
+      background: #e8ece7;
+      font: 750 0.69rem/1.3 ui-monospace, "SFMono-Regular", Consolas, monospace;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+    }
+    tbody tr:last-child td { border-bottom: 0; }
+    td.numeric { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .status-good { color: var(--colour-forest-bright); font-weight: 750; }
+    .status-watch { color: var(--colour-amber); font-weight: 750; }
+    .status-problem { color: var(--colour-red); font-weight: 750; }
+
+    .finding-list { display: grid; gap: 14px; }
+    details.finding {
+      background: var(--colour-paper-raised);
+      border: 1px solid var(--colour-line);
+      border-left: 5px solid var(--colour-amber);
+    }
+    details.finding.priority-one { border-left-color: var(--colour-red); }
+    details.finding.priority-two { border-left-color: var(--colour-amber); }
+    details.finding.priority-three { border-left-color: var(--colour-blue); }
+    details.finding[open] { box-shadow: var(--shadow-raised); }
+    details.finding summary {
+      display: grid;
+      grid-template-columns: 62px 1fr auto;
+      gap: 12px;
+      align-items: center;
+      min-height: 64px;
+      padding: 13px 18px;
+      cursor: pointer;
+      list-style: none;
+    }
+    details.finding summary::-webkit-details-marker { display: none; }
+    details.finding summary::after {
+      content: "+";
+      color: var(--colour-text-muted);
+      font: 500 1.25rem/1 ui-monospace, "SFMono-Regular", Consolas, monospace;
+    }
+    details.finding[open] summary::after { content: "−"; }
+    .finding-identifier {
+      color: var(--colour-text-muted);
+      font: 750 0.69rem/1.2 ui-monospace, "SFMono-Regular", Consolas, monospace;
+      letter-spacing: 0.07em;
+    }
+    .finding-title {
+      font-family: Charter, "Iowan Old Style", Georgia, serif;
+      font-size: 1.12rem;
+      font-weight: 700;
+      line-height: 1.22;
+    }
+    .finding-body { padding: 0 92px 24px; }
+    .finding-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }
+    .finding-tag {
+      padding: 4px 7px;
+      color: var(--colour-text-muted);
+      background: #e8ece7;
+      border-radius: 3px;
+      font: 700 0.65rem/1.2 ui-monospace, "SFMono-Regular", Consolas, monospace;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .evidence-box {
+      margin: 15px 0;
+      padding: 14px 16px;
+      background: #e9eeeb;
+      border-left: 3px solid var(--colour-forest-bright);
+      color: #31423d;
+      font-size: 0.84rem;
+    }
+    .evidence-box strong {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--colour-forest);
+      font: 750 0.68rem/1.2 ui-monospace, "SFMono-Regular", Consolas, monospace;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+    }
+    .finding-body ul, .finding-body ol, .compact-list, .method-list {
+      margin: 10px 0 0;
+      padding-left: 1.25rem;
+    }
+    .finding-body li, .compact-list li, .method-list li { margin-bottom: 8px; }
+
+    .roadmap-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .roadmap-card {
+      position: relative;
+      min-height: 190px;
+      padding: 22px;
+      background: var(--colour-paper-raised);
+      border: 1px solid var(--colour-line);
+    }
+    .roadmap-number {
+      position: absolute;
+      right: 16px;
+      top: 12px;
+      color: rgba(33, 79, 70, 0.13);
+      font: 500 3.5rem/1 Charter, "Iowan Old Style", Georgia, serif;
+    }
+    .roadmap-card h3 { max-width: 80%; }
+    .roadmap-outcome {
+      margin-top: 16px;
+      color: var(--colour-forest-bright);
+      font: 750 0.68rem/1.3 ui-monospace, "SFMono-Regular", Consolas, monospace;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .strength-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .strength-card {
+      padding: 18px;
+      background: var(--colour-positive-background);
+      border: 1px solid #bed1c4;
+    }
+    .strength-card h3 { color: var(--colour-forest); font-size: 1.06rem; }
+    .strength-card p { margin-bottom: 0; color: #3c5049; font-size: 0.85rem; }
+
+    .report-footer {
+      padding: 28px 24px 38px;
+      color: #b9cbc5;
+      background: var(--colour-forest);
+      text-align: center;
+      font-size: 0.76rem;
+    }
+
+    @media (max-width: 860px) {
+      .report-layout { grid-template-columns: 1fr; }
+      .report-navigation { position: static; display: flex; flex-wrap: wrap; gap: 4px 14px; }
+      .navigation-label, .navigation-note { width: 100%; }
+      .navigation-link { min-height: 34px; }
+      .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .metric-cell:nth-child(2) { border-right: 0; }
+      .metric-cell:nth-child(-n+2) { border-bottom: 1px solid var(--colour-line); }
+      .chart-grid, .roadmap-grid, .strength-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 560px) {
+      .report-header { padding: 44px 18px 36px; }
+      .report-layout { padding: 32px 16px 72px; }
+      .metric-grid { grid-template-columns: 1fr; }
+      .metric-cell { border-right: 0; border-bottom: 1px solid var(--colour-line); }
+      .metric-cell:last-child { border-bottom: 0; }
+      .bar-row { grid-template-columns: 112px minmax(0, 1fr) 58px; }
+      details.finding summary { grid-template-columns: 52px 1fr auto; padding: 12px 14px; }
+      .finding-body { padding: 0 16px 20px; }
+    }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+    @media print {
+      body { background: white; }
+      .report-header { padding-top: 32px; }
+      .report-layout { display: block; padding-top: 28px; }
+      .report-navigation { display: none; }
+      details.finding { break-inside: avoid; }
+      details.finding:not([open]) .finding-body { display: block; }
+      .chart-card, .roadmap-card, .strength-card { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <header class="report-header">
+    <div class="header-content">
+      <p class="eyebrow">Ariadne Maps · review and remediation</p>
+      <h1>Older hardware.<br>Far less waiting.</h1>
+      <p class="header-summary">A comprehensive, parallel-agent performance review followed by an implemented remediation pass. All fourteen findings now have code changes and regression coverage; remaining work is limited to actual-device evidence, hosted-cache deployment configuration and observation of the advisory large-map thresholds.</p>
+      <div class="header-metadata">
+        <span>REVIEWED + REMEDIATED 2 SEPTEMBER 2026</span>
+        <span>IMPLEMENTATION BASE 5d36bca8a1f7</span>
+        <span>300-BOX PRIMARY WORKLOAD</span>
+        <span>CHROMIUM · 6× CPU SLOWDOWN</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="report-layout">
+    <nav class="report-navigation" aria-label="Report sections">
+      <p class="navigation-label">Read the review</p>
+      <a class="navigation-link" href="#verdict"><span class="navigation-marker">01</span><span>Verdict</span></a>
+      <a class="navigation-link" href="#measurements"><span class="navigation-marker evidence">02</span><span>Measurements</span></a>
+      <a class="navigation-link" href="#priority-one"><span class="navigation-marker priority-one">P1</span><span>Core fixes</span></a>
+      <a class="navigation-link" href="#priority-two"><span class="navigation-marker priority-two">P2</span><span>Scale &amp; lifecycle</span></a>
+      <a class="navigation-link" href="#roadmap"><span class="navigation-marker roadmap">→</span><span>Remaining work</span></a>
+      <a class="navigation-link" href="#strengths"><span class="navigation-marker">✓</span><span>Keep</span></a>
+      <a class="navigation-link" href="#evidence"><span class="navigation-marker evidence">i</span><span>Evidence</span></a>
+      <p class="navigation-note">Priorities combine measured user impact, older-hardware amplification, frequency, and implementation leverage. Each finding retains its original evidence and now records the implemented outcome.</p>
+    </nav>
+
+    <main>
+      <section id="verdict">
+        <p class="eyebrow">Executive verdict</p>
+        <h2>The app now meets its automated older-hardware interaction gates at 300 boxes</h2>
+        <div class="verdict-panel">
+          <p class="verdict-lead"><strong>The focused architecture work paid off.</strong> Simulation no longer rebuilds the map, selection and Atlas repaint through retained references, scale algorithms are bounded, and imports prepare away from the interface thread.</p>
+          <p>At the agreed 300-box scale under 6× CPU slowdown, selection measured 33 ms p75, Simulation entry 105 ms, exit 74 ms and slider response 30 ms. Atlas now paints meaningful structure in 160 ms, reaches its complete state in 259 ms and reopens a completed view in 61 ms p75. Startup layout shift remained 0.00021 with no boot transition runs.</p>
+          <p>The result is not a claim of universal speed. A restored 300-box map still has a 546 ms p75 longest startup task in the final isolated run, complete Atlas enrichment deliberately follows its first structural paint, and very large maps can still be expensive after the user explicitly accepts them.</p>
+        </div>
+        <div class="metric-grid" aria-label="Key audit measurements">
+          <div class="metric-cell"><span class="metric-value">660 ms</span><span class="metric-label">Saved-map FCP p75 · 6× CPU</span></div>
+          <div class="metric-cell"><span class="metric-value">105 ms</span><span class="metric-label">Simulation entry p75 · 300 boxes</span></div>
+          <div class="metric-cell"><span class="metric-value">160 ms</span><span class="metric-label">First Atlas structure paint · 300 boxes</span></div>
+          <div class="metric-cell"><span class="metric-value">1,065</span><span class="metric-label">Unit + integration tests passing</span></div>
+        </div>
+        <div class="callout">
+          <p><strong>Large maps are advisory, not forbidden.</strong> Import now transfers file bytes to a dedicated worker for decoding, one-pass parsing, structural validation and counting. At 5 MiB, 1,000 boxes or 2,000 links the app shows the detected counts and asks whether to open the map. Cancel leaves the current map intact; every valid file remains openable.</p>
+        </div>
+      </section>
+
+      <section id="measurements">
+        <p class="eyebrow">Measured experience</p>
+        <h2>Core interactions moved from visible pauses to responsive updates</h2>
+        <p class="section-introduction">The primary verification profile uses Chromium at 1366×768, a restored 300-box / 299-link map, and 6× CPU throttling. Values are p75 across four repetitions where available. They are lab action-to-observable-state times, not field INP.</p>
+
+        <div class="chart-grid">
+          <article class="chart-card">
+            <h3>Restored startup is visually stable</h3>
+            <div class="bar-row"><span>Saved-map FCP p75</span><span class="bar-track"><span class="bar-fill" style="width: 26.4%"></span></span><span class="bar-value">660 ms</span></div>
+            <div class="bar-row"><span>Saved-map load p75</span><span class="bar-track"><span class="bar-fill" style="width: 28.9%"></span></span><span class="bar-value">723 ms</span></div>
+            <div class="bar-row"><span>Good LCP line</span><span class="bar-track"><span class="bar-fill warning" style="width: 100%"></span></span><span class="bar-value">2.5 s</span></div>
+            <p class="chart-note">Boot transitions no longer run before the restored shell is stable. The remaining startup long task is structural map load rather than duplicated restored-state rendering.</p>
+          </article>
+          <article class="chart-card">
+            <h3>Retained surfaces remove mode-boundary stalls</h3>
+            <div class="bar-row"><span>Selection p75</span><span class="bar-track"><span class="bar-fill" style="width: 16.5%"></span></span><span class="bar-value">33 ms</span></div>
+            <div class="bar-row"><span>Simulation entry p75</span><span class="bar-track"><span class="bar-fill" style="width: 52.5%"></span></span><span class="bar-value">105 ms</span></div>
+            <div class="bar-row"><span>Atlas reuse p75</span><span class="bar-track"><span class="bar-fill" style="width: 30.5%"></span></span><span class="bar-value">61 ms</span></div>
+            <div class="bar-row"><span>First Atlas structure</span><span class="bar-track"><span class="bar-fill" style="width: 80%"></span></span><span class="bar-value">160 ms</span></div>
+            <p class="chart-note">The 200 ms comparison line is an experience target, not a claim that these lab values are field INP.</p>
+          </article>
+        </div>
+
+        <div class="table-wrapper" style="margin-top: 18px;">
+          <table>
+            <thead>
+              <tr><th>Scenario</th><th>Native CPU</th><th>6× CPU</th><th>Assessment</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Saved 300-box first contentful paint p75</td><td class="numeric">Baseline not equivalent</td><td class="numeric">660 ms</td><td class="status-good">Good</td></tr>
+              <tr><td>Saved 300-box cumulative layout shift</td><td class="numeric">0.177 intermittent</td><td class="numeric">0.00021</td><td class="status-good">Fixed</td></tr>
+              <tr><td>Saved 300-box longest startup task p75</td><td class="numeric">383 ms median</td><td class="numeric">546 ms</td><td class="status-watch">Paint is fast; task remains</td></tr>
+              <tr><td>300-box import</td><td class="numeric">80 ms native</td><td class="numeric">Worker-prepared</td><td class="status-good">UI stays cancellable</td></tr>
+              <tr><td>Selection</td><td class="numeric">19 ms median / 208 ms run maximum</td><td class="numeric">33 ms p75 / 37 ms maximum</td><td class="status-good">Fixed</td></tr>
+              <tr><td>Simulation entry</td><td class="numeric">593 ms median</td><td class="numeric">105 ms p75</td><td class="status-good">82% faster</td></tr>
+              <tr><td>Simulation exit</td><td class="numeric">Whole-map rebuild</td><td class="numeric">74 ms p75</td><td class="status-good">Fixed</td></tr>
+              <tr><td>Simulation slider response</td><td class="numeric">197 ms observable</td><td class="numeric">30 ms p75</td><td class="status-good">Fixed</td></tr>
+              <tr><td>Atlas first meaningful structure</td><td class="numeric">345 ms median complete reveal</td><td class="numeric">160 ms</td><td class="status-good">Progressive target met</td></tr>
+              <tr><td>Atlas complete state</td><td class="numeric">Monolithic</td><td class="numeric">259 ms</td><td class="status-good">Deferred after structure</td></tr>
+              <tr><td>Atlas reopen</td><td class="numeric">79–85 ms full synchronous render</td><td class="numeric">61 ms p75 end-to-paint</td><td class="status-good">Retained and stable</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout">
+          <p><strong>Offline delivery remains one file:</strong> 804,440 bytes raw, 270,899 bytes at gzip level 9, and about 227.0 KiB with Brotli quality 11. Its CSV Worker is embedded as a Blob and was verified directly from <code>file://</code>.</p>
+          <p><strong>Hosted delivery is now a separate production build.</strong> It emits a 524,661-byte hashed main script, a 5,103-byte hashed Worker, 149,016 bytes of CSS and four deduplicated font payloads. Estimated cold transfer is 266,417 bytes. The main script remains under its unchanged 525,000-byte budget. Immutable asset caching and entry-document revalidation still need to be applied by the actual host.</p>
+        </div>
+      </section>
+
+      <section id="priority-one">
+        <p class="eyebrow">Priority one · implemented</p>
+        <h2>Six high-impact findings now have shipped code paths and regression proof</h2>
+        <div class="table-wrapper" style="margin-bottom: 22px;">
+          <table>
+            <thead><tr><th>Finding</th><th>Implemented outcome</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td>P1.01 Boot layout shift</td><td>Explicit boot state suppresses shell transitions until the restored layout has painted.</td><td class="status-good">Closed</td></tr>
+              <tr><td>P1.02 Simulation rebuild</td><td>Existing map nodes and links are patched in place; values are created lazily on first entry.</td><td class="status-good">Closed</td></tr>
+              <tr><td>P1.03 Atlas rebuild</td><td>First open paints structure before deferred labels and wheels; completed SVG and paint references are retained for immediate reopen.</td><td class="status-good">Closed</td></tr>
+              <tr><td>P1.04 Selection scan</td><td>Identifier-to-element caches and set differences limit work to changed nodes and links.</td><td class="status-good">Closed</td></tr>
+              <tr><td>P1.05 Import memory</td><td>Transferable bytes, one-pass Worker parsing, progress, Cancel and advisory large-map consent.</td><td class="status-good">Closed</td></tr>
+              <tr><td>P1.06 Review complexity</td><td>Drift attribution and snapshot validation now use shared O(N+E) indexes.</td><td class="status-good">Closed</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="finding-list">
+          <details class="finding priority-one" open>
+            <summary><span class="finding-identifier">P1.01</span><span class="finding-title">Boot animates the entire application from a three-column shell to reading mode</span></summary>
+            <div class="finding-body">
+              <div class="finding-tags"><span class="finding-tag">Measured</span><span class="finding-tag">Cold start</span><span class="finding-tag">High confidence</span></div>
+              <p>The HTML initially paints the default 240 px / 340 px side panels. Only after the eager module graph executes does <code>applyUiMode()</code> add reading mode, reducing both tracks to zero through a slow <code>grid-template-columns</code> transition. On a constrained CPU, first paint sometimes lands before that transition and the map visibly stretches across the viewport.</p>
+              <div class="evidence-box"><strong>Evidence</strong>Default grid at <code>assets/css/03-app-shell.css:22–43</code>; transition and reading tracks at <code>:360–370</code>; mode is first applied after every module import at <code>assets/js/18-main.ts:19–59</code> and <code>:95–97</code>. At 6× CPU, 3 of 12 cold loads recorded CLS around 0.177, sourced to <code>MAIN.viz-container</code> and sidebar content; the other nine were 0.003.</div>
+              <p><strong>Implemented:</strong> the document starts in <code>app-booting</code>, restored mode and panel state are applied without duplicate panel renders, and transitions are enabled only after two animation frames. Four 6×-CPU reloads recorded zero boot transition runs and CLS 0.00021.</p>
+            </div>
+          </details>
+
+          <details class="finding priority-one" open>
+            <summary><span class="finding-identifier">P1.02</span><span class="finding-title">Simulation entry synchronously rebuilds the sidebar, every map element, and the detail panel</span></summary>
+            <div class="finding-body">
+              <div class="finding-tags"><span class="finding-tag">593 ms</span><span class="finding-tag">300 boxes</span><span class="finding-tag">High confidence</span></div>
+              <p><code>toggleSimulationMode()</code> performs a synchronous full-surface transaction. The central renderer serializes and replaces the complete SVG. At 300 boxes the map sits just below the 400-node / 2,000-edge virtualization boundary, so all 300 nodes and 299 links are rebuilt.</p>
+              <div class="evidence-box"><strong>Evidence</strong><code>assets/js/14-simulation-panel.ts:508–545</code>; full render and <code>innerHTML</code> commit at <code>assets/js/11-rendering.ts:1155–1580</code>, especially <code>:1565–1568</code>; thresholds at <code>:413–415</code>. Median 6×-CPU entry: 593 ms. The 400-box profile still took 707 ms despite culling to 264 nodes and 263 links.</div>
+              <p><strong>Implemented:</strong> map elements and their resting fills survive Simulation entry and exit; Simulation values are inserted lazily, then updated in place. In the final isolated 6× run, entry fell from the 593 ms baseline to 105 ms p75 and exit measured 74 ms p75.</p>
+            </div>
+          </details>
+
+          <details class="finding priority-one" open>
+            <summary><span class="finding-identifier">P1.03</span><span class="finding-title">Atlas open spends far more time replacing and painting SVG than building the model</span></summary>
+            <div class="finding-body">
+              <div class="finding-tags"><span class="finding-tag">345 ms</span><span class="finding-tag">DOM dominated</span><span class="finding-tag">High confidence</span></div>
+              <p>The Atlas engine is not the ordinary 300-box bottleneck. Opening Atlas constructs a graph and Atlas, then generates the full picture string, replaces the stage DOM, paints all flows and circles, frames the view and starts reveal behavior.</p>
+              <div class="evidence-box"><strong>Evidence</strong><code>assets/js/21-atlas-view.ts:401–434</code> and <code>:714–725</code>. In a partitioned 6× run, <code>buildGraph</code> took 1.4 ms, <code>buildAtlas</code> 20.2 ms and measurement 0.2 ms, while the synchronous open path took 196 ms and open-to-paint 345 ms. A repeated full Atlas render took 79–85 ms at 300 boxes.</div>
+              <p><strong>Implemented after owner decision:</strong> Atlas commits real paths, circles and gates first, then yields across a paint boundary before adding labels, feedback-wheel controls, current Simulation state and the inspector. The stage exposes deterministic <code>structure</code> / <code>complete</code> phases, remains inert while busy and cancels stale work on close or start changes. Meaningful structure painted in 160 ms, completion reached 259 ms and a completed same-start Atlas reopened in 61 ms p75.</p>
+            </div>
+          </details>
+
+          <details class="finding priority-one" open>
+            <summary><span class="finding-identifier">P1.04</span><span class="finding-title">Selection patches styling, but still scans the whole rendered slice and rebuilds the detail panel</span></summary>
+            <div class="finding-body">
+              <div class="finding-tags"><span class="finding-tag">208 ms maximum</span><span class="finding-tag">Core workflow</span><span class="finding-tag">High confidence</span></div>
+              <p>A normal selection is fast, but the first selected box can cross the 200 ms line. Trace state scans all visible nodes, selection styling queries and walks every rendered node and edge, and the detail panel opens through the same grid transition.</p>
+              <div class="evidence-box"><strong>Evidence</strong><code>assets/js/09-graph-selection.ts:180–233</code> and <code>:281–311</code>; DOM scan at <code>assets/js/11-rendering.ts:1606–1686</code>; selection notification at <code>:1712–1719</code>. The 300-box 6× profile had a 19 ms selection median but a 208 ms median-of-run maxima; a separate end-to-second-paint probe measured about 305 ms.</div>
+              <p><strong>Implemented:</strong> rendered nodes and links are indexed by identifier, selection styling compares the previous and next sets, and only changed elements are repainted. The final isolated 6× run measured 33 ms p75 and 37 ms maximum.</p>
+            </div>
+          </details>
+
+          <details class="finding priority-one" open>
+            <summary><span class="finding-identifier">P1.05</span><span class="finding-title">CSV import reads and multiplies arbitrarily large files in main-thread memory</span></summary>
+            <div class="finding-body">
+              <div class="finding-tags"><span class="finding-tag">Memory safety</span><span class="finding-tag">Unbounded input</span><span class="finding-tag">High confidence</span></div>
+              <p>The picker validates only the filename extension, reads the entire file into one string, builds a second array of record strings, then cell arrays and row objects while the earlier representations remain live. On low-memory hardware this can cause garbage-collection storms or tab termination before the local-storage quota warning is relevant.</p>
+              <div class="evidence-box"><strong>Evidence</strong><code>assets/js/16-file-io.ts:38–57</code>; record retention at <code>assets/js/05-csv-parser.ts:87–131</code>; row construction at <code>:133–178</code>; parsed sections remain live during runtime-array construction at <code>assets/js/06-data-loader.ts:619–622</code> and <code>:1073–1083</code>. Parser-only probe: 1.49 MiB/10k rows → +32.6 MiB immediate heap; 7.98 MiB/50k → +282.7 MiB; 16.09 MiB/100k → +552.0 MiB.</div>
+              <p><strong>Implemented after owner decision:</strong> there is deliberately no hard envelope. File bytes transfer to a dedicated Worker, records are parsed in one pass, pure transaction-gating checks and counts run off-thread, and progress can be cancelled without touching the current map. At 5 MiB, 1,000 boxes or 2,000 links, exact counts and a performance warning precede explicit Open map / Cancel choices.</p>
+            </div>
+          </details>
+
+          <details class="finding priority-one" open>
+            <summary><span class="finding-identifier">P1.06</span><span class="finding-title">Review attribution and validation become quadratic and run synchronously during load and edits</span></summary>
+            <div class="finding-body">
+              <div class="finding-tags"><span class="finding-tag">Scale</span><span class="finding-tag">Multi-second</span><span class="finding-tag">High confidence</span></div>
+              <p>Drift attribution independently walks upstream for every drifting box; snapshot validation filters the entire edge list once per node. Load currently attributes findings twice around Review reconstruction, and topology/calculation edits repeat the work.</p>
+              <div class="evidence-box"><strong>Evidence</strong><code>assets/js/22-review.ts:102–140</code>; duplicate load invocation at <code>assets/js/06-data-loader.ts:1196–1208</code>; per-node edge filter at <code>assets/js/22a-review-model.ts:235–265</code>; mutation refresh at <code>assets/js/16f-canvas-mutations.ts:103–110</code>. On an Apple M5, drift attribution grew from 31 ms/500 nodes to 836 ms/4,000 and 3.73 s/8,000. Stable validation reached 403 ms at 8,000 nodes/20,000 edges before older-hardware slowdown.</div>
+              <p><strong>Implemented:</strong> attribution builds the drifting subgraph once, Review snapshots cache incoming links, and the overwritten first attribution pass is removed. The 8,000-node attribution probe fell from 3.73 s to about 29 ms; a 16,000-node / 40,000-link Review validation completed in about 51 ms on the test machine.</p>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <section id="priority-two">
+        <p class="eyebrow">Priority two · implemented</p>
+        <h2>Scale, delivery and lifecycle fixes are now guarded by tests and budgets</h2>
+        <div class="table-wrapper" style="margin-bottom: 22px;">
+          <table>
+            <thead><tr><th>Finding</th><th>Implemented outcome</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td>P2.01 Performance gate</td><td>Dedicated 6×-CPU startup, interaction, CLS and long-task browser lane plus deterministic bundle budgets.</td><td class="status-good">Closed</td></tr>
+              <tr><td>P2.02 Edge virtualization</td><td>Exact curve candidates are indexed into bounded tiles before intersection tests.</td><td class="status-good">Closed</td></tr>
+              <tr><td>P2.03 Atlas lane scale</td><td>Neighbour sets and exact-signature grouping avoid all-pairs scans while preserving weighted comparisons.</td><td class="status-good">Closed</td></tr>
+              <tr><td>P2.04 Collapsed links</td><td>Each visible source now traverses the hidden frontier once.</td><td class="status-good">Closed</td></tr>
+              <tr><td>P2.05 Restored startup</td><td>Duplicate mode application, recomputation and panel rendering are removed from restore.</td><td class="status-good">Closed</td></tr>
+              <tr><td>P2.06 Builder retention</td><td>Cloned Builder arrays and caches are released on close.</td><td class="status-good">Closed</td></tr>
+              <tr><td>P2.07 Hosted delivery</td><td>Separate hashed hosted output added while preserving the single-file offline artifact.</td><td class="status-watch">Code complete; host config open</td></tr>
+              <tr><td>P3.01 Tutorial idle work</td><td>Perpetual animation-frame polling replaced by a mutation/scroll/resize dirty scheduler.</td><td class="status-good">Closed</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="finding-list">
+          <details class="finding priority-two" open>
+            <summary><span class="finding-identifier">P2.01</span><span class="finding-title">The performance gate proves regression tolerance, not older-hardware quality</span></summary>
+            <div class="finding-body">
+              <div class="finding-tags"><span class="finding-tag">Testing</span><span class="finding-tag">High leverage</span><span class="finding-tag">Verified gap</span></div>
+              <p>The real-browser 300-box test is valuable, but its 500–5,000 ms limits allow interactions that already feel frozen. It samples five selections, runs without CPU throttling, does not count long tasks or CLS, and omits Review, dense collapse, Atlas menu scaling, tutorial idle cost and the 399/400 virtualization boundary.</p>
+              <div class="evidence-box"><strong>Evidence</strong><code>tests/browser/app.acceptance.spec.ts:623–857</code>. The current test passed with all actions inside budget while the separate 6× trace recorded a 593 ms Simulation entry, 11–12 long tasks per run and a median 200 ms longest task.</div>
+              <p><strong>Implemented:</strong> the broad smoke lane remains, and a second browser test runs the restored 300-box workload at 6× CPU. It gates p75 startup, CLS, boot transitions, selection, Simulation, Atlas and long-task behavior. A deterministic build check separately gates offline raw/gzip size, hosted main/Worker/CSS size, estimated cold transfer and duplicate fonts.</p>
+            </div>
+          </details>
+
+          <details class="finding priority-two">
+            <summary><span class="finding-identifier">P2.02</span><span class="finding-title">Virtualization bounds live DOM, not full-edge scans or model work</span></summary>
+            <div class="finding-body">
+              <div class="finding-tags"><span class="finding-tag">Dense maps</span><span class="finding-tag">Measured boundary</span><span class="finding-tag">High confidence</span></div>
+              <p>At 400 nodes the renderer correctly culls map DOM, but every slice still loops over every render edge and performs recursive Bézier intersection tests. Review, Atlas and simulation model work remains whole-map. This explains why 400-box interaction can be slower even with fewer live elements than the 300-box case.</p>
+              <div class="evidence-box"><strong>Evidence</strong>Thresholds and culling at <code>assets/js/11-rendering.ts:399–430</code>; full-edge cull loop at <code>:1338–1349</code>; second hit-path test at <code>:1382–1388</code>. At 400 boxes, only 264 nodes/263 links were rendered, yet 6× Simulation entry was 707 ms and Atlas open 603 ms.</div>
+              <p><strong>Implemented:</strong> cached Bézier geometry is subdivided into exact tile candidates, with a bounded always-candidate path for exceptionally long curves. An edge-heavy regression fixture confirmed 486 candidates from 2,498 links—about 80.5% pruned before exact intersection checks.</p>
+            </div>
+          </details>
+
+          <details class="finding priority-two">
+            <summary><span class="finding-identifier">P2.03</span><span class="finding-title">Atlas lane discovery becomes quadratic in large sibling families</span></summary>
+            <div class="finding-body">
+              <div class="finding-tags"><span class="finding-tag">Atlas scale</span><span class="finding-tag">Engine</span><span class="finding-tag">High confidence</span></div>
+              <p>Candidate lane families pair-compare members for adjacency and then pair-compare surviving neighbourhoods. One broad family can dominate before any SVG is created.</p>
+              <div class="evidence-box"><strong>Evidence</strong><code>assets/js/20-atlas-engine.ts:217–277</code> and <code>:327–361</code>. Star-family probe on an Apple M5: 251 nodes 11 ms; 1,001 nodes 72 ms; 2,001 nodes 276 ms; 4,001 nodes 1.15 s.</div>
+              <p><strong>Implemented:</strong> Atlas builds neighbour sets once, groups identical signatures, and performs exact weighted Jaccard comparisons only where still needed. The 4,001-node star-family probe fell from 1.15 s to about 31 ms.</p>
+            </div>
+          </details>
+
+          <details class="finding priority-two">
+            <summary><span class="finding-identifier">P2.04</span><span class="finding-title">Collapsed-link routing restarts hidden-subgraph traversal for every boundary edge</span></summary>
+            <div class="finding-body">
+              <div class="finding-tags"><span class="finding-tag">Dense topology</span><span class="finding-tag">188–201 ms</span><span class="finding-tag">High confidence</span></div>
+              <p>When a row, column or category hides a dense region, each visible-to-hidden boundary edge receives fresh traversal state. Multiple entries from the same source repeat the same hidden work.</p>
+              <div class="evidence-box"><strong>Evidence</strong><code>assets/js/10a-collapsed-edges.ts:148–182</code>, synchronously invoked by <code>assets/js/10-filters.ts:118–138</code>. A 40-source/30-hidden/2,220-edge fixture took 188–201 ms at 6× CPU; existing coverage uses one visible source and nine hidden nodes.</div>
+              <p><strong>Implemented:</strong> collapsed-edge routing now performs one multi-entry hidden-frontier traversal for each visible source. The dense regression fixture completes in about 7 ms on the test machine.</p>
+            </div>
+          </details>
+
+          <details class="finding priority-two">
+            <summary><span class="finding-identifier">P2.05</span><span class="finding-title">Restored startup repeats whole-map derivation and rendering in one long task</span></summary>
+            <div class="finding-body">
+              <div class="finding-tags"><span class="finding-tag">383 ms long task</span><span class="finding-tag">Saved maps</span><span class="finding-tag">Source confirmed</span></div>
+              <p>Loading stored CSV performs indexes, validation, layout, simulation, Review and full-surface renders. The separate restored-UI phase then recomputes values and renders again, potentially toggling Simulation and selecting a box before the browser can paint.</p>
+              <div class="evidence-box"><strong>Evidence</strong>Boot order at <code>assets/js/18-main.ts:99–140</code>; load work at <code>assets/js/06-data-loader.ts:1190–1229</code>; restored recompute/render at <code>assets/js/04a-storage.ts:277–302</code>. Saved 300-box startup at 6× CPU: 440 ms load, 468 ms LCP and one 383 ms median long task.</div>
+              <p><strong>Implemented:</strong> startup no longer applies reading mode before applying the saved mode, and restored UI avoids a second panel render during hydration. A structural 300-box load still produced a 546 ms p75 longest task in the final isolated run, but first contentful paint was 660 ms p75 and the shell no longer visibly transitions through the wrong layout.</p>
+            </div>
+          </details>
+
+          <details class="finding priority-two">
+            <summary><span class="finding-identifier">P2.06</span><span class="finding-title">Closing Bulk edit keeps its deep-cloned graph resident</span></summary>
+            <div class="finding-body">
+              <div class="finding-tags"><span class="finding-tag">Concrete retention</span><span class="finding-tag">Low frequency</span><span class="finding-tag">High confidence</span></div>
+              <p>Opening Builder deep-clones nodes and edges into <code>state.builder</code>. Closing removes UI and storage but leaves those arrays live. A 4,000-node/10,000-edge synthetic clone remained after forced collection and retained at least 1.31 MiB with short shared strings.</p>
+              <div class="evidence-box"><strong>Evidence</strong>Clone at <code>assets/js/16a-builder-state.ts:182–237</code>; close path at <code>:116–126</code>.</div>
+              <p><strong>Implemented:</strong> closing Builder clears its cloned node, edge, parameter and review arrays plus transient sort/validation state. Focused lifecycle coverage verifies the data is released.</p>
+            </div>
+          </details>
+
+          <details class="finding priority-two">
+            <summary><span class="finding-identifier">P2.07</span><span class="finding-title">Hosted delivery should not use the offline package as its only build</span></summary>
+            <div class="finding-body">
+              <div class="finding-tags"><span class="finding-tag">Conditional</span><span class="finding-tag">Hosted use</span><span class="finding-tag">Measured counterfactual</span></div>
+              <p>The self-contained file is exactly right for email, USB and double-click use. It is not the fastest hosted entry because the browser cannot paint until a large HTML response containing JavaScript, CSS and base64 fonts arrives.</p>
+              <div class="evidence-box"><strong>Evidence</strong>Inlining is deliberate at <code>vite.config.ts:13–25</code>. A standard Vite counterfactual cut cold transfer from 343 KB to about 258 KB. At 400 Kbps + 6× CPU, FCP improved from 6.99 s to 1.57 s and load from 7.16 s to 5.58 s.</div>
+              <p><strong>Implemented in the repository:</strong> <code>npm run build</code> still produces the self-contained offline file; <code>npm run build:hosted</code> now emits hashed CSS, JavaScript, fonts and a separate CSV Worker. CI builds both. The deployment platform must still assign immutable caching to hashed assets and revalidation to <code>index.html</code>.</p>
+            </div>
+          </details>
+
+          <details class="finding priority-three">
+            <summary><span class="finding-identifier">P3.01</span><span class="finding-title">Tutorial target tracking performs layout reads and connector writes every animation frame</span></summary>
+            <div class="finding-body">
+              <div class="finding-tags"><span class="finding-tag">Hypothesis</span><span class="finding-tag">Continuous cost</span><span class="finding-tag">Measure before changing</span></div>
+              <p>While a target exists, a perpetual frame loop queries candidate targets, checks computed style, measures the target and card, and rewrites the connector even when neither moved. The mechanism is confirmed; user impact was not isolated in this audit.</p>
+              <div class="evidence-box"><strong>Evidence</strong><code>assets/js/26-tutorial.ts:390–475</code> and global invalidation listeners at <code>:1744–1750</code>.</div>
+              <p><strong>Implemented:</strong> connector geometry is marked dirty by step changes, resize, scroll, drag and relevant DOM mutations, then coalesced into one frame. With no change, no animation-frame loop runs.</p>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <section id="roadmap">
+        <p class="eyebrow">Remaining work</p>
+        <h2>The engineering pass is complete; the next moves need evidence or ownership</h2>
+        <div class="roadmap-grid">
+          <article class="roadmap-card">
+            <span class="roadmap-number">1</span>
+            <h3>Verify one actual older device</h3>
+            <p>Run the canonical 300-box and dense fixtures on a low-end Intel Mac or comparable Chromebook. Lab throttling does not reproduce thermal, GPU or memory-pressure behavior exactly.</p>
+            <p class="roadmap-outcome">Replace simulation with device evidence</p>
+          </article>
+          <article class="roadmap-card">
+            <span class="roadmap-number">2</span>
+            <h3>Configure the real host</h3>
+            <p>Publish <code>dist-hosted/</code>, cache hashed assets immutably and revalidate the entry document. The repository now provides the right artifact but cannot set an unknown platform’s response headers.</p>
+            <p class="roadmap-outcome">Delivery configuration, not app code</p>
+          </article>
+          <article class="roadmap-card">
+            <span class="roadmap-number">3</span>
+            <h3>Observe large-map consent</h3>
+            <p>The thresholds are intentionally advisory. Use support reports or telemetry to learn whether 5 MiB, 1,000 boxes and 2,000 links warn at the right point; do not convert them into a hidden rejection rule.</p>
+            <p class="roadmap-outcome">Tune from use, not guesswork</p>
+          </article>
+          <article class="roadmap-card">
+            <span class="roadmap-number">4</span>
+            <h3>Investigate startup only if felt</h3>
+            <p>The restored map paints in 660 ms p75 but still contains a 546 ms p75 structural load task. Splitting that transaction changes loading presentation and should follow actual-device evidence, not an isolated task-duration number.</p>
+            <p class="roadmap-outcome">Avoid complexity without visible return</p>
+          </article>
+          <article class="roadmap-card">
+            <span class="roadmap-number">✓</span>
+            <h3>Keep the gates honest</h3>
+            <p>Retain both lanes: broad browser smoke budgets catch catastrophic regressions; the 6× profile and deterministic artifact budgets protect the older-hardware experience and delivery shape.</p>
+            <p class="roadmap-outcome">Performance remains a tested contract</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="strengths">
+        <p class="eyebrow">Protect these strengths</p>
+        <h2>The review found more focused engineering than waste</h2>
+        <div class="strength-grid">
+          <article class="strength-card"><h3>Single-request offline delivery</h3><p>No dependency chain, no service worker requirement, minified code, no source maps, local fonts and a compact Brotli form. Local/offline cold startup is already strong.</p></article>
+          <article class="strength-card"><h3>Incremental simulation engine</h3><p>Slider work is coalesced to one solve and repaint per frame, and downstream solving is incremental. Warm 300-box solver updates were 1–6 ms at 6× CPU.</p></article>
+          <article class="strength-card"><h3>Pan, zoom and drag scheduling</h3><p>Native scrolling, passive listeners, idle-time slice redraw, compositor zoom gestures, spatial hit indexes and overlay-only drag painting avoid obvious high-frequency rebuilds.</p></article>
+          <article class="strength-card"><h3>Builder virtualization</h3><p>Rows are windowed, selects are upgraded lazily, and validation/sort results are memoized per render pass. Scale-focused suites remain green.</p></article>
+          <article class="strength-card"><h3>Search stays cheap</h3><p>Search caches normalized data, caps rendering at eight results and debounces input. Even a 5,000-node long-text corpus stayed around 10–22 ms at 6× CPU.</p></article>
+          <article class="strength-card"><h3>No general leak was confirmed</h3><p>Forced-GC heap at 400 boxes stayed between 5.22 and 5.31 MB across baseline runs. The observed listeners were stable and mostly delegated or lifecycle-guarded; the specific Builder retention defect is now cleared on close.</p></article>
+        </div>
+        <div class="callout warning">
+          <p><strong>Three tempting changes remain unwarranted.</strong> Do not remove the tutorial for a roughly 32 ms baseline cold-start gain; do not rewrite the SVG architecture now that retained updates meet the gates; and do not impose a hard file-size ceiling when cancellable preparation and explicit consent meet the owner’s requirement.</p>
+        </div>
+      </section>
+
+      <section id="evidence">
+        <p class="eyebrow">Evidence and limitations</p>
+        <h2>What was checked, and what remains unknown</h2>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Check</th><th>Result</th><th>Interpretation</th></tr></thead>
+            <tbody>
+              <tr><td>TypeScript, lint and unit/integration suite</td><td class="status-good">Passed</td><td>46 files and 1,065 tests, including parser progress, Worker protocol, transactional import, retained rendering, progressive Atlas cancellation, scale and lifecycle regressions.</td></tr>
+              <tr><td>Offline production build</td><td class="status-good">Passed</td><td><code>dist/systems-map.html</code> rebuilt at 804,440 bytes; direct <code>file://</code> execution launched its embedded Blob Worker.</td></tr>
+              <tr><td>Hosted production build</td><td class="status-good">Passed</td><td>Hashed main script, Worker, CSS and fonts emitted; browser verification confirmed the separately requested Worker.</td></tr>
+              <tr><td>Deterministic artifact budgets</td><td class="status-good">Passed</td><td>Raw, gzip, main/Worker/CSS, cold-transfer and duplicate-font checks run in <code>npm run check</code> and CI.</td></tr>
+              <tr><td>Full Chromium acceptance</td><td class="status-good">9 / 9 passed</td><td>Core app, 390×844 layout, 300-box smoke, offline/hosted Workers, progress, Cancel, large consent and older-hardware gate.</td></tr>
+              <tr><td>6× CPU startup</td><td class="status-good">CLS 0.00021</td><td>Four restored 300-box loads; FCP 660 ms p75, load 723 ms p75, longest task 546 ms p75 and no boot transitions.</td></tr>
+              <tr><td>6× CPU interactions</td><td class="status-good">All gates passed</td><td>Selection 33 ms, Simulation entry 105 ms, exit 74 ms, slider 30 ms, Atlas structure 160 ms, complete 259 ms and reuse 61 ms.</td></tr>
+              <tr><td>Scale/memory probes</td><td class="status-good">Improved</td><td>One-pass CSV parser, O(N+E) Review paths, bounded Atlas families, per-source collapse traversal, edge tiles and Builder release were individually exercised.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 style="margin-top: 28px;">Method</h3>
+        <ul class="method-list">
+          <li>Three parallel specialist passes covered main-thread rendering and interaction, bundle/startup/network, and scale/memory/lifecycle. A second parallel implementation pass owned retained surfaces, Worker/import behavior, and delivery compatibility. The coordinator independently reran the complete checks.</li>
+          <li>The primary workload is the previously agreed 300-box scale. Separate adversarial fixtures establish where unbounded input or algorithmic shape can overwhelm that happy path.</li>
+          <li>Chrome documents 6× CPU slowdown as a useful constrained-device profile. Core Web Vitals “good” reference points are LCP ≤2.5 s, INP ≤200 ms and CLS ≤0.1 at the 75th percentile. See <a href="https://developer.chrome.com/docs/devtools/lighthouse/">Chrome performance guidance</a> and <a href="https://web.dev/articles/vitals">web.dev’s Web Vitals reference</a>.</li>
+          <li>Action timings in this report are controlled lab observations, not field telemetry. No real-user INP distribution exists, and no actual low-end device was available in this run.</li>
+          <li>The dedicated Chrome DevTools profile was locked by another running inspection session, so it was not terminated. Equivalent CPU throttling, Performance Observer data and Chrome DevTools Protocol metrics were collected through isolated Playwright Chromium instead.</li>
+          <li>Playwright now refuses to reuse an existing preview server and supports explicit offline/hosted port overrides. This prevents a foreign checkout on port 4173 from being mistaken for the artifact under test; the final verification used fresh ports 4185 and 4186.</li>
+        </ul>
+
+        <h3 style="margin-top: 28px;">Scope boundaries</h3>
+        <ul class="compact-list">
+          <li>This report now covers both the baseline review and the implemented remediation in the isolated <code>codex/performance-older-hardware</code> worktree.</li>
+          <li>The report covers reading, editing, Simulation, Atlas, Review, Bulk edit, tutorial, import, persistence, rendering, network delivery and memory lifecycle.</li>
+          <li>GPU raster cost, energy draw, thermal throttling and accessibility beyond the startup semantic snapshot need actual-device or dedicated tooling follow-up.</li>
+          <li>Production hosting cache headers were not available. The hosted artifact is implemented and tested, but its final cache policy remains a deployment responsibility.</li>
+        </ul>
+      </section>
+    </main>
+  </div>
+
+  <footer class="report-footer">Ariadne Maps older-hardware performance review and remediation · implementation base 5d36bca8a1f7b48c177ff5fdaed1e6cc91469d36 · 2 September 2026</footer>
+</body>
+</html>
