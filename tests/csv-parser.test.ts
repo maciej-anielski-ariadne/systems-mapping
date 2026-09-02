@@ -103,6 +103,43 @@ Second line  "
       description: "  First line\nSecond line  ",
     }]);
   });
+
+  it("parses a large document in one pass within a bounded time", () => {
+    const rowCount = 100_000;
+    const rows = Array.from(
+      { length: rowCount },
+      (_, rowIndex) => "node_" + rowIndex + ",Node " + rowIndex + ",Description " + rowIndex,
+    ).join("\n");
+    const document = "# SECTION: nodes\nid,label,description\n" + rows;
+
+    const startedAt = performance.now();
+    const sections = parseCsvDocument(document);
+    const elapsedMilliseconds = performance.now() - startedAt;
+
+    expect(sections.nodes).toHaveLength(rowCount);
+    expect(sections.nodes[rowCount - 1].id).toBe("node_99999");
+    expect(elapsedMilliseconds).toBeLessThan(1_000);
+  });
+
+  it("reports monotonic parsing progress through the complete document", () => {
+    const document = "# SECTION: nodes\nid,label\na,Alpha\nb,Beta\nc,Gamma";
+    const processedCharacterCounts: number[] = [];
+
+    parseCsvDocument(document, {
+      progressCharacterInterval: 8,
+      onProgress(progress) {
+        expect(progress.totalCharacters).toBe(document.length);
+        processedCharacterCounts.push(progress.processedCharacters);
+      },
+    });
+
+    expect(processedCharacterCounts[0]).toBe(0);
+    expect(processedCharacterCounts.at(-1)).toBe(document.length);
+    expect(processedCharacterCounts.length).toBeGreaterThan(2);
+    expect(processedCharacterCounts).toEqual(
+      [...processedCharacterCounts].sort((firstCount, secondCount) => firstCount - secondCount),
+    );
+  });
 });
 
 describe("parseBooleanCell", () => {

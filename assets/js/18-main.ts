@@ -92,10 +92,6 @@ initAtlasStage();
 initReviewStage();
 initReviewRail();
 
-// Reading mode until told otherwise — applyRestoredUiState re-applies this
-// with the saved choice a moment later.
-applyUiMode();
-
 // ───── Restore previous session ──────────────────────────────────────────
 // The UI slot is READ FIRST, before any CSV load, and applied last. Loading a
 // map resets the sliders (a multiplier belongs to the map it was set on) and
@@ -125,6 +121,7 @@ if (!restored) {
 // the data-dependent vs. independent split internally). Read above, before
 // the CSV load could have rewritten it.
 if (ui) applyRestoredUiState(ui);
+else applyUiMode();
 
 // The badge last, once the map (and therefore its findings) is settled. A boot
 // into the empty starter grid has nothing to say and the button stays hidden.
@@ -143,3 +140,20 @@ if (savedBuilder) {
 // version of the tutorial has never been completed or dismissed. The same
 // tour remains available later as the first lesson in Learn.
 showFirstOpenTutorialWelcome(restored);
+
+// The document starts with shell transitions disabled so restoring a saved
+// mode, panel width or selection cannot animate an intermediate grid. Keep the
+// final state stable for one paint, then restore the normal transitions used by
+// deliberate user actions.
+function finishApplicationBoot(): void {
+  const enableShellTransitions = (): void => {
+    document.documentElement.classList.remove("app-booting");
+  };
+  if (typeof requestAnimationFrame !== "function") {
+    enableShellTransitions();
+    return;
+  }
+  requestAnimationFrame(() => requestAnimationFrame(enableShellTransitions));
+}
+
+finishApplicationBoot();

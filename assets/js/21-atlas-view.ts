@@ -104,6 +104,27 @@ interface AtlasTrace {
 let GRAPH: AtlasGraph | null = null;
 let ATLAS: AtlasData | null = null;
 let START: string | null = null;
+let ATLAS_STRUCTURE_KEY: string | null = null;
+let CACHED_ATLAS_STRUCTURE: {
+  key: string;
+  graph: AtlasGraph;
+  atlas: AtlasData;
+  world: AtlasWorld;
+} | null = null;
+
+function atlasStructureKey(startIdentifier: string): string {
+  return JSON.stringify({
+    startIdentifier,
+    nodes: NODES.map(node => [node.id, node.label, node.direction || ""]),
+    edges: EDGES.map(edge => [
+      edge.id || "",
+      edge.from,
+      edge.to,
+      edge.effect,
+      resolveEdgeElasticity(edge),
+    ]),
+  });
+}
 
 type WheelEdgeKey = string & { readonly wheelEdgeKey: unique symbol };
 type WheelEdge = AtlasWheelEdge;
@@ -400,32 +421,50 @@ export function atlasIsOpen(): boolean {
 
 export function openAtlas(startId: string): void {
   if (!nodeById[startId]) return;
+  cancelDeferredAtlasRendering();
+  cancelAnimationFrame(vbRAF);
+  vbRAF = 0;
   state.atlas = { startId };
   START = startId;
-  const graph = buildGraph({
-    name: "map",
-    nodes: NODES.map(n => ({ id: n.id, label: n.label, direction: n.direction || "" })),
-    // The engine reads only the sign and the size of a link. resolveEdgeElasticity
-    // is what the simulation uses too, so "decreases" is negative in both.
-    edges: EDGES.map(e => ({ from: e.from, to: e.to, id: e.id, effect: e.effect,
-                             elasticity: resolveEdgeElasticity(e) })),
-  });
-  GRAPH = graph;
-  const atlas = buildAtlas(graph, startId, {
-    grouping: "loose",
-    lanes: { minMembers: 3, minTokenFamilies: 2 },
-  });
-  ATLAS = atlas;
-  WHEELS.clear();
-  PAIR_GAIN.clear();
-  PATHS_THROUGH.clear();
+  const structureKey = atlasStructureKey(startId);
+  let canReuseStructure = ATLAS_STRUCTURE_KEY === structureKey &&
+    !!GRAPH && !!ATLAS && !!WORLD && !!svgEl();
+  if (!canReuseStructure && CACHED_ATLAS_STRUCTURE?.key === structureKey && svgEl()) {
+    GRAPH = CACHED_ATLAS_STRUCTURE.graph;
+    ATLAS = CACHED_ATLAS_STRUCTURE.atlas;
+    WORLD = CACHED_ATLAS_STRUCTURE.world;
+    canReuseStructure = true;
+  }
+  CACHED_ATLAS_STRUCTURE = null;
+  if (!canReuseStructure) {
+    const graph = buildGraph({
+      name: "map",
+      nodes: NODES.map(n => ({ id: n.id, label: n.label, direction: n.direction || "" })),
+      // The engine reads only the sign and the size of a link. resolveEdgeElasticity
+      // is what the simulation uses too, so "decreases" is negative in both.
+      edges: EDGES.map(e => ({ from: e.from, to: e.to, id: e.id, effect: e.effect,
+                               elasticity: resolveEdgeElasticity(e) })),
+    });
+    GRAPH = graph;
+    ATLAS = buildAtlas(graph, startId, {
+      grouping: "loose",
+      lanes: { minMembers: 3, minTokenFamilies: 2 },
+    });
+    ATLAS_STRUCTURE_KEY = structureKey;
+    WHEELS.clear();
+    PAIR_GAIN.clear();
+    PATHS_THROUGH.clear();
+    STRAND_CACHE = null;
+    VB = null;
+    WORLD = null;
+  }
   WHEEL_PICK = null; WHEEL_LOOP = 0; WHEEL_TANGLE = null; PICK_FROM_WHEEL = false;
   SHOW_ALL_LOOPS = false;
   MOVES_OPEN = {};
   R.roots = []; R.open = []; R.current = []; R.lanes = [];
   R.trace = null; R.traceKey = null; R.inside = null;
   POINTED = null; TRACE_OF = null; TRACE_CACHE = null;
-  STRAND_CACHE = null; VB = null; WORLD = null;
+  STRAND_CACHE = null;
   stopTour();
   stopLoopAnimation();
   document.body.classList.add("atlas-open");
@@ -435,15 +474,34 @@ export function openAtlas(startId: string): void {
 
 export function closeAtlas(): void {
   if (!state.atlas) return;
+  cancelDeferredAtlasRendering();
   stopTour();
   stopLoopAnimation();
+  cancelAnimationFrame(vbRAF);
+  vbRAF = 0;
   state.atlas = null;
+  const stage = stageEl();
+  const completedStructure = stage?.dataset.renderPhase === "complete" &&
+    _structurallyRenderedAtlas === ATLAS;
+  if (completedStructure && ATLAS_STRUCTURE_KEY && GRAPH && ATLAS && WORLD && svgEl()) {
+    CACHED_ATLAS_STRUCTURE = {
+      key: ATLAS_STRUCTURE_KEY,
+      graph: GRAPH,
+      atlas: ATLAS,
+      world: WORLD,
+    };
+  }
   START = null; ATLAS = null; GRAPH = null; WORLD = null; VB = null;
   R.inside = null; R.roots = []; R.open = []; R.current = []; R.lanes = []; POINTED = null;
-  WHEELS.clear();
   document.body.classList.remove("atlas-open");
-  const stage = stageEl();
-  if (stage) { stage.innerHTML = ""; stage.hidden = true; }
+  // Keep the expensive structural drawing hidden so reopening the same start on
+  // an unchanged map can reuse it. The structure key in openAtlas invalidates
+  // this cache after any topology, label, direction or elasticity change.
+  if (stage) {
+    stage.hidden = true;
+    setAtlasRenderPhase(stage, null);
+    if (!completedStructure) stage.innerHTML = "";
+  }
   syncAtlasButton();
   renderDetailPanel();
 }
@@ -519,7 +577,12 @@ export function restoreAtlasSessionState(snapshot: AtlasSessionState | null): vo
   loopAnimationSpeed = snapshot.loopAnimationSpeed;
   paintAtlas();
   if (snapshot.viewBox) {
+    cancelAnimationFrame(vbRAF);
+    vbRAF = 0;
     VB = { ...snapshot.viewBox };
+    if (ATLAS && stageEl()?.dataset.renderPhase === "structure") {
+      atlasViewBoxToRestoreAfterProgressiveRender = { ...snapshot.viewBox };
+    }
     setScale();
   }
   renderInspector();
@@ -709,24 +772,177 @@ if (atlasExitButton) {
   });
 }
 
+interface AtlasRenderFrameScheduler {
+  requestFrame: (callback: FrameRequestCallback) => number;
+  cancelFrame: (requestIdentifier: number) => void;
+}
+
+let atlasRenderFrameSchedulerForTests: AtlasRenderFrameScheduler | null = null;
+let atlasRenderGeneration = 0;
+let atlasRenderFrameRequestIdentifier: number | null = null;
+let atlasRevealTimer: ReturnType<typeof setTimeout> | null = null;
+let atlasViewBoxToRestoreAfterProgressiveRender: AtlasFrame | null = null;
+let atlasRenderFailed = false;
+
+/** A deterministic seam for exercising the production frame boundary in unit
+ * tests. Passing null restores the browser scheduler and the normal test-mode
+ * synchronous rendering path. */
+export function setAtlasRenderFrameSchedulerForTests(
+  scheduler: AtlasRenderFrameScheduler | null,
+): void {
+  cancelDeferredAtlasRendering();
+  atlasRenderFrameSchedulerForTests = scheduler;
+}
+
+function cancelDeferredAtlasRendering(): void {
+  atlasRenderGeneration++;
+  if (atlasRenderFrameRequestIdentifier !== null) {
+    if (import.meta.env.MODE === "test" && atlasRenderFrameSchedulerForTests) {
+      atlasRenderFrameSchedulerForTests.cancelFrame(atlasRenderFrameRequestIdentifier);
+    } else {
+      cancelAnimationFrame(atlasRenderFrameRequestIdentifier);
+    }
+    atlasRenderFrameRequestIdentifier = null;
+  }
+  if (atlasRevealTimer !== null) {
+    clearTimeout(atlasRevealTimer);
+    atlasRevealTimer = null;
+  }
+  const revealedSvg = svgEl();
+  if (revealedSvg) revealedSvg.classList.remove("reveal");
+  atlasViewBoxToRestoreAfterProgressiveRender = null;
+}
+
+function scheduleAtlasRenderFrame(callback: () => void): void {
+  const scheduledCallback = () => {
+    atlasRenderFrameRequestIdentifier = null;
+    callback();
+  };
+  atlasRenderFrameRequestIdentifier = import.meta.env.MODE === "test" && atlasRenderFrameSchedulerForTests
+    ? atlasRenderFrameSchedulerForTests.requestFrame(scheduledCallback)
+    : requestAnimationFrame(scheduledCallback);
+}
+
+function atlasRenderStillCurrent(
+  generation: number,
+  atlas: AtlasData,
+  stage: HTMLElement,
+  svg: SVGSVGElement,
+): boolean {
+  return atlasRenderGeneration === generation &&
+    atlasIsOpen() && ATLAS === atlas && stageEl() === stage && svgEl() === svg;
+}
+
+function atlasRenderIsPending(): boolean {
+  return stageEl()?.dataset.renderPhase === "structure" || atlasRenderFailed;
+}
+
+function setAtlasRenderPhase(
+  stage: HTMLElement,
+  renderPhase: "structure" | "complete" | null,
+): void {
+  if (renderPhase) stage.dataset.renderPhase = renderPhase;
+  else delete stage.dataset.renderPhase;
+  atlasRenderFailed = false;
+  const renderingIsPending = renderPhase === "structure";
+  stage.ariaBusy = renderingIsPending ? "true" : null;
+  stage.inert = renderingIsPending;
+}
+
+function completeProgressiveAtlasRender(
+  generation: number,
+  atlas: AtlasData,
+  stage: HTMLElement,
+  svg: SVGSVGElement,
+): void {
+  if (!atlasRenderStillCurrent(generation, atlas, stage, svg) || !WORLD) return;
+  try {
+    appendAtlasNodeDetails(atlas, WORLD, svg);
+
+    _structurallyRenderedAtlas = atlas;
+    rebuildAtlasPaintReferences();
+    const savedViewBox = atlasViewBoxToRestoreAfterProgressiveRender;
+    atlasViewBoxToRestoreAfterProgressiveRender = null;
+    VB = savedViewBox
+      ? { ...savedViewBox }
+      : R.inside && WORLD.at.has(R.inside) ? frameOn(R.inside) : wholePicture();
+    paintAtlas(true, true);
+    if (!atlasRenderStillCurrent(generation, atlas, stage, svg)) return;
+
+    setAtlasRenderPhase(stage, "complete");
+    revealAtlas(generation);
+    if (R.inside) playTour();
+  } catch {
+    if (atlasRenderStillCurrent(generation, atlas, stage, svg)) {
+      setAtlasRenderPhase(stage, null);
+      atlasRenderFailed = true;
+      stage.innerHTML = `<p class="busy" role="alert">Atlas could not finish. Close it and try again.</p>`;
+    }
+  }
+}
+
+function scheduleProgressiveAtlasCompletion(
+  generation: number,
+  atlas: AtlasData,
+  stage: HTMLElement,
+  svg: SVGSVGElement,
+): void {
+  // Two animation frames establish a real rendering opportunity between the
+  // structural commit and the expensive label/wheel/detail work. A single rAF
+  // callback still runs before the browser paints that frame.
+  scheduleAtlasRenderFrame(() => {
+    scheduleAtlasRenderFrame(() => completeProgressiveAtlasRender(generation, atlas, stage, svg));
+  });
+}
+
 // Draw (or redraw) the whole picture, then frame it and play whatever the
 // current state says should be playing.
 export function renderAtlas(): void {
   const stage = stageEl();
   if (!stage || !ATLAS) return;
-  stage.hidden = false;
-  stage.innerHTML = viewAtlas(ATLAS, measure(ATLAS));
+  const existingSvg = svgEl();
+  if (_structurallyRenderedAtlas !== ATLAS || !existingSvg) {
+    // Unit interactions retain their historic synchronous contract. Focused
+    // lifecycle tests opt into the production path through the scheduler seam.
+    const renderProgressively = import.meta.env.MODE !== "test" ||
+      atlasRenderFrameSchedulerForTests !== null;
+    cancelDeferredAtlasRendering();
+    stage.hidden = true;
+    setAtlasRenderPhase(stage, renderProgressively ? "structure" : "complete");
+    stage.innerHTML = viewAtlas(ATLAS, measure(ATLAS), !renderProgressively);
+    const newSvg = svgEl();
+    if (!newSvg || !WORLD) {
+      setAtlasRenderPhase(stage, "complete");
+      stage.hidden = false;
+      return;
+    }
+    VB = R.inside && WORLD.at.has(R.inside) ? frameOn(R.inside) : wholePicture();
+    setScale();
+    stage.hidden = false;
+    if (renderProgressively) {
+      _structurallyRenderedAtlas = null;
+      _atlasPaintReferences = null;
+      const generation = atlasRenderGeneration;
+      scheduleProgressiveAtlasCompletion(generation, ATLAS, stage, newSvg);
+      return;
+    }
+    _structurallyRenderedAtlas = ATLAS;
+    rebuildAtlasPaintReferences();
+  }
   if (!WORLD) return;
+  // Completed cached structures are repainted while hidden, so stale reading,
+  // Simulation and reveal classes never flash during same-start reopen.
+  stage.hidden = true;
   VB = R.inside && WORLD.at.has(R.inside) ? frameOn(R.inside) : wholePicture();
-  setScale();
   paintAtlas();
-  revealAtlas();
+  setAtlasRenderPhase(stage, "complete");
+  stage.hidden = false;
   if (R.inside) playTour();
 }
 
 // The picture draws itself in, column by column, so the first thing a reader
 // sees is the shape arriving rather than a wall of circles already there.
-function revealAtlas(): void {
+function revealAtlas(generation: number): void {
   const svg = svgEl();
   const world = WORLD;
   if (!svg || !world || reduced()) return;
@@ -735,7 +951,10 @@ function revealAtlas(): void {
     group.style.animationDelay = Math.min(700, (at[0] / world.W) * 620).toFixed(0) + "ms";
   }
   svg.classList.add("reveal");
-  setTimeout(() => svg.classList.remove("reveal"), REVEAL + 800);
+  atlasRevealTimer = setTimeout(() => {
+    atlasRevealTimer = null;
+    if (atlasRenderGeneration === generation && svgEl() === svg) svg.classList.remove("reveal");
+  }, REVEAL + 800);
 }
 
 const WORLD_H = 900;          // the picture's own coordinate space
@@ -772,7 +991,11 @@ const chordPath = (
     centreY + (startY + endY - 2 * centreY) * pull
   ).toFixed(1)} ${endX.toFixed(1)} ${endY.toFixed(1)}`;
 
-function viewAtlas(A: AtlasData, M: AtlasMeasurement): string {
+function viewAtlas(
+  A: AtlasData,
+  M: AtlasMeasurement,
+  includeNodeDetails = true,
+): string {
   const cols: AtlasElementIdentifier[][] = [];
   for (const [id] of A.nodes) {
     if (id === END) continue;
@@ -879,26 +1102,8 @@ function viewAtlas(A: AtlasData, M: AtlasMeasurement): string {
       // in the stylesheet.
       `<line class="gate" x1="${(cx - r - 5).toFixed(1)}" y1="${(cy - Math.max(7, r * 0.55)).toFixed(1)}"
         x2="${(cx - r - 5).toFixed(1)}" y2="${(cy + Math.max(7, r * 0.55)).toFixed(1)}"></line>` +
-      (node.loop ? tangleWheel(node, cx, cy, r) : "") +
-      `<text x="${cx.toFixed(1)}" y="${(cy + r + 15).toFixed(1)}" text-anchor="middle">${
-        node.loop ? "↻ " : ""}${escapeHtml(clip(labelOf(id), 30))}${
-        node.boxes.length > 1 && !node.loop ? " ×" + node.boxes.length : ""}` +
-      // The move goes in the LABEL, not on the disc. A tangle's disc already
-      // has its wheel drawn inside it, and the smallest circles here are a few
-      // pixels across — so there is no room in the middle that is room on every
-      // circle. In the label it appears under exactly the rule the label
-      // appears under: lit, or pointed at. Reading a lit run then gives the
-      // name and the size of the move at every step along it.
-      //
-      // On its OWN LINE, though. Beside the name it sat at the right-hand end
-      // of the widest thing on screen, which on a lit run through neighbouring
-      // circles is precisely where the next label starts — so the first thing
-      // to be painted over was the number. Under the name each label is half
-      // as wide and the figures line up down the run. The offset is in `em`,
-      // so it tracks the font size, which is itself calc(12px / --z): the two
-      // lines stay one line apart at every zoom, where a fixed offset in world
-      // units would drift apart as the frame closed in.
-      `<tspan class="mag" x="${cx.toFixed(1)}" dy="1.25em"></tspan></text></g>`);
+      (includeNodeDetails ? atlasNodeDetails(node, id, cx, cy, r) : "") +
+      `</g>`);
   }
 
   return `<div class="atlas-legend">
@@ -947,6 +1152,52 @@ function viewAtlas(A: AtlasData, M: AtlasMeasurement): string {
         <button class="atlas-btn" type="button" data-atlas-zoom="in" aria-label="Zoom in">+</button>
       </div>
     </div>`;
+}
+
+function atlasNodeDetails(
+  node: AtlasNode,
+  identifier: AtlasElementIdentifier,
+  centreX: number,
+  centreY: number,
+  radius: number,
+): string {
+  return (node.loop ? tangleWheel(node, centreX, centreY, radius) : "") +
+    `<text x="${centreX.toFixed(1)}" y="${(centreY + radius + 15).toFixed(1)}" text-anchor="middle">${
+      node.loop ? "↻ " : ""}${escapeHtml(clip(labelOf(identifier), 30))}${
+      node.boxes.length > 1 && !node.loop ? " ×" + node.boxes.length : ""}` +
+    // The move goes in the LABEL, not on the disc. A tangle's disc already
+    // has its wheel drawn inside it, and the smallest circles here are a few
+    // pixels across — so there is no room in the middle that is room on every
+    // circle. In the label it appears under exactly the rule the label
+    // appears under: lit, or pointed at. Reading a lit run then gives the
+    // name and the size of the move at every step along it.
+    //
+    // On its OWN LINE, though. Beside the name it sat at the right-hand end
+    // of the widest thing on screen, which on a lit run through neighbouring
+    // circles is precisely where the next label starts — so the first thing
+    // to be painted over was the number. Under the name each label is half
+    // as wide and the figures line up down the run. The offset is in `em`,
+    // so it tracks the font size, which is itself calc(12px / --z): the two
+    // lines stay one line apart at every zoom, where a fixed offset in world
+    // units would drift apart as the frame closed in.
+    `<tspan class="mag" x="${centreX.toFixed(1)}" dy="1.25em"></tspan></text>`;
+}
+
+function appendAtlasNodeDetails(
+  atlas: AtlasData,
+  world: AtlasWorld,
+  svg: SVGSVGElement,
+): void {
+  for (const group of svg.querySelectorAll<SVGGElement>("g.n")) {
+    const identifier = group.dataset.el!;
+    const node = atlas.nodes.get(identifier)!;
+    const coordinates = world.at.get(identifier)!;
+    const radius = world.rOf.get(identifier)!;
+    group.insertAdjacentHTML(
+      "beforeend",
+      atlasNodeDetails(node, identifier, coordinates[0], coordinates[1], radius),
+    );
+  }
 }
 
 // The share every percentage on this page is a share of. Said once, in the
@@ -1003,6 +1254,144 @@ function tangleWheel(node: AtlasNode, centreX: number, centreY: number, radius: 
 // LOOKING AT IT — zoom, pan, and what is lit up
 // ---------------------------------------------------------------------------
 const svgEl = (): SVGSVGElement | null => document.querySelector("#atlas-stage svg.atlas");
+
+interface AtlasNodePaintReference {
+  element: SVGGElement;
+  identifier: AtlasElementIdentifier;
+  magnitude: SVGTSpanElement | null;
+}
+
+interface AtlasFlowPaintReference {
+  element: SVGPathElement;
+  key: AtlasLinkKey;
+  fromIdentifier: AtlasElementIdentifier;
+  toIdentifier: AtlasElementIdentifier;
+  structuralWidth: number;
+}
+
+interface AtlasPaintReferences {
+  svg: SVGSVGElement;
+  nodes: AtlasNodePaintReference[];
+  nodesByIdentifier: Map<AtlasElementIdentifier, AtlasNodePaintReference>;
+  flows: AtlasFlowPaintReference[];
+  flowsByKey: Map<AtlasLinkKey, AtlasFlowPaintReference[]>;
+  rimNodes: SVGCircleElement[];
+}
+
+let _structurallyRenderedAtlas: AtlasData | null = null;
+let _atlasPaintReferences: AtlasPaintReferences | null = null;
+let _paintedAtlasOnIdentifiers = new Set<AtlasElementIdentifier>();
+let _paintedAtlasEndIdentifiers = new Set<AtlasElementIdentifier>();
+let _paintedAtlasHotLinkKeys = new Set<AtlasLinkKey>();
+let _paintedAtlasFocusIdentifier: AtlasElementIdentifier | null = null;
+let _paintedAtlasSimulationMode: boolean | null = null;
+
+function rebuildAtlasPaintReferences(): AtlasPaintReferences | null {
+  const svg = svgEl();
+  if (!svg) {
+    _atlasPaintReferences = null;
+    return null;
+  }
+
+  const nodes: AtlasNodePaintReference[] = [];
+  const nodesByIdentifier = new Map<AtlasElementIdentifier, AtlasNodePaintReference>();
+  for (const element of svg.querySelectorAll<SVGGElement>("g.n")) {
+    const identifier = element.dataset.el || "";
+    const reference = {
+      element,
+      identifier,
+      magnitude: element.querySelector<SVGTSpanElement>("tspan.mag"),
+    };
+    nodes.push(reference);
+    nodesByIdentifier.set(identifier, reference);
+  }
+
+  const flows: AtlasFlowPaintReference[] = [];
+  const flowsByKey = new Map<AtlasLinkKey, AtlasFlowPaintReference[]>();
+  for (const element of svg.querySelectorAll<SVGPathElement>(".fl")) {
+    const fromIdentifier = element.dataset.a || "";
+    const toIdentifier = element.dataset.b || "";
+    const key = fromIdentifier + "\u0000" + toIdentifier;
+    const reference = {
+      element,
+      key,
+      fromIdentifier,
+      toIdentifier,
+      structuralWidth: Number(element.dataset.w) || 1,
+    };
+    flows.push(reference);
+    const matchingReferences = flowsByKey.get(key) || [];
+    matchingReferences.push(reference);
+    flowsByKey.set(key, matchingReferences);
+  }
+
+  _atlasPaintReferences = {
+    svg,
+    nodes,
+    nodesByIdentifier,
+    flows,
+    flowsByKey,
+    rimNodes: Array.from(svg.querySelectorAll<SVGCircleElement>("circle.nd")),
+  };
+  _paintedAtlasOnIdentifiers = new Set();
+  _paintedAtlasEndIdentifiers = new Set();
+  _paintedAtlasHotLinkKeys = new Set();
+  _paintedAtlasFocusIdentifier = null;
+  _paintedAtlasSimulationMode = null;
+  return _atlasPaintReferences;
+}
+
+function atlasPaintReferences(svg: SVGSVGElement): AtlasPaintReferences {
+  if (_atlasPaintReferences?.svg === svg) return _atlasPaintReferences;
+  return rebuildAtlasPaintReferences() || {
+    svg,
+    nodes: [],
+    nodesByIdentifier: new Map(),
+    flows: [],
+    flowsByKey: new Map(),
+    rimNodes: [],
+  };
+}
+
+function updateAtlasIdentifierClass(
+  references: AtlasPaintReferences,
+  previousIdentifiers: Set<AtlasElementIdentifier>,
+  nextIdentifiers: Set<AtlasElementIdentifier>,
+  className: string,
+): void {
+  for (const identifier of previousIdentifiers) {
+    if (!nextIdentifiers.has(identifier)) {
+      references.nodesByIdentifier.get(identifier)?.element.classList.remove(className);
+    }
+  }
+  for (const identifier of nextIdentifiers) {
+    if (!previousIdentifiers.has(identifier)) {
+      references.nodesByIdentifier.get(identifier)?.element.classList.add(className);
+    }
+  }
+}
+
+function updateAtlasLinkClass(
+  references: AtlasPaintReferences,
+  previousKeys: Set<AtlasLinkKey>,
+  nextKeys: Set<AtlasLinkKey>,
+  className: string,
+): void {
+  for (const key of previousKeys) {
+    if (!nextKeys.has(key)) {
+      for (const reference of references.flowsByKey.get(key) || []) {
+        reference.element.classList.remove(className);
+      }
+    }
+  }
+  for (const key of nextKeys) {
+    if (!previousKeys.has(key)) {
+      for (const reference of references.flowsByKey.get(key) || []) {
+        reference.element.classList.add(className);
+      }
+    }
+  }
+}
 
 // One world unit is this many screen pixels. Text and hairlines divide by it,
 // so they stay the same size on screen however far in the frame has closed.
@@ -2066,9 +2455,11 @@ function highlightLinks(
   return activeTrace ? activeTrace.links : null;
 }
 
-function paintAtlas(repanel = true) {
+function paintAtlas(repanel = true, paintPendingStructure = false) {
+  if (atlasRenderIsPending() && !paintPendingStructure) return;
   const svg = svgEl();
   if (!svg || !WORLD) return;
+  const references = atlasPaintReferences(svg);
   const paintSnapshot = createAtlasPaintSnapshot();
   // ONE thing lights the picture: what is being read. There used to be a second
   // — the last circle clicked, held on its own — which lit itself, made every
@@ -2104,30 +2495,39 @@ function paintAtlas(repanel = true) {
     ? changedInputIds().map(elementOfBox).filter((elementIdentifier): elementIdentifier is string =>
         elementIdentifier !== null && activeTrace.els.has(elementIdentifier))
     : []);
+  const nextOnIdentifiers = new Set<AtlasElementIdentifier>();
+  if (lone) nextOnIdentifiers.add(lone);
+  if (onStrand) for (const identifier of onStrand) nextOnIdentifiers.add(identifier);
+  const nextEndIdentifiers = new Set<AtlasElementIdentifier>();
+  if (activeTrace) {
+    const tracedElementIdentifier = traceEl();
+    if (tracedElementIdentifier) nextEndIdentifiers.add(tracedElementIdentifier);
+    for (const identifier of traceStarts) nextEndIdentifiers.add(identifier);
+  }
+  const nextHotLinkKeys = strandLinks || new Set<AtlasLinkKey>();
+
   svg.classList.toggle("busy", !!lone || !!onStrand);
   svg.classList.toggle("traced", !!activeTrace);
   svg.classList.toggle("inside", !!R.inside);
-
-  for (const g of svg.querySelectorAll<SVGElement>("g.n")) {
-    const id = g.dataset.el || "";
-    g.classList.toggle("on", id === lone || (!!onStrand && onStrand.has(id)));
-    // The two ENDS of a traced run keep their names while the middle of it goes
-    // quiet: the box asked about, and the input the change started at. A run
-    // named only at its far end says what arrived without saying what set off,
-    // and the whole point of a trace is the pair — this much went in there,
-    // this much came out here. See the .traced rule in the stylesheet.
-    g.classList.toggle("ends", !!activeTrace && (id === traceEl() || traceStarts.has(id)));
-    g.classList.toggle("focus", id === R.inside);
+  updateAtlasIdentifierClass(references, _paintedAtlasOnIdentifiers, nextOnIdentifiers, "on");
+  updateAtlasIdentifierClass(references, _paintedAtlasEndIdentifiers, nextEndIdentifiers, "ends");
+  if (_paintedAtlasFocusIdentifier !== R.inside) {
+    if (_paintedAtlasFocusIdentifier) {
+      references.nodesByIdentifier.get(_paintedAtlasFocusIdentifier)?.element.classList.remove("focus");
+    }
+    if (R.inside) references.nodesByIdentifier.get(R.inside)?.element.classList.add("focus");
   }
+  _paintedAtlasOnIdentifiers = nextOnIdentifiers;
+  _paintedAtlasEndIdentifiers = nextEndIdentifiers;
+  _paintedAtlasFocusIdentifier = R.inside;
   // Hot means "on the route being read", and nothing else. It used to also mean
   // "touching the circle you last clicked", which is how three links out of a
   // circle nobody was looking at stayed lit while the pointer was somewhere
   // else entirely.
-  for (const p of svg.querySelectorAll<SVGElement>(".fl"))
-    p.classList.toggle("hot",
-      !!strandLinks && strandLinks.has(p.dataset.a + "\u0000" + p.dataset.b));
+  updateAtlasLinkClass(references, _paintedAtlasHotLinkKeys, nextHotLinkKeys, "hot");
+  _paintedAtlasHotLinkKeys = new Set(nextHotLinkKeys);
   setScale();
-  refreshAtlasValues(paintSnapshot);
+  refreshAtlasValues(paintSnapshot, paintPendingStructure);
   paintWheel();
   // Pointing repaints the picture and leaves the list alone: the row under the
   // pointer would be replaced mid-hover, and the pointer would come to rest on
@@ -3096,32 +3496,45 @@ const effectFill = (merit: Merit, strength: number): string =>
 // Every circle is repainted, not just the ones that moved — the ramp is
 // measured against the biggest mover, so one box running away restates the
 // colour of everything else.
-export function refreshAtlasValues(paintSnapshot = createAtlasPaintSnapshot()): void {
+export function refreshAtlasValues(
+  paintSnapshot = createAtlasPaintSnapshot(),
+  paintPendingStructure = false,
+): void {
+  if (atlasRenderIsPending() && !paintPendingStructure) return;
   const svg = svgEl();
   if (!svg || !ATLAS) return;
+  const references = atlasPaintReferences(svg);
   const simulating = !!state.simulationMode;
   svg.classList.toggle("simulating", simulating);
+  // Fresh structural markup already represents the resting state. Repeated
+  // selection and hover paints outside Simulation therefore have no value,
+  // colour or flow work to do. Leaving Simulation performs one restoring pass.
+  if (!simulating && _paintedAtlasSimulationMode !== true) {
+    _paintedAtlasSimulationMode = false;
+    return;
+  }
   // Worked out once for the frame, not once per circle — it is one pass over
   // the whole picture.
   const shares = simulating ? paintSnapshot.sharesByElementIdentifier : null;
 
-  for (const el of svg.querySelectorAll<SVGGElement>("g.n")) {
+  for (const reference of references.nodes) {
+    const element = reference.element;
     if (!simulating) {
-      el.classList.remove("flat");
-      el.style.removeProperty("--simfill");
-      setMag(el, EMPTY_EFFECT);
+      element.classList.remove("flat");
+      element.style.removeProperty("--simfill");
+      setMag(element, reference.magnitude, EMPTY_EFFECT);
       continue;
     }
-    const effect = paintSnapshot.effectsByElementIdentifier.get(el.dataset.el || "") || EMPTY_EFFECT;
-    el.classList.toggle("flat", !effect.moved);
-    if (effect.moved) el.style.setProperty("--simfill", effectFill(effect.merit, effect.strength));
-    else el.style.removeProperty("--simfill");
-    setMag(el, effect, shares, paintSnapshot.heldByElement);
+    const effect = paintSnapshot.effectsByElementIdentifier.get(reference.identifier) || EMPTY_EFFECT;
+    element.classList.toggle("flat", !effect.moved);
+    if (effect.moved) element.style.setProperty("--simfill", effectFill(effect.merit, effect.strength));
+    else element.style.removeProperty("--simfill");
+    setMag(element, reference.magnitude, effect, shares, paintSnapshot.heldByElement);
   }
 
   // Inside a tangle the rim dots are the boxes themselves, so they carry their
   // own move rather than the wheel's average.
-  for (const dot of svg.querySelectorAll<SVGCircleElement>("circle.nd")) {
+  for (const dot of references.rimNodes) {
     if (!simulating) { dot.style.removeProperty("--simfill"); continue; }
     const effect = nodeEffect(dot.dataset.box || "");
     if (effect.moved) dot.style.setProperty("--simfill", effectFill(effect.merit, effect.strength));
@@ -3131,7 +3544,8 @@ export function refreshAtlasValues(paintSnapshot = createAtlasPaintSnapshot()): 
   // Which links are carrying anything changes with every solve, so this belongs
   // on the per-frame path rather than on the rebuild — a slider drag reaches
   // here and never touches paintAtlas.
-  paintFlow(svg, paintSnapshot);
+  paintFlow(references, paintSnapshot);
+  _paintedAtlasSimulationMode = simulating;
 }
 
 // The number beside the name. Written on every circle whether it is lit or not
@@ -3141,38 +3555,38 @@ export function refreshAtlasValues(paintSnapshot = createAtlasPaintSnapshot()): 
 // looked at. An element standing for several boxes reads as the average of
 // them, the same figure its tooltip and its row in the list report.
 function setMag(
-  g: SVGGElement,
+  group: SVGGElement,
+  magnitude: SVGTSpanElement | null,
   effect: ElementEffect,
   shares?: Map<AtlasElementIdentifier, StrandShare> | null,
   heldByElement?: Map<AtlasElementIdentifier, { label: string }>,
 ): void {
-  const t = g.querySelector<SVGTSpanElement>("tspan.mag");
-  if (!t) return;
+  if (!magnitude) return;
   // Reading one pathway, a circle on it says what THAT pathway carried — the
   // same figure the row in the panel prints. Off it, or with none picked, it
   // says what the whole run did.
-  const elementIdentifier = g.dataset.el || "";
+  const elementIdentifier = group.dataset.el || "";
   const share = shares ? shares.get(elementIdentifier) : null;
   if (carries(share)) {
-    t.textContent = (share!.exact ? "" : "~") + signed(share!.pct);
-    t.setAttribute("class", "mag " + meritOfElement(elementIdentifier, share!.pct));
-    g.classList.remove("held");
+    magnitude.textContent = (share!.exact ? "" : "~") + signed(share!.pct);
+    magnitude.setAttribute("class", "mag " + meritOfElement(elementIdentifier, share!.pct));
+    group.classList.remove("held");
     return;
   }
   if (state.simulationMode && effect.moved) {
-    t.textContent = signed(effect.pct);
-    t.setAttribute("class", "mag " + effect.merit);
-    g.classList.remove("held");
+    magnitude.textContent = signed(effect.pct);
+    magnitude.setAttribute("class", "mag " + effect.merit);
+    group.classList.remove("held");
     return;
   }
   // Where a mover prints its size, a held box prints what is holding it. The
   // number would be "0.0%", which is true and says nothing.
   const gate = heldByElement
-    ? heldByElement.get(g.dataset.el || "") || null
+    ? heldByElement.get(group.dataset.el || "") || null
     : heldBy(elementIdentifier);
-  g.classList.toggle("held", !!gate);
-  t.textContent = gate ? "held by " + clip(gate.label, 22) : "";
-  t.setAttribute("class", "mag" + (gate ? " hold" : ""));
+  group.classList.toggle("held", !!gate);
+  magnitude.textContent = gate ? "held by " + clip(gate.label, 22) : "";
+  magnitude.setAttribute("class", "mag" + (gate ? " hold" : ""));
 }
 
 // ───── Held back ──────────────────────────────────────────────────────────
@@ -3615,7 +4029,7 @@ function liveLinks(
 }
 
 // Widths, applied to the live paths — the picture is not rebuilt for this.
-function paintFlow(svg: SVGSVGElement, paintSnapshot: AtlasPaintSnapshot): void {
+function paintFlow(references: AtlasPaintReferences, paintSnapshot: AtlasPaintSnapshot): void {
   // A picked box gives per-link shares, which are the finer answer; without one
   // the yes/no from liveLinks still keeps the dead structure off the picture.
   const shares = paintSnapshot.traceSharesByLinkKey;
@@ -3630,9 +4044,8 @@ function paintFlow(svg: SVGSVGElement, paintSnapshot: AtlasPaintSnapshot): void 
   const keep = paintSnapshot.routeLinkKeys;
   const HAIRLINE = 1.2;
   const world = WORLD!;
-  for (const path of svg.querySelectorAll<SVGPathElement>(".fl")) {
-    const key = path.dataset.a + "\u0000" + path.dataset.b;
-    const structural = Number(path.dataset.w) || 1;
+  for (const reference of references.flows) {
+    const { element: path, key, structuralWidth, fromIdentifier, toIdentifier } = reference;
     const onRoute = !!keep && keep.has(key);
 
     if (shares) {
@@ -3641,8 +4054,8 @@ function paintFlow(svg: SVGSVGElement, paintSnapshot: AtlasPaintSnapshot): void 
       if (share > 0) {
         // Never fatter than the circles it joins — a line as wide as its
         // endpoints stops being a line, the same guard the structural width uses.
-        const rA = world.rOf.get(path.dataset.a || "") || 8;
-        const rB = world.rOf.get(path.dataset.b || "") || 8;
+        const rA = world.rOf.get(fromIdentifier) || 8;
+        const rB = world.rOf.get(toIdentifier) || 8;
         const cap = Math.max(1.4, 0.85 * Math.min(rA, rB));
         path.setAttribute("stroke-width", Math.min(cap, 1.2 + share * 18).toFixed(2));
       } else if (onRoute) {
@@ -3653,7 +4066,7 @@ function paintFlow(svg: SVGSVGElement, paintSnapshot: AtlasPaintSnapshot): void 
 
     path.classList.toggle("off", !!live && !live.has(key) && !onRoute);
     path.setAttribute("stroke-width", String(
-      !!live && !live.has(key) && onRoute ? HAIRLINE : structural));
+      !!live && !live.has(key) && onRoute ? HAIRLINE : structuralWidth));
   }
 }
 
@@ -4108,6 +4521,7 @@ export function initAtlasStage(): void {
   stage.addEventListener("pointercancel", atlasPointerUp);
 
   stage.addEventListener("click", event => {
+    if (atlasRenderIsPending()) return;
     // A drag that ends on a circle is not a click on it.
     if (panMoved > 4) { panMoved = 0; return; }
     const target = eventTargetElement(event.target);
@@ -4146,6 +4560,7 @@ export function initAtlasStage(): void {
   });
 
   stage.addEventListener("input", event => {
+    if (atlasRenderIsPending()) return;
     const target = eventTargetElement(event.target);
     const scrubber = target?.closest<HTMLInputElement>("[data-loop-animation-scrub]");
     if (!scrubber) return;
@@ -4153,6 +4568,7 @@ export function initAtlasStage(): void {
   });
 
   stage.addEventListener("change", event => {
+    if (atlasRenderIsPending()) return;
     const target = eventTargetElement(event.target);
     const speedSelect = target?.closest<HTMLSelectElement>("[data-loop-animation-speed]");
     if (!speedSelect) return;
@@ -4163,6 +4579,7 @@ export function initAtlasStage(): void {
   // in IS going inside it, where its loops are. A single click is now the same
   // question everywhere ("how do I get here"), so the way in moved here.
   stage.addEventListener("dblclick", event => {
+    if (atlasRenderIsPending()) return;
     const g = closestSvgElement(event.target, "svg.atlas g.n");
     const elementIdentifier = g?.dataset.el;
     if (!elementIdentifier || !WORLD || !WORLD.at.has(elementIdentifier)) return;
@@ -4172,6 +4589,7 @@ export function initAtlasStage(): void {
   });
 
   stage.addEventListener("keydown", event => {
+    if (atlasRenderIsPending()) return;
     if (event.key !== "Enter" && event.key !== " ") return;
     const g = closestSvgElement(event.target, "svg.atlas g.n");
     const elementIdentifier = g?.dataset.el;
@@ -4245,14 +4663,15 @@ export function initAtlasStage(): void {
     // Pointing at a row draws its fork, and nothing else. Leaving the list puts
     // back whatever is actually chosen.
     content.addEventListener("pointerover", event => {
-      if (!atlasIsOpen()) return;
+      if (!atlasIsOpen() || atlasRenderIsPending()) return;
       const row = closestHtmlElement(event.target, "[data-fork]");
       previewFork(row ? forkOfKey(row.dataset.forkpath) : null);
     });
     content.addEventListener("pointerleave", () => {
-      if (atlasIsOpen()) previewFork(null);
+      if (atlasIsOpen() && !atlasRenderIsPending()) previewFork(null);
     });
     content.addEventListener("click", event => {
+      if (atlasRenderIsPending()) return;
       const t = eventTargetElement(event.target);
       // The panel carries its own copies of the atlas controls, and a click on
       // one of them never reached the stage's handler — so they are wired here.
@@ -4341,6 +4760,7 @@ export function initAtlasStage(): void {
 // then the selection, then the atlas itself.
 document.addEventListener("keydown", event => {
   if (!atlasIsOpen()) return;
+  if (atlasRenderIsPending()) return;
   const target = event.target instanceof HTMLElement ? event.target : null;
   // Never while typing: the search box and every field in the app take these
   // keys for themselves.

@@ -362,6 +362,15 @@ body.panel-resizing {
   transition: grid-template-columns var(--dur-slow) var(--ease);
 }
 
+/* The saved mode, panel widths and selection are restored synchronously during
+ * boot. Suppress only the shell's movement until that final state has painted;
+ * the class is then removed so every user-triggered transition remains intact. */
+html.app-booting .app,
+html.app-booting .sidebar,
+html.app-booting .detail-panel {
+  transition: none !important;
+}
+
 /* Simulation is the exception: its sliders ARE the left panel, and you work
  * them against the map, so while simulating the panel docks exactly as it does
  * while editing rather than sliding over the picture. */

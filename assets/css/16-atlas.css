@@ -29,6 +29,14 @@
 
 .atlas-stage[hidden] { display: none; }
 
+/* The first progressive commit is already a useful map of paths and element
+ * sizes, but labels and feedback-wheel hit targets do not exist until the next
+ * rendering opportunity. Keep that brief intermediate picture read-only so a
+ * click cannot be interpreted against only half of the established controls. */
+.atlas-stage[data-render-phase="structure"] .atlaswrap {
+  pointer-events: none;
+}
+
 /* The map underneath is still rendered — it just isn't the thing on screen. */
 body.atlas-open .viz-controls-cluster { display: none; }
 

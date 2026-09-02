@@ -39,12 +39,26 @@ const solvedValuesBySnapshot = new WeakMap<ReviewModelSnapshot, Record<string, n
 const findingsBySnapshot = new WeakMap<ReviewModelSnapshot, Finding[]>();
 const proposalsBySnapshot = new WeakMap<ReviewModelSnapshot, Map<string, ReviewProposal[]>>();
 const previewsBySnapshot = new WeakMap<ReviewModelSnapshot, Map<string, ReviewProposalPreview>>();
+const incomingConnectionsBySnapshot = new WeakMap<ReviewModelSnapshot, Map<string, Edge[]>>();
 
 export interface ReviewModelSnapshot {
   nodes: GraphNode[];
   edges: Edge[];
   params: Param[];
   defaultElasticities: ElasticityDefaults;
+}
+
+function incomingConnectionsForSnapshot(snapshot: ReviewModelSnapshot): Map<string, Edge[]> {
+  const cachedIncomingConnections = incomingConnectionsBySnapshot.get(snapshot);
+  if (cachedIncomingConnections) return cachedIncomingConnections;
+  const incomingConnections = new Map<string, Edge[]>();
+  for (const connection of snapshot.edges) {
+    const connections = incomingConnections.get(connection.to);
+    if (connections) connections.push(connection);
+    else incomingConnections.set(connection.to, [connection]);
+  }
+  incomingConnectionsBySnapshot.set(snapshot, incomingConnections);
+  return incomingConnections;
 }
 
 const REVALIDATED_FINDING_KINDS = new Set([
@@ -114,19 +128,16 @@ export function solveReviewSnapshot(snapshot: ReviewModelSnapshot): Record<strin
   const previousValues: Record<string, number> = {};
   const nodeByIdentifier = Object.fromEntries(snapshot.nodes.map(node => [node.id, node]));
   const paramByIdentifier = Object.fromEntries(snapshot.params.map(param => [param.id, param]));
-  const incomingConnections: Record<string, Edge[]> = {};
+  const incomingConnections = incomingConnectionsForSnapshot(snapshot);
   const parsedFormulaByNodeIdentifier: Record<string, ReturnType<typeof parseFormula>> = {};
 
-  for (const connection of snapshot.edges) {
-    (incomingConnections[connection.to] ||= []).push(connection);
-  }
   for (const node of snapshot.nodes) {
     if (node.baseline !== undefined && node.baseline !== null) values[node.id] = node.baseline;
     if (node.formula) {
       try {
         const parsedFormula = parseFormula(node.formula);
         const linkedSourceIdentifiers = new Set(
-          (incomingConnections[node.id] || []).map(connection => connection.from),
+          (incomingConnections.get(node.id) || []).map(connection => connection.from),
         );
         const missingDependencyArrow = parsedFormula.references.concat(parsedFormula.delayReferences)
           .some(identifier => nodeByIdentifier[identifier] && !linkedSourceIdentifiers.has(identifier));
@@ -159,7 +170,7 @@ export function solveReviewSnapshot(snapshot: ReviewModelSnapshot): Record<strin
       } else {
         nextValue = combineIncomingConnections(
           node,
-          incomingConnections[node.id] || [],
+          incomingConnections.get(node.id) || [],
           nodeByIdentifier,
           values,
           snapshot.defaultElasticities,
@@ -240,6 +251,7 @@ export function validateReviewSnapshot(snapshot: ReviewModelSnapshot): Finding[]
   const values = solveReviewSnapshot(snapshot);
   const nodeByIdentifier = Object.fromEntries(snapshot.nodes.map(node => [node.id, node]));
   const paramIdentifiers = new Set(snapshot.params.map(param => param.id));
+  const incomingConnections = incomingConnectionsForSnapshot(snapshot);
 
   for (const node of snapshot.nodes) {
     let parsedFormula: ReturnType<typeof parseFormula> | null = null;
@@ -261,7 +273,7 @@ export function validateReviewSnapshot(snapshot: ReviewModelSnapshot): Finding[]
         { kind: "node-field", nodeId: node.id, field: "controllable" }));
     }
     const linkedSourceIdentifiers = new Set(
-      snapshot.edges.filter(connection => connection.to === node.id).map(connection => connection.from),
+      (incomingConnections.get(node.id) || []).map(connection => connection.from),
     );
     const missingDependencyArrow = !!parsedFormula && parsedFormula.references.concat(parsedFormula.delayReferences)
       .some(identifier => nodeByIdentifier[identifier] && !linkedSourceIdentifiers.has(identifier));

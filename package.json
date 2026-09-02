@@ -10,6 +10,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && node scripts/rename-dist.mjs",
+    "build:hosted": "vite build --config vite.hosted.config.ts",
+    "build:all": "npm run build && npm run build:hosted",
+    "check:performance": "node scripts/check-performance-budgets.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -19,7 +22,7 @@
     "coverage": "vitest run --coverage",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "check": "npm run typecheck && npm run test && npm run lint && npm run build"
+    "check": "npm run typecheck && npm run test && npm run lint && npm run build:all && npm run check:performance"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

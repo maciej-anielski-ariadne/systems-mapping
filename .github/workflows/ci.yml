@@ -23,10 +23,12 @@ jobs:
         run: npm run test:shuffle
       - name: Lint
         run: npm run lint
-      - name: Build single-file bundle
-        run: npm run build
+      - name: Build offline and hosted bundles
+        run: npm run build:all
       - name: Verify tracked bundle is current
         run: git diff --exit-code -- dist/systems-map.html
+      - name: Check deterministic performance budgets
+        run: npm run check:performance
       - name: Install browser
         run: npx playwright install --with-deps chromium
       - name: Test built bundle in Chromium

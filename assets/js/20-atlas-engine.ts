@@ -257,10 +257,12 @@ export function detectLanes(
     families: [], laneValues: new Set<AtlasLaneValue>(), rejected: [], foldedBoxes: 0, roleCount: nodes.length,
   };
 
-  const linked = new Set<string>();
+  const neighbouringIdentifiers = new Map<AtlasIdentifier, Set<AtlasIdentifier>>();
   for (const edge of edges) {
-    linked.add(edge.from + SEP + edge.to);
-    linked.add(edge.to + SEP + edge.from);
+    if (!neighbouringIdentifiers.has(edge.from)) neighbouringIdentifiers.set(edge.from, new Set());
+    if (!neighbouringIdentifiers.has(edge.to)) neighbouringIdentifiers.set(edge.to, new Set());
+    neighbouringIdentifiers.get(edge.from)!.add(edge.to);
+    neighbouringIdentifiers.get(edge.to)!.add(edge.from);
   }
 
   const rejected: RejectedLaneFamily[] = [];
@@ -270,10 +272,17 @@ export function detectLanes(
     const members = [...membersByIdentifier].map(([identifier, token]) => ({ id: identifier, token }));
     if (new Set(members.map(member => member.token)).size !== members.length) continue;
 
+    const memberIdentifiers = new Set(members.map(member => member.id));
     let adjacent = false;
-    for (let firstIndex = 0; firstIndex < members.length && !adjacent; firstIndex++)
-      for (let secondIndex = firstIndex + 1; secondIndex < members.length && !adjacent; secondIndex++)
-        if (linked.has(members[firstIndex].id + SEP + members[secondIndex].id)) adjacent = true;
+    for (const member of members) {
+      for (const neighbourIdentifier of neighbouringIdentifiers.get(member.id) || []) {
+        if (memberIdentifiers.has(neighbourIdentifier)) {
+          adjacent = true;
+          break;
+        }
+      }
+      if (adjacent) break;
+    }
     if (adjacent) { rejected.push({ key, why: "members are linked to each other, so this is a sequence not a set of alternatives" }); continue; }
 
     const [prefix, suffix] = key.split(SEP);
@@ -339,19 +348,39 @@ export function detectLanes(
   for (const family of kept) {
     const mine = family.members.filter(member => tentative.roleOf.get(member.id) === "L:" + family.key);
     if (mine.length < resolvedOptions.minMembers) continue;
-    const surroundingRoleSets = mine.map(member =>
-      around.get(member.id) || new Set<AtlasRoleIdentifier>());
-    let pairCount = 0, totalOverlap = 0;
-    for (let firstIndex = 0; firstIndex < surroundingRoleSets.length; firstIndex++)
-      for (let secondIndex = firstIndex + 1; secondIndex < surroundingRoleSets.length; secondIndex++) {
+    // Many large lane families have the same surroundings for every member.
+    // Group identical sets first, then weight the comparisons between unique
+    // sets. This is byte-for-byte the same average pairwise Jaccard score, while
+    // turning the common identical-family case from quadratic into linear work.
+    const surroundingGroups = new Map<string, { roles: Set<AtlasRoleIdentifier>; count: number }>();
+    for (const member of mine) {
+      const roles = around.get(member.id) || new Set<AtlasRoleIdentifier>();
+      const signature = [...roles].sort().join(SEP);
+      const existingGroup = surroundingGroups.get(signature);
+      if (existingGroup) existingGroup.count++;
+      else surroundingGroups.set(signature, { roles, count: 1 });
+    }
+    const groups = [...surroundingGroups.values()];
+    const pairCount = mine.length * (mine.length - 1) / 2;
+    let totalOverlap = 0;
+    for (const group of groups) {
+      if (group.roles.size > 0 && group.count > 1) {
+        totalOverlap += group.count * (group.count - 1) / 2;
+      }
+    }
+    for (let firstIndex = 0; firstIndex < groups.length; firstIndex++)
+      for (let secondIndex = firstIndex + 1; secondIndex < groups.length; secondIndex++) {
+        const firstRoles = groups[firstIndex].roles;
+        const secondRoles = groups[secondIndex].roles;
+        const smallerRoles = firstRoles.size <= secondRoles.size ? firstRoles : secondRoles;
+        const largerRoles = smallerRoles === firstRoles ? secondRoles : firstRoles;
         let intersectionSize = 0;
-        for (const role of surroundingRoleSets[firstIndex]) {
-          if (surroundingRoleSets[secondIndex].has(role)) intersectionSize++;
+        for (const role of smallerRoles) {
+          if (largerRoles.has(role)) intersectionSize++;
         }
-        const unionSize = surroundingRoleSets[firstIndex].size +
-          surroundingRoleSets[secondIndex].size - intersectionSize;
-        totalOverlap += unionSize ? intersectionSize / unionSize : 0;
-        pairCount++;
+        const unionSize = firstRoles.size + secondRoles.size - intersectionSize;
+        const comparedPairCount = groups[firstIndex].count * groups[secondIndex].count;
+        totalOverlap += (unionSize ? intersectionSize / unionSize : 0) * comparedPairCount;
       }
     const overlap = pairCount ? totalOverlap / pairCount : 1;
     if (overlap < resolvedOptions.neighbourOverlap) {

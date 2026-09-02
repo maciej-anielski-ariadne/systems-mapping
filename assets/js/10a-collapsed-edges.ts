@@ -145,13 +145,15 @@ export function computeRenderEdges(): RenderEdge[] {
   // `seen` maps hidden node id → bitmask of signs already expanded from it;
   // `dashedSeen` marks the ones already expanded with a dashed chain (a dashed
   // arrival has to re-expand so the dash reaches the far side).
-  function walkHidden(srcVisibleId: string, firstEdge: Edge): void {
+  function walkHidden(srcVisibleId: string, firstEdges: readonly Edge[]): void {
     const seen = new Map<string, number>();
     const dashedSeen = new Set<string>();
     // Frontier entries: [hidden node id, sign bit, dashed so far]
-    const stack: Array<[string, number, boolean]> = [
-      [firstEdge.to, signBit(resolveEdgeElasticity(firstEdge)), firstEdge.style === "dashed"],
-    ];
+    const stack: Array<[string, number, boolean]> = firstEdges.map(firstEdge => [
+      firstEdge.to,
+      signBit(resolveEdgeElasticity(firstEdge)),
+      firstEdge.style === "dashed",
+    ]);
     while (stack.length) {
       const [mid, bit, dashed] = stack.pop()!;
       const mask = seen.get(mid) || 0;
@@ -176,10 +178,9 @@ export function computeRenderEdges(): RenderEdge[] {
 
   for (const a of NODES) {
     if (!visibleNodeIds.has(a.id)) continue;
-    for (const e0 of outgoingEdges[a.id]) {
-      if (isVisibleId(e0.to)) continue;            // direct visible→visible handled in (a)
-      walkHidden(a.id, e0);
-    }
+    const hiddenEntryEdges = (outgoingEdges[a.id] || [])
+      .filter(edge => !isVisibleId(edge.to));       // direct visible→visible handled in (a)
+    if (hiddenEntryEdges.length) walkHidden(a.id, hiddenEntryEdges);
   }
 
   for (const acc of synthAccum.values()) {

@@ -123,6 +123,13 @@ export function closeBuilder(): void {
     overlay.classList.remove("open");
     overlay.innerHTML = "";
   }
+  // A builder opened from a live map owns detached copies of every node, link,
+  // and evidence record. Once the overlay is closed there is no recovery draft
+  // to preserve (the storage slot was cleared above), so release those copies
+  // rather than retaining a second whole map for the rest of the tab lifetime.
+  // The tutorial takes its own detached snapshot before closing and restores it
+  // explicitly, so clearing the shared builder here does not discard that draft.
+  seedBuilderEmpty();
 }
 
 /**

@@ -232,7 +232,10 @@ export function applyRestoredUiState(ui: any): void {
   } else if (typeof ui.detailPanelCollapsed === "boolean") {
     state.detailPanelPinned = !ui.detailPanelCollapsed;
   }
-  if (typeof applyUiMode === "function") applyUiMode();
+  // The restore path applies all remaining data-dependent state below and then
+  // performs its final render. Updating the shell classes now is necessary;
+  // rebuilding both panels with half-restored filters and values is not.
+  if (typeof applyUiMode === "function") applyUiMode({ renderPanels: false });
 
   if (typeof ui.sidebarWidth     === "number" && !isNaN(ui.sidebarWidth))     state.sidebarWidth     = ui.sidebarWidth;
   if (typeof ui.detailPanelWidth === "number" && !isNaN(ui.detailPanelWidth)) state.detailPanelWidth = ui.detailPanelWidth;

@@ -175,7 +175,8 @@ const FIRST_LESSON_ID = "map-essentials";
 let tutorialSession: TutorialSession | null = null;
 let highlightedTutorialTarget: Element | null = null;
 let highlightedTutorialTargetSelector: string | null = null;
-let tutorialTargetTrackingAnimationFrame: number | null = null;
+let tutorialTargetUpdateAnimationFrame: number | null = null;
+let tutorialTargetThreadIsDirty = false;
 let tutorialCardDragState: TutorialCardDragState | null = null;
 
 function tutorialLayer(): HTMLElement | null {
@@ -296,10 +297,11 @@ function markTutorialState(value: "completed" | "dismissed"): void {
 }
 
 function clearTutorialTarget(): void {
-  if (tutorialTargetTrackingAnimationFrame !== null && typeof cancelAnimationFrame === "function") {
-    cancelAnimationFrame(tutorialTargetTrackingAnimationFrame);
+  if (tutorialTargetUpdateAnimationFrame !== null && typeof cancelAnimationFrame === "function") {
+    cancelAnimationFrame(tutorialTargetUpdateAnimationFrame);
   }
-  tutorialTargetTrackingAnimationFrame = null;
+  tutorialTargetUpdateAnimationFrame = null;
+  tutorialTargetThreadIsDirty = false;
   tutorialCardDragState = null;
   if (highlightedTutorialTarget) highlightedTutorialTarget.classList.remove("tutorial-target");
   highlightedTutorialTarget = null;
@@ -365,7 +367,7 @@ function moveTutorialCard(event: PointerEvent): void {
     top: tutorialCardDragState.cardStartTop + event.clientY - tutorialCardDragState.pointerStartY,
   };
   applyTutorialCardPosition();
-  updateTutorialTargetThread();
+  scheduleTutorialTargetThreadUpdate();
 }
 
 function finishTutorialCardDrag(event: PointerEvent): void {
@@ -378,7 +380,7 @@ function finishTutorialCardDrag(event: PointerEvent): void {
 
 function handleTutorialViewportResize(): void {
   applyTutorialCardPosition();
-  updateTutorialTargetThread();
+  scheduleTutorialTargetThreadUpdate();
 }
 
 function tutorialTargetCandidateIsVisible(candidate: Element): boolean {
@@ -453,18 +455,25 @@ function updateTutorialTargetThread(): void {
   targetMarker.setAttribute("cy", String(targetCenterY));
 }
 
-function trackTutorialTarget(): void {
-  tutorialTargetTrackingAnimationFrame = null;
+function flushTutorialTargetThreadUpdate(): void {
+  tutorialTargetUpdateAnimationFrame = null;
+  if (!tutorialTargetThreadIsDirty) return;
+  tutorialTargetThreadIsDirty = false;
   const layer = tutorialLayer();
   if (!highlightedTutorialTargetSelector || !layer || layer.hidden) return;
   updateTutorialTargetThread();
-  tutorialTargetTrackingAnimationFrame = requestAnimationFrame(trackTutorialTarget);
 }
 
-function startTutorialTargetTracking(): void {
-  updateTutorialTargetThread();
-  if (typeof requestAnimationFrame !== "function") return;
-  tutorialTargetTrackingAnimationFrame = requestAnimationFrame(trackTutorialTarget);
+function scheduleTutorialTargetThreadUpdate(): void {
+  const layer = tutorialLayer();
+  if (!highlightedTutorialTargetSelector || !layer || layer.hidden) return;
+  tutorialTargetThreadIsDirty = true;
+  if (tutorialTargetUpdateAnimationFrame !== null) return;
+  if (typeof requestAnimationFrame !== "function") {
+    flushTutorialTargetThreadUpdate();
+    return;
+  }
+  tutorialTargetUpdateAnimationFrame = requestAnimationFrame(flushTutorialTargetThreadUpdate);
 }
 
 function highlightTutorialTarget(selector: string): void {
@@ -472,7 +481,9 @@ function highlightTutorialTarget(selector: string): void {
   highlightedTutorialTargetSelector = selector;
   const target = synchroniseTutorialTarget();
   if (target) target.scrollIntoView({ block: "nearest", inline: "nearest" });
-  startTutorialTargetTracking();
+  // Draw once synchronously for the newly rendered step. Subsequent geometry
+  // changes are coalesced by the dirty scheduler rather than polling forever.
+  updateTutorialTargetThread();
 }
 
 function closeTutorialSurfaces(): void {
@@ -1742,12 +1753,33 @@ if (layer) {
 }
 
 window.addEventListener("resize", handleTutorialViewportResize, { passive: true });
-document.addEventListener("scroll", updateTutorialTargetThread, { capture: true, passive: true });
+document.addEventListener("scroll", scheduleTutorialTargetThreadUpdate, { capture: true, passive: true });
 document.addEventListener("pointermove", updateTutorialThreadPointerFade, { passive: true });
 document.addEventListener("pointerleave", revealTutorialThreadAfterPointerLeaves, { passive: true });
 document.addEventListener("pointermove", moveTutorialCard, { passive: true });
 document.addEventListener("pointerup", finishTutorialCardDrag, { passive: true });
 document.addEventListener("pointercancel", finishTutorialCardDrag, { passive: true });
+
+// Tutorial targets are frequently replaced by normal surface renders. Observe
+// those structural/visibility changes while a lesson is active and schedule one
+// geometry refresh. Ignore the thread's own path/marker writes so the observer
+// cannot turn the one-shot scheduler back into a perpetual animation loop.
+if (typeof MutationObserver === "function" && document.body) {
+  const tutorialTargetMutationObserver = new MutationObserver(mutationRecords => {
+    if (!highlightedTutorialTargetSelector) return;
+    const targetThread = tutorialLayer()?.querySelector(".tutorial-target-thread");
+    const externalMutationExists = mutationRecords.some(mutationRecord =>
+      !(targetThread && targetThread.contains(mutationRecord.target)),
+    );
+    if (externalMutationExists) scheduleTutorialTargetThreadUpdate();
+  });
+  tutorialTargetMutationObserver.observe(document.body, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: ["class", "style", "hidden", "aria-expanded"],
+  });
+}
 
 document.querySelectorAll(".tutorial-trigger").forEach(button => {
   button.addEventListener("click", () => startTutorial());

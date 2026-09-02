@@ -236,7 +236,7 @@ describe("Learn library", () => {
     exitTutorial({ markDismissed: false });
   });
 
-  it("rebinds the thread to a replaced map element and follows its new geometry", async () => {
+  it("rebinds after mutation and only follows later geometry when an event marks it dirty", async () => {
     expect(loadDataFromCsv(SAMPLE_CSV)).toBe(true);
     expect(startLearnLesson("map-essentials")).toBe(true);
 
@@ -285,6 +285,10 @@ describe("Learn library", () => {
     expect(marker.getAttribute("cx")).toBe("160");
 
     targetLeft = 300;
+    await waitForTrackingFrame();
+    expect(marker.getAttribute("cx")).toBe("160");
+
+    document.dispatchEvent(new Event("scroll"));
     await waitForTrackingFrame();
     expect(marker.getAttribute("cx")).toBe("340");
   });

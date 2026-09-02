@@ -25,6 +25,103 @@
   box-shadow: var(--shadow-float), 0 0 0 2px var(--accent-red);
 }
 
+/* === CSV import progress and large-map confirmation ========================
+ * Quick imports never reveal this layer; 16-file-io delays it until the work
+ * has lasted long enough to notice. The same stable dialog becomes the
+ * explicit, advisory checkpoint for an unusually large but valid map. */
+.csv-import-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 260;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  background: color-mix(in srgb, var(--bg-deepest) 72%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+.csv-import-layer[hidden] {
+  display: none;
+}
+
+.csv-import-dialog {
+  width: min(460px, 100%);
+  padding: clamp(22px, 4vw, 34px);
+  border-radius: var(--radius-surface);
+  background: var(--bg-light);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-float), 0 0 0 1px var(--border-strong);
+}
+
+.csv-import-eyebrow {
+  margin: 0 0 var(--space-1);
+  color: var(--act);
+  font-size: var(--fs-eyebrow);
+  font-weight: 700;
+  letter-spacing: var(--tracking-cap);
+  text-transform: uppercase;
+}
+
+.csv-import-dialog h2 {
+  margin: 0;
+  font-size: var(--fs-heading);
+}
+
+.csv-import-status {
+  min-height: 2.8em;
+  margin: var(--space-3) 0 var(--space-2);
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.csv-import-progress {
+  display: block;
+  width: 100%;
+  height: 8px;
+  accent-color: var(--act);
+}
+
+.csv-import-layer[data-state="warning"] .csv-import-progress {
+  display: none;
+}
+
+.csv-import-advice {
+  margin: var(--space-3) 0 0;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.csv-import-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.csv-import-button {
+  min-height: 40px;
+  padding: var(--pad-button);
+  border-radius: var(--radius-interactive);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.csv-import-button--secondary {
+  background: var(--bg-dark);
+  color: var(--text-primary);
+}
+
+.csv-import-button--primary {
+  background: var(--act);
+  color: var(--bg-deepest);
+}
+
+.csv-import-button:hover,
+.csv-import-button:focus-visible {
+  box-shadow: 0 0 0 2px var(--act-on);
+}
+
 /* === Undo toast (above the map-control dock) ===
  * Shown briefly after a canvas-edit delete. Click "Undo" to restore. The
  * clearance prevents it from covering the map mode controls it used to share

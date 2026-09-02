@@ -19,7 +19,7 @@ import { renderDetailPanel } from "../assets/js/15-detail-panel";
 import { NODES, STAGES, STREAMS, state } from "../assets/js/03-state";
 import { deselectAll, refreshTraceForSelection, selectNode } from "../assets/js/09-graph-selection";
 import { initCanvasEdit, setShiftHeld } from "../assets/js/16e-canvas-edit";
-import { renderFloatingHeadings, syncFloatingHeadings } from "../assets/js/11-rendering";
+import { render, renderFloatingHeadings, syncFloatingHeadings } from "../assets/js/11-rendering";
 import { toggleSimulationMode } from "../assets/js/14-simulation-panel";
 import { applyRestoredUiState, saveUiStateToStorage, loadUiStateFromStorage } from "../assets/js/04a-storage";
 import {
@@ -539,6 +539,29 @@ describe("simulation brings its own panel out", () => {
 
     toggleSimulationMode();
     expect(document.body.classList.contains("sim-mode")).toBe(false);
+  });
+
+  it("keeps the map elements while entering and leaving simulation", () => {
+    loadDataFromCsv(LINEAR_CSV);
+    state.simulationMode = false;
+    document.body.classList.remove("sim-mode");
+    render();
+    const nodeBefore = document.querySelector('.node-group[data-node-id="a"]')!;
+    const edgeBefore = document.querySelector(".ml-static-layer .edge-path")!;
+    expect(nodeBefore.querySelector(".node-value")).toBeNull();
+
+    toggleSimulationMode();
+
+    expect(document.querySelector('.node-group[data-node-id="a"]')).toBe(nodeBefore);
+    expect(document.querySelector(".ml-static-layer .edge-path")).toBe(edgeBefore);
+    expect(nodeBefore.classList.contains("sim-fill")).toBe(true);
+    expect(nodeBefore.querySelector(".node-value")).not.toBeNull();
+
+    toggleSimulationMode();
+
+    expect(document.querySelector('.node-group[data-node-id="a"]')).toBe(nodeBefore);
+    expect(document.querySelector(".ml-static-layer .edge-path")).toBe(edgeBefore);
+    expect(nodeBefore.classList.contains("sim-fill")).toBe(false);
   });
 });
 

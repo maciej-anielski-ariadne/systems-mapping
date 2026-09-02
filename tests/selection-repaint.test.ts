@@ -10,7 +10,7 @@
 //      produced — same classes, same stroke/width/opacity/marker on every link,
 //      same border on every box.
 // =============================================================================
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { loadDataFromCsv } from "../assets/js/06-data-loader";
 import { render, refreshSelectionStyling } from "../assets/js/11-rendering";
 import { deselectAll, selectNode, toggleNodeInSelection } from "../assets/js/09-graph-selection";
@@ -42,6 +42,7 @@ b,Bravo,second,ops,s2,cat,50,units,,higher_better,
 c,Charlie,third,ops,s3,cat,20,units,,,
 d,Delta,fourth,sup,s2,cat|sec,,,,,
 e,Echo,fifth,sup,s3,cat,,,,,
+f,Foxtrot,isolated,sup,s1,cat,,,,,
 
 # SECTION: edges
 from,to,effect,elasticity,style,description
@@ -116,6 +117,20 @@ describe("incremental selection repaint", () => {
     expect(groupBefore.querySelector(".node-rect")).toBe(rectBefore);
     expect(document.querySelector(".ml-static-layer .edge-path")).toBe(edgeBefore);
     expect(groupBefore.classList.contains("selected")).toBe(true);
+  });
+
+  it("does not inspect an unaffected node when one single selection replaces another", () => {
+    const isolatedGroup = document.querySelector('.node-group[data-node-id="f"]')!;
+    selectNode("b");
+    const querySelectorSpy = vi.spyOn(isolatedGroup, "querySelector");
+
+    selectNode("d");
+
+    expect(querySelectorSpy).not.toHaveBeenCalled();
+    expect(isolatedGroup.classList.contains("selected")).toBe(false);
+    expect(isolatedGroup.classList.contains("ancestor")).toBe(false);
+    expect(isolatedGroup.classList.contains("descendant")).toBe(false);
+    querySelectorSpy.mockRestore();
   });
 
   it("produces exactly what a full render would for a single selection", () => {

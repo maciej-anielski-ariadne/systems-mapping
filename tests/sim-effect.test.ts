@@ -175,11 +175,12 @@ describe("the map in simulation mode", () => {
     expect(fillOf("c")).not.toBe(before);
     expect(fillOf("c")).toBe(simEffectFill("good", nodeEffect("c").strength));
 
-    // Under the floor, every delta label disappears — a markup change, so the
-    // patch declines and hands back to a full render, which greys the box.
+    // Under the floor, every delta label becomes empty without changing the
+    // markup, so the same node element can be kept and repainted grey.
     nudge(1.001);
-    expect(updateSimulationValuesInPlace()).toBe(false);
-    render();
+    expect(updateSimulationValuesInPlace()).toBe(true);
+    expect(group("c")).toBe(groupBefore);
+    expect(group("c").querySelector(".node-delta")!.textContent).toBe("");
     expect(fillOf("c")).toBe(SIM_FLAT_FILL);
     expect(group("c").classList.contains("sim-flat")).toBe(true);
   });

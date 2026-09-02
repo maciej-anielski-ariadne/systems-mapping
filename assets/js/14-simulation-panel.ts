@@ -17,7 +17,7 @@ import type { GraphNode } from "./types";
 import { state, NODES, STREAMS, nodeById } from "./03-state";
 import { escapeHtml, formatScalar, formatScalarInput } from "./04-utils";
 import { biggestMover, recomputeValues, formatNodeDelta } from "./07-simulation-engine";
-import { render, scheduleRender, updateSimulationValuesInPlace } from "./11-rendering";
+import { refreshSelectionStyling, render, scheduleRender, updateSimulationValuesInPlace } from "./11-rendering";
 import { patchDetailPanelValues, renderDetailPanel } from "./15-detail-panel";
 import { saveUiStateToStorage, scheduleUiStateSave } from "./04a-storage";
 import { renderSidebar } from "./13-sidebar";
@@ -506,8 +506,7 @@ export function updateDetailPanelDeltaInline(changedNodeId: string): void {
 
 // Flip simulation mode on/off and refresh everything that depends on it.
 export function toggleSimulationMode(): void {
-  // Everything below re-renders from scratch, so an owed slider tick has nothing
-  // left to contribute.
+  // An owed slider tick has nothing left to contribute after the mode change.
   cancelSimTick();
   // Editing changes the model; simulation changes inputs to that model. They
   // use the same canvas controls for different jobs, so entering simulation
@@ -540,7 +539,11 @@ export function toggleSimulationMode(): void {
   syncReviewRail();
   if (typeof atlasIsOpen === "function" && atlasIsOpen()) refreshAtlasValues();
   renderSidebar();
-  render();
+  // Simulation changes paint and status text, not map structure. Preserve the
+  // existing node and edge elements so entering and leaving the mode stays
+  // responsive on large maps. A stale cache still falls back to the full render.
+  const stylingUpdated = refreshSelectionStyling();
+  if (!stylingUpdated || !updateSimulationValuesInPlace()) render();
   renderDetailPanel();
   saveUiStateToStorage();
 }

@@ -112,6 +112,10 @@ async function expectSingleRowBottomToolbars(page: Page): Promise<void> {
 test("built artifact boots, restores, imports, exports, searches and changes modes", async ({
   page,
 }) => {
+  // This is a broad end-to-end contract rather than a latency gate. Its many
+  // independent browser interactions can cumulatively exceed Playwright's
+  // default timeout on a busy host even when every individual wait is healthy.
+  test.slow();
   await openCleanBuiltApp(page);
   await expect(page.locator(".node-group")).toHaveCount(0);
 

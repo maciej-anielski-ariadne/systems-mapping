@@ -353,7 +353,15 @@ export function nodeSecondaryChips(node: GraphNode, pos: NodePosition): { svg: s
 //   • the node-visibility hidden sets — hiddenCategories toggles change
 //     isNodeVisible WITHOUT a setLayout, so they're keyed explicitly.
 // Selection/hover/sim renders don't touch any of these, so they hit the cache.
-interface EdgeGeometry { renderEdges: RenderEdge[]; anchorOffsets: AnchorOffset[]; }
+interface EdgeSpatialIndex {
+  edgeIndicesByTile: Map<string, number[]>;
+  alwaysCandidateEdgeIndices: number[];
+}
+interface EdgeGeometry {
+  renderEdges: RenderEdge[];
+  anchorOffsets: AnchorOffset[];
+  spatialIndex: EdgeSpatialIndex | null;
+}
 let _edgeGeomCache: (EdgeGeometry & {
   nodes: typeof NODES; edges: typeof EDGES; geometryRevision: number;
   edgeRevision: number; hiddenKey: string;
@@ -387,6 +395,9 @@ function edgeGeometry(): EdgeGeometry {
   _edgeGeomCache = {
     renderEdges,
     anchorOffsets,
+    // Built lazily on the first virtualized render. Small maps and exports that
+    // draw everything should not pay to create an index they never query.
+    spatialIndex: null,
     nodes: NODES,
     edges: EDGES,
     geometryRevision,
@@ -655,6 +666,128 @@ export function edgeCurveIntersectsRect(
 ): boolean {
   const p = edgeControlPoints(fromPos, toPos, fromYOffset, toYOffset);
   return cubicIntersectsRect(p.x0, p.y0, p.x1, p.y1, p.x2, p.y2, p.x3, p.y3, rect, CURVE_SUBDIVISION_DEPTH);
+}
+
+// Spatial candidates for virtualized link slices. Geometry is rebuilt only
+// when edgeGeometry()'s topology/layout revision changes, so indexing the leaf
+// hulls once is substantially cheaper than testing every curve on every pan.
+// A very long curve that would occupy hundreds of tiles is kept in a small
+// always-candidate list instead; that bounds index memory without sacrificing
+// correctness.
+const EDGE_INDEX_TILE_SIZE = 1200;
+const EDGE_INDEX_MAXIMUM_TILES_PER_EDGE = 256;
+
+function edgeIndexTileKey(horizontalTile: number, verticalTile: number): string {
+  return horizontalTile + ":" + verticalTile;
+}
+
+function curveTileKeys(
+  x0: number, y0: number, x1: number, y1: number,
+  x2: number, y2: number, x3: number, y3: number,
+): Set<string> | null {
+  const tileKeys = new Set<string>();
+  const visitCurve = (
+    curveX0: number, curveY0: number, curveX1: number, curveY1: number,
+    curveX2: number, curveY2: number, curveX3: number, curveY3: number,
+    depth: number,
+  ): boolean => {
+    if (depth > 0) {
+      const x01 = (curveX0 + curveX1) / 2, y01 = (curveY0 + curveY1) / 2;
+      const x12 = (curveX1 + curveX2) / 2, y12 = (curveY1 + curveY2) / 2;
+      const x23 = (curveX2 + curveX3) / 2, y23 = (curveY2 + curveY3) / 2;
+      const leftX = (x01 + x12) / 2, leftY = (y01 + y12) / 2;
+      const rightX = (x12 + x23) / 2, rightY = (y12 + y23) / 2;
+      const middleX = (leftX + rightX) / 2, middleY = (leftY + rightY) / 2;
+      return visitCurve(curveX0, curveY0, x01, y01, leftX, leftY, middleX, middleY, depth - 1) &&
+        visitCurve(middleX, middleY, rightX, rightY, x23, y23, curveX3, curveY3, depth - 1);
+    }
+
+    const minimumHorizontalTile = Math.floor((Math.min(curveX0, curveX1, curveX2, curveX3) - CURVE_PAD) / EDGE_INDEX_TILE_SIZE);
+    const maximumHorizontalTile = Math.floor((Math.max(curveX0, curveX1, curveX2, curveX3) + CURVE_PAD) / EDGE_INDEX_TILE_SIZE);
+    const minimumVerticalTile = Math.floor((Math.min(curveY0, curveY1, curveY2, curveY3) - CURVE_PAD) / EDGE_INDEX_TILE_SIZE);
+    const maximumVerticalTile = Math.floor((Math.max(curveY0, curveY1, curveY2, curveY3) + CURVE_PAD) / EDGE_INDEX_TILE_SIZE);
+    for (let horizontalTile = minimumHorizontalTile; horizontalTile <= maximumHorizontalTile; horizontalTile++) {
+      for (let verticalTile = minimumVerticalTile; verticalTile <= maximumVerticalTile; verticalTile++) {
+        tileKeys.add(edgeIndexTileKey(horizontalTile, verticalTile));
+        if (tileKeys.size > EDGE_INDEX_MAXIMUM_TILES_PER_EDGE) return false;
+      }
+    }
+    return true;
+  };
+
+  return visitCurve(x0, y0, x1, y1, x2, y2, x3, y3, CURVE_SUBDIVISION_DEPTH)
+    ? tileKeys
+    : null;
+}
+
+function buildEdgeSpatialIndex(
+  renderEdges: readonly RenderEdge[],
+  anchorOffsets: readonly AnchorOffset[],
+): EdgeSpatialIndex {
+  const edgeIndicesByTile = new Map<string, number[]>();
+  const alwaysCandidateEdgeIndices: number[] = [];
+  for (let edgeIndex = 0; edgeIndex < renderEdges.length; edgeIndex++) {
+    const renderEdge = renderEdges[edgeIndex];
+    const fromPosition = layout.positions[renderEdge.from];
+    const toPosition = layout.positions[renderEdge.to];
+    if (!fromPosition || !toPosition) continue;
+    const anchorOffset = anchorOffsets[edgeIndex];
+    const controlPoints = edgeControlPoints(
+      fromPosition,
+      toPosition,
+      anchorOffset.fromYOffset,
+      anchorOffset.toYOffset,
+    );
+    const tileKeys = curveTileKeys(
+      controlPoints.x0, controlPoints.y0, controlPoints.x1, controlPoints.y1,
+      controlPoints.x2, controlPoints.y2, controlPoints.x3, controlPoints.y3,
+    );
+    if (!tileKeys) {
+      alwaysCandidateEdgeIndices.push(edgeIndex);
+      continue;
+    }
+    for (const tileKey of tileKeys) {
+      const edgeIndices = edgeIndicesByTile.get(tileKey);
+      if (edgeIndices) edgeIndices.push(edgeIndex);
+      else edgeIndicesByTile.set(tileKey, [edgeIndex]);
+    }
+  }
+  return { edgeIndicesByTile, alwaysCandidateEdgeIndices };
+}
+
+function spatialIndexForEdgeGeometry(edgeGeometryValue: EdgeGeometry): EdgeSpatialIndex {
+  if (!edgeGeometryValue.spatialIndex) {
+    edgeGeometryValue.spatialIndex = buildEdgeSpatialIndex(
+      edgeGeometryValue.renderEdges,
+      edgeGeometryValue.anchorOffsets,
+    );
+  }
+  return edgeGeometryValue.spatialIndex;
+}
+
+function edgeCandidateIndicesForCull(spatialIndex: EdgeSpatialIndex, cull: CullRect): number[] {
+  const candidateEdgeIndices = new Set<number>(spatialIndex.alwaysCandidateEdgeIndices);
+  const minimumHorizontalTile = Math.floor(cull.minX / EDGE_INDEX_TILE_SIZE);
+  const maximumHorizontalTile = Math.floor(cull.maxX / EDGE_INDEX_TILE_SIZE);
+  const minimumVerticalTile = Math.floor(cull.minY / EDGE_INDEX_TILE_SIZE);
+  const maximumVerticalTile = Math.floor(cull.maxY / EDGE_INDEX_TILE_SIZE);
+  for (let horizontalTile = minimumHorizontalTile; horizontalTile <= maximumHorizontalTile; horizontalTile++) {
+    for (let verticalTile = minimumVerticalTile; verticalTile <= maximumVerticalTile; verticalTile++) {
+      for (const edgeIndex of spatialIndex.edgeIndicesByTile.get(edgeIndexTileKey(horizontalTile, verticalTile)) || []) {
+        candidateEdgeIndices.add(edgeIndex);
+      }
+    }
+  }
+  return [...candidateEdgeIndices].sort((firstIndex, secondIndex) => firstIndex - secondIndex);
+}
+
+/** Introspection hook for scale regression tests. */
+export function _edgeCandidateCountForCull(cull: CullRect): number {
+  const edgeGeometryValue = edgeGeometry();
+  return edgeCandidateIndicesForCull(
+    spatialIndexForEdgeGeometry(edgeGeometryValue),
+    cull,
+  ).length;
 }
 
 // ───── Coalesced render scheduling ────────────────────────────────────────
@@ -1314,7 +1447,11 @@ export function render(): void {
   // on topology / visibility / positions, so selection / hover / sim renders reuse
   // the previous result instead of recomputing. anchorOffsets stays parallel by
   // index to renderEdges (both come from the same cache entry together).
-  const { renderEdges, anchorOffsets } = edgeGeometry();
+  const edgeGeometryValue = edgeGeometry();
+  const { renderEdges, anchorOffsets } = edgeGeometryValue;
+  const candidateEdgeIndices = cull && renderEdges.length >= VIRTUALIZE_MIN_EDGES
+    ? edgeCandidateIndicesForCull(spatialIndexForEdgeGeometry(edgeGeometryValue), cull)
+    : null;
 
   // (Viewport cull rect was computed at the top of render(), before any
   // attribute writes, to avoid a forced synchronous layout.)
@@ -1335,7 +1472,9 @@ export function render(): void {
   // refreshSelectionStyling). Rebuilt from scratch by every render.
   const drawnEdges: RenderEdge[] = [];
 
-  for (let i = 0; i < renderEdges.length; i++) {
+  const edgeIterationCount = candidateEdgeIndices ? candidateEdgeIndices.length : renderEdges.length;
+  for (let candidateIndex = 0; candidateIndex < edgeIterationCount; candidateIndex++) {
+    const i = candidateEdgeIndices ? candidateEdgeIndices[candidateIndex] : candidateIndex;
     const re = renderEdges[i];
     const fromPos = layout.positions[re.from];
     const toPos   = layout.positions[re.to];
@@ -1411,18 +1550,20 @@ export function render(): void {
     // While the sliders are out the body says what the run DID to this box
     // rather than what kind of box it is — one meaning at a time. See
     // simEffectFill (04-utils) and nodeEffect (07-simulation-engine).
-    const effect   = state.simulationMode ? nodeEffect(node.id) : null;
+    const effect = state.simulationMode ? nodeEffect(node.id) : null;
+    // Keep the resting gradient definition in the DOM during Simulation. Mode
+    // entry and exit can then restore the exact resting fill without rebuilding
+    // the node (a gradient URL is tied to the definition minted in this render).
+    const restingFillInfo = nodePrimaryFill(node, "ngrad_" + (_nodeGradSeq++));
     const fillInfo = effect
-      ? { defs: "", fill: effect.moved ? simEffectFill(effect.merit, effect.strength) : SIM_FLAT_FILL, textColor: SIM_INK }
-      : nodePrimaryFill(node, "ngrad_" + (_nodeGradSeq++));
+      ? { defs: restingFillInfo.defs, fill: effect.moved ? simEffectFill(effect.merit, effect.strength) : SIM_FLAT_FILL, textColor: SIM_INK }
+      : restingFillInfo;
     const textColor = fillInfo.textColor;
     // The corner tags are dropped while the sliders are out. They sit in the
     // bottom-right corner, which is the same corner the run's number wants, and
     // two things in one corner is one thing too many — the tags say what KIND of
     // box this is, which is not the question anyone is asking mid-run.
-    const chips    = state.simulationMode
-      ? { svg: "", leftEdge: pos.x + pos.width }
-      : nodeSecondaryChips(node, pos);
+    const chips = nodeSecondaryChips(node, pos);
 
     // Class flags applied to the <g> wrapper — see 05-visualization.css
     // (state glows) + 13-search.css (search halo).
@@ -1459,7 +1600,10 @@ export function render(): void {
     // ── Background rect with conditional border ──
     const border = nodeRectStroke(node.id, ctx);
 
-    content += '<rect class="node-rect" x="' + pos.x + '" y="' + pos.y + '" width="' + pos.width + '" height="' + pos.height + '" rx="5" fill="' + escapeHtml(rectFill) + '" stroke="' + escapeHtml(border.stroke) + '" stroke-width="' + border.width + '"></rect>';
+    const restingRectFill = !restingFillInfo.defs && !hasNonRestingFilter(node.id, ctx)
+      ? desaturateColor(restingFillInfo.fill)
+      : restingFillInfo.fill;
+    content += '<rect class="node-rect" x="' + pos.x + '" y="' + pos.y + '" width="' + pos.width + '" height="' + pos.height + '" rx="5" fill="' + escapeHtml(rectFill) + '" data-resting-fill="' + escapeHtml(restingRectFill) + '" stroke="' + escapeHtml(border.stroke) + '" stroke-width="' + border.width + '"></rect>';
 
 
     // ── Coloured stripe down the left edge (the stream colour) ──
@@ -1485,7 +1629,10 @@ export function render(): void {
       " L " + barLeft + "," + (barTop + barRadius) +
       " A " + barRadius + "," + barRadius + " 0 0 1 " + (barLeft + barRadius) + "," + barTop +
       " Z";
-    content += '<path class="node-stripe" d="' + barPath + '" fill="' + escapeHtml(stripeFill) + '"></path>';
+    const restingStripeFill = hasNonRestingFilter(node.id, ctx)
+      ? stream.color
+      : desaturateColor(stream.color);
+    content += '<path class="node-stripe" d="' + barPath + '" fill="' + escapeHtml(stripeFill) + '" data-resting-fill="' + escapeHtml(restingStripeFill) + '"></path>';
 
     // ── Label (wrapped to up to 2 lines) ──
     // One <text> with one or two <tspan> children. Using `dy="1.083em"` (the
@@ -1498,44 +1645,37 @@ export function render(): void {
     const labelLines = pos.labelLines || wrapLabel(node.label, 24);
     const labelX = pos.x + LABEL_INSET;
     const labelBlockTopY = pos.y + 16;
-    content += '<text class="node-label" x="' + labelX + '" y="' + labelBlockTopY + '" fill="' + escapeHtml(textColor) + '" dominant-baseline="middle">';
+    content += '<text class="node-label" x="' + labelX + '" y="' + labelBlockTopY + '" fill="' + escapeHtml(textColor) + '" data-resting-fill="' + escapeHtml(restingFillInfo.textColor) + '" dominant-baseline="middle">';
     for (let lineIdx = 0; lineIdx < labelLines.length; lineIdx++) {
       const dy = lineIdx === 0 ? "0" : "1.083em";
       content += '<tspan x="' + labelX + '" dy="' + dy + '">' + escapeHtml(labelLines[lineIdx]) + '</tspan>';
     }
     content += '</text>';
 
-    // ── Value + delta (simulating only, and only for nodes with a baseline) ──
-    // At rest a number on the box is decoration: it is the same number it was
-    // the last time you looked, and it is repeated on every box on the map. It
-    // starts meaning something the moment it can CHANGE, which is what the
-    // sliders being out means — so that is when it is drawn.
-    const valueText = state.simulationMode ? formatNodeValue(node.id) : "";
-    if (valueText) {
+    // ── Value + delta (visible in simulation, only for quantified nodes) ──
+    // A resting map omits these elements to keep startup light. The first entry
+    // to Simulation inserts them into the existing groups; after that, crossing
+    // the effect floor and becoming held only changes their text and classes.
+    if (state.simulationMode && node.baseline !== undefined && node.baseline !== null) {
+      const valueText = formatNodeValue(node.id);
       const deltaInfo = formatNodeDelta(node.id);
       const valueY = pos.y + pos.height - 12;
-      content += '<text class="node-value" x="' + (pos.x + LABEL_INSET) + '" y="' + valueY + '" fill="' + escapeHtml(textColor) + '" dominant-baseline="middle" opacity="0.75">' + escapeHtml(valueText) + '</text>';
+      content += '<text class="node-value node-simulation-value" x="' + (pos.x + LABEL_INSET) + '" y="' + valueY + '" fill="' + escapeHtml(SIM_INK) + '" dominant-baseline="middle" opacity="0.75">' + escapeHtml(valueText) + '</text>';
 
       // Where a mover prints how far it moved, a held box prints that it is
       // held. What is holding it is named in the panel and on hover — there is
       // no room for "held by Detection & Seizure Rate" on a box this size, and
       // a truncated name is worse than none.
-      if (gate) {
-        const heldX = chips.svg ? chips.leftEdge - 6 : pos.x + pos.width - LABEL_INSET;
-        content += '<text class="node-held" x="' + heldX + '" y="' + valueY +
-          '" text-anchor="end" dominant-baseline="middle">held</text>';
-      }
-
-      if (deltaInfo.text && deltaInfo.text !== "—") {
-        const deltaColor = deltaColorFor(node, deltaInfo);
-        // Sit the delta just left of any secondary chips so they keep the corner.
-        const deltaX = chips.svg ? chips.leftEdge - 6 : pos.x + pos.width - LABEL_INSET;
-        content += '<text class="node-delta" x="' + deltaX + '" y="' + valueY + '" fill="' + deltaColor + '" text-anchor="end" dominant-baseline="middle" font-weight="600">' + escapeHtml(deltaInfo.text) + '</text>';
-      }
+      const statusX = pos.x + pos.width - LABEL_INSET;
+      content += '<text class="node-held node-simulation-value" x="' + statusX + '" y="' + valueY +
+        '" text-anchor="end" dominant-baseline="middle">' + (gate ? "held" : "") + '</text>';
+      const deltaText = deltaInfo.text && deltaInfo.text !== "—" ? deltaInfo.text : "";
+      const deltaColor = deltaText ? deltaColorFor(node, deltaInfo) : "var(--text-secondary)";
+      content += '<text class="node-delta node-simulation-value" x="' + statusX + '" y="' + valueY + '" fill="' + deltaColor + '" text-anchor="end" dominant-baseline="middle" font-weight="600">' + escapeHtml(deltaText) + '</text>';
     }
 
     // ── Secondary category chips (bottom-right) ──
-    content += chips.svg;
+    content += '<g class="node-secondary-chips">' + chips.svg + '</g>';
 
     // Edge-drag handle on the right edge of every node. Visible only on hover
     // via CSS. Mousedown starts an edge-drag (see 16e-canvas-edit.js).
@@ -1577,6 +1717,7 @@ export function render(): void {
   _drawnNodesLength = NODES.length;
   _drawnEdgesLength = EDGES.length;
   _drawnGeometryRevision = layoutGeometryRevision();
+  rebuildDrawnElementReferences();
   renderFloatingHeadings();
 }
 
@@ -1603,6 +1744,133 @@ let _drawnGeometryRevision = -1;
 let _drawnNodesLength = -1;
 let _drawnEdgesLength = -1;
 
+interface DrawnNodeElements {
+  identifier: string;
+  group: Element;
+  rectangle: Element | null;
+  stripe: Element | null;
+  label: Element | null;
+  value: Element | null;
+  delta: Element | null;
+  held: Element | null;
+  secondaryChips: Element | null;
+}
+
+interface DrawnEdgeElements {
+  renderedEdge: RenderEdge;
+  path: Element;
+  casing: Element;
+}
+
+interface SelectionStyleSnapshot {
+  singleSelection: boolean;
+  simulationMode: boolean;
+  reviewPassActive: boolean;
+  selectedNodeIdentifier: string | null;
+  selectedEdgeIdentifier: string | null;
+  hoveredNodeIdentifier: string | null;
+  draggedNodeIdentifier: string | null;
+  selectedNodeIdentifiers: Set<string>;
+  ancestorIdentifiers: Set<string>;
+  descendantIdentifiers: Set<string>;
+  highlightedEdgeIdentifiers: Set<string>;
+  searchMatchIdentifiers: Set<string>;
+  undoFlashNodeIdentifiers: Set<string>;
+  undoFlashEdgeIdentifiers: Set<string>;
+  flashedEdgeIdentifier: string | null;
+}
+
+let _drawnNodeElements: DrawnNodeElements[] = [];
+let _drawnNodeElementsByIdentifier = new Map<string, DrawnNodeElements>();
+let _drawnEdgeElements: DrawnEdgeElements[] = [];
+let _drawnEdgeIndexesByIdentifier = new Map<string, number[]>();
+let _drawnSyntheticEdgeIndexesByIncidentNode = new Map<string, number[]>();
+let _selectionStyleSnapshot: SelectionStyleSnapshot | null = null;
+
+function selectionStyleSnapshot(ctx: StyleContext): SelectionStyleSnapshot {
+  const canvasEditState = state.canvasEdit;
+  const draggedNode = canvasEditState && canvasEditState.draggingNode;
+  return {
+    singleSelection: ctx.singleSelection,
+    simulationMode: state.simulationMode,
+    reviewPassActive: Boolean(state.reviewPass),
+    selectedNodeIdentifier: state.selectedNodeId,
+    selectedEdgeIdentifier: state.selectedEdgeId || null,
+    hoveredNodeIdentifier: state.hoveredNodeId,
+    draggedNodeIdentifier: draggedNode ? draggedNode.nodeId : null,
+    selectedNodeIdentifiers: new Set(state.selectedNodeIds),
+    ancestorIdentifiers: new Set(state.ancestorSet),
+    descendantIdentifiers: new Set(state.descendantSet),
+    highlightedEdgeIdentifiers: new Set(state.highlightedEdgeIds),
+    searchMatchIdentifiers: new Set(ctx.searchMatchIds || []),
+    undoFlashNodeIdentifiers: new Set(ctx.undoFlashNodeIds || []),
+    undoFlashEdgeIdentifiers: new Set(ctx.undoFlashEdgeIds || []),
+    flashedEdgeIdentifier: ctx.flashedEdgeId || null,
+  };
+}
+
+function addSetDifference<T>(target: Set<T>, previous: Set<T>, current: Set<T>): void {
+  for (const value of previous) if (!current.has(value)) target.add(value);
+  for (const value of current) if (!previous.has(value)) target.add(value);
+}
+
+function rebuildDrawnElementReferences(): void {
+  const staticLayer = svg.querySelector("." + STATIC_LAYER_CLASS);
+  if (!staticLayer) {
+    _drawnNodeElements = [];
+    _drawnNodeElementsByIdentifier = new Map();
+    _drawnEdgeElements = [];
+    _drawnEdgeIndexesByIdentifier = new Map();
+    _drawnSyntheticEdgeIndexesByIncidentNode = new Map();
+    _selectionStyleSnapshot = null;
+    return;
+  }
+
+  _drawnNodeElements = [];
+  _drawnNodeElementsByIdentifier = new Map();
+  for (const group of staticLayer.querySelectorAll(".node-group")) {
+    const identifier = group.getAttribute("data-node-id");
+    if (!identifier) continue;
+    const elements = {
+      identifier,
+      group,
+      rectangle: group.querySelector(".node-rect"),
+      stripe: group.querySelector(".node-stripe"),
+      label: group.querySelector(".node-label"),
+      value: group.querySelector(".node-value"),
+      delta: group.querySelector(".node-delta"),
+      held: group.querySelector(".node-held"),
+      secondaryChips: group.querySelector(".node-secondary-chips"),
+    };
+    _drawnNodeElements.push(elements);
+    _drawnNodeElementsByIdentifier.set(identifier, elements);
+  }
+
+  const paths = staticLayer.querySelectorAll(".edge-path");
+  const casings = staticLayer.querySelectorAll(".edge-casing");
+  _drawnEdgeElements = [];
+  _drawnEdgeIndexesByIdentifier = new Map();
+  _drawnSyntheticEdgeIndexesByIncidentNode = new Map();
+  if (paths.length === _drawnEdges.length && casings.length === _drawnEdges.length) {
+    for (let index = 0; index < _drawnEdges.length; index++) {
+      const renderedEdge = _drawnEdges[index];
+      _drawnEdgeElements.push({ renderedEdge, path: paths[index], casing: casings[index] });
+      if (renderedEdge.synthetic) {
+        for (const identifier of [renderedEdge.from, renderedEdge.to]) {
+          const indexes = _drawnSyntheticEdgeIndexesByIncidentNode.get(identifier) || [];
+          indexes.push(index);
+          _drawnSyntheticEdgeIndexesByIncidentNode.set(identifier, indexes);
+        }
+      } else if (renderedEdge.edge.id) {
+        const indexes = _drawnEdgeIndexesByIdentifier.get(renderedEdge.edge.id) || [];
+        indexes.push(index);
+        _drawnEdgeIndexesByIdentifier.set(renderedEdge.edge.id, indexes);
+      }
+    }
+  }
+  _selectionStyleSnapshot = selectionStyleSnapshot(styleContext());
+}
+
 export function refreshSelectionStyling(): boolean {
   if (!state.dataLoaded) return false;
   // A full render is already owed (something structural changed and deferred its
@@ -1616,49 +1884,96 @@ export function refreshSelectionStyling(): boolean {
   if (_drawnNodesLength !== NODES.length || _drawnEdgesLength !== EDGES.length) return false;
   if (_drawnGeometryRevision !== layoutGeometryRevision()) return false;
 
-  const casings = staticLayer.querySelectorAll(".edge-casing");
-  const paths   = staticLayer.querySelectorAll(".edge-path");
-  if (casings.length !== _drawnEdges.length || paths.length !== _drawnEdges.length) return false;
-
   const ctx = styleContext();
+  if (_drawnEdgeElements.length !== _drawnEdges.length ||
+      _drawnNodeElements.length === 0 && _drawnNodesLength > 0) return false;
 
-  for (let i = 0; i < _drawnEdges.length; i++) {
-    const style = edgeStyleFor(_drawnEdges[i], ctx);
-    const path = paths[i];
+  const nextSnapshot = selectionStyleSnapshot(ctx);
+  const previousSnapshot = _selectionStyleSnapshot;
+  const repaintEveryElement = !previousSnapshot ||
+    previousSnapshot.singleSelection !== nextSnapshot.singleSelection ||
+    previousSnapshot.simulationMode !== nextSnapshot.simulationMode ||
+    previousSnapshot.reviewPassActive !== nextSnapshot.reviewPassActive;
+
+  const edgeIndexesToRepaint = new Set<number>();
+  const nodeIdentifiersToRepaint = new Set<string>();
+  if (repaintEveryElement) {
+    for (let index = 0; index < _drawnEdgeElements.length; index++) edgeIndexesToRepaint.add(index);
+    for (const nodeElements of _drawnNodeElements) nodeIdentifiersToRepaint.add(nodeElements.identifier);
+  } else if (previousSnapshot) {
+    const changedEdgeIdentifiers = new Set<string>();
+    addSetDifference(changedEdgeIdentifiers, previousSnapshot.highlightedEdgeIdentifiers, nextSnapshot.highlightedEdgeIdentifiers);
+    addSetDifference(changedEdgeIdentifiers, previousSnapshot.undoFlashEdgeIdentifiers, nextSnapshot.undoFlashEdgeIdentifiers);
+    for (const identifier of [
+      previousSnapshot.selectedEdgeIdentifier,
+      nextSnapshot.selectedEdgeIdentifier,
+      previousSnapshot.flashedEdgeIdentifier,
+      nextSnapshot.flashedEdgeIdentifier,
+    ]) if (identifier) changedEdgeIdentifiers.add(identifier);
+    for (const identifier of changedEdgeIdentifiers) {
+      for (const index of _drawnEdgeIndexesByIdentifier.get(identifier) || []) edgeIndexesToRepaint.add(index);
+    }
+    for (const identifier of [previousSnapshot.selectedNodeIdentifier, nextSnapshot.selectedNodeIdentifier]) {
+      if (!identifier) continue;
+      for (const index of _drawnSyntheticEdgeIndexesByIncidentNode.get(identifier) || []) edgeIndexesToRepaint.add(index);
+    }
+
+    addSetDifference(nodeIdentifiersToRepaint, previousSnapshot.selectedNodeIdentifiers, nextSnapshot.selectedNodeIdentifiers);
+    addSetDifference(nodeIdentifiersToRepaint, previousSnapshot.ancestorIdentifiers, nextSnapshot.ancestorIdentifiers);
+    addSetDifference(nodeIdentifiersToRepaint, previousSnapshot.descendantIdentifiers, nextSnapshot.descendantIdentifiers);
+    addSetDifference(nodeIdentifiersToRepaint, previousSnapshot.searchMatchIdentifiers, nextSnapshot.searchMatchIdentifiers);
+    addSetDifference(nodeIdentifiersToRepaint, previousSnapshot.undoFlashNodeIdentifiers, nextSnapshot.undoFlashNodeIdentifiers);
+    for (const identifier of [
+      previousSnapshot.selectedNodeIdentifier,
+      nextSnapshot.selectedNodeIdentifier,
+      previousSnapshot.hoveredNodeIdentifier,
+      nextSnapshot.hoveredNodeIdentifier,
+      previousSnapshot.draggedNodeIdentifier,
+      nextSnapshot.draggedNodeIdentifier,
+    ]) if (identifier) nodeIdentifiersToRepaint.add(identifier);
+  }
+
+  for (const index of edgeIndexesToRepaint) {
+    const edgeElements = _drawnEdgeElements[index];
+    if (!edgeElements) return false;
+    const style = edgeStyleFor(edgeElements.renderedEdge, ctx);
+    const path = edgeElements.path;
     setIfChanged(path, "class", style.classes);
     setIfChanged(path, "stroke", style.stroke);
     setIfChanged(path, "stroke-width", String(style.strokeWidth));
     setIfChanged(path, "stroke-opacity", String(style.strokeOpacity));
     if (style.marker) setIfChanged(path, "marker-end", "url(#arrow_" + style.marker + ")");
     else if (path.hasAttribute("marker-end")) path.removeAttribute("marker-end");
-    const casing = casings[i];
+    const casing = edgeElements.casing;
     setIfChanged(casing, "class", style.casingClasses);
     setIfChanged(casing, "stroke-width", String(style.strokeWidth + 2));
   }
 
-  const groups = staticLayer.querySelectorAll(".node-group");
-  for (let i = 0; i < groups.length; i++) {
-    const group = groups[i];
-    const id = group.getAttribute("data-node-id");
-    if (!id) continue;
+  for (const id of nodeIdentifiersToRepaint) {
+    const nodeElements = _drawnNodeElementsByIdentifier.get(id);
+    if (!nodeElements) continue;
+    const { group, rectangle: rect, stripe, label } = nodeElements;
     const node = nodeById[id];
     if (!node) return false;                 // slice describes nodes we no longer have
     let classes = nodeGroupClasses(id, ctx);
     // A box that gains a selection / trace / halo state needs its literal
     // colours back (its CSS filter is no longer the resting saturate()), and one
     // that loses them goes back to the baked-in desaturated pair.
-    const rect = group.querySelector(".node-rect");
-    const stripe = group.querySelector(".node-stripe");
     // A gradient (multi-primary) box paints through a per-render <defs> id and
     // is never pre-desaturated, so its fills are left exactly as rendered.
-    const gradientFilled = !!rect && (rect.getAttribute("fill") || "").startsWith("url(");
-    if (rect && !gradientFilled) {
+    const gradientFilled = !!rect && (rect.getAttribute("data-resting-fill") || rect.getAttribute("fill") || "").startsWith("url(");
+    const stream = streamById[node.stream];
+    if (rect && gradientFilled && state.simulationMode) {
+      const effect = nodeEffect(id);
+      classes += " sim-fill" + (effect.moved ? "" : " sim-flat");
+      setIfChanged(rect, "fill", effect.moved ? simEffectFill(effect.merit, effect.strength) : SIM_FLAT_FILL);
+      if (stripe && stream) setIfChanged(stripe, "fill", desaturateColor(stream.color));
+    } else if (rect && !gradientFilled) {
       // Same three-way decision the full render makes (see the node loop): an
       // effect fill while simulating, otherwise the baked resting pair or the
       // literal colours. This has to agree with render() exactly — a selection
       // patch that fell back to the category fill repainted the whole map in
       // its resting colours the first time anything was clicked mid-simulation.
-      const stream = streamById[node.stream];
       const effect = state.simulationMode ? nodeEffect(id) : null;
       if (effect) {
         classes += " sim-fill" + (effect.moved ? "" : " sim-flat");
@@ -1669,12 +1984,20 @@ export function refreshSelectionStyling(): boolean {
         const preDesat = !hasNonRestingFilter(id, ctx);
         if (preDesat) classes += " pre-desat";
         const solidFill = nodePrimaryFill(node, "").fill;
-        setIfChanged(rect, "fill", preDesat ? desaturateColor(solidFill) : solidFill);
+        const restingFill = preDesat ? desaturateColor(solidFill) : solidFill;
+        setIfChanged(rect, "data-resting-fill", restingFill);
+        setIfChanged(rect, "fill", restingFill);
         if (stripe && stream) {
-          setIfChanged(stripe, "fill", preDesat ? desaturateColor(stream.color) : stream.color);
+          const restingStripeFill = preDesat ? desaturateColor(stream.color) : stream.color;
+          setIfChanged(stripe, "data-resting-fill", restingStripeFill);
+          setIfChanged(stripe, "fill", restingStripeFill);
         }
       }
+    } else if (rect && !state.simulationMode) {
+      setIfChanged(rect, "fill", rect.getAttribute("data-resting-fill") || rect.getAttribute("fill") || "");
+      if (stripe) setIfChanged(stripe, "fill", stripe.getAttribute("data-resting-fill") || stripe.getAttribute("fill") || "");
     }
+    if (label) setIfChanged(label, "fill", state.simulationMode ? SIM_INK : label.getAttribute("data-resting-fill") || SIM_INK);
     setIfChanged(group, "class", classes);
     setIfChanged(group, "aria-pressed", String(state.selectedNodeIds.has(id)));
     if (rect) {
@@ -1683,11 +2006,16 @@ export function refreshSelectionStyling(): boolean {
       setIfChanged(rect, "stroke-width", border.width);
     }
   }
+  _selectionStyleSnapshot = nextSnapshot;
   return true;
 }
 
 function setIfChanged(el: Element, name: string, value: string): void {
   if (el.getAttribute(name) !== value) el.setAttribute(name, value);
+}
+
+function setTextIfChanged(element: Element, value: string): void {
+  if (element.textContent !== value) element.textContent = value;
 }
 
 // rAF-coalesced form, for callers that fire faster than the screen refreshes
@@ -1767,8 +2095,9 @@ function nodeOrderIndex(): Map<string, number> {
 // mostly wasted work.
 //
 // Returns true if it fully handled the update; false (→ caller falls back to a
-// full render) when a delta label needs to appear or disappear, because that is
-// a markup change and the structure has to be rebuilt.
+// full render) when the cached element references no longer describe the drawn
+// slice. Value, delta and held-state elements are always present for quantified
+// nodes, so crossing the effect threshold never changes the SVG structure.
 //
 // A SELECTION no longer forces the fallback. The selected / ancestor / descendant
 // borders take precedence over the outcome colour, but those three sets don't
@@ -1778,59 +2107,61 @@ export function updateSimulationValuesInPlace(): boolean {
   if (!state.dataLoaded) return false;
   const staticLayer = svg.querySelector("." + STATIC_LAYER_CLASS);
   if (!staticLayer) return false;
+  if (_renderQueued || _layoutDirty) return false;
+  if (_drawnNodesIdentity !== NODES || _drawnEdgesIdentity !== EDGES) return false;
+  if (_drawnNodesLength !== NODES.length || _drawnEdgesLength !== EDGES.length) return false;
+  if (_drawnGeometryRevision !== layoutGeometryRevision()) return false;
+  if (_drawnNodeElements.length === 0 && _drawnNodesLength > 0) return false;
 
-  // One DOM sweep → id-keyed map (only visible nodes have a group element), and
-  // one cached lookup of each group's three patchable children. The WeakMap is
-  // keyed by the group element, so a later full render (which replaces every
-  // group) drops the stale entries by itself.
-  const groups = staticLayer.querySelectorAll(".node-group");
   const patches: NodePatch[] = [];
 
-  // Pass 1: gather each node's freshly-formatted delta ONCE, and bail to a full
-  // render if any delta label must appear or disappear.
-  for (let i = 0; i < groups.length; i++) {
-    const group = groups[i];
-    const id = group.getAttribute("data-node-id");
-    if (!id) continue;
-    const node = nodeById[id];
+  // Pass 1: gather each visible node's freshly-formatted state once. The element
+  // references were captured after the structural render, so slider frames do
+  // not query every node group again.
+  for (const nodeElements of _drawnNodeElements) {
+    const node = nodeById[nodeElements.identifier];
     if (!node || node.baseline === undefined || node.baseline === null) continue;
-
-    const refs = nodePatchRefs(group);
-    const delta = formatNodeDelta(id);
-    const needsDelta = !!(delta.text && delta.text !== "—");
-    if (needsDelta !== !!refs.delta) return false;
-    // A box can be freed or caught by any drag — the gate is only as fixed as
-    // the value of whatever is gating it. Its mark is markup, not an attribute,
-    // so a change there is handed to the full render exactly as a delta
-    // appearing or disappearing is.
-    const held = !!(state.simulationMode && !nodeEffect(id, delta).moved && gatedBy(id));
-    if (held !== group.classList.contains("sim-held")) return false;
-    patches.push({ node: node, group: group, refs: refs, delta: delta });
+    if (state.simulationMode &&
+        (!nodeElements.value || !nodeElements.delta || !nodeElements.held)) {
+      if (!addSimulationValueElements(nodeElements, node)) return false;
+    }
+    if (!nodeElements.rectangle || !nodeElements.value || !nodeElements.delta || !nodeElements.held) {
+      return false;
+    }
+    const delta = formatNodeDelta(node.id);
+    const held = Boolean(state.simulationMode && !nodeEffect(node.id, delta).moved && gatedBy(node.id));
+    patches.push({ node, nodeElements, delta, held });
   }
 
-  // Pass 2: patch value text, delta text + colour, and the border.
+  // Pass 2: patch value text, status text, effect fill and border. Attribute and
+  // text writes are guarded because repeated slider input often rounds to the
+  // same displayed value even though the simulation still recomputes.
   const showOutcomeBorders = !state.selectedNodeId && !state.selectedNodeIds.size;
-  for (let i = 0; i < patches.length; i++) {
-    const { node, group, refs, delta } = patches[i];
+  for (const patch of patches) {
+    const { node, nodeElements, delta, held } = patch;
+    const { group, rectangle, value, delta: deltaElement, held: heldElement } = nodeElements;
 
-    if (refs.value) refs.value.textContent = formatNodeValue(node.id);
+    setTextIfChanged(value!, formatNodeValue(node.id));
+    setTextIfChanged(heldElement!, held ? "held" : "");
+    group.classList.toggle("sim-held", held);
 
     // The effect fill has to be repainted every frame, not just when this box
     // moved: the ramp is measured against the biggest mover on the map, so one
     // box running away restates the colour of every other one.
-    if (state.simulationMode && refs.rect) {
+    if (state.simulationMode && rectangle) {
       const effect = nodeEffect(node.id, delta);
-      refs.rect.setAttribute("fill",
+      setIfChanged(rectangle, "fill",
         effect.moved ? simEffectFill(effect.merit, effect.strength) : SIM_FLAT_FILL);
       group.classList.toggle("sim-flat", !effect.moved);
     }
 
-    if (refs.delta && delta.text && delta.text !== "—") {
-      refs.delta.textContent = delta.text;
-      refs.delta.setAttribute("fill", deltaColorFor(node, delta));
+    const deltaText = delta.text && delta.text !== "—" ? delta.text : "";
+    setTextIfChanged(deltaElement!, deltaText);
+    if (deltaText) {
+      setIfChanged(deltaElement!, "fill", deltaColorFor(node, delta));
     }
 
-    if (!refs.rect) continue;
+    if (!rectangle) continue;
     // Same precedence as the full render: the selection glow wins, then the
     // ancestor / descendant trace, then the good/bad outcome colour (which only
     // shows when nothing at all is selected), then the plain border.
@@ -1854,41 +2185,56 @@ export function updateSimulationValuesInPlace(): boolean {
         strokeWidth = "2";
       }
     }
-    refs.rect.setAttribute("stroke", strokeColor);
-    refs.rect.setAttribute("stroke-width", strokeWidth);
+    setIfChanged(rectangle, "stroke", strokeColor);
+    setIfChanged(rectangle, "stroke-width", strokeWidth);
   }
   return true;
 }
 
-// The three elements a value patch writes to, resolved once per group element
-// instead of on every frame. (querySelector is the expensive part of the patch:
-// four of them per node per frame was the bulk of a scrub's DOM cost.)
-interface NodePatchRefs {
-  value: Element | null;
-  delta: Element | null;
-  rect: Element | null;
-}
-
 interface NodePatch {
   node: GraphNode;
-  /** The <g> wrapper — the effect-fill patch toggles `.sim-flat` on it. */
-  group: Element;
-  refs: NodePatchRefs;
+  nodeElements: DrawnNodeElements;
   delta: { text: string; pct: number };
+  held: boolean;
 }
 
-const nodePatchRefsByGroup = new WeakMap<Element, NodePatchRefs>();
-
-function nodePatchRefs(group: Element): NodePatchRefs {
-  const cached = nodePatchRefsByGroup.get(group);
-  if (cached) return cached;
-  const refs: NodePatchRefs = {
-    value: group.querySelector(".node-value"),
-    delta: group.querySelector(".node-delta"),
-    rect: group.querySelector(".node-rect"),
+function addSimulationValueElements(nodeElements: DrawnNodeElements, node: GraphNode): boolean {
+  const position = layout.positions[node.id];
+  if (!position) return false;
+  const valueY = position.y + position.height - 12;
+  const statusX = position.x + position.width - LABEL_INSET;
+  const svgNamespace = "http://www.w3.org/2000/svg";
+  const createTextElement = (className: string): SVGTextElement => {
+    const element = document.createElementNS(svgNamespace, "text");
+    element.setAttribute("class", className + " node-simulation-value");
+    element.setAttribute("y", String(valueY));
+    element.setAttribute("dominant-baseline", "middle");
+    return element;
   };
-  nodePatchRefsByGroup.set(group, refs);
-  return refs;
+
+  const value = createTextElement("node-value");
+  value.setAttribute("x", String(position.x + LABEL_INSET));
+  value.setAttribute("fill", SIM_INK);
+  value.setAttribute("opacity", "0.75");
+
+  const held = createTextElement("node-held");
+  held.setAttribute("x", String(statusX));
+  held.setAttribute("text-anchor", "end");
+
+  const delta = createTextElement("node-delta");
+  delta.setAttribute("x", String(statusX));
+  delta.setAttribute("fill", "var(--text-secondary)");
+  delta.setAttribute("text-anchor", "end");
+  delta.setAttribute("font-weight", "600");
+
+  const insertionPoint = nodeElements.secondaryChips;
+  nodeElements.group.insertBefore(value, insertionPoint);
+  nodeElements.group.insertBefore(held, insertionPoint);
+  nodeElements.group.insertBefore(delta, insertionPoint);
+  nodeElements.value = value;
+  nodeElements.held = held;
+  nodeElements.delta = delta;
+  return true;
 }
 
 // Ensure the delegated event listeners are wired. All node / row-label /

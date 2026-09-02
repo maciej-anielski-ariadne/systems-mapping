@@ -8,6 +8,7 @@ import {
   CULL_MARGIN,
   RERENDER_BUFFER,
   computeCullRect,
+  _edgeCandidateCountForCull,
 } from "../assets/js/11-rendering";
 import { EDGES, NODES, layout } from "../assets/js/03-state";
 
@@ -282,6 +283,10 @@ describe("viewport virtualization", () => {
     // hairball it keeps most of the map; the curve test has to do meaningfully
     // better than that, and better than half the map in absolute terms.
     const cull = computeCullRect()!;
+    // The geometry-revision index must narrow the expensive curve tests before
+    // the exact cull below; otherwise DOM virtualization still scans every link.
+    const indexedCandidates = _edgeCandidateCountForCull(cull);
+    expect(indexedCandidates).toBeLessThan(EDGES.length * 0.5);
     let endpointBoxSurvivors = 0;
     for (const e of EDGES) {
       const a = layout.positions[e.from], b = layout.positions[e.to];

@@ -585,6 +585,23 @@ body.focus-wide .node-group.dimmed .node-stripe {
   opacity: 0.18;
 }
 
+/* Simulation-specific node labels are inserted into existing node groups on the
+ * first mode entry, then stay in the SVG so later transitions only change paint.
+ * The map's node and link elements are never replaced. */
+.node-simulation-value {
+  display: none;
+}
+body.sim-mode .node-simulation-value {
+  display: inline;
+}
+body.sim-mode .node-secondary-chips {
+  display: none;
+}
+.node-group:not(.sim-held) .node-held,
+.node-group.sim-held .node-delta {
+  display: none;
+}
+
 /* === Selection / trace state glows ===
  * Flat look → node rectangles never show an outline; selection and causal-trace
  * states read as stacked drop-shadow halos instead. Each stacks a tight inner

@@ -30,7 +30,7 @@
    Pick the one that names what you want to change.
 ================================================================================
 -->
-<html lang="en">
+<html lang="en" class="app-booting">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -87,7 +87,7 @@
   <link rel="stylesheet" href="assets/css/17-review.css">
   <link rel="stylesheet" href="assets/css/18-tutorial.css">
 </head>
-<body>
+<body class="reading">
 
 <!-- ============================================================================
      APP SHELL
@@ -169,7 +169,32 @@
   <!-- Hidden file picker. Clicking any .import-data-trigger button triggers it. -->
   <input type="file" id="hidden-file-input" accept=".csv,text/csv" style="display: none;">
   <!-- Toast container — JS fills it via showLoadFeedback() -->
-  <div id="load-feedback" class="load-feedback" style="display: none;"></div>
+  <div id="load-feedback" class="load-feedback" role="status" aria-live="polite"
+       aria-atomic="true" style="display: none;"></div>
+
+  <!-- CSV work happens off the main thread. This dialog is revealed only when
+       the work takes long enough to notice, or when an unusually large valid
+       map needs an explicit confirmation before replacing the current one. -->
+  <div id="csv-import-layer" class="csv-import-layer" data-state="progress" hidden>
+    <section class="csv-import-dialog" role="dialog" aria-modal="true"
+             aria-labelledby="csv-import-title" aria-describedby="csv-import-status csv-import-advice">
+      <p class="csv-import-eyebrow">Spreadsheet import</p>
+      <h2 id="csv-import-title">Preparing your map</h2>
+      <p id="csv-import-status" class="csv-import-status" role="status" aria-live="polite" aria-atomic="true">
+        Reading the spreadsheet…
+      </p>
+      <progress id="csv-import-progress" class="csv-import-progress" max="100"></progress>
+      <p id="csv-import-advice" class="csv-import-advice">
+        Your current map stays open until the new map is ready.
+      </p>
+      <div class="csv-import-actions">
+        <button type="button" class="csv-import-button csv-import-button--secondary"
+                data-csv-import-cancel>Cancel</button>
+        <button type="button" class="csv-import-button csv-import-button--primary"
+                data-csv-import-open hidden>Open map</button>
+      </div>
+    </section>
+  </div>
 
   <!-- ============== LEFT SIDEBAR ============== -->
   <aside class="sidebar" id="sidebar">

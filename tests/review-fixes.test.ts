@@ -99,6 +99,39 @@ describe("detached proposal evaluation", () => {
         !String(operation.value).includes("/ " + unusedSourceIdentifier)),
     )).toBe(true);
   });
+
+  it("validates a large link-heavy snapshot without scanning every link for every box", () => {
+    const nodeCount = 16_000;
+    const edgeCount = 40_000;
+    const snapshot = {
+      nodes: Array.from({ length: nodeCount }, (_, nodeIndex) => ({
+        id: "review_scale_" + nodeIndex,
+        label: "Review scale " + nodeIndex,
+        description: "",
+        stream: "main",
+        stage: "one",
+        category: "kind",
+        categoryIds: ["kind"],
+        primaryCategories: ["kind"],
+        secondaryCategories: [],
+      })),
+      edges: Array.from({ length: edgeCount }, (_, edgeIndex) => ({
+        id: "review_scale_edge_" + edgeIndex,
+        from: "review_scale_" + (edgeIndex % nodeCount),
+        to: "review_scale_" + ((edgeIndex * 17 + 1) % nodeCount),
+        effect: "increases" as const,
+        description: "",
+      })),
+      params: [],
+      defaultElasticities: { enables: 0.3, increases: 0.25, decreases: -0.25 },
+    };
+
+    const startedAt = performance.now();
+    expect(validateReviewSnapshot(snapshot)).toEqual([]);
+    const elapsedMilliseconds = performance.now() - startedAt;
+
+    expect(elapsedMilliseconds).toBeLessThan(1_000);
+  });
 });
 
 describe("confirmed Review fixes", () => {

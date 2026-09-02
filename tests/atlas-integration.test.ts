@@ -7,7 +7,7 @@
 // the right-hand panel becomes its inspector rather than a second one, and that
 // it never outlives the map it is a picture of.
 // =============================================================================
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
@@ -20,10 +20,16 @@ import { setUiMode } from "../assets/js/17-events";
 import {
   atlasIsOpen,
   atlasStartCandidates,
+  captureAtlasSessionState,
   closeAtlas,
   cutAtlasLinksAfterBlockedElements,
   initAtlasStage,
+  openFirstFeedbackTangle,
   openAtlas,
+  refreshAtlasValues,
+  renderAtlas,
+  restoreAtlasSessionState,
+  setAtlasRenderFrameSchedulerForTests,
 } from "../assets/js/21-atlas-view";
 
 describe("blocked-link propagation", () => {
@@ -38,6 +44,271 @@ describe("blocked-link propagation", () => {
 
     expect(result.links).toEqual(new Set());
     expect(result.scannedLinkCount).toBeLessThanOrEqual(links.size);
+  });
+});
+
+interface ControlledAtlasFrameScheduler {
+  scheduler: {
+    requestFrame: (callback: FrameRequestCallback) => number;
+    cancelFrame: (requestIdentifier: number) => void;
+  };
+  pendingFrameCount: () => number;
+  runNextFrame: () => void;
+}
+
+function controlledAtlasFrameScheduler(): ControlledAtlasFrameScheduler {
+  let nextRequestIdentifier = 1;
+  const callbacks = new Map<number, FrameRequestCallback>();
+  return {
+    scheduler: {
+      requestFrame(callback) {
+        const requestIdentifier = nextRequestIdentifier++;
+        callbacks.set(requestIdentifier, callback);
+        return requestIdentifier;
+      },
+      cancelFrame(requestIdentifier) {
+        callbacks.delete(requestIdentifier);
+      },
+    },
+    pendingFrameCount: () => callbacks.size,
+    runNextFrame() {
+      const entry = callbacks.entries().next().value as [number, FrameRequestCallback] | undefined;
+      if (!entry) throw new Error("No Atlas frame is pending");
+      callbacks.delete(entry[0]);
+      entry[1](performance.now());
+    },
+  };
+}
+
+describe("progressive first Atlas rendering", () => {
+  let frameScheduler: ControlledAtlasFrameScheduler;
+
+  beforeEach(() => {
+    frameScheduler = controlledAtlasFrameScheduler();
+    setAtlasRenderFrameSchedulerForTests(frameScheduler.scheduler);
+    const stage = document.getElementById("atlas-stage")!;
+    stage.innerHTML = "";
+    delete stage.dataset.renderPhase;
+    stage.removeAttribute("aria-busy");
+    stage.inert = false;
+  });
+
+  afterEach(() => {
+    closeAtlas();
+    setAtlasRenderFrameSchedulerForTests(null);
+  });
+
+  it("commits meaningful structure before generating labels and wheel details", () => {
+    loadDataFromCsv(advancedCsv);
+    openAtlas(firstInput());
+
+    const stage = document.getElementById("atlas-stage")!;
+    const structuralSvg = stage.querySelector<SVGSVGElement>("svg.atlas")!;
+    expect(stage.dataset.renderPhase).toBe("structure");
+    expect(stage.getAttribute("aria-busy")).toBe("true");
+    expect(stage.inert).toBe(true);
+    expect(structuralSvg.querySelectorAll(".fl").length).toBeGreaterThan(0);
+    expect(structuralSvg.querySelectorAll(".bub").length).toBeGreaterThan(1);
+    expect(structuralSvg.querySelectorAll("text, .ch, .nd")).toHaveLength(0);
+
+    frameScheduler.runNextFrame();
+    expect(stage.dataset.renderPhase).toBe("structure");
+    expect(structuralSvg.querySelectorAll("text")).toHaveLength(0);
+
+    frameScheduler.runNextFrame();
+    expect(stage.querySelector("svg.atlas")).toBe(structuralSvg);
+    expect(stage.dataset.renderPhase).toBe("complete");
+    expect(stage.hasAttribute("aria-busy")).toBe(false);
+    expect(stage.inert).toBe(false);
+    expect(structuralSvg.querySelectorAll("g.n > text").length).toBeGreaterThan(1);
+    expect(panel().querySelector(".ins")).not.toBeNull();
+  });
+
+  it("cancels incomplete work and never caches a partial structure", () => {
+    loadDataFromCsv(advancedCsv);
+    openAtlas(firstInput());
+    const partialSvg = document.querySelector("#atlas-stage svg.atlas");
+    expect(frameScheduler.pendingFrameCount()).toBe(1);
+
+    closeAtlas();
+    const stage = document.getElementById("atlas-stage")!;
+    expect(frameScheduler.pendingFrameCount()).toBe(0);
+    expect(stage.hidden).toBe(true);
+    expect(stage.hasAttribute("aria-busy")).toBe(false);
+    expect(stage.dataset.renderPhase).toBeUndefined();
+    expect(stage.querySelector("svg.atlas")).toBeNull();
+
+    openAtlas(firstInput());
+    expect(stage.querySelector("svg.atlas")).not.toBe(partialSvg);
+    expect(stage.dataset.renderPhase).toBe("structure");
+  });
+
+  it("removes the phase contract and keeps controls guarded if enrichment fails", () => {
+    const originalInsertAdjacentMarkup = Element.prototype.insertAdjacentHTML;
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    let injectedFailureIsPending = true;
+    Element.prototype.insertAdjacentHTML = function(position, text) {
+      if (injectedFailureIsPending && this.matches("g.n")) {
+        injectedFailureIsPending = false;
+        throw new Error("injected Atlas enrichment failure");
+      }
+      return originalInsertAdjacentMarkup.call(this, position, text);
+    };
+    try {
+      loadDataFromCsv(advancedCsv);
+      openAtlas(firstInput());
+      frameScheduler.runNextFrame();
+      frameScheduler.runNextFrame();
+
+      const stage = document.getElementById("atlas-stage")!;
+      expect(stage.dataset.renderPhase).toBeUndefined();
+      expect(stage.hasAttribute("aria-busy")).toBe(false);
+      expect(stage.querySelector("[role=alert]")?.textContent).toContain("could not finish");
+      expect(stage.querySelector("svg.atlas")).toBeNull();
+    } finally {
+      Element.prototype.insertAdjacentHTML = originalInsertAdjacentMarkup;
+      consoleError.mockRestore();
+    }
+  });
+
+  it("repaints a completed cached Atlas before revealing it synchronously", () => {
+    loadDataFromCsv(advancedCsv);
+    openAtlas(firstInput());
+    frameScheduler.runNextFrame();
+    frameScheduler.runNextFrame();
+    const stage = document.getElementById("atlas-stage")!;
+    const completedSvg = stage.querySelector<SVGSVGElement>("svg.atlas")!;
+    const firstGroup = completedSvg.querySelector<SVGGElement>("g.n")!;
+    firstGroup.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(completedSvg.querySelectorAll("g.n.on").length).toBeGreaterThan(0);
+
+    closeAtlas();
+    openAtlas(firstInput());
+
+    expect(stage.querySelector("svg.atlas")).toBe(completedSvg);
+    expect(stage.dataset.renderPhase).toBe("complete");
+    expect(stage.hasAttribute("aria-busy")).toBe(false);
+    expect(stage.inert).toBe(false);
+    expect(completedSvg.classList.contains("reveal")).toBe(false);
+    expect(completedSvg.querySelectorAll("g.n.on")).toHaveLength(0);
+    expect(frameScheduler.pendingFrameCount()).toBe(0);
+  });
+
+  it("defers stale inspector and keyboard controls until the current structure is complete", () => {
+    loadDataFromCsv(advancedCsv);
+    openAtlas(firstInput());
+    const stage = document.getElementById("atlas-stage")!;
+    const firstGroup = stage.querySelector<SVGGElement>("g.n")!;
+    firstGroup.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    panel().querySelector<HTMLButtonElement>("button")?.click();
+    expect(stage.querySelectorAll("g.n.on")).toHaveLength(0);
+
+    frameScheduler.runNextFrame();
+    frameScheduler.runNextFrame();
+    firstGroup.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    expect(stage.querySelectorAll("g.n.on").length).toBeGreaterThan(0);
+  });
+
+  it("preserves a saved view box across deferred restoration", () => {
+    loadDataFromCsv(sampleCsv);
+    // Build a complete source session synchronously, then force a changed
+    // structure so restoration has to take the progressive first-open path.
+    setAtlasRenderFrameSchedulerForTests(null);
+    openAtlas(firstInput());
+    const snapshot = captureAtlasSessionState()!;
+    snapshot.viewBox = { x: 11, y: 22, w: 333, h: 444 };
+    closeAtlas();
+
+    setAtlasRenderFrameSchedulerForTests(frameScheduler.scheduler);
+    loadDataFromCsv(sampleCsv.replace(
+      "team_size,Team size,",
+      "team_size,Team size updated,",
+    ));
+    restoreAtlasSessionState(snapshot);
+    expect(document.getElementById("atlas-stage")!.dataset.renderPhase).toBe("structure");
+    frameScheduler.runNextFrame();
+    frameScheduler.runNextFrame();
+
+    expect(document.querySelector("#atlas-stage svg.atlas")?.getAttribute("viewBox"))
+      .toBe("11.0 22.0 333.0 444.0");
+  });
+
+  it("invalidates an older completion frame when the starting box changes", () => {
+    loadDataFromCsv(advancedCsv);
+    const firstStart = firstInput();
+    const secondStart = NODES.find(node =>
+      node.id !== firstStart && EDGES.some(edge => edge.from === node.id))!.id;
+    openAtlas(firstStart);
+    const firstSvg = document.querySelector("#atlas-stage svg.atlas");
+    frameScheduler.runNextFrame();
+    expect(frameScheduler.pendingFrameCount()).toBe(1);
+
+    openAtlas(secondStart);
+    const stage = document.getElementById("atlas-stage")!;
+    expect(frameScheduler.pendingFrameCount()).toBe(1);
+    expect(stage.querySelector("svg.atlas")).not.toBe(firstSvg);
+    expect(state.atlas?.startId).toBe(secondStart);
+    frameScheduler.runNextFrame();
+    frameScheduler.runNextFrame();
+
+    expect(stage.dataset.renderPhase).toBe("complete");
+    expect(stage.querySelector("svg.atlas")?.getAttribute("aria-label"))
+      .toContain(nodeById[secondStart].label);
+    expect(firstSvg?.isConnected).toBe(false);
+  });
+
+  it("applies the latest Simulation state when deferred paint completes", () => {
+    loadDataFromCsv(advancedCsv);
+    openAtlas(firstInput());
+    const svg = document.querySelector<SVGSVGElement>("#atlas-stage svg.atlas")!;
+    expect(svg.classList.contains("simulating")).toBe(false);
+
+    toggleSimulationMode();
+    expect(state.simulationMode).toBe(true);
+    expect(svg.classList.contains("simulating")).toBe(false);
+    frameScheduler.runNextFrame();
+    frameScheduler.runNextFrame();
+
+    expect(svg.classList.contains("simulating")).toBe(true);
+    expect(svg.querySelectorAll("tspan.mag").length).toBeGreaterThan(0);
+  });
+
+  it("finishes a feedback view requested before wheel markup exists", () => {
+    loadDataFromCsv(borderForceCsv);
+    const start = NODES.find(node => node.label === "Analyst capacity")!;
+    openAtlas(start.id);
+    expect(openFirstFeedbackTangle()).toBe(true);
+    expect(document.querySelectorAll("#atlas-stage .ch")).toHaveLength(0);
+
+    frameScheduler.runNextFrame();
+    frameScheduler.runNextFrame();
+
+    expect(document.querySelector("#atlas-stage g.n.focus")).not.toBeNull();
+    expect(document.querySelectorAll("#atlas-stage g.n.focus .ch").length).toBeGreaterThan(0);
+    expect(document.querySelector("#atlas-loopctl")?.hasAttribute("hidden")).toBe(false);
+  });
+
+  it("keeps reduced-motion rendering progressive without adding reveal animation", () => {
+    const originalMatchMedia = globalThis.matchMedia;
+    Object.defineProperty(globalThis, "matchMedia", {
+      configurable: true,
+      value: (() => ({ matches: true })) as unknown as typeof globalThis.matchMedia,
+    });
+    try {
+      loadDataFromCsv(advancedCsv);
+      openAtlas(firstInput());
+      expect(document.getElementById("atlas-stage")!.dataset.renderPhase).toBe("structure");
+      frameScheduler.runNextFrame();
+      frameScheduler.runNextFrame();
+      const svg = document.querySelector("#atlas-stage svg.atlas")!;
+      expect(document.getElementById("atlas-stage")!.dataset.renderPhase).toBe("complete");
+      expect(svg.classList.contains("reveal")).toBe(false);
+    } finally {
+      Object.defineProperty(globalThis, "matchMedia", {
+        configurable: true,
+        value: originalMatchMedia,
+      });
+    }
   });
 });
 
@@ -217,6 +488,57 @@ describe("opening it", () => {
     expect(stage.querySelectorAll("svg.atlas .bub").length).toBeGreaterThan(1);
     // The map is still there underneath — going back is not a reload.
     expect(document.querySelectorAll("#viz-svg .node-group").length).toBe(NODES.length);
+  });
+
+  it("keeps the structural drawing when the same atlas is rendered again", () => {
+    loadDataFromCsv(sampleCsv);
+    openAtlas(firstInput());
+    const atlasSvg = document.querySelector("#atlas-stage svg.atlas")!;
+    const firstCircle = atlasSvg.querySelector("g.n")!;
+
+    renderAtlas();
+
+    expect(document.querySelector("#atlas-stage svg.atlas")).toBe(atlasSvg);
+    expect(document.querySelector("#atlas-stage svg.atlas g.n")).toBe(firstCircle);
+  });
+
+  it("reuses the hidden drawing when the same start is reopened on an unchanged map", () => {
+    loadDataFromCsv(sampleCsv);
+    const start = firstInput();
+    openAtlas(start);
+    const atlasSvg = document.querySelector("#atlas-stage svg.atlas")!;
+
+    closeAtlas();
+    expect(document.getElementById("atlas-stage")!.hidden).toBe(true);
+    expect(document.querySelector("#atlas-stage svg.atlas")).toBe(atlasSvg);
+
+    openAtlas(start);
+    expect(document.querySelector("#atlas-stage svg.atlas")).toBe(atlasSvg);
+    expect(document.getElementById("atlas-stage")!.hidden).toBe(false);
+  });
+
+  it("invalidates the hidden drawing when the map changes", () => {
+    loadDataFromCsv(sampleCsv);
+    openAtlas(firstInput());
+    const previousAtlasSvg = document.querySelector("#atlas-stage svg.atlas")!;
+    closeAtlas();
+
+    loadDataFromCsv(advancedCsv);
+    openAtlas(firstInput());
+
+    expect(document.querySelector("#atlas-stage svg.atlas")).not.toBe(previousAtlasSvg);
+  });
+
+  it("uses cached element references for a repeated resting-state paint", () => {
+    loadDataFromCsv(sampleCsv);
+    openAtlas(firstInput());
+    const atlasSvg = document.querySelector("#atlas-stage svg.atlas") as SVGSVGElement;
+    const querySelectorAllSpy = vi.spyOn(atlasSvg, "querySelectorAll");
+
+    refreshAtlasValues();
+
+    expect(querySelectorAllSpy).not.toHaveBeenCalled();
+    querySelectorAllSpy.mockRestore();
   });
 
   it("reads the whole map, filters and all", () => {

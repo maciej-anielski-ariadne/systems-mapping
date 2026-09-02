@@ -441,6 +441,32 @@ describe("counting", () => {
     expect(atlas.pathways).toBeGreaterThan(100000n);
     expect(atlas.ms).toBeLessThan(2000);
   });
+
+  it("checks a large alternative family without comparing every sibling pair", () => {
+    const alternativeCount = 4_000;
+    const nodes = [N("root", "Root")].concat(Array.from(
+      { length: alternativeCount },
+      (_, alternativeIndex) => N(
+        "alternative_" + alternativeIndex,
+        "Role " + alternativeIndex + " Outcome",
+      ),
+    ));
+    const edges = Array.from(
+      { length: alternativeCount },
+      (_, alternativeIndex) => E("root", "alternative_" + alternativeIndex),
+    );
+
+    const startedAt = performance.now();
+    const atlas = engine.buildAtlas(
+      engine.buildGraph({ nodes, edges, name: "large alternatives" }),
+      "root",
+      { grouping: "loose", lanes: { minMembers: 3, minTokenFamilies: 2 } },
+    );
+    const elapsedMilliseconds = performance.now() - startedAt;
+
+    expect(atlas.scope.size).toBe(alternativeCount + 1);
+    expect(elapsedMilliseconds).toBeLessThan(500);
+  });
 });
 
 // A strand is one reading made concrete — start element to finish. The claim is

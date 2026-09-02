@@ -84,25 +84,50 @@ export function parseCsvLine(line: string, options?: CsvLineParseOptions): strin
   return preserveCellWhitespace ? cells : cells.map(cell => cell.trim());
 }
 
-// Split a complete CSV document into logical records. A quoted field may span
-// several physical lines, so splitting the source text on every newline would
-// turn one valid row into several malformed rows. Keep quote state across line
-// endings and preserve line endings that are part of a quoted field.
-function splitCsvRecords(csvText: string): string[] {
-  const records: string[] = [];
-  let currentRecord = "";
+// Visit the logical records in a complete CSV document one at a time. A quoted
+// field may span several physical lines, so splitting the source text on every
+// newline would turn one valid row into several malformed rows. Emitting each
+// completed record immediately also avoids retaining a second copy of the
+// entire document while its row objects are being built.
+export interface CsvDocumentParseProgress {
+  processedCharacters: number;
+  totalCharacters: number;
+}
+
+export interface CsvDocumentParseOptions {
+  onProgress?: (progress: CsvDocumentParseProgress) => void;
+  /** Tests may lower this; production defaults to one update per 128 KiB. */
+  progressCharacterInterval?: number;
+}
+
+export type ParsedCsvDocument = Record<string, Array<Record<string, string>>>;
+
+function forEachCsvRecord(
+  csvText: string,
+  visitRecord: (record: string) => void,
+  options?: CsvDocumentParseOptions,
+): void {
+  let recordStartIndex = 0;
   let insideQuotedField = false;
+  const progressCharacterInterval = Math.max(1, options?.progressCharacterInterval || 128 * 1024);
+  let nextProgressCharacterIndex = progressCharacterInterval;
+
+  options?.onProgress?.({ processedCharacters: 0, totalCharacters: csvText.length });
 
   for (let characterIndex = 0; characterIndex < csvText.length; characterIndex++) {
+    if (characterIndex >= nextProgressCharacterIndex) {
+      options?.onProgress?.({
+        processedCharacters: characterIndex,
+        totalCharacters: csvText.length,
+      });
+      nextProgressCharacterIndex = characterIndex + progressCharacterInterval;
+    }
     const character = csvText[characterIndex];
 
     if (character === '"') {
-      currentRecord += character;
-
       // A doubled quote inside a quoted field is an escaped literal quote, not
-      // the end of that field. Preserve both characters for parseCsvLine().
+      // the end of that field. Both remain in the source slice passed below.
       if (insideQuotedField && csvText[characterIndex + 1] === '"') {
-        currentRecord += '"';
         characterIndex++;
       } else {
         insideQuotedField = !insideQuotedField;
@@ -114,32 +139,37 @@ function splitCsvRecords(csvText: string): string[] {
       // Treat CRLF as one record boundary. Lone CR and LF line endings remain
       // supported, while CRLF inside a quoted field is preserved above.
       if (character === "\r" && csvText[characterIndex + 1] === "\n") {
+        visitRecord(csvText.slice(recordStartIndex, characterIndex));
         characterIndex++;
+      } else {
+        visitRecord(csvText.slice(recordStartIndex, characterIndex));
       }
-      records.push(currentRecord);
-      currentRecord = "";
+      recordStartIndex = characterIndex + 1;
       continue;
     }
-
-    currentRecord += character;
   }
 
   // Match String.split() behaviour closely enough for the document parser:
   // the final empty record is harmless because blank records are ignored.
-  records.push(currentRecord);
-  return records;
+  visitRecord(csvText.slice(recordStartIndex));
+  options?.onProgress?.({
+    processedCharacters: csvText.length,
+    totalCharacters: csvText.length,
+  });
 }
 
 // Parse the whole multi-section CSV. Returns an object keyed by section name,
 // where each value is an array of row objects ({ columnName: cellValue }).
-export function parseCsvDocument(csvText: string): Record<string, Array<Record<string, string>>> {
-  const records = splitCsvRecords(csvText);
-  const sections: Record<string, Array<Record<string, string>>> = {};
+export function parseCsvDocument(
+  csvText: string,
+  options?: CsvDocumentParseOptions,
+): ParsedCsvDocument {
+  const sections: ParsedCsvDocument = {};
   let currentSectionName: string | null = null;
   let currentHeader: string[] | null = null;
   let currentRows: Array<Record<string, string>> | null = null;
 
-  for (const rawRecord of records) {
+  forEachCsvRecord(csvText, rawRecord => {
     const trimmedRecord = rawRecord.trim();
 
     // Detect "# SECTION: foo" markers.
@@ -149,23 +179,23 @@ export function parseCsvDocument(csvText: string): Record<string, Array<Record<s
       currentHeader = null;
       currentRows = [];
       sections[currentSectionName] = currentRows;
-      continue;
+      return;
     }
 
-    if (!trimmedRecord) continue;                  // skip blank records
-    if (trimmedRecord.startsWith("#")) continue;   // skip comments
-    if (currentSectionName === null) continue;   // skip lines before first section
+    if (!trimmedRecord) return;                  // skip blank records
+    if (trimmedRecord.startsWith("#")) return;   // skip comments
+    if (currentSectionName === null) return;     // skip lines before first section
 
     const cells = parseCsvLine(rawRecord, { preserveCellWhitespace: true });
 
     // First data row of a section = the header (column names).
     if (currentHeader === null) {
       currentHeader = cells.map(cell => cell.toLowerCase().trim().replace(/\s+/g, "_"));
-      continue;
+      return;
     }
 
     // Skip rows that are entirely empty.
-    if (cells.every(cell => cell.trim() === "")) continue;
+    if (cells.every(cell => cell.trim() === "")) return;
 
     // Build a row object using the header names as keys.
     const row: Record<string, string> = {};
@@ -173,7 +203,7 @@ export function parseCsvDocument(csvText: string): Record<string, Array<Record<s
       row[currentHeader[columnIndex]] = cells[columnIndex] !== undefined ? cells[columnIndex] : "";
     }
     currentRows!.push(row);
-  }
+  }, options);
 
   return sections;
 }

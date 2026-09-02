@@ -103,40 +103,64 @@ export function attributeFindings(findings: Finding[]): Finding[] {
   const drifting = new Set<string>();
   for (const f of findings) if (f.kind === REST_DRIFT && f.boxId) drifting.add(f.boxId);
 
-  // A box whose every input rests where it should: the drift starts here.
-  const isCause = (id: string): boolean => {
-    const node = nodeById[id];
-    if (!node) return true;
-    return !readsFrom(node).some(sourceId => drifting.has(sourceId));
-  };
-
-  // Walk upstream through drifting boxes only, and stop at the first box whose
-  // own inputs are healthy. That is the box to send the reader to.
-  const rootOf = (startId: string): string | undefined => {
-    const seen = new Set<string>([startId]);
-    let frontier = [startId];
-    while (frontier.length) {
-      const next: string[] = [];
-      for (const id of frontier) {
-        const node = nodeById[id];
-        if (!node) continue;
-        for (const sourceId of readsFrom(node)) {
-          if (!drifting.has(sourceId) || seen.has(sourceId)) continue;
-          if (isCause(sourceId)) return sourceId;
-          seen.add(sourceId);
-          next.push(sourceId);
-        }
-      }
-      frontier = next;
+  // Build the drifting subgraph once. The previous implementation walked the
+  // same upstream chain independently for every finding, making a simple chain
+  // quadratic. Distances from all causes give every box its nearest healthy
+  // upstream boundary in O(nodes + links); resolving through the first source
+  // at each distance preserves the old breadth-first tie order.
+  const driftingSources = new Map<string, string[]>();
+  const driftingDependants = new Map<string, string[]>();
+  for (const identifier of drifting) {
+    const node = nodeById[identifier];
+    const sources = node
+      ? readsFrom(node).filter(sourceIdentifier => drifting.has(sourceIdentifier))
+      : [];
+    driftingSources.set(identifier, sources);
+    for (const sourceIdentifier of sources) {
+      const dependants = driftingDependants.get(sourceIdentifier);
+      if (dependants) dependants.push(identifier);
+      else driftingDependants.set(sourceIdentifier, [identifier]);
     }
-    return undefined;   // a ring with no way out — leave it standing on its own
-  };
+  }
+
+  const distanceFromCause = new Map<string, number>();
+  const queue: string[] = [];
+  for (const identifier of drifting) {
+    if ((driftingSources.get(identifier) || []).length === 0) {
+      distanceFromCause.set(identifier, 0);
+      queue.push(identifier);
+    }
+  }
+  for (let queueIndex = 0; queueIndex < queue.length; queueIndex++) {
+    const sourceIdentifier = queue[queueIndex];
+    const nextDistance = distanceFromCause.get(sourceIdentifier)! + 1;
+    for (const dependantIdentifier of driftingDependants.get(sourceIdentifier) || []) {
+      if (distanceFromCause.has(dependantIdentifier)) continue;
+      distanceFromCause.set(dependantIdentifier, nextDistance);
+      queue.push(dependantIdentifier);
+    }
+  }
+
+  const rootCauseByIdentifier = new Map<string, string>();
+  for (const identifier of queue) {
+    const distance = distanceFromCause.get(identifier);
+    if (distance === undefined) continue;
+    if (distance === 0) {
+      rootCauseByIdentifier.set(identifier, identifier);
+      continue;
+    }
+    const precedingSource = (driftingSources.get(identifier) || [])
+      .find(sourceIdentifier => distanceFromCause.get(sourceIdentifier) === distance - 1);
+    if (!precedingSource) continue;
+    const rootCause = rootCauseByIdentifier.get(precedingSource);
+    if (rootCause) rootCauseByIdentifier.set(identifier, rootCause);
+  }
 
   for (const f of findings) {
     if (f.kind !== REST_DRIFT || !f.boxId) continue;
-    if (isCause(f.boxId)) continue;
-    const root = rootOf(f.boxId);
-    if (root) f.causedBy = root;
+    if (distanceFromCause.get(f.boxId) === 0) continue;
+    const rootCause = rootCauseByIdentifier.get(f.boxId);
+    if (rootCause && rootCause !== f.boxId) f.causedBy = rootCause;
   }
 
   // Causes first, then consequences; within each, worst severity first. A

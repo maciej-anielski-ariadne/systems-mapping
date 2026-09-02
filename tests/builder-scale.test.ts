@@ -199,6 +199,21 @@ describe("builder row virtualization", () => {
   });
 });
 
+describe("builder lifecycle memory", () => {
+  it("releases detached map copies when the builder closes", () => {
+    seedBuilder(4_000, 10_000, 5);
+    expect(state.builder.nodes).toHaveLength(4_000);
+    expect(state.builder.edges).toHaveLength(10_000);
+
+    closeBuilder();
+
+    expect(state.builder.open).toBe(false);
+    expect(state.builder.nodes).toEqual([]);
+    expect(state.builder.edges).toEqual([]);
+    expect(state.builder.params).toEqual([]);
+  });
+});
+
 // The keyboard now walks BUILDER_ROW_FIELDS instead of the live DOM, so the two
 // have to agree — a column added to a step renderer without a matching entry
 // would silently become unreachable by Tab.

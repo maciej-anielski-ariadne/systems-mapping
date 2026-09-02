@@ -66,16 +66,16 @@ describe("computeRenderEdges — re-routing through a hidden region", () => {
   });
 
   it("completes promptly on a dense hidden region instead of enumerating every path", () => {
-    // 9 fully-interconnected hidden nodes ⇒ ~100k+ simple paths for the old
-    // exhaustive walk; the bounded expansion visits each node a fixed number of
-    // times, so this is milliseconds.
-    loadDataFromCsv(densehiddenCsv(9, false));
+    // 100 fully-interconnected hidden nodes also provide 100 entry links from
+    // the same visible source. The bounded expansion must share one frontier
+    // across those entries rather than re-walking the component 100 times.
+    loadDataFromCsv(densehiddenCsv(100, false));
     state.hiddenStages = new Set(["s2"]);
     const started = Date.now();
     const edges = computeRenderEdges();
     const elapsed = Date.now() - started;
     expect(edges.filter((e) => e.synthetic)).toHaveLength(1);
-    expect(elapsed).toBeLessThan(1000);
+    expect(elapsed).toBeLessThan(100);
     state.hiddenStages = new Set();
   });
 });

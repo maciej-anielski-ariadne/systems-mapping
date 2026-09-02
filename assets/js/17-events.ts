@@ -73,7 +73,7 @@ export const hiddenFileInput = document.getElementById("hidden-file-input") as H
 if (hiddenFileInput) {
   hiddenFileInput.addEventListener("change", event => {
     const file = (event.target as HTMLInputElement).files && (event.target as HTMLInputElement).files![0];
-    if (file) readCsvFile(file);
+    if (file) void readCsvFile(file);
     (event.target as HTMLInputElement).value = "";       // reset so picking the same file twice works
   });
 }
@@ -190,7 +190,11 @@ document.addEventListener("keydown", event => {
 // so reading mode mostly takes chrome away rather than powers.
 //
 // Everything here is one class on <body> plus one on .app; CSS owns the rest.
-export function applyUiMode(): void {
+export interface ApplyUiModeOptions {
+  renderPanels?: boolean;
+}
+
+export function applyUiMode(options: ApplyUiModeOptions = {}): void {
   const reading = state.uiMode !== "edit";
   document.body.classList.toggle("reading", reading);
   document.body.classList.toggle("editing", !reading);
@@ -229,7 +233,7 @@ export function applyUiMode(): void {
 
   // Both panels render mode-dependent controls, so they are redrawn on the
   // switch rather than waiting for the next unrelated render.
-  if (state.dataLoaded) {
+  if (state.dataLoaded && options.renderPanels !== false) {
     if (typeof renderSidebar === "function") renderSidebar();
     if (typeof renderDetailPanel === "function") renderDetailPanel();
   }
@@ -1377,7 +1381,7 @@ window.addEventListener("drop", event => {
   event.preventDefault();
   document.body.classList.remove("drag-active");
   const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
-  if (file) readCsvFile(file);
+  if (file) void readCsvFile(file);
 });
 
 // ───── Sidebar "Map appearance" accordion ────────────────────────────────

@@ -32,6 +32,7 @@ import {
   parseNumericCell,
   parseBooleanCell,
   parseEvidenceStatusCell,
+  type ParsedCsvDocument,
 } from "./05-csv-parser";
 import {
   canonicalIdentifierGuidance,
@@ -617,12 +618,38 @@ export interface LoadDataOptions {
 }
 
 export function loadDataFromCsv(csvText: string, options?: LoadDataOptions): boolean {
-  const shouldPersist = options?.persist !== false;
   const sections = parseCsvDocument(csvText);
+  return integrateParsedCsvDocument(csvText, sections, options, true);
+}
+
+/**
+ * Integrate sections already parsed in the dedicated import worker. All
+ * validation before the existing commit boundary remains transactional, so a
+ * rejected preparation leaves the current map untouched.
+ */
+export function loadDataFromParsedCsv(
+  csvText: string,
+  sections: ParsedCsvDocument,
+  options?: LoadDataOptions,
+): boolean {
+  return integrateParsedCsvDocument(csvText, sections, options, false);
+}
+
+function integrateParsedCsvDocument(
+  csvText: string,
+  sections: ParsedCsvDocument,
+  options: LoadDataOptions | undefined,
+  reportRejectedFindingsInState: boolean,
+): boolean {
+  const shouldPersist = options?.persist !== false;
   const errors: Finding[] = [];
 
   const failLoad = (): false => {
-    state.loadErrors = errors;
+    // Direct/programmatic loads retain the historical behaviour of publishing
+    // rejected findings. A prepared background import must be a stricter
+    // transaction: even an unexpected integration failure leaves every part of
+    // the current map, including its Review findings, unchanged.
+    if (reportRejectedFindingsInState) state.loadErrors = errors;
     showLoadFeedback("Load failed: " + errors.map(error => error.message).join(" "), true);
     return false;
   };
@@ -1197,14 +1224,14 @@ export function loadDataFromCsv(csvText: string, options?: LoadDataOptions): boo
   // Every slider is at 100% on a fresh load, so every box should be sitting on
   // its own starting value. Any that isn't gets named here — see the function.
   validateRestState(errors);
-  // Which of those findings are causes and which are the same mistake arriving
-  // from upstream. Runs last because it needs every finding in hand, and the
-  // rest-state check above is the one that produces the shadows.
-  attributeFindings(errors);
   // Replace reproducible text-only findings with their structured equivalents.
   // Import-row findings stay intact; structured targets are what lets Review
   // offer a safe direct patch only when the exact field or connection is known.
   refreshLiveReviewFindings();
+  // Which findings are causes and which are the same mistake arriving from
+  // upstream. Run this only after structured findings replace their temporary
+  // text equivalents; attributing the soon-discarded array did the same graph
+  // walk twice on every map load without contributing to the final result.
   attributeFindings(state.loadErrors);
   // A sweep is a fact about the shape of the map, and this is a different map.
   invalidateSweep();

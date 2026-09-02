@@ -6,8 +6,8 @@
 // these fixtures reproduce the same shapes in six boxes.
 // =============================================================================
 import { describe, it, expect, beforeEach } from "vitest";
-import { loadDataFromCsv } from "../assets/js/06-data-loader";
-import { state, NODES } from "../assets/js/03-state";
+import { loadDataFromCsv, rebuildIndexes } from "../assets/js/06-data-loader";
+import { state, NODES, setEdges, setNodes } from "../assets/js/03-state";
 import {
   attributeFindings,
   groupFindings,
@@ -150,6 +150,39 @@ a,b,increases,,
     expect(loadDataFromCsv(clean)).toBe(true);
     expect(state.loadErrors).toEqual([]);
     expect(groupFindings(state.loadErrors).groups).toEqual([]);
+  });
+
+  it("attributes a long cascade without walking the chain once per finding", () => {
+    const nodeCount = 8_000;
+    setNodes(Array.from({ length: nodeCount }, (_, nodeIndex) => ({
+      id: "cascade_" + nodeIndex,
+      label: "Cascade " + nodeIndex,
+      description: "",
+      stream: "main",
+      stage: "s1",
+      category: "c",
+      categoryIds: ["c"],
+      primaryCategories: ["c"],
+      secondaryCategories: [],
+    })) as never);
+    setEdges(Array.from({ length: nodeCount - 1 }, (_, edgeIndex) => ({
+      id: "cascade_edge_" + edgeIndex,
+      from: "cascade_" + edgeIndex,
+      to: "cascade_" + (edgeIndex + 1),
+      effect: "increases",
+      style: "solid",
+    })) as never);
+    rebuildIndexes();
+    const findings = Array.from({ length: nodeCount }, (_, nodeIndex) =>
+      finding(REST_DRIFT, "wrong", "drift", { boxId: "cascade_" + nodeIndex }));
+
+    const startedAt = performance.now();
+    attributeFindings(findings);
+    const elapsedMilliseconds = performance.now() - startedAt;
+
+    expect(findings.find(candidate => candidate.boxId === "cascade_7999")?.causedBy)
+      .toBe("cascade_0");
+    expect(elapsedMilliseconds).toBeLessThan(1_000);
   });
 });
 
