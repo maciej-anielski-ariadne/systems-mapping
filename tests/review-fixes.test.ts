@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { loadDataFromCsv } from "../assets/js/06-data-loader";
 import { EDGES, NODES, state } from "../assets/js/03-state";
 import {
@@ -13,6 +16,8 @@ import { applyConfirmedReviewProposal } from "../assets/js/22b-review-apply";
 import { closeReview, initReviewStage, openReview } from "../assets/js/23-review-panel";
 import { setUiMode } from "../assets/js/17-events";
 import { FORMULA_INVALID_CSV } from "./fixtures/graphs";
+
+const currentDirectory = dirname(fileURLToPath(import.meta.url));
 
 const REVIEW_FIX_CSV = `# SECTION: streams
 id,label,short,color
@@ -149,5 +154,37 @@ describe("confirmed Review fixes", () => {
     expect(state.uiMode).toBe("edit");
     expect(document.body.classList.contains("review-open")).toBe(false);
     closeReview();
+  });
+
+  it("groups the floating handoff actions after opening an issue on the map", () => {
+    openReview();
+    const firstIssueToggle = document.querySelector<HTMLButtonElement>("[data-review-issue]")!;
+    firstIssueToggle.click();
+    const openOnMapButton = document.querySelector<HTMLButtonElement>("[data-open-review-issue]")!;
+    openOnMapButton.click();
+
+    const issueBanner = document.getElementById("review-issue-banner")!;
+    expect(issueBanner.hidden).toBe(false);
+    expect(issueBanner.querySelector(":scope > .review-banner-main")).not.toBeNull();
+    expect(issueBanner.querySelector(":scope > .review-banner-dismiss")).not.toBeNull();
+
+    issueBanner.querySelector<HTMLButtonElement>("#review-banner-toggle")!.click();
+    const actionGroup = issueBanner.querySelector(".review-banner-actions")!;
+    expect(actionGroup.querySelectorAll(":scope > button")).toHaveLength(1);
+    expect(actionGroup.textContent).toContain("Back to Review");
+  });
+
+  it("keeps the floating handoff borderless at the top of the map", () => {
+    const reviewStyles = readFileSync(resolve(currentDirectory, "../assets/css/17-review.css"), "utf8");
+    const bannerRuleStart = reviewStyles.indexOf(".review-issue-banner {");
+    const bannerRule = reviewStyles.slice(
+      bannerRuleStart,
+      reviewStyles.indexOf("}", bannerRuleStart),
+    );
+
+    expect(bannerRule).toMatch(/top:\s*calc\(48px \+ var\(--space-3\)\)/);
+    expect(bannerRule).toMatch(/bottom:\s*auto/);
+    expect(bannerRule).toMatch(/border:\s*0/);
+    expect(bannerRule).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\) 40px/);
   });
 });

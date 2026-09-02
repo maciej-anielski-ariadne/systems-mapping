@@ -126,9 +126,10 @@ function renderPinnedIssueBanner(): void {
   if (pinnedIssueExpanded) {
     html += '<div class="review-banner-details">';
     if (!resolved && finding.fix) html += '<div>' + markCode(finding.fix) + '</div>';
+    html += '<div class="review-banner-actions">';
     html += '<button type="button" class="review-secondary" id="review-banner-back">Back to Review</button>';
     if (resolved) html += '<button type="button" class="review-apply" id="review-banner-next">Next issue</button>';
-    html += '</div>';
+    html += '</div></div>';
   }
   banner.innerHTML = html;
 }

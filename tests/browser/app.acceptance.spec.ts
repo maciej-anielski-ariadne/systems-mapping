@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { FORMULA_INVALID_CSV } from "../fixtures/graphs";
 
 const sampleCsvPath = resolve(process.cwd(), "assets/data/sample.csv");
 
@@ -314,6 +315,76 @@ test("390 by 844 keeps the page pinned and fits the global header", async ({ pag
     "#map-scope-bar",
     ".viz-controls-cluster",
   ]);
+});
+
+test("the floating Review handoff sits borderless at the top of the map", async ({ page }) => {
+  await openCleanBuiltApp(page);
+  await importCsv(page, FORMULA_INVALID_CSV, "review-handoff.csv");
+  await page.locator("#review-button").click();
+  await page.locator("[data-review-issue]").first().click();
+  await page.locator("[data-open-review-issue]").first().click();
+
+  const issueBanner = page.locator("#review-issue-banner");
+  await expect(issueBanner).toBeVisible();
+  const darkThemeAppearance = await issueBanner.evaluate(element => {
+    const styles = getComputedStyle(element);
+    const elementBounds = element.getBoundingClientRect();
+    const visualizationBounds = document.getElementById("viz-container")!.getBoundingClientRect();
+    const summaryBounds = element.querySelector<HTMLElement>(".review-banner-main")!.getBoundingClientRect();
+    const dismissBounds = element.querySelector<HTMLElement>(".review-banner-dismiss")!.getBoundingClientRect();
+    return {
+      backgroundColor: styles.backgroundColor,
+      borderTopWidth: styles.borderTopWidth,
+      relativeTop: elementBounds.top - visualizationBounds.top,
+      summaryCenter: summaryBounds.top + summaryBounds.height / 2,
+      dismissCenter: dismissBounds.top + dismissBounds.height / 2,
+    };
+  });
+  expect(darkThemeAppearance.borderTopWidth).toBe("0px");
+  expect(darkThemeAppearance.relativeTop).toBeGreaterThanOrEqual(56);
+  expect(darkThemeAppearance.relativeTop).toBeLessThanOrEqual(64);
+  expect(Math.abs(darkThemeAppearance.summaryCenter - darkThemeAppearance.dismissCenter))
+    .toBeLessThanOrEqual(1);
+
+  await page.locator("#review-banner-toggle").click();
+  const expandedActions = await issueBanner.locator(".review-banner-actions").evaluate(element => {
+    const styles = getComputedStyle(element);
+    const buttonBounds = Array.from(element.querySelectorAll("button"), button => {
+      const bounds = button.getBoundingClientRect();
+      return { top: bounds.top, height: bounds.height };
+    });
+    return {
+      alignItems: styles.alignItems,
+      display: styles.display,
+      buttonBounds,
+    };
+  });
+  expect(expandedActions.display).toBe("flex");
+  expect(expandedActions.alignItems).toBe("center");
+  expect(expandedActions.buttonBounds.every(bounds => bounds.height >= 32)).toBe(true);
+
+  await page.locator("#theme-toggle-button").click();
+  const lightThemeAppearance = await issueBanner.evaluate(element => ({
+    backgroundColor: getComputedStyle(element).backgroundColor,
+    borderTopWidth: getComputedStyle(element).borderTopWidth,
+  }));
+  expect(lightThemeAppearance.backgroundColor).not.toBe(darkThemeAppearance.backgroundColor);
+  expect(lightThemeAppearance.borderTopWidth).toBe("0px");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const narrowAppearance = await issueBanner.evaluate(element => {
+    const elementBounds = element.getBoundingClientRect();
+    const visualizationBounds = document.getElementById("viz-container")!.getBoundingClientRect();
+    return {
+      relativeTop: elementBounds.top - visualizationBounds.top,
+      left: elementBounds.left,
+      right: elementBounds.right,
+    };
+  });
+  expect(narrowAppearance.relativeTop).toBeGreaterThanOrEqual(52);
+  expect(narrowAppearance.relativeTop).toBeLessThanOrEqual(60);
+  expect(narrowAppearance.left).toBeGreaterThanOrEqual(0);
+  expect(narrowAppearance.right).toBeLessThanOrEqual(390);
 });
 
 test("floating controls clear content and scrolling never shows browser chrome", async ({ page }) => {
