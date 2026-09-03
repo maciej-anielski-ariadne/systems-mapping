@@ -6,9 +6,12 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const from = resolve(root, "dist/index.html");
-const to = resolve(root, "dist/systems-map.html");
+// Which build's output to rename. Defaults to dist/; the white-label build
+// passes its own directory so it never touches the tracked artifact.
+const outputDirectory = process.argv[2] || "dist";
+const from = resolve(root, outputDirectory + "/index.html");
+const to = resolve(root, outputDirectory + "/systems-map.html");
 
 await rename(from, to);
 const { size } = await stat(to);
-console.log(`Wrote dist/systems-map.html  (${(size / 1024).toFixed(0)} KB)`);
+console.log(`Wrote ${outputDirectory}/systems-map.html  (${(size / 1024).toFixed(0)} KB)`);

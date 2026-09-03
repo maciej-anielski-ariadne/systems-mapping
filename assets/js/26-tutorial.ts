@@ -8,6 +8,10 @@
 // that deliberately persists the tutorial map.
 // =============================================================================
 
+import { appName, brandedTitle } from "./00-brand";
+// The brand comes from .env rather than from a person, but a name carrying an
+// ampersand or a quote would still break the markup it lands in.
+import { escapeHtml } from "./04-utils";
 import { TUTORIAL_MAP_CSV, TUTORIAL_MAP_SMALL_CSV } from "./01a-tutorial-map-data";
 import { openLearnReference } from "./26a-learn-reference";
 import {
@@ -990,7 +994,7 @@ const SEARCH_FILTER_STEPS: TutorialStep[] = [
   },
   {
     title: "Fold a row or column to keep its connections",
-    body: "In View mode, click a row or column heading to fold it. Ariadne keeps a compact connector showing that hidden boxes still carry a causal route; click the heading again to expand it.",
+    body: "In View mode, click a row or column heading to fold it. " + appName() + " keeps a compact connector showing that hidden boxes still carry a causal route; click the heading again to expand it.",
     targetSelector: ".viz-container.floating-rows .viz-sticky-row, .viz-container:not(.floating-rows) .row-label-group",
     enter: () => enterReadingSurface(),
     task: { checkpoints: [tutorialCheckpoint(
@@ -1135,7 +1139,7 @@ const CALCULATION_TRACE_STEPS: TutorialStep[] = [
   },
   {
     title: "Read what the map says went wrong",
-    body: "There is nobody to divide by, so Ariadne shows 0 and explains why, rather than letting an impossible number spread through the rest of the map. The 0–1 range still applies. Decide for yourself whether 0 is a sensible answer here before you trust it.",
+    body: "There is nobody to divide by, so " + appName() + " shows 0 and explains why, rather than letting an impossible number spread through the rest of the map. The 0–1 range still applies. Decide for yourself whether 0 is a sensible answer here before you trust it.",
     targetSelector: ".calc-breakdown",
     enter: () => enterSimulationExample("registration_share"),
   },
@@ -1855,7 +1859,7 @@ const AUTOMATIC_REVIEW_STEPS: TutorialStep[] = [
 const HUMAN_REVIEW_STEPS: TutorialStep[] = [
   {
     title: "Start a signed box-by-box pass",
-    body: "Enter your full name, then start the pass. Ariadne asks whether each box has the right and complete set of causes, moving through the model in a consistent order.",
+    body: "Enter your full name, then start the pass. " + appName() + " asks whether each box has the right and complete set of causes, moving through the model in a consistent order.",
     targetSelector: "#review-reviewer",
     enter: () => {
       enterReadingSurface();
@@ -1899,7 +1903,7 @@ const HUMAN_REVIEW_STEPS: TutorialStep[] = [
 const PROTECT_EDITABLE_SOURCE_STEPS: TutorialStep[] = [
   {
     title: "Know what the browser remembers",
-    body: "Ariadne autosaves the current map, view choices and unfinished Bulk edit draft in this browser. Autosave is convenient recovery, not a substitute for downloading the Spreadsheet source before important work or moving devices.",
+    body: "" + appName() + " autosaves the current map, view choices and unfinished Bulk edit draft in this browser. Autosave is convenient recovery, not a substitute for downloading the Spreadsheet source before important work or moving devices.",
     targetSelector: ".header-document-actions",
     enter: () => {
       enterReadingSurface();
@@ -1960,7 +1964,7 @@ const SHARE_FOR_AUDIENCE_STEPS: TutorialStep[] = [
   },
   {
     title: "Export a view-only interactive web page",
-    body: "Web page creates one self-contained HTML file. Recipients can pan, zoom and hover without editing or needing Ariadne installed; send the Spreadsheet too if they must continue the model.",
+    body: "Web page creates one self-contained HTML file. Recipients can pan, zoom and hover without editing or needing " + appName() + " installed; send the Spreadsheet too if they must continue the model.",
     targetSelector: ".publish-html-trigger",
     enter: () => {
       enterReadingSurface();
@@ -2380,9 +2384,11 @@ export function openLearnHub(): boolean {
     "</article></section>";
 
   const countedLessons = LEARN_LESSONS.length;
+  const learnHeading = brandedTitle("Learn {name}.", "Learn this app.");
+  const learnLabel = brandedTitle("Learn {name}", "Learn this app");
   layer.hidden = false;
-  layer.innerHTML = '<div class="learn-backdrop"><section class="learn-library" role="dialog" aria-modal="true" aria-label="Learn Ariadne Maps">' +
-    '<header class="learn-library-header"><div><h1>Learn Ariadne Maps.</h1>' +
+  layer.innerHTML = '<div class="learn-backdrop"><section class="learn-library" role="dialog" aria-modal="true" aria-label="' + escapeHtml(learnLabel) + '">' +
+    '<header class="learn-library-header"><div><h1>' + escapeHtml(learnHeading) + '</h1>' +
     "<p>Start with a three-minute first look, or go straight to whatever you came here to do. " +
     "Every lesson uses an example map and gives yours back when you leave.</p></div>" +
     '<button class="learn-close" data-tutorial-action="close-learn" aria-label="Close Learn">×</button></header>' +
@@ -2771,9 +2777,11 @@ export function showFirstOpenTutorialWelcome(hasSavedCsv: boolean): boolean {
   // "no decision yet" into a saved map that suppresses the welcome on refresh.
   setStorageWritesSuspended(true);
   layer.hidden = false;
-  layer.innerHTML = '<div class="tutorial-welcome-backdrop"><section class="tutorial-welcome" role="dialog" aria-label="Welcome to Ariadne Maps">' +
+  layer.innerHTML = '<div class="tutorial-welcome-backdrop"><section class="tutorial-welcome" role="dialog" aria-label="' +
+    escapeHtml(brandedTitle("Welcome to {name}", "Welcome")) + '">' +
     '<svg class="tutorial-welcome-mark" viewBox="0 0 48 28" fill="none" aria-hidden="true"><path d="M3 22C12 22 13 6 24 6s12 16 21 16" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><circle cx="3" cy="22" r="3" fill="currentColor"/><circle cx="24" cy="6" r="3" fill="currentColor"/><circle cx="45" cy="22" r="3" fill="currentColor"/></svg>' +
-    '<div class="tutorial-kicker">Welcome to Ariadne Maps</div>' +
+    '<div class="tutorial-kicker">' +
+    escapeHtml(brandedTitle("Welcome to {name}", "Welcome")) + '</div>' +
     '<h1>Find out what a systems map is for, in three minutes.</h1>' +
     '<p>A systems map lays out what affects what, so a question like &ldquo;can we reach more people without booking more venues?&rdquo; can be answered rather than argued about. First look walks you through reading one, changing it, and following what happens. Your own map is never written over.</p>' +
     '<div class="tutorial-welcome-actions">' +

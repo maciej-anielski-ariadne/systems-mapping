@@ -1,3 +1,4 @@
+import { BRAND_NAME } from "../assets/js/00-brand";
 import { describe, it, expect, beforeEach } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 
@@ -229,7 +230,7 @@ describe("workbook", () => {
     ]);
     // The comment lines that clutter the CSV are carried, not thrown away.
     const readMe = sheets.get("Read me")!.flat().join("\n");
-    expect(readMe).toContain("Ariadne Maps");
+    expect(readMe).toContain(BRAND_NAME);
     expect(readMe).toContain("Boxes sheet");
   });
 

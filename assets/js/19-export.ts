@@ -29,6 +29,7 @@
 // output needs no external CSS, fonts, or scripts.
 // =============================================================================
 
+import { BRAND_NAME } from "./00-brand";
 import type { GraphNode, Edge, Stream, StageWithIndex, NodePosition } from "./types";
 import {
   COL_GAP,
@@ -1076,7 +1077,9 @@ export function buildPublishHtml(
   return '<!DOCTYPE html>' +
     '<html lang="en"><head><meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-    '<title>Ariadne Maps</title>' +
+    // A published page is the copy that leaves the building, so it carries the
+    // brand it was built with — and says what it is when there is no brand.
+    '<title>' + escapeHtml(BRAND_NAME || "Systems map") + '</title>' +
     '<style>' +
       '*{box-sizing:border-box;}' +
       'html,body{margin:0;height:100%;background:' + pal.bgDeepest + ';' +

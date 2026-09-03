@@ -1,3 +1,4 @@
+import { BRAND_NAME } from "../assets/js/00-brand";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SAMPLE_CSV } from "../assets/js/01-sample-data";
 import { TUTORIAL_MAP_CSV } from "../assets/js/01a-tutorial-map-data";
@@ -161,7 +162,7 @@ describe("first-open tutorial welcome", () => {
 
     expect(tutorialIsActive()).toBe(false);
     expect(storageWritesAreSuspended()).toBe(false);
-    expect(tutorialLayer().textContent).toContain("Learn Ariadne Maps.");
+    expect(tutorialLayer().textContent).toContain("Learn " + BRAND_NAME + ".");
     expect(tutorialLayer().querySelector('[data-lesson-card="first-look"]')).not.toBeNull();
   });
 
@@ -208,7 +209,7 @@ describe("Learn library", () => {
     expect(learnButton).toBeTruthy();
     learnButton.click();
 
-    expect(tutorialLayer().textContent).toContain("Learn Ariadne Maps.");
+    expect(tutorialLayer().textContent).toContain("Learn " + BRAND_NAME + ".");
     expect(tutorialLayer().textContent).toContain("0 of 8 lessons complete");
 
     const heroCard = tutorialLayer().querySelector<HTMLElement>(".learn-hero-card")!;
@@ -1089,7 +1090,7 @@ describe("Learn library", () => {
     tutorialLayer().querySelector<HTMLElement>('[data-tutorial-action="exit-lesson"]')!.click();
     expect(tutorialIsActive()).toBe(false);
     expect(NODES.map(node => node.id)).toEqual(originalNodeIdentifiers);
-    expect(tutorialLayer().textContent).toContain("Learn Ariadne Maps.");
+    expect(tutorialLayer().textContent).toContain("Learn " + BRAND_NAME + ".");
   });
 
   it("loads the small example for the early lessons and the full one later", () => {

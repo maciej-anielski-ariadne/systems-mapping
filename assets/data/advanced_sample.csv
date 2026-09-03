@@ -1,4 +1,4 @@
-# Ariadne Maps — Advanced sample (per-box calculation rules)
+# Advanced sample map — per-box calculation rules
 # A neutral worked example of every calculation rule the simulation engine
 # supports. Models a small parcel-delivery company: web demand on one row,
 # fulfilment in the middle, customer service at the end. 16 boxes, 18 links,

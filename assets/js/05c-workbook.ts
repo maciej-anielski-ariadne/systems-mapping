@@ -23,6 +23,7 @@
  *     leading zeros survive, which they would not if everything were guessed.
  * ========================================================================== */
 
+import { BRAND_NAME } from "./00-brand";
 import { parseCsvLine } from "./05-csv-parser";
 import { csvRow } from "./05a-csv-serializer";
 import { COMBINE_OPTIONS, DIRECTION_OPTIONS, EFFECT_OPTIONS } from "./02-config";
@@ -151,7 +152,9 @@ export function csvToTables(csvText: string): { tables: WorkbookTable[]; preambl
 /** Tables back to a CSV the existing loader can read. */
 export function tablesToCsv(tables: WorkbookTable[]): string {
   const lines: string[] = [
-    "# Ariadne Maps — converted from a workbook (.xlsx)",
+    BRAND_NAME
+      ? "# " + BRAND_NAME + " — converted from a workbook (.xlsx)"
+      : "# Converted from a workbook (.xlsx)",
     "# Drag this file back onto the app to reload it, or edit in Excel / Sheets.",
     "",
   ];

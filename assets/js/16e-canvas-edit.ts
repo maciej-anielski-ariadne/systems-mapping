@@ -291,7 +291,7 @@ export function initCanvasEdit(): void {
     // Builder wizard owns its own keyboard handling.
     if (state.builder && state.builder.open) return;
 
-    // Model fields in the box panel write through Ariadne's history as they
+    // Model fields in the box panel write through the app's history as they
     // change, so Command/Ctrl-Z must reach that history even while the field
     // retains focus. Other text surfaces (search, Review, sidebar renaming and
     // filterable dropdown typing) keep the browser's local text undo instead.

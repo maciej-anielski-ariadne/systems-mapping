@@ -17,6 +17,7 @@
 // =============================================================================
 
 // ───── Side-effect imports (original load order) ────────────────────────────
+import { BRAND_NAME } from "./00-brand";
 import "./01-sample-data";
 import "./02-config";
 import "./03-state";
@@ -76,7 +77,7 @@ import { initReviewStage, syncReviewButton } from "./23-review-panel";
 
 import { showFirstOpenTutorialWelcome } from "./26-tutorial";
 
-console.log("Ariadne Maps — canvas-edit ready");
+console.log((BRAND_NAME || "Systems map") + " — canvas-edit ready");
 console.log(
   "Click any cell to add a node. Drag from a node's right edge to draw an edge. Press Delete to remove (with undo).",
 );

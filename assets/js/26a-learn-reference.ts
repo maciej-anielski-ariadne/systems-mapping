@@ -16,6 +16,7 @@
 // rendered, styled and torn down independently.
 // =============================================================================
 
+import { appName } from "./00-brand";
 import type { GraphNode } from "./types";
 import { escapeHtml } from "./04-utils";
 
@@ -194,9 +195,9 @@ export const LEARN_REFERENCE_CARDS: LearnReferenceCard[] = [
     title: "Use delay() to stop feedback happening instantly",
     useWhen: "Use this when boxes form a circle and one of them has to read an earlier value so the circle can be worked out at all.",
     whatItDoes: "delay(community_confidence) reads that box from the previous calculation round, so the current round never depends directly on its own unfinished answer.",
-    whyThisChoice: "The confidence and outreach boxes form a circle. Something must use an earlier value or the result could depend on which box Ariadne happened to calculate first.",
+    whyThisChoice: "The confidence and outreach boxes form a circle. Something must use an earlier value or the result could depend on which box " + appName() + " happened to calculate first.",
     howToApplyIt: "Put delay() on the input that conceptually feeds back later. Make the starting reference neutral so the feedback multiplier begins at 1 instead of shifting the model at baseline.",
-    howToEvaluateIt: "Confirm the baseline does not drift, the result is independent of calculation order, and Ariadne reports that the loop converged rather than reaching its safety limit.",
+    howToEvaluateIt: "Confirm the baseline does not drift, the result is independent of calculation order, and " + appName() + " reports that the loop converged rather than reaching its safety limit.",
     exampleNodeId: "feedback_uplift",
   },
   {
@@ -204,7 +205,7 @@ export const LEARN_REFERENCE_CARDS: LearnReferenceCard[] = [
     group: "feedback",
     title: "Know what delay() does not model",
     useWhen: "Use this when you are tempted to read delay() as a week, a month or a year of real waiting time.",
-    whatItDoes: "One calculation round is a technical solver step. It is not automatically a day, month or year, and Ariadne does not preserve a sequence of past scenario values.",
+    whatItDoes: "One calculation round is a technical solver step. It is not automatically a day, month or year, and " + appName() + " does not preserve a sequence of past scenario values.",
     whyThisChoice: "delay() makes a circular calculation well-defined; it does not by itself simulate how the system travels through real time.",
     howToApplyIt: "Use delay() when you want a stable equilibrium for a feedback loop. If the timing, path, peaks or recovery period matter, use a proper time-step model outside this calculation.",
     howToEvaluateIt: "Do not validate delay() against a calendar lag. Instead check the final equilibrium and convergence, and state plainly that real-world timing remains outside the model.",
@@ -258,7 +259,7 @@ export const LEARN_REFERENCE_CARDS: LearnReferenceCard[] = [
     whyThisChoice: "A silently wrong number is worse than a reported one. The fallbacks keep the rest of the map working out while making the broken part visible in Review and in the calculation breakdown.",
     howToApplyIt: "Check every name in the formula against the box ids and global variable names you actually have, give every box a starting value, and draw an arrow into this box from every box the formula names.",
     howToEvaluateIt: "Open the calculation breakdown and read which rule actually ran. If it names the arrows rather than the formula, the formula is not what is producing the number.",
-    alsoWorthKnowing: "A box with a formula ignores the Strength on its incoming arrows. Those arrows still record what causes what, and Ariadne will point out one the formula never reads — often deliberate, sometimes a leftover. Evidence notes are for readers only: they never change a number.",
+    alsoWorthKnowing: "A box with a formula ignores the Strength on its incoming arrows. Those arrows still record what causes what, and " + appName() + " will point out one the formula never reads — often deliberate, sometimes a leftover. Evidence notes are for readers only: they never change a number.",
   },
 ];
 

@@ -14,7 +14,7 @@
 //   • "Download sample"  – saves SAMPLE_CSV as a .csv file
 // =============================================================================
 
-export const SAMPLE_CSV = `# Ariadne Maps — Simple sample
+export const SAMPLE_CSV = `# Simple sample map
 # A small, neutral worked example you can use as a placeholder while learning
 # the schema. Models a three-team product company (Operations, Sales,
 # Support) so most readers can follow the cause-and-effect chains without
