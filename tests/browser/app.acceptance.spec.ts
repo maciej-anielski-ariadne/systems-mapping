@@ -562,40 +562,39 @@ test("Review uses the shared dropdown without clicking through its panel", async
     'body > .typeable-dropdown-popup:not([hidden]) .typeable-dropdown-item[data-item-index="3"]',
   ).click();
 
-  await expect(page.locator("#review-stage")).toBeVisible();
+  await expect(page.locator("#review-sidebar")).toBeVisible();
   await expect(evidenceStatusDropdown).toHaveText("Supported");
-  await expect(page.locator("#review-stage select:not(.typeable-dropdown-native)")).toHaveCount(0);
+  await expect(page.locator("#review-sidebar select:not(.typeable-dropdown-native)")).toHaveCount(0);
 });
 
-test("Review folding keeps the reader in place and Evidence provenance can collapse", async ({ page }) => {
+test("the review queue keeps the reader in place and reaches the whole inventory", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 480 });
   await openCleanBuiltApp(page);
-  await importCsv(page, FORMULA_INVALID_CSV, "review-folding.csv");
+  await importCsv(page, FORMULA_INVALID_CSV, "review-queue.csv");
   await page.locator("#review-button").click();
 
-  const leftReviewColumn = page.locator("#review-stage .review-column").first();
-  const lastIssueToggle = page.locator("[data-review-issue]").last();
-  await lastIssueToggle.scrollIntoViewIfNeeded();
-  const scrollTopBeforeExpansion = await leftReviewColumn.evaluate(
-    reviewColumn => reviewColumn.scrollTop,
-  );
-  expect(scrollTopBeforeExpansion).toBeGreaterThan(0);
+  // Picking an item rebuilds the list. The reader's place in it must survive
+  // that: the queue is the one thing on screen saying how far they have got.
+  const list = page.locator("#review-list");
+  const lastRow = page.locator("#review-sidebar .review-row").last();
+  await lastRow.scrollIntoViewIfNeeded();
+  const scrollTopBefore = await list.evaluate(element => element.scrollTop);
+  expect(scrollTopBefore).toBeGreaterThan(0);
 
-  await lastIssueToggle.click();
-  await expect(lastIssueToggle).toHaveAttribute("aria-expanded", "true");
-  await expect.poll(() => leftReviewColumn.evaluate(reviewColumn => reviewColumn.scrollTop))
-    .toBe(scrollTopBeforeExpansion);
+  await lastRow.click();
+  await expect(page.locator("#detail-panel [data-review-item-block]")).toBeVisible();
+  await expect.poll(() => list.evaluate(element => element.scrollTop)).toBe(scrollTopBefore);
 
-  const evidenceToggle = page.locator("#review-evidence-toggle");
-  await evidenceToggle.scrollIntoViewIfNeeded();
-  await evidenceToggle.click();
-  await expect(evidenceToggle).toHaveAttribute("aria-expanded", "false");
-  await expect(page.locator("#review-evidence-content")).toHaveCount(0);
-  await expect(evidenceToggle).toBeInViewport();
-
-  await evidenceToggle.click();
-  await expect(evidenceToggle).toHaveAttribute("aria-expanded", "true");
-  await expect(page.locator("#review-evidence-content")).toBeVisible();
+  // The queue carries evidence gaps; the whole inventory is behind the picker.
+  await page.locator('[data-review-filter="evidence"]').click();
+  const statusPicker = page.getByRole("combobox", { name: "Show evidence status" });
+  await expect(statusPicker).toBeVisible();
+  await expect(page.locator("[data-review-inventory]")).toHaveCount(0);
+  await statusPicker.click();
+  await page.locator(
+    'body > .typeable-dropdown-popup:not([hidden]) .typeable-dropdown-item',
+  ).nth(1).click();                                  // "All statuses"
+  await expect(page.locator("[data-review-inventory]").first()).toBeVisible();
 });
 
 test("Share lesson keeps each export target open and connected", async ({ page }) => {
@@ -646,14 +645,22 @@ test("Sensitivity interpretation points at the opened result rows", async ({ pag
   await openCleanBuiltApp(page);
   await openConsolidatedLessonAtStep(page, "review-evidence", 5);
 
-  await page.locator("#review-fold-toggle").click();
+  // The lesson asks for the ranked sweep, which lives behind the list's picker.
+  const sweepPicker = page.getByRole("combobox", { name: "Show" });
+  await expect(sweepPicker).toHaveClass(/tutorial-target/);
+  await sweepPicker.click();
+  await page.locator(
+    'body > .typeable-dropdown-popup:not([hidden]) .typeable-dropdown-item',
+  ).nth(1).click();                                  // "Every adjustable box, by reach"
+  await expect(page.locator(".review-reach-row").first()).toBeVisible();
+
   await expect(page.locator('[data-tutorial-action="next"]')).toBeEnabled();
   await page.locator('[data-tutorial-action="next"]').click();
 
   await expect(page.getByRole("heading", { name: "Use sensitivity as a diagnostic, not proof" }))
     .toBeVisible();
-  await expect(page.locator(".review-rows.tutorial-target")).toBeVisible();
-  await expect(page.locator("#review-fold-toggle")).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator("#review-list.tutorial-target")).toBeVisible();
+  await expect(page.locator(".review-reach-row").first()).toBeVisible();
 });
 
 test("Atlas lesson teaches the user to open Atlas before showing pathways", async ({ page }) => {
@@ -1143,74 +1150,68 @@ test("390 by 844 keeps the page pinned and fits the global header", async ({ pag
   expect(tutorialMapWidth).toBeGreaterThanOrEqual(300);
 });
 
-test("the floating Review handoff sits borderless at the top of the map", async ({ page }) => {
+test("a review item hands its question to the box panel beside the map", async ({ page }) => {
   await openCleanBuiltApp(page);
   await importCsv(page, FORMULA_INVALID_CSV, "review-handoff.csv");
   await page.locator("#review-button").click();
-  await page.locator("[data-review-issue]").first().click();
-  await page.locator("[data-open-review-issue]").first().click();
+  await page.locator('[data-review-filter="issue"]').click();
+  await page.locator("#review-sidebar .review-row").first().click();
 
-  const issueBanner = page.locator("#review-issue-banner");
-  await expect(issueBanner).toBeVisible();
-  const darkThemeAppearance = await issueBanner.evaluate(element => {
-    const styles = getComputedStyle(element);
-    const elementBounds = element.getBoundingClientRect();
-    const visualizationBounds = document.getElementById("viz-container")!.getBoundingClientRect();
-    const summaryBounds = element.querySelector<HTMLElement>(".review-banner-main")!.getBoundingClientRect();
-    const dismissBounds = element.querySelector<HTMLElement>(".review-banner-dismiss")!.getBoundingClientRect();
+  // The three surfaces at once. This is the whole change: the list used to be
+  // an overlay across the map, so opening anything it named closed it, and a
+  // floating banner had to carry the one issue you clicked back to the map.
+  const sidebar = page.locator("#review-sidebar");
+  const block = page.locator("#detail-panel [data-review-item-block]");
+  await expect(sidebar).toBeVisible();
+  await expect(block).toBeVisible();
+  await expect(page.locator("#viz-svg")).toBeVisible();
+  await expect(page.locator("#review-issue-banner")).toHaveCount(0);
+
+  const columns = await page.evaluate(() => {
+    const sidebarBounds = document.getElementById("review-sidebar")!.getBoundingClientRect();
+    const mapBounds = document.getElementById("viz-container")!.getBoundingClientRect();
+    const panelBounds = document.getElementById("detail-panel")!.getBoundingClientRect();
+    const itemBounds = document.querySelector<HTMLElement>("[data-review-item-block]")!.getBoundingClientRect();
+    const boxTitle = document.querySelector<HTMLElement>("#detail-content .detail-name, #detail-content .detail-name-input");
     return {
-      backgroundColor: styles.backgroundColor,
-      borderTopWidth: styles.borderTopWidth,
-      relativeTop: elementBounds.top - visualizationBounds.top,
-      summaryCenter: summaryBounds.top + summaryBounds.height / 2,
-      dismissCenter: dismissBounds.top + dismissBounds.height / 2,
+      sidebarRight: Math.round(sidebarBounds.right),
+      mapLeft: Math.round(mapBounds.left),
+      mapWidth: Math.round(mapBounds.width),
+      panelLeft: Math.round(panelBounds.left),
+      itemTop: Math.round(itemBounds.top),
+      boxTop: boxTitle ? Math.round(boxTitle.getBoundingClientRect().top) : null,
     };
   });
-  expect(darkThemeAppearance.borderTopWidth).toBe("0px");
-  expect(darkThemeAppearance.relativeTop).toBeGreaterThanOrEqual(56);
-  expect(darkThemeAppearance.relativeTop).toBeLessThanOrEqual(64);
-  expect(Math.abs(darkThemeAppearance.summaryCenter - darkThemeAppearance.dismissCenter))
-    .toBeLessThanOrEqual(1);
+  // Left, middle, right — and none of them overlapping.
+  expect(columns.mapLeft).toBeGreaterThanOrEqual(columns.sidebarRight);
+  expect(columns.mapWidth).toBeGreaterThan(200);
+  expect(columns.panelLeft).toBeGreaterThanOrEqual(columns.mapLeft);
+  // The item sits ABOVE the box it is about, which is still there underneath.
+  expect(columns.boxTop).not.toBeNull();
+  expect(columns.itemTop).toBeLessThan(columns.boxTop!);
 
-  await page.locator("#review-banner-toggle").click();
-  const expandedActions = await issueBanner.locator(".review-banner-actions").evaluate(element => {
-    const styles = getComputedStyle(element);
-    const buttonBounds = Array.from(element.querySelectorAll("button"), button => {
-      const bounds = button.getBoundingClientRect();
-      return { top: bounds.top, height: bounds.height };
-    });
+  // The map's own controls stay reachable — the overlay used to hide them.
+  await expect(page.locator("#review-button")).toBeVisible();
+  await expect(page.locator("#filters-button")).toBeVisible();
+
+  // Below 1100px the column becomes a dock along the bottom, with the list in a
+  // tray, and the map's controls ride above it.
+  await page.setViewportSize({ width: 900, height: 800 });
+  await expect(page.locator(".review-tray-toggle")).toBeVisible();
+  const docked = await page.evaluate(() => {
+    const sidebarBounds = document.getElementById("review-sidebar")!.getBoundingClientRect();
+    const dockBounds = document.querySelector<HTMLElement>(".map-bottom-dock")!.getBoundingClientRect();
     return {
-      alignItems: styles.alignItems,
-      display: styles.display,
-      buttonBounds,
+      reachesTheLeftEdge: Math.round(sidebarBounds.left),
+      sitsOnTheBottom: Math.round(window.innerHeight - sidebarBounds.bottom),
+      mapControlsClearIt: dockBounds.bottom <= sidebarBounds.top,
+      mapControlsVisible: dockBounds.height > 0,
     };
   });
-  expect(expandedActions.display).toBe("flex");
-  expect(expandedActions.alignItems).toBe("center");
-  expect(expandedActions.buttonBounds.every(bounds => bounds.height >= 32)).toBe(true);
-
-  await page.locator("#theme-toggle-button").click();
-  const lightThemeAppearance = await issueBanner.evaluate(element => ({
-    backgroundColor: getComputedStyle(element).backgroundColor,
-    borderTopWidth: getComputedStyle(element).borderTopWidth,
-  }));
-  expect(lightThemeAppearance.backgroundColor).not.toBe(darkThemeAppearance.backgroundColor);
-  expect(lightThemeAppearance.borderTopWidth).toBe("0px");
-
-  await page.setViewportSize({ width: 390, height: 844 });
-  const narrowAppearance = await issueBanner.evaluate(element => {
-    const elementBounds = element.getBoundingClientRect();
-    const visualizationBounds = document.getElementById("viz-container")!.getBoundingClientRect();
-    return {
-      relativeTop: elementBounds.top - visualizationBounds.top,
-      left: elementBounds.left,
-      right: elementBounds.right,
-    };
-  });
-  expect(narrowAppearance.relativeTop).toBeGreaterThanOrEqual(52);
-  expect(narrowAppearance.relativeTop).toBeLessThanOrEqual(60);
-  expect(narrowAppearance.left).toBeGreaterThanOrEqual(0);
-  expect(narrowAppearance.right).toBeLessThanOrEqual(390);
+  expect(docked.reachesTheLeftEdge).toBe(0);
+  expect(docked.sitsOnTheBottom).toBe(0);
+  expect(docked.mapControlsVisible).toBe(true);
+  expect(docked.mapControlsClearIt).toBe(true);
 });
 
 test("floating controls clear content and scrolling never shows browser chrome", async ({ page }) => {

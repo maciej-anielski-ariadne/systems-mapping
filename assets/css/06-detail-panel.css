@@ -75,10 +75,6 @@
   margin: var(--space-2) 0 var(--section-gap);
 }
 
-body.review-open .detail-scope-actions {
-  display: none;
-}
-
 .detail-scope-button {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);

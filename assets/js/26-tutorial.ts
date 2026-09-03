@@ -70,8 +70,8 @@ import {
   closeReview,
   openReview,
   reviewIsOpen,
-  setSensitivityListOpen,
 } from "./23-review-panel";
+import { reviewItemIsCurrent, setReviewFilter, setReviewRecord } from "./25-review-sidebar";
 import { endReviewPass, reviewerNamed, startReviewPass } from "./24-review-record";
 import type { BuilderState, History } from "./types";
 
@@ -1757,20 +1757,22 @@ const ATLAS_STEPS: TutorialStep[] = [
 const REVIEW_EVIDENCE_STEPS: TutorialStep[] = [
   {
     title: "Separate model warnings from assurance",
-    body: "Review gathers three different things: problems found when the map was read, checks on how it behaves, and how well each claim is backed up. A warning means look at this. Hypothesis and Unspecified mean nobody has recorded a source yet — that is a gap in the evidence, not a mistake in the maths.",
-    targetSelector: "#review-stage",
+    body: "Review is one list down the left of everything the map still owes you: what the loader noticed, what somebody flagged, boxes nobody has checked, claims with no source recorded, and what a nudge on each adjustable input actually does. The chips narrow it to one kind. A warning means look at this. Hypothesis and Unspecified mean nobody has recorded a source yet — that is a gap in the evidence, not a mistake in the maths.",
+    targetSelector: "#review-sidebar",
     enter: () => {
       enterReadingSurface();
       openReview();
+      setReviewFilter("all");
     },
   },
   {
     title: "Compare formula and link evidence",
-    body: "Formula evidence supports the mathematical form or parameters. Link evidence supports the causal claim. Filter the evidence inventory to find assumptions that need research, calibration or validation.",
+    body: "Formula evidence supports the mathematical form or parameters. Link evidence supports the causal claim. The queue lists the gaps; switch the picker to a status to read the whole inventory and find assumptions that need research, calibration or validation.",
     targetSelector: ".review-evidence-filter .typeable-dropdown-button",
     enter: () => {
       enterReadingSurface();
       openReview();
+      setReviewFilter("evidence");
     },
     task: { checkpoints: [tutorialCheckpoint(
       "filter-evidence", "Filter the evidence inventory to one assurance status.", "#review-evidence-filter", ["change"],
@@ -1789,25 +1791,30 @@ const REVIEW_EVIDENCE_STEPS: TutorialStep[] = [
 const SENSITIVITY_SWEEP_STEPS: TutorialStep[] = [
   {
     title: "Nudge one adjustable input at a time",
-    body: "Review's sensitivity sweep raises each adjustable input by the same percentage while every other input stays at baseline. It reports what moved, how far the input reached, and where a gate stopped the change.",
-    targetSelector: "#review-fold-toggle",
+    body: "Review's sensitivity sweep raises each adjustable input by the same percentage while every other input stays at baseline. The Odd inputs chip opens on the handful that behave strangely; the picker above the list swaps that for every adjustable box ranked by how far a nudge on it carries, with its biggest movers beside it.",
+    targetSelector: ".review-evidence-filter .typeable-dropdown-button",
     enter: () => {
       enterReadingSurface();
       openReview();
+      setReviewFilter("input");
+      setReviewRecord("odd");
     },
     task: { checkpoints: [tutorialCheckpoint(
-      "open-sensitivity-list", "Open the full sensitivity list.", "#review-fold-toggle", ["click"],
-      () => document.getElementById("review-fold-toggle")?.getAttribute("aria-expanded") === "true",
+      "open-sensitivity-list", "Switch the picker to every adjustable box, by reach.",
+      "#review-evidence-filter", ["change"],
+      () => (document.getElementById("review-evidence-filter") as HTMLSelectElement | null)
+        ?.value === "reach",
     )] },
   },
   {
     title: "A sweep is a clue, not a proof",
     body: "An input that changes nothing might be held back by a cap, might not be connected to anything, or might genuinely not matter. An input that swamps everything else might be right, or its Strength might simply be set too high. The sweep tells you how the model behaves. It cannot tell you whether the model is true.",
-    targetSelector: ".review-rows",
+    targetSelector: "#review-list",
     enter: () => {
       enterReadingSurface();
       openReview();
-      setSensitivityListOpen(true);
+      setReviewFilter("input");
+      setReviewRecord("reach");
     },
   },
 ];
@@ -1818,24 +1825,29 @@ function enterAutomaticReviewExample(): void {
   // real here rather than a fault the lesson planted a moment earlier.
   enterReadingSurface();
   openReview();
+  // Every step establishes its own surface rather than inheriting the last
+  // one's. Without this, arriving here from the sensitivity steps left the list
+  // showing the ranked sweep — whose rows are navigation, not questions — and
+  // this step is about picking a question.
+  setReviewFilter("all");
 }
 
 const AUTOMATIC_REVIEW_STEPS: TutorialStep[] = [
   {
     title: "Let Review find the problems for you",
     body: "Review reads the whole map and reports what does not hold up: rules it cannot follow, boxes that no longer rest where they say they do, bounds quietly changing an answer, and claims nobody ever recorded a source for. This map has real gaps in it — Review will show you where.",
-    targetSelector: ".review-card[data-review-box]",
+    targetSelector: ".review-row[data-review-item]",
     enter: () => enterAutomaticReviewExample(),
   },
   {
     title: "Inspect a finding before you act on it",
-    body: "Each finding names a box and says what was noticed \u2014 an input that changes nothing, a box no input can reach, a claim with no source recorded. None of that means the model is wrong. Open the box on the map and judge it in context; these checks are leads, not permission to change anything.",
-    targetSelector: ".review-card[data-review-box]",
+    body: "Each finding names a box and says what was noticed \u2014 an input that changes nothing, a box no input can reach, a claim with no source recorded. None of that means the model is wrong. Pick one: the map goes to its box, the question moves to the box panel on the right, and the list stays where it is.",
+    targetSelector: ".review-row[data-review-item]",
     enter: () => enterAutomaticReviewExample(),
     task: { checkpoints: [tutorialCheckpoint(
-      "open-review-finding-on-map", "Select a finding to open its box on the map.",
-      ".review-card[data-review-box]", ["click"],
-      () => !reviewIsOpen() && !!state.selectedNodeId,
+      "open-review-finding-on-map", "Pick an item to open it on the map.",
+      ".review-row[data-review-item]", ["click"],
+      () => reviewItemIsCurrent(),
     )] },
   },
 ];
@@ -1855,7 +1867,8 @@ const HUMAN_REVIEW_STEPS: TutorialStep[] = [
         () => reviewerNamed(),
       ),
       tutorialCheckpoint(
-        "start-review-pass", "Then start the review pass.", "#review-start-pass", ["click"],
+        "start-review-pass", "Then start the review pass.",
+        '[data-review-action="start"]', ["click"],
         () => !!state.reviewPass,
       ),
     ] },

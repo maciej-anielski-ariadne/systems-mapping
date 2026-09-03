@@ -197,11 +197,13 @@ body.editing #mode-toggle-button {
   font-weight: inherit;
 }
 
-body.atlas-open .map-bottom-dock,
-body.review-open .map-bottom-dock { display: none; }
+/* The atlas takes the whole frame, so the map's own controls go with it. Review
+ * does NOT any more — it is a docked column beside a map you are still working
+ * on, and hiding the dock took the Review button, Filters and the mode switch
+ * with it. */
+body.atlas-open .map-bottom-dock { display: none; }
 
-body.atlas-open:not(.review-open) .atlas-surface-bar { display: flex; }
-body.review-open .atlas-surface-bar { display: none; }
+body.atlas-open .atlas-surface-bar { display: flex; }
 
 .map-review-status .scope-button {
   display: inline-flex;
@@ -431,10 +433,10 @@ body.review-open .atlas-surface-bar { display: none; }
   height: auto;
 }
 
+/* Same reasoning: nothing covers the map while Review is open, so its row and
+ * column headings are still the reader's index into it. */
 body.atlas-open .viz-sticky-columns,
-body.atlas-open .viz-sticky-rows,
-body.review-open .viz-sticky-columns,
-body.review-open .viz-sticky-rows {
+body.atlas-open .viz-sticky-rows {
   display: none;
 }
 

@@ -24,7 +24,7 @@ import { renderSidebar } from "./13-sidebar";
 import { setFiltersOpen, setUiMode } from "./17-events";
 import { focusNode, scrollNodeIntoView } from "./09-graph-selection";
 import { atlasIsOpen, refreshAtlasValues } from "./21-atlas-view";
-import { syncReviewRail } from "./25-review-rail";
+import { syncReviewSidebar } from "./25-review-sidebar";
 
 export function renderSimulationPanel(): void {
   const simPanel = document.getElementById("simulation-panel");
@@ -532,7 +532,7 @@ export function toggleSimulationMode(): void {
   document.body.classList.toggle("sim-mode", state.simulationMode);
   // Same reason as the mode switch in 17-events' applyUiMode: the rail is a
   // reading-mode surface, and simulation docks the left panel where it lives.
-  syncReviewRail();
+  syncReviewSidebar();
   if (typeof atlasIsOpen === "function" && atlasIsOpen()) refreshAtlasValues();
   renderSidebar();
   // Simulation changes paint and status text, not map structure. Preserve the

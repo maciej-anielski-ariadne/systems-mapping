@@ -182,7 +182,7 @@ export function addCategory(catClass?: string | null): void {
 // + nodes + edges into an undo entry, splice them out, then surface a 6-second
 // "Undo" toast.
 /** "1 box" / "3 boxes" — the old copy said "box(es)" in a dialog people read. */
-function countPhrase(count: number, singular: string, plural: string): string {
+export function countPhrase(count: number, singular: string, plural: string): string {
   return count + " " + (count === 1 ? singular : plural);
 }
 

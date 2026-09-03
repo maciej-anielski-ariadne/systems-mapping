@@ -250,6 +250,25 @@ export function _flashUndoChange(nodeIds: Set<string> | null, edgeIds: Set<strin
   }, UNDO_FLASH_DURATION_MS);
 }
 
+/**
+ * Drop the pending un-flash without running it.
+ *
+ * The flash clears itself 1.4 seconds later and repaints the map to do it, so
+ * the timer outlives whatever triggered it by a long way. In the app that is
+ * exactly right. In a test harness it is a repaint arriving in the middle of an
+ * unrelated test, and one that measures geometry has no way to tell it from a
+ * repaint of its own — so the harness cancels it between tests, alongside the
+ * storage, review-record and search timers.
+ */
+export function cancelPendingUndoFlashWithoutFlushing(): void {
+  if (_undoFlashTimer) clearTimeout(_undoFlashTimer);
+  _undoFlashTimer = null;
+  if (state.canvasEdit) {
+    state.canvasEdit.flashedNodeIds = null;
+    state.canvasEdit.flashedEdgeIds = null;
+  }
+}
+
 // Reload a snapshot via the trusted data-loader path. Preserves selection,
 // edit mode, zoom, and scroll position across the round-trip so undo doesn't
 // jump the user away from what they were doing.

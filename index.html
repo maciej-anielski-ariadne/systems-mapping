@@ -246,20 +246,22 @@
     <div class="sidebar-section"><div id="trace-filters"></div></div>
   </aside>
 
-  <!-- ============== REVIEW RAIL ==============
-       The review queue, docked in the left column for the length of a pass:
-       every box that has something driving it, grouped by the map's columns,
-       each with a mark for whether anybody has checked it. Clicking a row goes
-       to that box; the question and the verdict stay in the box panel on the
-       right. Filled by JS in 25-review-rail.ts, styles in 17-review.css.
+  <!-- ============== REVIEW SIDEBAR ==============
+       The review queue, docked in the left column while Review is open: every
+       thing a review has to decide — what the loader noticed, what somebody
+       flagged, what nobody has checked, where evidence is missing, and what a
+       nudge on each adjustable input does — as rows of one shape. Nothing here
+       expands: clicking a row goes to it on the map and puts its question, with
+       the controls that answer it, at the top of the box panel on the right.
+       Filled by JS in 25-review-sidebar.ts, styles in 17-review.css.
 
        Absolutely positioned rather than a fourth grid child: an absolutely
        positioned grid child is out of flow, so the sidebar / viz / detail
        columns place exactly as they did before this element existed. The space
-       it sits in is reserved by widening --sidebar-w while a pass runs (the
-       left panel is a slide-over drawer while reading, so that track is
-       otherwise empty). Below 1100px it re-lays-out as a dock. -->
-  <div id="review-rail" class="review-rail" hidden aria-label="Review queue"></div>
+       it sits in is reserved by widening --sidebar-w while Review is open (the
+       left panel is a slide-over drawer otherwise, so that track is empty).
+       Below 1100px it re-lays-out as a dock. -->
+  <div id="review-sidebar" class="review-sidebar" hidden aria-label="Review queue"></div>
 
   <!-- ============== PANEL RESIZE HANDLES ==============
        Slim vertical drag bars between the side panels and the central viz.
@@ -280,7 +282,7 @@
       <div class="map-primary-controls" aria-label="Review and map actions">
         <div class="map-review-status" aria-label="Map health">
           <button id="review-button" class="scope-button" aria-expanded="false" hidden
-                  data-tooltip="Check the map: what the loader flagged, and what each adjustable input actually does.">Review</button>
+                  data-tooltip="Everything the map still owes you, in one list: what the loader noticed, what people flagged, what nobody has checked, claims with no source, and what each adjustable input actually does.">Review</button>
         </div>
 
         <div class="map-scope-bar" id="map-scope-bar" aria-label="Map actions">
@@ -358,14 +360,6 @@
          map as one picture you zoom into. Filled by 21-atlas-view.ts when a
          box's Atlas is opened; empty and hidden otherwise. -->
     <div id="atlas-stage" class="atlas-stage" hidden></div>
-
-    <!-- The review panel — what the loader noticed (grouped by cause) beside
-         what a nudge on each adjustable input actually does. Filled by
-         23-review-panel.ts when opened; empty and hidden otherwise. -->
-    <div id="review-stage" class="review-stage" hidden></div>
-    <!-- Persists after Review closes so the author does not have to remember
-         the issue while inspecting or editing its box on the map. -->
-    <aside id="review-issue-banner" class="review-issue-banner" hidden aria-live="polite"></aside>
 
     <!-- Optional CSV-import overlay. No longer shown at startup — the
          canvas boots into an empty 3x3 starter grid instead, and you click

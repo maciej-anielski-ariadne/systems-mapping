@@ -27,6 +27,7 @@ import {
   setMapTextScaleVar,
   syncFloatingHeadings,
 } from "./11-rendering";
+import { confirmAction } from "./04c-confirm";
 import { hideTooltip } from "./12-tooltip";
 import { toggleSimulationMode } from "./14-simulation-panel";
 import { renderSidebar } from "./13-sidebar";
@@ -36,9 +37,9 @@ import { downloadWorkbook, readMapFile } from "./16-file-io";
 import { closeBuilder, openBuilder } from "./16a-builder-state";
 import { bootEmptyStateGrid } from "./16e-canvas-edit";
 import { clearSearch } from "./17a-search";
-import { addCategory, addStage, addStream } from "./16f-canvas-mutations";
+import { addCategory, addStage, addStream, countPhrase } from "./16f-canvas-mutations";
 import { exportCanvasImage, getExportSelection, publishCanvasHtml } from "./19-export";
-import { downloadReviewLog, syncReviewRail } from "./25-review-rail";
+import { downloadReviewLog, reviewItemIsCurrent, syncReviewSidebar } from "./25-review-sidebar";
 import { endReviewPass } from "./24-review-record";
 import {
   EDGES,
@@ -139,9 +140,24 @@ document.querySelectorAll(".publish-html-trigger").forEach(button => {
 // they've drawn. Confirms first when there's existing data to avoid wiping
 // work by accident.
 document.querySelectorAll(".create-map-trigger").forEach(button => {
-  button.addEventListener("click", () => {
+  button.addEventListener("click", async () => {
     const hasData = state.dataLoaded && (NODES.length > 0 || EDGES.length > 0);
-    if (hasData && !confirm("Clear the current map and start with an empty grid? This can't be undone.")) return;
+    // The app's own dialog, not window.confirm(). A suppressed native confirm
+    // returns false, and `if (!confirm(msg)) return;` reads that as "the user
+    // said no" — so in an embedded or preview browser, or once somebody has
+    // ticked "prevent this page from creating additional dialogs", this button
+    // did nothing at all, silently, for the rest of the session.
+    if (hasData && !await confirmAction({
+      eyebrow: "New map",
+      title: "Clear this map and start again?",
+      detail: [
+        countPhrase(NODES.length, "box", "boxes") + " and " +
+        countPhrase(EDGES.length, "link", "links") + " will be replaced by an empty grid.",
+        "Undo cannot bring them back. Export the spreadsheet first if you want to keep them.",
+      ],
+      confirmLabel: "Clear the map",
+      danger: true,
+    })) return;
     if (typeof clearCsvFromStorage === "function") clearCsvFromStorage();
     if (typeof closeAtlas === "function") closeAtlas();
     if (typeof clearSearch === "function") clearSearch();
@@ -245,7 +261,7 @@ export function applyUiMode(options: ApplyUiModeOptions = {}): void {
   // mode. Nothing else was telling it: a pass survived a trip into editing and
   // back with the flag still set and the rail still hidden — the pass running
   // with no sign of it, which is the state it exists to prevent.
-  syncReviewRail();
+  syncReviewSidebar();
 }
 
 export function setUiMode(mode: string): void {
@@ -278,7 +294,11 @@ export function applySelectionClass(): void {
   // zero pixels. That happened on every atlas opened from the header with
   // nothing selected, which is most of them.
   const hasAtlas = typeof atlasIsOpen === "function" && atlasIsOpen();
-  app.classList.toggle("has-selection", !!state.selectedNodeId || hasAtlas);
+  // A review item is the third reason. One that names no box — a finding about
+  // the map as a whole — would otherwise put its question in a panel pinned to
+  // zero pixels.
+  const hasReviewItem = typeof reviewItemIsCurrent === "function" && reviewItemIsCurrent();
+  app.classList.toggle("has-selection", !!state.selectedNodeId || hasAtlas || hasReviewItem);
 }
 
 // ───── Filters drawer ────────────────────────────────────────────────────

@@ -34,6 +34,7 @@ import {
   setTopologicalOrder,
   state,
 } from "../assets/js/03-state";
+import { closeReviewSidebar, resetReviewSidebar } from "../assets/js/25-review-sidebar";
 
 // ── Canvas 2D context (jsdom returns null) ──────────────────────────────────
 function makeContextStub(): Partial<CanvasRenderingContext2D> {
@@ -121,14 +122,18 @@ mountAppDom();
 // The promises are cached by the module loader; subsequent test resets only call
 // the small cancellation functions.
 async function cancelPendingApplicationWorkWithoutFlushing(): Promise<void> {
-  const [storageModule, reviewRecordModule, searchModule] = await Promise.all([
+  const [storageModule, reviewRecordModule, searchModule, undoModule] = await Promise.all([
     import("../assets/js/04a-storage"),
     import("../assets/js/24-review-record"),
     import("../assets/js/17a-search"),
+    import("../assets/js/16g-canvas-undo"),
   ]);
   storageModule.cancelPendingStorageSavesWithoutFlushing();
   reviewRecordModule.cancelPendingReviewSaveWithoutFlushing();
   searchModule.cancelPendingSearchWorkWithoutFlushing();
+  // The undo flash repaints the map 1.4s after an undo to clear itself. Left
+  // pending it lands in whichever test is running by then.
+  undoModule.cancelPendingUndoFlashWithoutFlushing();
 }
 
 // ── Per-test isolation ──────────────────────────────────────────────────────
@@ -243,7 +248,7 @@ function resetApplicationState(): void {
 
   document.body.className = "";
   document.documentElement.removeAttribute("data-theme");
-  for (const overlayIdentifier of ["builder-overlay", "review-stage", "atlas-stage"]) {
+  for (const overlayIdentifier of ["builder-overlay", "review-sidebar", "atlas-stage"]) {
     const overlay = document.getElementById(overlayIdentifier);
     if (overlay) overlay.hidden = true;
   }

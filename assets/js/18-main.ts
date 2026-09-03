@@ -55,7 +55,7 @@ import "./21-atlas-view";
 import "./22-review";
 import "./23-review-panel";
 import "./24-review-record";
-import "./25-review-rail";
+import "./25-review-sidebar";
 import "./26-tutorial";
 
 // ───── Named imports for the boot sequence ──────────────────────────────────
@@ -73,7 +73,7 @@ import { initCanvasEdit, bootEmptyStateGrid } from "./16e-canvas-edit";
 import { applyUiMode } from "./17-events";
 import { initAtlasStage } from "./21-atlas-view";
 import { initReviewStage, syncReviewButton } from "./23-review-panel";
-import { initReviewRail } from "./25-review-rail";
+
 import { showFirstOpenTutorialWelcome } from "./26-tutorial";
 
 console.log("Ariadne Maps — canvas-edit ready");
@@ -90,7 +90,7 @@ console.log(
 initCanvasEdit();
 initAtlasStage();
 initReviewStage();
-initReviewRail();
+
 
 // ───── Restore previous session ──────────────────────────────────────────
 // The UI slot is READ FIRST, before any CSV load, and applied last. Loading a

@@ -168,6 +168,27 @@ describe("confirmAction", () => {
     expect(rule.slice(0, rule.indexOf("}"))).toContain("z-index: var(--z-confirm)");
   });
 
+  it("is the only kind of confirmation the app has", () => {
+    // New map regressed to window.confirm() once already: the conversion was
+    // collateral damage in an unrelated revert, and nothing was pinned down to
+    // notice. A suppressed native confirm returns false, so the button then does
+    // nothing — silently, for the rest of the session. This is the guard.
+    const sources = readdirSync("assets/js")
+      .filter(name => name.endsWith(".ts") && name !== "04c-confirm.ts")
+      .map(name => ({ name, text: readFileSync("assets/js/" + name, "utf8") }));
+
+    const offenders: string[] = [];
+    for (const source of sources) {
+      for (const line of source.text.split("\n")) {
+        const code = line.replace(/\/\/.*$/, "").replace(/\*.*$/, "");
+        if (/(^|[^.\w])confirm\s*\(/.test(code) && !/confirmAction\s*\(/.test(code)) {
+          offenders.push(source.name + ": " + line.trim());
+        }
+      }
+    }
+    expect(offenders, "use confirmAction from 04c-confirm.ts instead").toEqual([]);
+  });
+
   it("stops listening once answered, so a later Escape hits nothing", async () => {
     const answer = confirmAction(options);
     acceptButton().click();

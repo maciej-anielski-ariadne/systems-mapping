@@ -25,6 +25,7 @@ import {
   storageWritesAreSuspended,
 } from "../assets/js/04a-storage";
 import { parseCsvDocument } from "../assets/js/05-csv-parser";
+import { renderDetailPanel } from "../assets/js/15-detail-panel";
 import { loadDataFromCsv } from "../assets/js/06-data-loader";
 import { focusNode, selectEdge, setSelection } from "../assets/js/09-graph-selection";
 import { render } from "../assets/js/11-rendering";
@@ -48,6 +49,7 @@ import {
   setAtlasRenderFrameSchedulerForTests,
 } from "../assets/js/21-atlas-view";
 import { closeReview, openReview, reviewIsOpen } from "../assets/js/23-review-panel";
+import { selectReviewItem } from "../assets/js/25-review-sidebar";
 import { endReviewPass, startReviewPass } from "../assets/js/24-review-record";
 import {
   LEARN_GROUPS,
@@ -1005,19 +1007,21 @@ describe("Learn library", () => {
     expect(startLearnLesson("check-a-map")).toBe(true);
     goToTutorialStep(4);
 
-    // Review draws its behavioural finding cards from whatever the example map
-    // happens to show, so stand one in rather than depending on today's map.
-    const findingCard = document.createElement("div");
-    findingCard.className = "review-card is-clickable";
-    findingCard.setAttribute("data-review-box", "workshop_readiness");
-    findingCard.textContent = "Workshop readiness moves nothing";
-    document.getElementById("review-stage")!.appendChild(findingCard);
+    // The queue draws its rows from whatever the example map happens to show,
+    // so stand one in rather than depending on today's map.
+    const itemRow = document.createElement("button");
+    itemRow.className = "review-row";
+    itemRow.setAttribute("data-review-item", "unchecked:workshop_readiness");
+    itemRow.textContent = "Workshop readiness";
+    document.getElementById("review-sidebar")!.appendChild(itemRow);
 
     expect(tutorialNextButton().disabled).toBe(true);
 
-    findingCard.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    focusNode("workshop_readiness");
-    closeReview();
+    itemRow.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    // The sidebar's own delegated handler is application wiring, not part of
+    // this test; what a click does is stand an item up, so stand one up.
+    selectReviewItem("unchecked:workshop_readiness");
+    renderDetailPanel();
     await finishTutorialCheckpointEvaluation();
     expect(
       tutorialLayer().querySelector('[data-tutorial-checkpoint="open-review-finding-on-map"]')
@@ -1052,7 +1056,8 @@ describe("Learn library", () => {
     const firstReviewTarget = startReviewPass();
     expect(firstReviewTarget).toBeTruthy();
     focusNode(firstReviewTarget!);
-    const startPassButton = document.getElementById("review-start-pass") as HTMLButtonElement;
+    const startPassButton = document.querySelector<HTMLButtonElement>(
+      '#review-sidebar [data-review-action="start"]')!;
     startPassButton.disabled = false;
     startPassButton.click();
     await finishTutorialCheckpointEvaluation();
@@ -1126,8 +1131,8 @@ describe("Learn library", () => {
       { lessonIdentifier: "build-a-map", stepIndex: 2, selector: '#detail-panel [data-field="description"]' },
       { lessonIdentifier: "build-a-map", stepIndex: 5, selector: '.edge-handle[data-node-id="workshop_readiness"]' },
       { lessonIdentifier: "make-it-calculate", stepIndex: 1, selector: '#detail-panel [data-field="combine"]' },
-      { lessonIdentifier: "check-a-map", stepIndex: 0, selector: "#review-stage" },
-      { lessonIdentifier: "check-a-map", stepIndex: 6, selector: ".review-rows" },
+      { lessonIdentifier: "check-a-map", stepIndex: 0, selector: "#review-sidebar" },
+      { lessonIdentifier: "check-a-map", stepIndex: 6, selector: "#review-list" },
       { lessonIdentifier: "check-a-map", stepIndex: 7, selector: "#review-reviewer" },
     ];
 
@@ -1418,7 +1423,7 @@ describe("Learn library", () => {
     // runtime to give Review something to find.
     expect(nodeById.registration_share).toBeDefined();
     expect(nodeById.registration_share.formula).not.toContain("missing_tutorial_input");
-    expect(document.getElementById("review-stage")!.hidden).toBe(false);
+    expect(document.getElementById("review-sidebar")!.hidden).toBe(false);
 
     tutorialLayer().querySelector<HTMLElement>('[data-tutorial-action="exit-lesson"]')!.click();
     expect(nodeById.team_size.formula).toBe(originalFormula);

@@ -109,6 +109,7 @@ import { finding, attributeFindings, groupFindings, REST_DRIFT, invalidateSweep 
 import { refreshReview } from "./23-review-panel";
 import { refreshLiveReviewFindings } from "./22a-review-model";
 import { endReviewPass, reconcileReviews } from "./24-review-record";
+import { resetReviewSidebar } from "./25-review-sidebar";
 
 // The three ways a box can aggregate the arrows pointing into it. Blank in the
 // CSV means "multiplicative", which is exactly what the app did before the
@@ -1139,9 +1140,10 @@ function integrateParsedCsvDocument(
   state.userOverrides = createIdentifierRecord();
   if (shouldPersist) saveUiStateToStorage();
   // A pass belongs to the map it was started on: the queue, the marks and the
-  // rail are all about boxes that may not exist in the file just opened. Ending
-  // it here is the same reasoning as closing the atlas below.
+  // sidebar are all about boxes that may not exist in the file just opened.
+  // Ending it here is the same reasoning as closing the atlas below.
   endReviewPass();
+  resetReviewSidebar();
   // ── The review record, read back from the map's own spreadsheet ──────────
   // Replaced wholesale, never merged: a verdict belongs to the map it was given
   // on, and carrying one across a load would attach somebody's sign-off to a

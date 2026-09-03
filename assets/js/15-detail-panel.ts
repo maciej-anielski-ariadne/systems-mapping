@@ -67,6 +67,7 @@ import { applySelectionClass, setUiMode } from "./17-events";
 import { atlasIsOpen, atlasPanelHtml, openAtlas, putScroll, takeScroll } from "./21-atlas-view";
 import { deleteEdgeById, commitNewEdge, deleteSelection } from "./16e-canvas-edit";
 import { applyCanvasMutation } from "./16f-canvas-mutations";
+import { reviewItemBlockHtml, wireReviewItemBlock } from "./15b-review-item";
 import { openLearnReference, referenceCardForNode } from "./26a-learn-reference";
 
 // The "?" beside the formula editor and the calculation breakdown. It opens the
@@ -100,10 +101,31 @@ export function renderDetailPanel(): void {
     return;
   }
 
-  // Nothing selected → show the empty-state placeholder.
+  // The current review item, when there is one, sits ABOVE the box — the list
+  // on the left says where you are, this says what you are being asked, and the
+  // box's own panel underneath stays exactly as it was.
+  const reviewItem = reviewItemBlockHtml();
+
+  // Nothing selected → show the empty-state placeholder, unless a review item
+  // is asking something that stands on its own. A map-level finding names no
+  // box, and "no box selected" would be the wrong thing to say about it.
   if (!state.selectedNodeId) {
-    emptyState.style.display   = "block";
-    contentState.style.display = "none";
+    if (!reviewItem) {
+      emptyState.style.display   = "block";
+      contentState.style.display = "none";
+      // Emptied, not merely hidden. A hidden panel still holding the last box —
+      // or the last review question — leaves markup that outlives the thing it
+      // describes, findable by anything that queries the document. Guarded,
+      // because this runs on every repaint and an unnecessary write is a
+      // structural mutation anything watching the document has to react to.
+      if (contentState.innerHTML !== "") contentState.innerHTML = "";
+      return;
+    }
+    emptyState.style.display   = "none";
+    contentState.style.display = "block";
+    contentState.classList.remove("is-editing");
+    contentState.innerHTML = reviewItem;
+    wireReviewItemBlock(contentState);
     return;
   }
 
@@ -113,6 +135,7 @@ export function renderDetailPanel(): void {
     state.selectedNodeId = null;
     emptyState.style.display   = "block";
     contentState.style.display = "none";
+    if (contentState.innerHTML !== "") contentState.innerHTML = "";
     return;
   }
 
@@ -134,7 +157,7 @@ export function renderDetailPanel(): void {
   // selection changed. One global mode, one answer.
   const editMode = state.uiMode === "edit";
   contentState.classList.toggle("is-editing", editMode);
-  contentState.innerHTML = renderNodeSkeleton(node, editMode);
+  contentState.innerHTML = reviewItem + renderNodeSkeleton(node, editMode);
 
   // Finite choices in the detail panel are selection-only dropdowns. They must
   // not turn into text fields: Row, Column, Adjustable, Outcome, Combine and
@@ -160,6 +183,7 @@ export function renderDetailPanel(): void {
   if (typeof upgradeSelectsIn === "function") upgradeSelectsIn(contentState);
 
   // Wire up handlers for whichever mode just rendered.
+  wireReviewItemBlock(contentState);
   wireSharedHandlers(node, contentState);
   if (editMode) {
     wireEditModeHandlers(node, contentState);

@@ -306,7 +306,7 @@ export function initCanvasEdit(): void {
         "text", "search", "email", "url", "tel", "password",
       ].includes(target.type));
     const targetUsesLocalTextUndo = !!target?.closest(
-      "#search-input, #builder-overlay, #review-stage, .typeable-dropdown-input, " +
+      "#search-input, #builder-overlay, #review-sidebar, .typeable-dropdown-input, " +
       ".sidebar input, .sidebar textarea, .sidebar [contenteditable]",
     ) || (targetIsTextEditingControl && !targetIsInsideDetailPanel);
     if (commandOrControlIsPressed && (event.key === "z" || event.key === "Z")) {

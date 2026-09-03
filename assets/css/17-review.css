@@ -1,70 +1,84 @@
 /* =============================================================================
- * REVIEW PANEL — what the loader noticed, and what each input actually does
+ * REVIEW — the queue down the left, and the current item at the top of the right
  * -----------------------------------------------------------------------------
- * An overlay over the map, two columns, both of them lists of cards. Structured
- * like the atlas stage (16-atlas.css) because it does the same thing: takes the
- * frame, says one thing, and hands you back to the map.
+ * Three columns, three jobs. The sidebar says WHERE YOU ARE in a review, the map
+ * shows WHAT YOU ARE LOOKING AT, and the box panel is WHAT YOU ARE DOING: the
+ * item's own controls sit above the box, which stays fully editable underneath.
+ *
+ * This replaced a full-frame overlay. Both halves of a review are lists of
+ * boxes, so every route out of that overlay closed it — and it had grown a
+ * floating banner whose only job was to carry one issue back to the map the
+ * list had just been taken off. Nothing closes now, so nothing has to be
+ * carried.
  *
  * THE ONE NEW COLOUR RULE. Severity is data, not affordance — like the map's
  * increase / decrease / enable hues, and unlike everything else in the app,
  * which reserves colour for what you can act on. Three dots, and only ever as
- * a 6px dot beside a card's name, so a colour never has to be read as a word:
+ * a 6px dot in a row's left column, so a colour never has to be read as a word:
  *   ignored  (red)   the engine threw away something you typed
  *   wrong    (amber) the number is not the one you declared
  *   mismatch (grey)  the picture and the maths disagree; the number is fine
  * ========================================================================== */
 
-.review-stage {
+/* =============================================================================
+ * THE SIDEBAR
+ * -----------------------------------------------------------------------------
+ * Wide windows: a 300px column on the left, holding the whole queue. Narrow ones
+ * (below 1100px): the same markup as a dock along the bottom, with the list in a
+ * tray. Same rows, same state, same handlers — a media query rather than a
+ * second component. The app fills the viewport, so window width IS the app's
+ * width here; this is the one place a viewport query answers the right question.
+ * ========================================================================== */
+
+.app { --review-w: 300px; --dock-h: 52px; }
+
+/* Review reserves the left track for as long as it is open, in view and edit
+ * alike — the whole point is that fixing something does not cost you the list.
+ *
+ * Simulation is the exception, and not an arbitrary one: in that mode the left
+ * track IS the sliders, and you work them against the map. So the sidebar stands
+ * down while simulating and comes back when it ends; 25-review-sidebar.ts checks
+ * the same condition before it renders. */
+body.review-open:not(.sim-mode) .app { --sidebar-w: var(--review-w); }
+
+.review-sidebar {
+  /* Out of flow, so the three grid columns place exactly as they did before
+   * this element existed. `.app` is the containing block (it is positioned). */
   position: absolute;
-  inset: 0;
-  z-index: 5;
+  left: 0;
+  top: var(--header-h);
+  bottom: 0;
+  width: var(--review-w);
+  z-index: var(--z-panel-strip);
   display: flex;
   flex-direction: column;
-  background: var(--bg-deepest);
-  /* The stage sits inside the MAP column, so how much room it has depends on
-   * whether the two side panels are docked — not on the size of the window.
-   * A viewport media query would stack the columns on a narrow window that had
-   * plenty of room, and keep them side by side on a wide window whose panels
-   * had eaten most of it. The container query below asks the only question
-   * that matters: how wide is this panel, right now. */
-  container-type: inline-size;
-  container-name: review;
+  min-height: 0;
+  background: var(--bg-deep);
+  border-right: 1px solid var(--border-subtle);
 }
 
-.review-stage[hidden] { display: none; }
+.review-sidebar[hidden] { display: none; }
 
-/* The map underneath is still rendered — it just isn't the thing on screen. */
-body.review-open .viz-controls-cluster { display: none; }
-
-/* ── Header strip ───────────────────────────────────────────────────────── */
+/* ── Head: how much of the review is done ───────────────────────────────── */
 .review-head {
   flex: 0 0 auto;
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--gutter);
+  padding: var(--space-2) var(--gutter) var(--space-3);
   border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-deep);
 }
 
-.review-title {
+.review-headrow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.review-eyebrow {
   font-size: var(--fs-eyebrow);
   letter-spacing: var(--tracking-cap);
   text-transform: uppercase;
   color: var(--text-tertiary);
   font-weight: var(--fw-medium);
-}
-
-/* Truncates rather than wraps: the head is one line high, and Done must never
- * be pushed off the end of it by a long sentence. */
-.review-sub {
-  flex: 1;
-  min-width: 0;
-  font-size: var(--fs-body);
-  color: var(--text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .review-close {
@@ -75,52 +89,261 @@ body.review-open .viz-controls-cluster { display: none; }
   background: transparent;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-interactive);
-  padding: var(--space-1) var(--space-3);
+  padding: 1px var(--space-2);
   cursor: pointer;
 }
-.review-close:hover { background: var(--act-tint); border-color: var(--act); }
+.review-close:hover { border-color: var(--act); background: var(--act-tint); }
 
-/* ── Two columns, each scrolling on its own ─────────────────────────────── */
-.review-body {
+.review-progress {
+  margin-top: var(--space-0_5);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+.review-progress span { color: var(--text-tertiary); font-weight: 400; }
+
+.review-bar {
+  display: flex;
+  height: 4px;
+  margin-top: var(--space-1_5);
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--bg-deepest);
+}
+.review-bar i { display: block; height: 100%; }
+
+/* ── The chips over the list ────────────────────────────────────────────── */
+.review-chips {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--gutter);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.review-chip {
+  font: inherit;
+  font-size: var(--fs-eyebrow);
+  padding: 2px var(--space-1_5);
+  border-radius: var(--radius-interactive);
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.review-chip:hover { color: var(--text-secondary); border-color: var(--border-strong); }
+.review-chip.on {
+  color: var(--act);
+  border-color: var(--act);
+  background: var(--act-tint);
+}
+
+/* The evidence status picker, shown only while the Evidence chip is on. The
+ * queue carries gaps; this is how the whole inventory is reached. */
+.review-evidence-filter {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--gutter);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--fs-body);
+  color: var(--text-tertiary);
+}
+.review-evidence-select {
   flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0;
-}
-
-.review-column {
   min-width: 0;
+  background: var(--bg-deepest);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-interactive);
+  color: var(--text-primary);
+  font: 400 var(--fs-body)/1.4 var(--font-ui);
+  padding: var(--space-1) var(--space-2);
+}
+
+/* ── The list ───────────────────────────────────────────────────────────── */
+.review-list {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
-  padding: var(--space-3) var(--gutter) var(--space-6);
-}
-.review-column + .review-column { border-left: 1px solid var(--border-subtle); }
-
-/* One column below the width where two would each be too narrow to read a
- * formula in. The sections then stack, issues first. */
-@container review (max-width: 900px) {
-  .review-body { grid-template-columns: 1fr; overflow-y: auto; }
-  .review-column { overflow-y: visible; }
-  .review-column + .review-column { border-left: 0; border-top: 1px solid var(--border-subtle); }
+  padding-bottom: var(--space-2);
 }
 
-/* ── Section headings ───────────────────────────────────────────────────── */
-.review-section-head {
+/* Sticky, because a queue of forty rows scrolls past the heading that says what
+ * kind of thing you are now looking at — and the five kinds are answered in
+ * five different ways, so which one you are in is not decoration. */
+.review-group {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   align-items: baseline;
+  justify-content: space-between;
   gap: var(--space-2);
-  padding-bottom: var(--space-2);
-  margin-bottom: var(--section-gap);
-  border-bottom: 1px solid var(--border-subtle);
-  position: sticky;
-  top: calc(var(--space-3) * -1);
-  background: var(--bg-deepest);
-  z-index: 1;
-  padding-top: var(--space-3);
-  margin-top: calc(var(--space-3) * -1);
+  padding: var(--space-2) var(--gutter) var(--space-1);
+  background: var(--bg-deep);
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--tracking-cap);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  font-weight: var(--fw-medium);
+}
+.review-group-count { letter-spacing: 0; font-variant-numeric: tabular-nums; }
+
+/* A row is a destination and nothing else. Nothing here expands: the thing you
+ * want after reading one is the box, and the question about it is on the right. */
+.review-row {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: start;
+  width: 100%;
+  padding: var(--space-1) var(--gutter);
+  border: 0;
+  background: transparent;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.review-row:hover { background: var(--bg-mid); }
+.review-row.is-current {
+  background: var(--act-tint);
+  box-shadow: inset 2px 0 0 var(--act);
+}
+.review-row:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--act); }
+
+.review-row-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.45em;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
 }
 
-.review-section-title {
+.review-row-body { min-width: 0; }
+.review-row-name { display: block; color: var(--text-primary); overflow-wrap: anywhere; }
+.review-row.is-current .review-row-name { font-weight: var(--fw-semibold); }
+.review-row.is-settled .review-row-name { color: var(--text-tertiary); }
+/* Two lines, then an ellipsis. A row is a destination, not the explanation: a
+ * sweep finding's own sentence runs to four lines at this width, and four rows
+ * of that is a list nobody scans. The whole of it is in the box panel, which is
+ * where the item is actually read. */
+.review-row-why {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--text-tertiary);
+  overflow-wrap: anywhere;
+}
+
+/* A comment on a box nobody has judged yet would otherwise be invisible here. */
+.review-row-note {
+  align-self: center;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent-amber);
+}
+
+.review-row.rv-agreed  .review-row-mark { color: var(--accent-green); }
+.review-row.rv-flagged .review-row-mark { color: var(--accent-amber); }
+.review-row.rv-stale   .review-row-mark { color: var(--text-secondary); }
+
+.review-list .review-empty { margin: var(--space-2) var(--gutter); }
+
+/* ── Foot: who is signing, where to go next, how to take the log away ───── */
+.review-foot {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--border-subtle);
+  padding: var(--space-2) var(--gutter);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1_5);
+  background: var(--bg-deep);
+}
+
+.review-who {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--fs-body);
+  color: var(--text-tertiary);
+}
+.review-who.is-wanted label { color: var(--accent-amber); }
+.review-who-input {
+  min-width: 0;
+  background: var(--bg-deepest);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-interactive);
+  color: var(--text-primary);
+  font: 400 var(--fs-body)/1.4 var(--font-ui);
+  padding: var(--pad-input);
+}
+.review-who-why { font-size: var(--fs-eyebrow); color: var(--text-tertiary); line-height: 1.5; }
+
+.review-next {
+  width: 100%;
+  font: inherit;
+  font-size: var(--fs-body);
+  color: var(--act);
+  background: transparent;
+  border: 1px solid var(--act);
+  border-radius: var(--radius-interactive);
+  padding: var(--pad-button);
+  cursor: pointer;
+}
+.review-next:hover:not(:disabled) { background: var(--act-tint); }
+.review-next:disabled { color: var(--text-tertiary); border-color: var(--border-subtle); cursor: default; }
+
+.review-footrow { display: flex; gap: var(--space-1); }
+.review-btn {
+  flex: 1;
+  font: inherit;
+  font-size: var(--fs-eyebrow);
+  color: var(--text-tertiary);
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-interactive);
+  padding: var(--space-1);
+  cursor: pointer;
+}
+.review-btn:hover:not(:disabled) { color: var(--text-secondary); border-color: var(--border-strong); }
+.review-btn:disabled { opacity: .5; cursor: default; }
+
+/* Only meaningful in the dock below 1100px, where the list is a tray. */
+.review-tray-toggle { display: none; }
+
+/* =============================================================================
+ * THE ITEM BLOCK — the current question, at the top of the box panel
+ * -----------------------------------------------------------------------------
+ * Full-bleed across the panel's gutter so it reads as a band above the box
+ * rather than as the box's first field. Everything below it is the ordinary box
+ * panel, unchanged and still editable.
+ * ========================================================================== */
+
+.review-item {
+  margin: 0 calc(-1 * var(--gutter)) var(--space-3);
+  padding: var(--space-2) var(--gutter) var(--space-3);
+  background: var(--bg-mid);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.review-item-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.review-item-kind {
   font-size: var(--fs-eyebrow);
   letter-spacing: var(--tracking-cap);
   text-transform: uppercase;
@@ -128,57 +351,128 @@ body.review-open .viz-controls-cluster { display: none; }
   font-weight: var(--fw-medium);
 }
 
-.review-section-toggle {
-  width: 100%;
-  border-right: 0;
-  border-left: 0;
-  border-top: 0;
+.review-item-close {
+  flex: 0 0 auto;
   font: inherit;
-  color: inherit;
-  text-align: left;
+  line-height: 1;
+  color: var(--text-tertiary);
+  background: transparent;
+  border: 0;
+  padding: 0 var(--space-1);
   cursor: pointer;
 }
+.review-item-close:hover { color: var(--text-primary); }
 
-.review-section-toggle:hover .review-section-title,
-.review-section-toggle:focus-visible .review-section-title {
+.review-item-title {
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
   color: var(--text-primary);
+  overflow-wrap: anywhere;
 }
 
-.review-section-toggle:focus-visible {
-  outline: none;
-  box-shadow: inset 0 0 0 1px var(--act);
+.review-item-why  { color: var(--text-secondary); line-height: 1.55; }
+.review-item-why code,
+.review-item-fix code { font-family: var(--font-mono); color: var(--text-primary); }
+
+.review-item-fix {
+  color: var(--text-secondary);
+  line-height: 1.55;
+  padding-left: var(--space-2);
+  border-left: 2px solid var(--border-strong);
 }
 
-.review-section-disclosure {
-  flex: 0 0 auto;
-  width: 1em;
-  color: var(--act);
-}
+.review-item-note { font-size: var(--fs-eyebrow); color: var(--text-tertiary); line-height: 1.5; }
 
-.review-section-count {
-  font-family: var(--font-mono);
-  font-size: var(--fs-body);
-  color: var(--accent-amber);
-}
-.review-section-count.ok { color: var(--accent-green); }
-
-.review-hint {
-  font-size: var(--fs-body);
+.review-item-fold {
+  font-size: var(--fs-eyebrow);
   color: var(--text-tertiary);
   line-height: 1.5;
-  margin-bottom: var(--section-gap);
 }
+.review-item-fold b { color: var(--text-secondary); font-weight: var(--fw-medium); }
 
-.review-scope-note {
-  margin: calc(-1 * var(--space-2)) 0 var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  border-left: 2px solid var(--border-strong);
+.review-item-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
   color: var(--text-tertiary);
-  font-size: var(--fs-body);
-  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+}
+.review-item-facts b { color: var(--text-secondary); font-weight: var(--fw-medium); }
+
+.review-item-code {
+  display: block;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
 }
 
-.review-scope-note b { color: var(--text-secondary); font-weight: var(--fw-semibold); }
+/* A person's note, quoted rather than paraphrased — it is the most valuable
+ * thing in the record and the only part the app did not write. */
+.review-item-quote {
+  color: var(--text-primary);
+  line-height: 1.55;
+  padding-left: var(--space-2);
+  border-left: 2px solid var(--accent-amber);
+}
+
+.review-item-by { font-size: var(--fs-eyebrow); color: var(--text-tertiary); }
+
+.review-item-close-note,
+.review-evidence-fields textarea,
+.review-evidence-fields input {
+  width: 100%;
+  background: var(--bg-deepest);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-interactive);
+  color: var(--text-primary);
+  font: 400 var(--fs-body)/1.5 var(--font-ui);
+  padding: var(--pad-input);
+  resize: vertical;
+}
+
+.review-evidence-fields { display: flex; flex-direction: column; gap: var(--space-1_5); }
+.review-evidence-fields label { display: grid; gap: 2px; }
+.review-evidence-fields label > span {
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--tracking-cap);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.review-evidence-fields select {
+  width: 100%;
+  background: var(--bg-deepest);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-interactive);
+  color: var(--text-primary);
+  font: 400 var(--fs-body)/1.4 var(--font-ui);
+  padding: var(--pad-input);
+}
+
+.review-item-actions { display: flex; gap: var(--space-1); }
+
+.review-item-primary,
+.review-item-secondary {
+  font: inherit;
+  font-size: var(--fs-body);
+  border-radius: var(--radius-interactive);
+  padding: var(--pad-button);
+  cursor: pointer;
+}
+.review-item-primary {
+  color: var(--bg-deepest);
+  background: var(--act);
+  border: 1px solid var(--act);
+}
+.review-item-primary:hover:not(:disabled) { background: var(--act-hi); }
+.review-item-primary:disabled { opacity: .5; cursor: default; }
+.review-item-secondary {
+  color: var(--act);
+  background: transparent;
+  border: 1px solid var(--border-strong);
+}
+.review-item-secondary:hover { border-color: var(--act); background: var(--act-tint); }
+
+.review-item-foot { display: flex; justify-content: flex-end; }
 
 .review-empty {
   font-size: var(--fs-body);
@@ -204,42 +498,17 @@ body.review-open .viz-controls-cluster { display: none; }
   cursor: pointer;
 }
 .review-run:hover { background: var(--act-hi); }
-
-/* ── A card: one thing to fix, or one input worth a look ────────────────── */
-.review-card {
-  background: var(--bg-deep);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-surface);
-  padding: var(--space-3);
-  margin-bottom: var(--space-2);
+/* Severity dot — see the header note. Never the only cue: the message says it. */
+.review-sev {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  align-self: center;
 }
-.review-card.is-clickable { cursor: pointer; }
-.review-card.is-clickable:hover { background: var(--bg-mid); border-color: var(--border-strong); }
-
-.review-issue-card { padding: 0; overflow: hidden; }
-.review-issue-card.is-expanded { border-color: var(--border-strong); }
-.review-card-toggle {
-  width: 100%;
-  padding: var(--space-3);
-  color: inherit;
-  background: transparent;
-  border: 0;
-  text-align: left;
-  font: inherit;
-  cursor: pointer;
-}
-.review-card-toggle:hover { background: var(--bg-mid); }
-.review-card-content { padding: 0 var(--space-3) var(--space-3); border-top: 1px solid var(--border-subtle); }
-.review-direct-tag {
-  margin-left: auto;
-  padding: 2px var(--space-1_5);
-  border-radius: 999px;
-  color: var(--accent-green);
-  background: color-mix(in srgb, var(--accent-green) 12%, transparent);
-  font-size: var(--fs-eyebrow);
-}
-.review-disclosure { color: var(--text-tertiary); font-family: var(--font-mono); }
-
+.review-sev.sev-ignored  { background: var(--accent-red); }
+.review-sev.sev-wrong    { background: var(--accent-amber); }
+.review-sev.sev-mismatch { background: var(--text-tertiary); }
 .review-proposals { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--border-subtle); }
 .review-proposal-label {
   margin-bottom: var(--space-2);
@@ -291,193 +560,6 @@ body.review-open .viz-controls-cluster { display: none; }
 .review-value-changes { margin-top: var(--space-1); }
 .review-value-changes > div { display: flex; justify-content: space-between; gap: var(--space-2); padding: 3px 0; color: var(--text-secondary); font-size: var(--fs-eyebrow); }
 .review-value-changes code { color: var(--text-primary); white-space: nowrap; }
-
-.review-apply,
-.review-secondary,
-.review-open-map {
-  font: inherit;
-  font-size: var(--fs-body);
-  border-radius: var(--radius-interactive);
-  padding: var(--space-1_5) var(--space-3);
-  cursor: pointer;
-}
-.review-apply { color: var(--bg-deepest); background: var(--act); border: 1px solid var(--act); }
-.review-apply:hover { background: var(--act-hi); }
-.review-secondary,
-.review-open-map { color: var(--act); background: transparent; border: 1px solid var(--border-strong); }
-.review-secondary:hover,
-.review-open-map:hover { border-color: var(--act); background: var(--act-tint); }
-.review-open-map { margin-left: var(--space-2); }
-
-.review-resolved {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  margin-bottom: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  color: var(--text-secondary);
-  background: color-mix(in srgb, var(--accent-green) 10%, var(--bg-deep));
-  border: 1px solid color-mix(in srgb, var(--accent-green) 40%, var(--border-subtle));
-  border-radius: var(--radius-surface);
-  font-size: var(--fs-body);
-}
-.review-resolved-actions { display: flex; gap: var(--space-1); }
-
-/* The compact handoff shown over the map after an issue is opened. The top
- * offset reserves the floating column-heading band so the two surfaces never
- * obscure one another. */
-.review-issue-banner {
-  position: absolute;
-  z-index: 4;
-  top: calc(48px + var(--space-3));
-  bottom: auto;
-  left: 50%;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 40px;
-  width: min(680px, calc(100% - var(--space-6)));
-  transform: translateX(-50%);
-  box-sizing: border-box;
-  color: var(--text-primary);
-  background: color-mix(in srgb, var(--bg-deep) 92%, transparent);
-  border: 0;
-  border-radius: var(--radius-surface);
-  box-shadow: var(--shadow-float);
-  backdrop-filter: blur(12px);
-}
-.review-issue-banner[hidden] { display: none; }
-.review-banner-main {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-  min-height: 40px;
-  padding: var(--space-2) var(--space-3);
-  font: inherit;
-  color: inherit;
-  background: transparent;
-  border: 0;
-  text-align: left;
-  cursor: pointer;
-}
-.review-banner-main:hover { background: var(--act-tint); }
-.review-banner-copy { flex: 1; min-width: 0; display: flex; gap: var(--space-2); align-items: baseline; }
-.review-banner-copy b { flex: 0 0 auto; font-size: var(--fs-body); }
-.review-banner-copy span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); font-size: var(--fs-body); }
-.review-disclosure { flex: 0 0 16px; text-align: center; }
-.review-banner-dismiss {
-  display: grid;
-  place-items: center;
-  align-self: stretch;
-  width: 40px;
-  min-height: 40px;
-  padding: 0;
-  color: var(--text-tertiary);
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-interactive);
-  font-size: 20px;
-  cursor: pointer;
-}
-.review-banner-dismiss:hover { color: var(--text-primary); background: var(--act-tint); }
-.review-banner-details {
-  grid-column: 1 / -1;
-  padding: 0 var(--space-3) var(--space-3) 28px;
-  color: var(--text-secondary);
-  font-size: var(--fs-body);
-  line-height: 1.5;
-}
-.review-banner-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-}
-.review-banner-actions button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 32px;
-  margin: 0;
-}
-.review-issue-banner.is-resolved { background: color-mix(in srgb, var(--accent-green) 10%, var(--bg-deep)); }
-
-@media (max-width: 600px) {
-  .review-issue-banner { top: calc(48px + var(--space-2)); width: calc(100% - var(--space-3)); }
-  .review-banner-copy { display: block; }
-  .review-banner-copy b,
-  .review-banner-copy span { display: block; }
-  .review-resolved { align-items: flex-start; flex-direction: column; }
-}
-
-.review-card-head {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.review-card-label {
-  font-size: var(--fs-body);
-  color: var(--text-primary);
-  font-weight: var(--fw-medium);
-}
-
-.review-card-id {
-  font-family: var(--font-mono);
-  font-size: var(--fs-eyebrow);
-  color: var(--act);
-}
-
-/* Severity dot — see the header note. Never the only cue: the message says it. */
-.review-sev {
-  flex: 0 0 auto;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  align-self: center;
-}
-.review-sev.sev-ignored  { background: var(--accent-red); }
-.review-sev.sev-wrong    { background: var(--accent-amber); }
-.review-sev.sev-mismatch { background: var(--text-tertiary); }
-
-.review-what {
-  font-size: var(--fs-body);
-  color: var(--text-secondary);
-  line-height: 1.55;
-  margin-top: var(--space-1_5);
-}
-.review-what code,
-.review-fix code {
-  font-family: var(--font-mono);
-  font-size: var(--fs-eyebrow);
-  background: var(--bg-mid);
-  border-radius: var(--radius-interactive);
-  padding: 1px var(--space-1);
-  color: var(--accent-amber);
-}
-
-.review-fix {
-  font-size: var(--fs-body);
-  color: var(--accent-green);
-  line-height: 1.5;
-  margin-top: var(--space-1_5);
-}
-.review-fix::before { content: "→ "; }
-
-/* The consequences, folded. Present so nobody thinks they were suppressed —
- * quiet so nobody reads them as work. */
-.review-fold {
-  font-size: var(--fs-body);
-  color: var(--text-tertiary);
-  line-height: 1.5;
-  margin-top: var(--space-2);
-  padding-left: var(--space-2);
-  border-left: 2px solid var(--bg-lighter);
-}
-.review-fold b { color: var(--text-secondary); font-weight: var(--fw-medium); }
-
 /* ── The arms of a gate ─────────────────────────────────────────────────── */
 /* Monospace and right-aligned numbers, because the whole point is comparing
  * three values down a column to see which is smallest. */
@@ -504,69 +586,6 @@ body.review-open .viz-controls-cluster { display: none; }
 .review-arm.is-binding .review-arm-text,
 .review-arm.is-binding .review-arm-value,
 .review-arm.is-binding .review-arm-tag { color: var(--accent-red); }
-
-/* ── The full sweep, folded ─────────────────────────────────────────────── */
-.review-fold-toggle {
-  display: block;
-  width: 100%;
-  text-align: left;
-  font: inherit;
-  font-size: var(--fs-body);
-  color: var(--text-tertiary);
-  background: transparent;
-  border: 0;
-  border-top: 1px solid var(--border-subtle);
-  padding: var(--space-2) 0;
-  margin-top: var(--space-3);
-  cursor: pointer;
-}
-.review-fold-toggle:hover { color: var(--act); }
-
-.review-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-1_5) var(--space-1);
-  border-bottom: 1px solid var(--border-subtle);
-  cursor: pointer;
-}
-.review-row:hover { background: var(--act-tint); }
-
-.review-row-body { flex: 1; min-width: 0; }
-.review-row-name { display: block; font-size: var(--fs-body); color: var(--text-primary); }
-.review-row-top {
-  display: block;
-  font-size: var(--fs-eyebrow);
-  color: var(--text-tertiary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  margin-top: 1px;
-}
-.review-row-top b { color: var(--text-secondary); font-weight: var(--fw-regular); }
-.review-row-top .up { color: var(--accent-green); }
-.review-row-top .dn { color: var(--accent-red); }
-
-.review-row-bar {
-  flex: 0 0 74px;
-  height: 5px;
-  background: var(--bg-mid);
-  border-radius: 3px;
-  overflow: hidden;
-}
-.review-row-bar i { display: block; height: 100%; background: var(--act); }
-
-.review-row-count {
-  flex: 0 0 22px;
-  text-align: right;
-  font-family: var(--font-mono);
-  font-size: var(--fs-eyebrow);
-  color: var(--text-secondary);
-}
-
-.review-row.is-dead .review-row-name { color: var(--accent-red); }
-.review-row.is-dead .review-row-bar i { background: var(--accent-red); }
-
 /* ── The header button's count badge ────────────────────────────────────── */
 .review-badge {
   display: inline-block;
@@ -583,7 +602,6 @@ body.review-open .viz-controls-cluster { display: none; }
 .review-badge.sev-ignored  { background: var(--accent-red); }
 .review-badge.sev-wrong    { background: var(--accent-amber); }
 .review-badge.sev-mismatch { background: var(--text-tertiary); }
-
 /* =============================================================================
  * THE REVIEW CARD — the box panel while a pass is running
  * -----------------------------------------------------------------------------
@@ -760,7 +778,6 @@ body.review-open .viz-controls-cluster { display: none; }
   color: var(--text-tertiary);
 }
 .rv-stale { color: var(--accent-amber); }
-
 /* =============================================================================
  * COVERAGE ON THE MAP
  * -----------------------------------------------------------------------------
@@ -777,460 +794,12 @@ body.review-pass .node-group.rv-stale .node-rect   { stroke: var(--accent-amber)
  * the marks accumulate as the pass goes: the map fills in rather than emptying. */
 body.review-pass .node-group.rv-unreviewed .node-rect { stroke: transparent; }
 
-/* ── Coverage, in the panel ─────────────────────────────────────────────── */
-.review-cov { margin-bottom: var(--space-3); }
 
-.review-cov-bar {
-  display: flex;
-  height: 6px;
-  border-radius: 3px;
-  overflow: hidden;
-  background: var(--bg-mid);
-}
-.review-cov-bar i { display: block; height: 100%; }
-
+/* ── The fills, shared by the map marks and the sidebar's progress bar ─── */
 .cov-agreed  { background: var(--accent-green); }
 .cov-flagged { background: var(--accent-amber); }
 .cov-stale   { background: color-mix(in srgb, var(--accent-amber) 45%, var(--bg-mid)); }
 .cov-none    { background: var(--bg-mid); }
-
-.review-cov-key {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1) var(--space-3);
-  margin-top: var(--space-1_5);
-  font-family: var(--font-mono);
-  font-size: var(--fs-eyebrow);
-  color: var(--text-tertiary);
-}
-.review-cov-key span { display: flex; align-items: center; gap: var(--space-1); }
-.review-cov-key i { width: 8px; height: 8px; border-radius: 2px; display: block; }
-
-.review-who {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-bottom: var(--space-2);
-  font-size: var(--fs-body);
-  color: var(--text-secondary);
-}
-.review-who-input {
-  width: 90px;
-  background: var(--bg-deepest);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-interactive);
-  color: var(--text-primary);
-  font: 400 var(--fs-body)/1.4 var(--font-ui);
-  padding: var(--space-1) var(--space-2);
-}
-
-/* ── The review log ─────────────────────────────────────────────────────── */
-/* A person's note, quoted rather than paraphrased — it is the most valuable
- * thing in the record and the only part the app did not write. */
-.review-note {
-  font-size: var(--fs-body);
-  color: var(--text-primary);
-  line-height: 1.5;
-  margin-top: var(--space-1_5);
-  padding-left: var(--space-2);
-  border-left: 2px solid var(--accent-amber);
-}
-.review-note-none { font-style: italic; }
-
-.review-log-by {
-  margin-top: var(--space-2);
-  font-family: var(--font-mono);
-  font-size: var(--fs-eyebrow);
-  color: var(--text-tertiary);
-}
-
-/* The account of what was done, asked for before a flag can be closed. Styled
- * as the note above it, not as an alarm: it is a normal thing to fill in. */
-.review-close-note {
-  width: 100%;
-  box-sizing: border-box;
-  margin-top: var(--space-2);
-  background: var(--bg-deepest);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-interactive);
-  color: var(--text-secondary);
-  font: 400 var(--fs-body)/1.4 var(--font-ui);
-  padding: var(--space-1_5) var(--space-2);
-  resize: vertical;
-}
-.review-close-note:focus { outline: none; box-shadow: var(--focus-ring); }
-
-/* A disabled verdict button is waiting for something, not broken. */
-.rv-v:disabled {
-  opacity: .45;
-  cursor: not-allowed;
-}
-
-/* The name field, while there is not yet a name worth recording. One cue, on
- * the field itself — the sentence underneath already says why. */
-.review-who.is-wanted .review-who-input {
-  border-color: color-mix(in srgb, var(--accent-amber) 55%, transparent);
-}
-.review-who-why {
-  margin: var(--space-1) 0 var(--space-2);
-  font-size: var(--fs-body);
-  color: var(--text-tertiary);
-  line-height: 1.45;
-}
-.review-who-why b { color: var(--text-secondary); font-weight: var(--fw-medium); }
-
-.review-run:disabled {
-  opacity: .5;
-  cursor: not-allowed;
-  background: transparent;
-  color: var(--text-tertiary);
-  border-color: var(--border-subtle);
-}
-
-.review-log-actions {
-  display: flex;
-  gap: var(--space-1);
-  margin-top: var(--space-2);
-}
-.review-log-actions .rv-v { flex: 1; }
-
-.review-log-state {
-  flex: 0 0 auto;
-  font-family: var(--font-mono);
-  font-size: var(--fs-eyebrow);
-  padding: 1px var(--space-1_5);
-  border-radius: var(--radius-interactive);
-  background: var(--bg-mid);
-  color: var(--text-tertiary);
-}
-.review-log-state.rv-agreed  { color: var(--accent-green); }
-.review-log-state.rv-flagged { color: var(--accent-amber); }
-.review-log-state.rv-stale   { color: var(--accent-amber); }
-
-/* =============================================================================
- * THE REVIEW RAIL — the queue, docked beside the map for the length of a pass
- * -----------------------------------------------------------------------------
- * Wide windows: a 260px column on the left, holding every box in the queue.
- * Narrow ones (below 1100px): the same markup as a dock along the bottom, with
- * the list in a tray. One component, two layouts — see 25-review-rail.ts for
- * why the list is here and the verdict is not.
- * ========================================================================== */
-
-.app { --rail-w: 260px; --dock-h: 52px; }
-
-/* The space the rail sits in. Reading mode collapses this track to 0 and slides
- * the left panel over the map as a drawer, so the track is free — but that rule
- * is `body.reading:not(.sim-mode) .app`, and a plainer selector here would lose
- * to it on specificity. Hence the repetition: this has to say at least as much.
- *
- * A pass only turns the box panel into a review card while reading, so the rail
- * follows the same condition rather than inventing a second one; 25-review-rail
- * checks the same thing before it renders. */
-body.reading:not(.sim-mode).review-pass .app { --sidebar-w: var(--rail-w); }
-
-.review-rail {
-  /* Out of flow, so the three grid columns place exactly as they did before
-   * this element existed. `.app` is the containing block (it is positioned). */
-  position: absolute;
-  left: 0;
-  top: var(--header-h);
-  bottom: 0;
-  width: var(--rail-w);
-  z-index: var(--z-panel-strip);
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  background: var(--bg-deep);
-  border-right: 1px solid var(--border-subtle);
-}
-
-.review-rail[hidden] { display: none; }
-
-/* ── Head: where the pass has got to ────────────────────────────────────── */
-.rail-head {
-  flex: 0 0 auto;
-  padding: var(--space-2) var(--gutter) var(--space-3);
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.rail-eyebrow {
-  font-size: var(--fs-eyebrow);
-  letter-spacing: var(--tracking-cap);
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-  font-weight: var(--fw-medium);
-}
-
-.rail-count {
-  margin-top: var(--space-0_5);
-  font-size: var(--fs-body);
-  font-weight: var(--fw-semibold);
-  color: var(--text-primary);
-}
-.rail-count span { color: var(--text-tertiary); font-weight: 400; }
-
-.rail-bar {
-  display: flex;
-  height: 4px;
-  margin-top: var(--space-1_5);
-  border-radius: 2px;
-  overflow: hidden;
-  background: var(--bg-deepest);
-}
-.rail-bar i { display: block; height: 100%; }
-
-/* ── The list, and the filters over it ──────────────────────────────────── */
-.rail-tray {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.rail-chips {
-  flex: 0 0 auto;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-  padding: var(--space-2) var(--gutter);
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.rail-chip {
-  font: inherit;
-  font-size: var(--fs-eyebrow);
-  padding: 2px var(--space-1_5);
-  border-radius: var(--radius-interactive);
-  border: 1px solid var(--border-subtle);
-  background: transparent;
-  color: var(--text-tertiary);
-  cursor: pointer;
-}
-.rail-chip:hover { color: var(--text-secondary); border-color: var(--border-strong); }
-.rail-chip.on {
-  background: var(--act-on);
-  border-color: color-mix(in srgb, var(--act) 45%, transparent);
-  color: var(--text-primary);
-}
-
-.rail-list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding-bottom: var(--space-2);
-}
-
-.rail-empty {
-  padding: var(--space-3) var(--gutter);
-  font-size: var(--fs-body);
-  color: var(--text-tertiary);
-}
-
-/* Grouped by the map's own columns — a position a reader can already see,
- * rather than a number. Sticky, so the group you are inside stays named. */
-.rail-group {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  padding: var(--space-2) var(--gutter) var(--space-0_5);
-  background: var(--bg-deep);
-  font-size: var(--fs-eyebrow);
-  letter-spacing: var(--tracking-cap);
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-}
-.rail-group b { color: var(--text-secondary); font-weight: var(--fw-medium); }
-
-.rail-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1_5);
-  width: 100%;
-  padding: 3px var(--gutter) 3px calc(var(--gutter) - 2px);
-  border: 0;
-  border-left: 2px solid transparent;
-  background: transparent;
-  font: inherit;
-  font-size: var(--fs-body);
-  color: var(--text-secondary);
-  text-align: left;
-  cursor: pointer;
-}
-.rail-row:hover { background: var(--bg-mid); }
-.rail-row.is-current {
-  background: var(--act-on);
-  border-left-color: var(--act);
-  color: var(--text-primary);
-}
-
-/* The mark repeats what the colour says, so neither is doing the work alone.
- * Severity is DATA here — the same exception the cards' dots make. */
-.rail-mark {
-  flex: 0 0 10px;
-  width: 10px;
-  text-align: center;
-  font-family: var(--font-mono);
-  font-size: var(--fs-eyebrow);
-}
-.rail-row.rv-agreed  .rail-mark { color: var(--accent-green); }
-.rail-row.rv-flagged .rail-mark { color: var(--accent-amber); }
-.rail-row.rv-stale   .rail-mark { color: var(--accent-amber); }
-.rail-row.rv-unreviewed .rail-mark { color: var(--text-tertiary); opacity: .55; }
-
-/* Somebody has written something about this box. Amber because it is data —
- * a state of the record — not something you click, and small because it is a
- * pointer to the note rather than the note itself (which the tooltip carries). */
-.rail-note-dot {
-  flex: 0 0 auto;
-  width: 5px;
-  height: 5px;
-  border-radius: 5px;
-  background: var(--accent-amber);
-  opacity: .8;
-}
-
-.rail-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.rail-links {
-  flex: 0 0 auto;
-  font-family: var(--font-mono);
-  font-size: var(--fs-eyebrow);
-  color: var(--text-tertiary);
-}
-
-/* ── Foot: where to go next, and how to take the log away ───────────────── */
-.rail-foot {
-  flex: 0 0 auto;
-  padding: var(--space-2) var(--gutter) var(--space-3);
-  border-top: 1px solid var(--border-subtle);
-}
-
-.rail-next {
-  display: block;
-  width: 100%;
-  font: inherit;
-  font-size: var(--fs-body);
-  font-weight: var(--fw-semibold);
-  padding: var(--pad-button);
-  border: 1px solid var(--act);
-  border-radius: var(--radius-interactive);
-  background: var(--act);
-  color: var(--bg-deepest);
-  cursor: pointer;
-}
-.rail-next:hover:not(:disabled) { background: var(--act-hi); border-color: var(--act-hi); }
-.rail-next:disabled {
-  background: transparent;
-  border-color: var(--border-subtle);
-  color: var(--text-tertiary);
-  cursor: default;
-}
-
-.rail-foot-row {
-  display: flex;
-  gap: var(--space-1);
-  margin-top: var(--space-2);
-}
-
-.rail-btn {
-  flex: 1;
-  font: inherit;
-  font-size: var(--fs-eyebrow);
-  padding: var(--space-1) var(--space-1_5);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-interactive);
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  white-space: nowrap;
-}
-.rail-btn:hover { border-color: var(--act); color: var(--text-primary); }
-
-/* The list is always on screen in this layout, so a control that reveals it
- * would be answering a question nobody asked. It comes back in the dock. */
-.rail-tray-toggle { display: none; }
-
-/* ── The dock: the same rail, for a window too narrow to give up a column ──
- * 260 + map + 340 stops being a sensible split somewhere around here: the map
- * would be left with under 500px, which is four boxes wide. The app fills the
- * viewport, so window width IS the app's width — the one place in this file
- * where a viewport query asks the right question rather than a container one. */
-@media (max-width: 1100px) {
-  /* The map takes its column back; the dock overlays the bottom of it. */
-  body.reading:not(.sim-mode).review-pass .app { --sidebar-w: 0; }
-
-  .review-rail {
-    top: auto;
-    bottom: 0;
-    left: 0;
-    right: var(--detail-w);
-    width: auto;
-    height: var(--dock-h);
-    flex-direction: row;
-    align-items: center;
-    gap: var(--space-3);
-    padding: 0 var(--gutter);
-    border-right: 0;
-    border-top: 1px solid var(--border-subtle);
-    box-shadow: var(--shadow-panel);
-  }
-
-  .rail-head {
-    flex: 0 0 auto;
-    width: 130px;
-    padding: 0;
-    border-bottom: 0;
-  }
-  .rail-eyebrow { display: none; }
-
-  /* The list becomes a tray over the map, raised by the toggle in the foot. */
-  .rail-tray {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: var(--dock-h);
-    height: 250px;
-    background: var(--bg-deep);
-    border-top: 1px solid var(--border-subtle);
-    box-shadow: 0 -12px 26px rgba(0, 0, 0, .35);
-  }
-  .review-rail:not(.tray-open) .rail-tray { display: none; }
-
-  /* Three across rather than one, since the tray is as wide as the map. A grid
-   * with the group headings spanning it, NOT CSS columns: multicol in a
-   * fixed-height box spills into new columns to the right, so the tray would
-   * have scrolled sideways. */
-  .rail-list {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    align-content: start;
-    overflow-y: auto;
-  }
-  .rail-group { grid-column: 1 / -1; }
-
-  .rail-foot {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    min-width: 0;
-    padding: 0;
-    border-top: 0;
-  }
-  .rail-next { width: auto; flex: 0 1 auto; }
-  .rail-foot-row { flex: 0 0 auto; margin-top: 0; }
-  .rail-tray-toggle { display: block; }
-
-  /* Keep the shared map-control dock above the compact Review tray when the
-   * map is visible during a review handoff. */
-  body.review-rail-open .map-bottom-dock { bottom: calc(var(--dock-h) + 12px); }
-}
-
 /* ── The rule, on a box whose rule is not its arrows ─────────────────────
  * A formula box is computed from its expression alone. Until this block the
  * card asked about the arrows and never showed the expression — see
@@ -1333,66 +902,172 @@ body.reading:not(.sim-mode).review-pass .app { --sidebar-w: var(--rail-w); }
   text-decoration: line-through;
   opacity: .45;
 }
-.review-evidence-head { margin-top: var(--space-5); }
-.review-evidence-filter {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin: var(--space-3) 0;
-  color: var(--text-secondary);
+
+/* =============================================================================
+ * THE DOCK — the same sidebar, for a window too narrow to give up a column
+ * -----------------------------------------------------------------------------
+ * Below 1100px, 300 + map + 340 stops being a sensible split, so the column
+ * becomes a bar along the bottom: the progress, the chips and the controls stay
+ * visible, and the list itself folds into a tray you pull up. Same markup, same
+ * handlers.
+ * ========================================================================== */
+@media (max-width: 1100px) {
+  body.review-open:not(.sim-mode) .app { --sidebar-w: 0; }
+
+  .review-sidebar {
+    top: auto;
+    left: 0;
+    right: var(--detail-w);
+    bottom: 0;
+    width: auto;
+    max-height: 62vh;
+    border-right: 0;
+    border-top: 1px solid var(--border-subtle);
+    box-shadow: var(--shadow-panel);
+  }
+
+  /* Head and chips on one line, so the dock costs a bar rather than a block. */
+  .review-head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3);
+    padding: var(--space-1_5) var(--gutter);
+  }
+  .review-headrow { flex: 0 0 auto; gap: var(--space-3); }
+  .review-progress { margin: 0; }
+  .review-bar { flex: 1 1 120px; margin: 0; align-self: center; }
+
+  .review-chips { padding: var(--space-1_5) var(--gutter); }
+
+  /* The tray. Closed by default: the dock's job at this width is the controls,
+   * and the list is what you ask for. */
+  .review-list { display: none; }
+  .review-sidebar.tray-open .review-list { display: block; max-height: 40vh; }
+
+  .review-tray-toggle { display: block; }
+
+  .review-foot { flex-direction: row; align-items: center; gap: var(--space-2); }
+  .review-who { flex: 1 1 220px; }
+  .review-next { width: auto; flex: 0 0 auto; }
+  .review-footrow { flex: 0 0 auto; }
+
+  /* Keep the map's own control dock above the review dock. */
+  body.review-open .map-bottom-dock { bottom: calc(var(--dock-h) + 12px); }
+}
+
+/* The denominator, accounted for. A pass counts boxes that have something
+ * feeding them, so on most maps it counts fewer than the map has — and a
+ * number nobody can account for is one people stop trusting. */
+.review-scope-note {
+  flex: 0 0 auto;
+  padding: var(--space-2) var(--gutter);
+  border-bottom: 1px solid var(--border-subtle);
+  border-left: 2px solid var(--border-strong);
+  color: var(--text-tertiary);
+  font-size: var(--fs-eyebrow);
+  line-height: 1.5;
+}
+.review-scope-note b { color: var(--text-secondary); font-weight: var(--fw-semibold); }
+
+/* "Show 100 more" under a long inventory. */
+.review-fold-toggle {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
   font-size: var(--fs-body);
-  font-weight: 650;
-}
-.review-evidence-filter select,
-.review-evidence-filter .review-evidence-select {
-  min-width: 150px;
-  padding: 6px 28px 6px 8px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-interactive);
-  background: var(--bg-deep);
-  color: var(--text-primary);
-}
-.review-evidence-list { display: grid; gap: var(--space-2); }
-.review-evidence-item {
-  padding: var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-interactive);
-  background: var(--bg-mid);
+  color: var(--text-tertiary);
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  padding: var(--space-2) var(--gutter);
   cursor: pointer;
 }
-.review-evidence-item:hover { border-color: var(--text-tertiary); }
-.review-evidence-item-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
-.review-evidence-kind {
+.review-fold-toggle:hover { color: var(--act); }
+
+/* The row for whatever box is selected on the map, when it is not the item you
+ * are standing on. Quieter than is-current: it says "you are here", not "this
+ * is the question". */
+.review-row.is-on-map { background: var(--bg-mid); }
+.review-row.is-on-map .review-row-name { color: var(--text-primary); }
+
+/* =============================================================================
+ * THE RECORDS BEHIND THE QUEUE
+ * -----------------------------------------------------------------------------
+ * Each of three chips carries a picker whose first option is the queue and whose
+ * rest is everything of that kind on the map: the evidence inventory, the whole
+ * sweep ranked by reach, the whole review log. Same row shell, two variants.
+ * ========================================================================== */
+
+/* One sentence saying what a list is a list of. */
+.review-hint {
+  flex: 0 0 auto;
+  padding: var(--space-2) var(--gutter);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--fs-eyebrow);
   color: var(--text-tertiary);
-  font-size: 10px;
-  font-weight: 750;
-  letter-spacing: .07em;
-  text-transform: uppercase;
+  line-height: 1.5;
 }
-.review-evidence-label {
-  margin-top: 6px;
-  color: var(--text-primary);
-  font-size: var(--fs-body);
-  font-weight: 700;
+
+/* The key under the coverage bar. Four states, and the bar alone cannot say
+ * which colour is which — nor that "not looked at" is the one with no mark. */
+.review-cov-key {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-2) var(--gutter);
+  border-bottom: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--fs-eyebrow);
+  color: var(--text-tertiary);
 }
-.review-evidence-detail {
+.review-cov-key span { display: flex; align-items: center; gap: var(--space-1); }
+.review-cov-key i { display: block; width: 8px; height: 8px; border-radius: 2px; }
+
+/* A sweep row: the name and its biggest movers, a proportional bar, the count.
+ * The bar is the one thing a 300px column does better than a table — the whole
+ * question is which inputs carry furthest, and that is a shape, not a number. */
+.review-reach-row {
+  grid-template-columns: minmax(0, 1fr) 68px 22px;
+  align-items: center;
+}
+
+.review-row-top {
   display: block;
-  margin-top: 4px;
-  color: var(--text-secondary);
-  white-space: normal;
-  overflow-wrap: anywhere;
+  margin-top: 1px;
+  font-size: var(--fs-eyebrow);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.review-evidence-meta {
-  display: grid;
-  grid-template-columns: 88px minmax(0, 1fr);
-  gap: var(--space-2);
-  margin-top: 6px;
-  color: var(--text-secondary);
-  font-size: var(--fs-body);
+.review-row-top b { color: var(--text-secondary); font-weight: var(--fw-regular); }
+.review-row-top .up { color: var(--accent-green); }
+.review-row-top .dn { color: var(--accent-red); }
+
+.review-row-bar {
+  height: 5px;
+  background: var(--bg-mid);
+  border-radius: 3px;
+  overflow: hidden;
 }
-.review-evidence-meta b { color: var(--text-tertiary); }
+.review-row-bar i { display: block; height: 100%; background: var(--act); }
+
+.review-row-count {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--fs-eyebrow);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* An input that moves nothing at all. The one place severity is worth shouting:
+ * every other row in this list carries something. */
+.review-reach-row.is-dead .review-row-name  { color: var(--accent-red); }
+.review-reach-row.is-dead .review-row-bar i { background: var(--accent-red); }
+
+/* The log's own marks, on a row that is a record rather than a question. */
+.review-row-mark.rv-agreed  { color: var(--accent-green); }
+.review-row-mark.rv-flagged { color: var(--accent-amber); }
+.review-row-mark.rv-stale   { color: var(--text-secondary); }

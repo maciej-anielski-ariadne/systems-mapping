@@ -11,9 +11,16 @@ import {
   initReviewStage,
   openReview,
   closeReview,
-  reviewEvidenceItems,
   syncReviewButton,
 } from "../assets/js/23-review-panel";
+import { reviewEvidenceItems } from "../assets/js/22c-review-queue";
+import {
+  initReviewSidebar, setReviewFilter, syncReviewSidebar,
+} from "../assets/js/25-review-sidebar";
+
+const sidebar = (): HTMLElement => document.getElementById("review-sidebar") as HTMLElement;
+const inventoryRows = (): HTMLElement[] =>
+  Array.from(sidebar().querySelectorAll("[data-review-inventory]"));
 
 const EVIDENCE_CSV = `# SECTION: streams
 id,label,short,color
@@ -161,14 +168,20 @@ describe("evidence in Review", () => {
 
   it("lists formula and link provenance as filterable information", () => {
     expect(reviewEvidenceItems().map(item => item.kind).sort()).toEqual(["formula", "link"]);
+    initReviewSidebar();
     initReviewStage();
     syncReviewButton();
     expect(document.querySelector("#review-button .review-badge")).toBeNull();
     openReview();
+    // The queue carries the GAPS. The whole inventory — including records
+    // somebody has already judged — is behind the status picker.
+    setReviewFilter("evidence");
+    const filterToAll = document.getElementById("review-evidence-filter") as HTMLSelectElement;
+    changeValue(filterToAll, "all");
 
-    expect(document.querySelectorAll(".review-evidence-item")).toHaveLength(2);
-    expect(document.querySelector(".review-evidence-list")?.textContent).toContain("Calibrated");
-    expect(document.querySelector(".review-evidence-list")?.textContent).toContain("Supported");
+    expect(inventoryRows()).toHaveLength(2);
+    expect(sidebar().querySelector(".review-list")?.textContent).toContain("Calibrated");
+    expect(sidebar().querySelector(".review-list")?.textContent).toContain("Supported");
 
     const filter = document.getElementById("review-evidence-filter") as HTMLSelectElement;
     expect(filter.classList.contains("typeable-dropdown-native")).toBe(true);
@@ -186,19 +199,23 @@ describe("evidence in Review", () => {
     expect(filter.value).toBe("all");
     supportedOption.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
-    expect(document.getElementById("review-stage")!.hidden).toBe(false);
+    expect(sidebar().hidden).toBe(false);
     expect((document.getElementById("review-evidence-filter") as HTMLSelectElement).value)
       .toBe("supported");
-    expect(document.querySelectorAll(".review-evidence-item")).toHaveLength(1);
-    const linkEvidenceItem = document.querySelector(".review-evidence-item") as HTMLElement;
-    expect(linkEvidenceItem.textContent).toContain("Causal link");
-    expect(linkEvidenceItem.getAttribute("data-review-box")).toBe("input");
+    expect(inventoryRows()).toHaveLength(1);
+    const linkEvidenceItem = inventoryRows()[0];
+    expect(linkEvidenceItem.textContent).toContain("Supported");
 
     linkEvidenceItem.click();
-    expect(state.uiMode).toBe("edit");
+    renderDetailPanel();
+    // Reading, still: picking a review item does not put the app into editing.
+    expect(state.uiMode).toBe("read");
     expect(state.selectedNodeId).toBe("input");
     expect(state.canvasEdit.openEdgeId).toBe(EDGES[0].id);
-    expect(document.querySelector('.edge-open [data-evidence-scope="edge"]')).not.toBeNull();
+    // The link's own evidence fields, in the box panel, above the box.
+    const block = document.querySelector("#detail-panel [data-review-item-block]")!;
+    expect(block.querySelector('[data-review-evidence-field="status"]')).not.toBeNull();
+    expect(block.querySelector(".review-item-title")!.textContent).toBe("Input → Outcome");
     closeReview();
   });
 
@@ -207,48 +224,41 @@ describe("evidence in Review", () => {
     for (let edgeIndex = 0; edgeIndex < 205; edgeIndex++) {
       EDGES.push({ ...templateEdge, id: "evidence_scale_" + edgeIndex });
     }
+    initReviewSidebar();
     initReviewStage();
     openReview();
+    setReviewFilter("evidence");
     const filter = document.getElementById("review-evidence-filter") as HTMLSelectElement;
     changeValue(filter, "all");
 
-    expect(document.querySelectorAll(".review-evidence-item")).toHaveLength(100);
+    expect(inventoryRows()).toHaveLength(100);
     let moreButton = document.getElementById("review-evidence-more") as HTMLButtonElement;
     expect(moreButton.textContent).toContain("Show 100 more");
     moreButton.click();
-    expect(document.querySelectorAll(".review-evidence-item")).toHaveLength(200);
+    expect(inventoryRows()).toHaveLength(200);
 
     moreButton = document.getElementById("review-evidence-more") as HTMLButtonElement;
     expect(moreButton.textContent).toContain("Show 7 more");
     moreButton.click();
-    expect(document.querySelectorAll(".review-evidence-item")).toHaveLength(207);
+    expect(inventoryRows()).toHaveLength(207);
     expect(document.getElementById("review-evidence-more")).toBeNull();
     closeReview();
   });
 
-  it("collapses Evidence provenance without losing the Review position", () => {
+  it("keeps the list where it was scrolled to across a repaint", () => {
+    // The sidebar repaints on every keystroke in a note field. Losing the
+    // scroll position on the first character typed would throw somebody forty
+    // rows back up the queue they were working through.
+    initReviewSidebar();
     initReviewStage();
     openReview();
-    const leftReviewColumnBefore = document.querySelector<HTMLElement>(
-      "#review-stage .review-column:first-child",
-    )!;
-    leftReviewColumnBefore.scrollTop = 140;
-    const evidenceToggle = document.getElementById("review-evidence-toggle") as HTMLButtonElement;
+    setReviewFilter("evidence");
+    changeValue(document.getElementById("review-evidence-filter") as HTMLSelectElement, "all");
 
-    expect(evidenceToggle.getAttribute("aria-expanded")).toBe("true");
-    expect(document.getElementById("review-evidence-content")).not.toBeNull();
-    evidenceToggle.click();
-
-    const collapsedEvidenceToggle = document.getElementById("review-evidence-toggle") as HTMLButtonElement;
-    expect(collapsedEvidenceToggle.getAttribute("aria-expanded")).toBe("false");
-    expect(document.getElementById("review-evidence-content")).toBeNull();
-    expect(document.querySelector<HTMLElement>("#review-stage .review-column:first-child")!.scrollTop)
-      .toBe(140);
-
-    collapsedEvidenceToggle.click();
-    expect(document.getElementById("review-evidence-toggle")?.getAttribute("aria-expanded"))
-      .toBe("true");
-    expect(document.getElementById("review-evidence-content")).not.toBeNull();
+    const list = sidebar().querySelector<HTMLElement>(".review-list")!;
+    list.scrollTop = 140;
+    syncReviewSidebar();
+    expect(sidebar().querySelector<HTMLElement>(".review-list")!.scrollTop).toBe(140);
     closeReview();
   });
 });

@@ -648,6 +648,7 @@ systems_mapping/
     │   ├── 13-sidebar.ts            Renders the left filter UI
     │   ├── 14-simulation-panel.ts   Renders the slider + number-input UI
     │   ├── 15-detail-panel.ts       Renders the right-side details
+    │   ├── 15b-review-item.ts       The current review item, above the box it is about
     │   ├── 16-file-io.ts            Drag-drop, file picker, CSV download
     │   ├── 16a-builder-state.ts     Wizard: state seeding, validation, helpers
     │   ├── 16b-builder-render.ts    Wizard: HTML output for the seven steps
@@ -670,9 +671,10 @@ systems_mapping/
     │   ├── 22-review.ts             Review logic: findings grouped by cause + the input sweep
     │   ├── 22a-review-model.ts      Detached Review solver, structured checks, proposals + previews
     │   ├── 22b-review-apply.ts      Applies a confirmed Review proposal as one undoable map edit
-    │   ├── 23-review-panel.ts       Review UI: the overlay, the cards, the header count badge
+    │   ├── 22c-review-queue.ts      One queue: findings, flags, coverage, evidence gaps, odd inputs
+    │   ├── 23-review-panel.ts       The Review button and the map-health count riding on it
     │   ├── 24-review-record.ts      The review pass: the queue, verdicts, staleness, families
-    │   ├── 25-review-rail.ts        The review queue docked beside the map, and the log export
+    │   ├── 25-review-sidebar.ts     The review queue docked down the left, and the log export
     │   ├── 26-tutorial.ts           Reversible First look + eight-lesson Learn library across every surface
     │   ├── 26a-learn-reference.ts   Browsable reference for choosing a box's calculation rule
     │   └── types.ts                 Shared TypeScript types every module imports (the data model)
@@ -743,11 +745,13 @@ The two biggest features are split across multiple files:
 | The atlas UI — the picture, the wheel, the loop tour, the panel | `assets/js/21-atlas-view.ts`, `assets/css/16-atlas.css` |
 | What the loader checks, and the words it says | `assets/js/06-data-loader.ts` (the `finding(...)` calls) |
 | How a finding is blamed on a cause rather than listed as its own problem | `assets/js/22-review.ts` (`attributeFindings`) |
-| Direct fixes and downstream previews in Review | `assets/js/22a-review-model.ts`, `assets/js/22b-review-apply.ts`, `assets/js/23-review-panel.ts` |
+| Direct fixes and downstream previews in Review | `assets/js/22a-review-model.ts`, `assets/js/22b-review-apply.ts`, `assets/js/15b-review-item.ts` |
 | The input sweep — what each adjustable box actually moves | `assets/js/22-review.ts` (`runSweep`, `sweepExceptions`) |
-| The Review panel UI + its header count badge | `assets/js/23-review-panel.ts`, `assets/css/17-review.css` |
+| What a review has to get through, as one list | `assets/js/22c-review-queue.ts` |
+| The Review button + its map-health count badge | `assets/js/23-review-panel.ts`, `assets/css/17-review.css` |
+| The current review item and the controls that answer it | `assets/js/15b-review-item.ts`, `assets/css/17-review.css` |
 | The review pass — queue order, verdicts, staleness, the family prompt | `assets/js/24-review-record.ts` |
-| The review queue beside the map (and its dock on narrow windows) | `assets/js/25-review-rail.ts`, `assets/css/17-review.css` |
+| The review queue down the left (and its dock on narrow windows) | `assets/js/25-review-sidebar.ts`, `assets/css/17-review.css` |
 | Showing a formula to a reviewer — the rule, its constants, the working | `assets/js/15-detail-panel.ts` (`renderReviewRule`), `assets/js/07-simulation-engine.ts` (`formulaInLabels`, `formulaConstants`, `formulaReads`) |
 | The exported review log — every box, checked or not, with dates | `assets/js/24-review-record.ts` (`reviewReport`, `reviewReportCsv`) |
 | How a verdict is stored and travels (the `reviews` CSV section) | `assets/js/05a-csv-serializer.ts`, `assets/js/06-data-loader.ts` |

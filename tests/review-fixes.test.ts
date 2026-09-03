@@ -14,6 +14,10 @@ import {
 } from "../assets/js/22a-review-model";
 import { applyConfirmedReviewProposal } from "../assets/js/22b-review-apply";
 import { closeReview, initReviewStage, openReview } from "../assets/js/23-review-panel";
+import {
+  currentReviewItem, initReviewSidebar, setReviewFilter, syncReviewSidebar,
+} from "../assets/js/25-review-sidebar";
+import { renderDetailPanel } from "../assets/js/15-detail-panel";
 import { setUiMode } from "../assets/js/17-events";
 import { FORMULA_INVALID_CSV } from "./fixtures/graphs";
 
@@ -44,9 +48,15 @@ from,to,effect,elasticity,description
 input,conflicted,increases,,
 `;
 
+const sidebar = (): HTMLElement => document.getElementById("review-sidebar") as HTMLElement;
+const issueRows = (): HTMLButtonElement[] =>
+  Array.from(sidebar().querySelectorAll('[data-review-item^="issue:"]'));
+
 beforeEach(() => {
   loadDataFromCsv(REVIEW_FIX_CSV);
+  initReviewSidebar();
   initReviewStage();
+  closeReview();
 });
 
 describe("detached proposal evaluation", () => {
@@ -166,41 +176,32 @@ describe("confirmed Review fixes", () => {
     expect(state.loadErrors.some(candidate => candidate.issueKey === finding.issueKey)).toBe(false);
   });
 
-  it("opens with every issue collapsed and expands only the chosen card", () => {
+  it("opens on no item, and picking one makes exactly one current", () => {
     openReview();
-    const toggles = Array.from(document.querySelectorAll("[data-review-issue]")) as HTMLButtonElement[];
-    expect(toggles.length).toBeGreaterThan(1);
-    expect(toggles.every(toggle => toggle.getAttribute("aria-expanded") === "false")).toBe(true);
+    setReviewFilter("issue");
+    const rows = issueRows();
+    expect(rows.length).toBeGreaterThan(1);
+    expect(currentReviewItem()).toBeUndefined();
+    expect(sidebar().querySelectorAll(".review-row.is-current")).toHaveLength(0);
 
-    toggles[0].click();
+    rows[0].click();
 
-    const expandedToggles = Array.from(document.querySelectorAll('[data-review-issue][aria-expanded="true"]'));
-    expect(expandedToggles).toHaveLength(1);
+    expect(sidebar().querySelectorAll(".review-row.is-current")).toHaveLength(1);
+    expect(currentReviewItem()!.kind).toBe("issue");
+    closeReview();
   });
 
-  it("keeps both Review columns in place when an issue card is expanded", () => {
+  it("keeps the list where it was when an item is picked", () => {
     openReview();
-    const reviewBodyBefore = document.querySelector<HTMLElement>(
-      "#review-stage .review-body",
-    )!;
-    const reviewColumnsBefore = Array.from(
-      document.querySelectorAll<HTMLElement>("#review-stage .review-column"),
-    );
-    expect(reviewColumnsBefore).toHaveLength(2);
-    reviewBodyBefore.scrollTop = 45;
-    reviewColumnsBefore[0].scrollTop = 180;
-    reviewColumnsBefore[1].scrollTop = 95;
+    const listBefore = sidebar().querySelector<HTMLElement>(".review-list")!;
+    listBefore.scrollTop = 180;
 
-    document.querySelector<HTMLButtonElement>("[data-review-issue]")!.click();
+    issueRows()[0].click();
 
-    const reviewColumnsAfter = Array.from(
-      document.querySelectorAll<HTMLElement>("#review-stage .review-column"),
-    );
-    expect(document.querySelector<HTMLElement>("#review-stage .review-body")!.scrollTop)
-      .toBe(45);
-    expect(reviewColumnsAfter[0]).not.toBe(reviewColumnsBefore[0]);
-    expect(reviewColumnsAfter[0].scrollTop).toBe(180);
-    expect(reviewColumnsAfter[1].scrollTop).toBe(95);
+    const listAfter = sidebar().querySelector<HTMLElement>(".review-list")!;
+    expect(listAfter).not.toBe(listBefore);          // the markup was rebuilt
+    expect(listAfter.scrollTop).toBe(180);           // the reader's place was not
+    closeReview();
   });
 
   it("owns its exit without discarding Edit mode", () => {
@@ -214,35 +215,39 @@ describe("confirmed Review fixes", () => {
     closeReview();
   });
 
-  it("groups the floating handoff actions after opening an issue on the map", () => {
+  it("hands the fix to the box panel without closing the list or switching mode", () => {
+    // This is the whole change. Opening an issue used to close Review, force
+    // edit mode and pin a floating banner carrying the one issue you clicked —
+    // a second, smaller copy of the panel, with its own Back to Review.
+    setUiMode("read");
     openReview();
-    const firstIssueToggle = document.querySelector<HTMLButtonElement>("[data-review-issue]")!;
-    firstIssueToggle.click();
-    const openOnMapButton = document.querySelector<HTMLButtonElement>("[data-open-review-issue]")!;
-    openOnMapButton.click();
+    setReviewFilter("issue");
+    issueRows()[0].click();
+    renderDetailPanel();
 
-    const issueBanner = document.getElementById("review-issue-banner")!;
-    expect(issueBanner.hidden).toBe(false);
-    expect(issueBanner.querySelector(":scope > .review-banner-main")).not.toBeNull();
-    expect(issueBanner.querySelector(":scope > .review-banner-dismiss")).not.toBeNull();
-
-    issueBanner.querySelector<HTMLButtonElement>("#review-banner-toggle")!.click();
-    const actionGroup = issueBanner.querySelector(".review-banner-actions")!;
-    expect(actionGroup.querySelectorAll(":scope > button")).toHaveLength(1);
-    expect(actionGroup.textContent).toContain("Back to Review");
+    expect(sidebar().hidden).toBe(false);            // the list stayed
+    expect(state.uiMode).toBe("read");               // nothing was assumed
+    const block = document.querySelector("#detail-panel [data-review-item-block]")!;
+    expect(block.querySelector('[data-review-item-action="confirm-fix"]')).not.toBeNull();
+    expect(block.querySelector(".review-preview-summary")!.textContent).toContain("cleared");
+    closeReview();
   });
 
-  it("keeps the floating handoff borderless at the top of the map", () => {
+  it("has no floating handoff left to keep in step", () => {
+    // The banner existed only because the list disappeared. Nothing disappears
+    // now, so both it and the markup it needed are gone — and a stylesheet still
+    // carrying its rules is how a deleted surface comes back by accident.
     const reviewStyles = readFileSync(resolve(currentDirectory, "../assets/css/17-review.css"), "utf8");
-    const bannerRuleStart = reviewStyles.indexOf(".review-issue-banner {");
-    const bannerRule = reviewStyles.slice(
-      bannerRuleStart,
-      reviewStyles.indexOf("}", bannerRuleStart),
-    );
+    expect(reviewStyles).not.toContain("review-issue-banner");
+    expect(reviewStyles).not.toContain("review-banner");
+    const markup = readFileSync(resolve(currentDirectory, "../index.html"), "utf8");
+    expect(markup).not.toContain("review-issue-banner");
+    expect(markup).not.toContain("review-stage");
 
-    expect(bannerRule).toMatch(/top:\s*calc\(48px \+ var\(--space-3\)\)/);
-    expect(bannerRule).toMatch(/bottom:\s*auto/);
-    expect(bannerRule).toMatch(/border:\s*0/);
-    expect(bannerRule).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\) 40px/);
+    // And the sidebar reserves the column it sits in, rather than covering the
+    // map the way the overlay did.
+    expect(reviewStyles).toMatch(
+      /body\.review-open:not\(\.sim-mode\) \.app \{ --sidebar-w: var\(--review-w\); \}/,
+    );
   });
 });
