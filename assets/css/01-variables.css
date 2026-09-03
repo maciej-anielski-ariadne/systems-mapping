@@ -198,6 +198,11 @@
   --z-cell-editor: 300;
   --z-tooltip:     500;   /* hover popup sits above panels and editing overlays */
   --z-dropdown:    600;   /* every open dropdown sits above tutorials, tooltips and overlays */
+  /* The top of the ladder, and it has to stay there. A confirmation asks a
+   * question the app is BLOCKED on: if anything covers it the action simply
+   * never happens and the button reads as broken. Reset all progress lives
+   * inside the Learn hub (520) and was doing exactly that at 280. */
+  --z-confirm:     900;
 
   /* ===== Fonts ========================================================== *
    * Two faces only: IBM Plex Sans (UI + titles) and IBM Plex Mono (numbers /

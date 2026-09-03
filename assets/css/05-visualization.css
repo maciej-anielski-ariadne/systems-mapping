@@ -183,7 +183,9 @@ body.editing .map-scope-name--edit,
 body.sim-mode .map-scope-name--simulation { display: inline-flex; }
 
 body.editing .toolbar-edit-actions { display: flex; gap: var(--space-1); }
-body.editing #filters-button,
+/* Filters stays available in Edit: the panel is a drawer there too, so the
+ * button is the only way to call it. Simulation still hides it — the sliders
+ * are that panel, and it is docked. */
 body.editing #sim-toggle-button,
 body.sim-mode #filters-button,
 body.sim-mode #mode-toggle-button { display: none; }

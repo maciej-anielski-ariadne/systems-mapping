@@ -557,8 +557,6 @@ export interface AppState {
   uiMode: "read" | "edit";
   /** Reading mode only: the left panel is open as an overlay drawer. */
   filtersOpen: boolean;
-  sidebarPinned: boolean;
-  detailPanelPinned: boolean;
   sidebarWidth: number;
   detailPanelWidth: number;
   zoomLevel: number;

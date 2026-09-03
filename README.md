@@ -625,6 +625,7 @@ systems_mapping/
     │   ├── 04-utils.ts              wrapLabel / escapeHtml / formatScalar / clone helpers
     │   ├── 04a-storage.ts           localStorage persistence (CSV, UI, wizard)
     │   ├── 04b-typeable-dropdown.ts Turns native <select>s into filter-as-you-type inputs
+    │   ├── 04c-confirm.ts          In-app confirm dialog (replaces window.confirm)
     │   ├── 05-csv-parser.ts         Multi-section CSV parser (CSV → data)
     │   ├── 05a-csv-serializer.ts    Multi-section CSV serializer (data → CSV)
     │   ├── 05b-csv-import-protocol.ts Worker message types + advisory preflight

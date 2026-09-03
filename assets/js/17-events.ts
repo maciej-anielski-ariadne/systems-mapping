@@ -201,9 +201,11 @@ export function applyUiMode(options: ApplyUiModeOptions = {}): void {
   document.body.classList.toggle("reading", reading);
   document.body.classList.toggle("editing", !reading);
 
+  // Switching mode is a change of task, so the drawer closes either way rather
+  // than following you across.
   const app = document.querySelector(".app");
-  if (app && reading) app.classList.remove("filters-open");
-  if (reading) state.filtersOpen = false;
+  if (app) app.classList.remove("filters-open");
+  state.filtersOpen = false;
 
   const button = document.getElementById("mode-toggle-button");
   if (button) {
@@ -230,7 +232,6 @@ export function applyUiMode(options: ApplyUiModeOptions = {}): void {
     closeAtlas();
   }
 
-  applyPanelPinnedClasses();
   applySelectionClass();
 
   // Both panels render mode-dependent controls, so they are redrawn on the
@@ -283,12 +284,13 @@ export function applySelectionClass(): void {
 // ───── Filters drawer ────────────────────────────────────────────────────
 // In reading mode the left panel is not part of the layout — it slides over the
 // map when asked for, and goes away again on Esc, on a click outside it, or on
-// a second press of the button. In edit mode it is docked and the button is
-// hidden, because that panel is where rows / columns / tags are edited.
+// a second press of the button. The same in edit mode: the panel holds the row,
+// column and tag editors, but keeping it docked there spent 220px of map on a
+// panel most edits never touch.
 export function setFiltersOpen(open: boolean): void {
   const app = document.querySelector(".app");
   if (!app) return;
-  state.filtersOpen = !!open && state.uiMode !== "edit";
+  state.filtersOpen = !!open;
   app.classList.toggle("filters-open", state.filtersOpen);
   const button = document.getElementById("filters-button");
   if (button) {
@@ -358,53 +360,6 @@ document.addEventListener("keydown", event => {
   if (menu && !menu.hidden) { setExportMenuOpen(false); return; }
   if (state.filtersOpen) setFiltersOpen(false);
 });
-
-// ───── Sidebar / detail-panel pin toggles ───────────────────────────────
-// Pinned (default) = panel stays expanded. Unpinned = panel collapses to a
-// narrow strip, expands on hover via CSS. Flipping the class on .app is all
-// the JS does; CSS owns the visual transitions. State is persisted so the
-// pin choice survives a refresh.
-export function applyPanelPinnedClasses(): void {
-  const app = document.querySelector(".app");
-  if (!app) return;
-  // Reading mode lays the panels out itself (drawer on the left, open-on-
-  // selection on the right), so the pin classes only apply while editing.
-  const editing = state.uiMode === "edit";
-  app.classList.toggle("sidebar-unpinned", editing && !state.sidebarPinned);
-  app.classList.toggle("detail-unpinned",  editing && !state.detailPanelPinned);
-
-  const updatePin = (button: HTMLElement | null, pinned: boolean, kind: string): void => {
-    if (!button) return;
-    // pinned === true → panel is expanded, so the action is "Collapse".
-    const label = button.querySelector(".panel-pin-label");
-    const verb  = pinned ? "Collapse" : "Expand";
-    if (label) label.textContent = verb;
-    button.removeAttribute("title");                 // styled UI only, no native tooltip
-    button.setAttribute("aria-label", verb + " " + kind);
-  };
-  updatePin(document.getElementById("sidebar-pin"), state.sidebarPinned,     "sidebar");
-  updatePin(document.getElementById("detail-pin"),  state.detailPanelPinned, "details");
-}
-
-export const sidebarPinButton = document.getElementById("sidebar-pin");
-if (sidebarPinButton) {
-  sidebarPinButton.addEventListener("click", event => {
-    event.stopPropagation();
-    state.sidebarPinned = !state.sidebarPinned;
-    applyPanelPinnedClasses();
-    saveUiStateToStorage();
-  });
-}
-
-export const detailPinButton = document.getElementById("detail-pin");
-if (detailPinButton) {
-  detailPinButton.addEventListener("click", event => {
-    event.stopPropagation();
-    state.detailPanelPinned = !state.detailPanelPinned;
-    applyPanelPinnedClasses();
-    saveUiStateToStorage();
-  });
-}
 
 // ───── Sidebar / detail-panel resizing ──────────────────────────────────
 // Slim drag-handles between each side panel and the central viz let the

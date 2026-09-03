@@ -22,6 +22,7 @@
 // space with the mutation entry points.
 // =============================================================================
 
+import { confirmAction } from "./04c-confirm";
 import type { GraphNode, Edge, Stream, CategoryMap } from "./types";
 import {
   state,
@@ -180,16 +181,27 @@ export function addCategory(catClass?: string | null): void {
 // All three follow the same shape: warn the user, snapshot the affected rows
 // + nodes + edges into an undo entry, splice them out, then surface a 6-second
 // "Undo" toast.
-export function deleteStreamWithCascade(streamId: string): void {
+/** "1 box" / "3 boxes" — the old copy said "box(es)" in a dialog people read. */
+function countPhrase(count: number, singular: string, plural: string): string {
+  return count + " " + (count === 1 ? singular : plural);
+}
+
+export async function deleteStreamWithCascade(streamId: string): Promise<void> {
   const stream = streamById[streamId];
   if (!stream) return;
   const nodesToDelete = NODES.filter((n: GraphNode) => n.stream === streamId);
   const nodeIdSet = new Set(nodesToDelete.map((n: GraphNode) => n.id));
   const edgesToDelete = EDGES.filter((e: Edge) => nodeIdSet.has(e.from) || nodeIdSet.has(e.to));
-  const msg = nodesToDelete.length === 0
-    ? 'Delete row "' + stream.label + '"?'
-    : 'Delete row "' + stream.label + '"?\n\n' + nodesToDelete.length + ' box(es) and ' + edgesToDelete.length + ' link(s) will also be removed.';
-  if (!confirm(msg)) return;
+  if (!await confirmAction({
+    eyebrow: "Delete row",
+    title: 'Delete the row "' + stream.label + '"?',
+    detail: nodesToDelete.length === 0 ? [] : [
+      countPhrase(nodesToDelete.length, "box", "boxes") + " and " +
+      countPhrase(edgesToDelete.length, "link", "links") + " will be removed with it.",
+    ],
+    confirmLabel: "Delete row",
+    danger: true,
+  })) return;
 
   const snapshot = {
     kind: "stream",
@@ -212,16 +224,22 @@ export function deleteStreamWithCascade(streamId: string): void {
   showUndoToast("Row deleted", () => restoreFromUndo(snapshot));
 }
 
-export function deleteStageWithCascade(stageId: string): void {
+export async function deleteStageWithCascade(stageId: string): Promise<void> {
   const stage = stageById[stageId];
   if (!stage) return;
   const nodesToDelete = NODES.filter((n: GraphNode) => n.stage === stageId);
   const nodeIdSet = new Set(nodesToDelete.map((n: GraphNode) => n.id));
   const edgesToDelete = EDGES.filter((e: Edge) => nodeIdSet.has(e.from) || nodeIdSet.has(e.to));
-  const msg = nodesToDelete.length === 0
-    ? 'Delete column "' + stage.label + '"?'
-    : 'Delete column "' + stage.label + '"?\n\n' + nodesToDelete.length + ' box(es) and ' + edgesToDelete.length + ' link(s) will also be removed.';
-  if (!confirm(msg)) return;
+  if (!await confirmAction({
+    eyebrow: "Delete column",
+    title: 'Delete the column "' + stage.label + '"?',
+    detail: nodesToDelete.length === 0 ? [] : [
+      countPhrase(nodesToDelete.length, "box", "boxes") + " and " +
+      countPhrase(edgesToDelete.length, "link", "links") + " will be removed with it.",
+    ],
+    confirmLabel: "Delete column",
+    danger: true,
+  })) return;
 
   const snapshot = {
     kind: "stage",
@@ -245,7 +263,7 @@ export function deleteStageWithCascade(stageId: string): void {
   showUndoToast("Column deleted", () => restoreFromUndo(snapshot));
 }
 
-export function deleteCategoryWithCascade(catId: string): void {
+export async function deleteCategoryWithCascade(catId: string): Promise<void> {
   const cat = CATEGORIES[catId];
   if (!cat) return;
   const catsOf = (n: GraphNode): string[] => (n.categoryIds && n.categoryIds.length) ? n.categoryIds : [n.category];
@@ -257,12 +275,20 @@ export function deleteCategoryWithCascade(catId: string): void {
   const nodeIdSet = new Set(soleNodes.map((n: GraphNode) => n.id));
   const edgesToDelete = EDGES.filter((e: Edge) => nodeIdSet.has(e.from) || nodeIdSet.has(e.to));
 
-  let msg = 'Delete category "' + cat.label + '"?';
-  const parts: string[] = [];
-  if (soleNodes.length)  parts.push(soleNodes.length + ' box(es) using only this category (and ' + edgesToDelete.length + ' link(s)) will be removed');
-  if (untagCount)        parts.push(untagCount + ' box(es) will be untagged');
-  if (parts.length)      msg += '\n\n' + parts.join(';\n') + '.';
-  if (!confirm(msg)) return;
+  const consequences: string[] = [];
+  if (soleNodes.length) {
+    consequences.push(countPhrase(soleNodes.length, "box", "boxes") +
+      " using only this category will be removed, along with " +
+      countPhrase(edgesToDelete.length, "link", "links") + ".");
+  }
+  if (untagCount) consequences.push(countPhrase(untagCount, "box", "boxes") + " will be untagged.");
+  if (!await confirmAction({
+    eyebrow: "Delete category",
+    title: 'Delete the category "' + cat.label + '"?',
+    detail: consequences,
+    confirmLabel: "Delete category",
+    danger: true,
+  })) return;
 
   // Untag from the multi-category survivors.
   for (const n of usingNodes) {

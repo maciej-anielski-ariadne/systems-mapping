@@ -20,70 +20,12 @@
    * and a form that slides sideways under the labels just reads as broken.
    * Content wraps here; it never scrolls across. */
   overflow-x: hidden;
-  /* No top padding so the sticky .panel-header sits flush against the top.
-   * Side + bottom padding give the rest of the content breathing room. */
+  /* No top padding: the box title sits flush against the top. Side + bottom
+   * padding give the rest of the content breathing room. */
   padding: 0 var(--gutter) var(--gutter) var(--gutter);
   position: relative;
   grid-column: 3;
 }
-
-/* The detail panel has --gutter (16px) side padding, but we want the pin button to sit
- * at the very right edge of the panel (= window edge). Negative side margin
- * pulls the header outside the panel's padding so it spans the full width. */
-.detail-panel > .panel-header {
-  margin: 0 calc(-1 * var(--gutter)) var(--heading-gap) calc(-1 * var(--gutter));
-}
-
-/* Unpinned → strip + hover-expand. Same model as the left sidebar. In strip
- * mode the background is removed entirely so the pin button floats over
- * the viz; backgrounds return on hover. */
-.app.detail-unpinned .detail-panel {
-  position: absolute;
-  top: 64px;
-  bottom: 0;
-  right: 0;
-  width: var(--panel-strip-w);
-  z-index: var(--z-panel-strip);
-  overflow: hidden;
-  padding: 0;
-  min-width: 0;
-  background: transparent;
-  transition: width var(--dur-slow) var(--ease), box-shadow var(--dur-slow) var(--ease), background var(--dur-base) var(--ease);
-}
-
-.app.detail-unpinned .detail-panel .panel-header {
-  background: transparent;
-}
-
-/* When unpinned, the strip has no side padding, so the header doesn't
- * need its negative margin compensation. */
-.app.detail-unpinned .detail-panel > .panel-header {
-  margin: 0 0 var(--heading-gap) 0;
-}
-
-.app.detail-unpinned .detail-panel:hover {
-  width: var(--detail-w-full);
-  overflow-y: auto;
-  padding: 0 var(--gutter) var(--gutter) var(--gutter);
-  background: var(--bg-deep);
-  box-shadow: var(--shadow-panel);
-}
-
-.app.detail-unpinned .detail-panel:hover > .panel-header {
-  margin: 0 calc(-1 * var(--gutter)) var(--heading-gap) calc(-1 * var(--gutter));
-  background: var(--bg-deep);
-}
-
-/* visibility:hidden so we don't override the inline style.display set by
- * 15-detail-panel.js on .detail-empty / #detail-content. */
-.app.detail-unpinned .detail-panel > *:not(.panel-header) { visibility: hidden; }
-.app.detail-unpinned .detail-panel:hover > *              { visibility: visible; }
-
-/* Strip mode: hide the verb label beside the chevron (no room); it lives
- * inside .panel-header (exempt from the rule above), so it needs its own
- * hide rule. It returns when the strip hover-expands. */
-.app.detail-unpinned .detail-panel .panel-pin-label { display: none; }
-.app.detail-unpinned .detail-panel:hover .panel-pin-label { display: inline; }
 
 /* === Empty state (nothing selected) === */
 .detail-empty {
@@ -370,7 +312,6 @@ body.review-open .detail-scope-actions {
  * blocks that dressed its three lines — went with it. The .edge-stripe base and
  * its --edit variant stay: the edit-mode editors still use them. */
 
-
 /* === Quantification block (baseline, current, delta) === */
 .detail-quant-block {
   margin: var(--section-gap) 0;
@@ -518,6 +459,38 @@ body.review-open .detail-scope-actions {
   font-size: var(--fs-cap);
 }
 
+/* The formula gets a row of its own rather than the 150px value slot the other
+ * quantities share. Those hold "160" or "Standard"; a formula runs to 120
+ * characters, of which that slot showed 21 — and no single line of any width
+ * fits one in a 340px panel, so this wraps instead. Height is set from the
+ * content by wireFormulaField(); overflow is hidden because the element is
+ * always exactly as tall as its text. */
+.detail-formula-row {
+  padding: var(--space-2) 0 var(--space-1);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.detail-formula-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+}
+
+.detail-formula-input {
+  display: block;
+  width: 100%;
+  min-height: 1.9em;
+  overflow: hidden;
+  resize: none;
+  line-height: 1.5;
+  /* Break inside a long box id rather than letting one run off the edge — the
+   * point of wrapping is that nothing is out of sight. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* A collapsed modelling decision aid at the point where Combine / Formula are
  * edited. It is deliberately text-first and uses the panel's existing rails —
  * no modal or second navigation system for a choice made in this form. */
@@ -568,7 +541,6 @@ body.review-open .detail-scope-actions {
   -webkit-appearance: none;
   margin: 0;
 }
-
 
 /* === Calculation breakdown ("How this number is calculated") ===
  * Shown under the quantification block in simulation mode: the plain-language
@@ -988,7 +960,6 @@ body.review-open .detail-scope-actions {
   font-size: var(--fs-cap);
 }
 
-
 /* === Tags, while editing =================================================
  * The strip is the tag editor. It used to be a display strip with a twelve-row
  * checkbox list 330px below it changing the same twelve tags — the same
@@ -1171,8 +1142,6 @@ body.review-open .detail-scope-actions {
   font-size: var(--fs-cap);
   min-height: 32px;
 }
-
-
 
 .outgoing-edge-add {
   margin: var(--space-1_5) 0 var(--space-2);

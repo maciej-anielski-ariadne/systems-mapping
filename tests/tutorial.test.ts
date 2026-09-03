@@ -291,7 +291,7 @@ describe("Learn library", () => {
     ]));
   });
 
-  it("offers one restart action for a completed lesson and can reset all Learn progress", () => {
+  it("offers one restart action for a completed lesson and can reset all Learn progress", async () => {
     expect(loadDataFromCsv(SAMPLE_CSV)).toBe(true);
     const originalNodeIdentifiers = NODES.map(node => node.id);
     localStorage.setItem(LEARN_PROGRESS_KEY, JSON.stringify({
@@ -311,16 +311,32 @@ describe("Learn library", () => {
     expect(completedLessonActions.querySelector('[data-tutorial-action="lesson"]')).toBeNull();
     expect(completedLessonActions.querySelector('[data-tutorial-action="restart-lesson"]')?.textContent).toBe("Restart lesson");
 
-    const confirmation = vi.spyOn(window, "confirm").mockReturnValue(true);
-    tutorialLayer().querySelector<HTMLButtonElement>('[data-tutorial-action="reset-all-progress"]')!.click();
+    const resetButton = (): HTMLButtonElement =>
+      tutorialLayer().querySelector<HTMLButtonElement>('[data-tutorial-action="reset-all-progress"]')!;
+    const confirmLayer = (): HTMLElement => document.querySelector<HTMLElement>(".app-confirm-layer")!;
+    const settle = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0));
 
-    expect(confirmation).toHaveBeenCalledWith("Reset all lesson progress? Your map will not be changed.");
+    // The app's own dialog, not window.confirm() — see 04c-confirm.ts. Backing
+    // out has to leave the progress alone, or the safe answer is not safe.
+    resetButton().click();
+    await settle();
+    expect(confirmLayer().hidden).toBe(false);
+    expect(confirmLayer().querySelector("[data-confirm-title]")!.textContent)
+      .toBe("Reset all lesson progress?");
+    confirmLayer().querySelector<HTMLButtonElement>("[data-confirm-cancel]")!.click();
+    await settle();
+    expect(localStorage.getItem(LEARN_PROGRESS_KEY)).not.toBeNull();
+
+    resetButton().click();
+    await settle();
+    confirmLayer().querySelector<HTMLButtonElement>("[data-confirm-accept]")!.click();
+    await settle();
+
     expect(localStorage.getItem(LEARN_PROGRESS_KEY)).toBeNull();
     expect(tutorialLayer().textContent).toContain("0 of 8 lessons complete");
     expect(tutorialLayer().querySelector<HTMLButtonElement>('[data-tutorial-action="reset-all-progress"]')!.disabled).toBe(true);
     expect(tutorialLayer().querySelector('[data-tutorial-action="restart-lesson"]')).toBeNull();
     expect(NODES.map(node => node.id)).toEqual(originalNodeIdentifiers);
-    confirmation.mockRestore();
   });
 
   it("restarts a completed lesson from its first step", () => {

@@ -63,15 +63,16 @@ describe("the app opens on the map", () => {
     expect(button.textContent).toBe("Edit map");
   });
 
-  it("keeps the pin classes for editing, where the panels are docked", () => {
-    state.sidebarPinned = false;
-    applyUiMode();
-    // Reading lays the panels out itself, so an old pin choice can't leave a
-    // stray strip over the map.
-    expect(app().classList.contains("sidebar-unpinned")).toBe(false);
-    setUiMode("edit");
-    expect(app().classList.contains("sidebar-unpinned")).toBe(true);
-    state.sidebarPinned = true;
+  it("never collapses a panel to a strip, in either mode", () => {
+    // The pin toggles are gone: a panel is either laid out or, for the left one,
+    // a drawer you open. Nothing narrows it to a hover strip any more.
+    for (const mode of ["read", "edit"] as const) {
+      setUiMode(mode);
+      expect(app().classList.contains("sidebar-unpinned"), mode).toBe(false);
+      expect(app().classList.contains("detail-unpinned"), mode).toBe(false);
+    }
+    expect(document.getElementById("sidebar-pin")).toBeNull();
+    expect(document.getElementById("detail-pin")).toBeNull();
   });
 
   it("comes back in the mode you left in", () => {
@@ -212,11 +213,30 @@ describe("the filters drawer", () => {
     expect(app().classList.contains("filters-open")).toBe(false);
   });
 
-  it("stays shut while editing — that panel is docked", () => {
+  it("opens on request while editing too, and does not open by itself", () => {
+    // The panel used to dock open in Edit, spending 220px of map on rows,
+    // columns and tags whether or not this edit was about any of them.
     setUiMode("edit");
-    setFiltersOpen(true);
     expect(state.filtersOpen).toBe(false);
     expect(app().classList.contains("filters-open")).toBe(false);
+
+    setFiltersOpen(true);
+    expect(state.filtersOpen).toBe(true);
+    expect(app().classList.contains("filters-open")).toBe(true);
+
+    setFiltersOpen(false);
+    expect(state.filtersOpen).toBe(false);
+  });
+
+  it("closes the drawer on every change of mode, in both directions", () => {
+    setUiMode("read");
+    setFiltersOpen(true);
+    setUiMode("edit");
+    expect(state.filtersOpen, "read to edit").toBe(false);
+
+    setFiltersOpen(true);
+    setUiMode("read");
+    expect(state.filtersOpen, "edit to read").toBe(false);
   });
 
   it("describes show and hide actions without edit guidance in View mode", () => {

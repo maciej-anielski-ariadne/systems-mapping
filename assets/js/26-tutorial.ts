@@ -36,6 +36,7 @@ import { hideTooltip } from "./12-tooltip";
 import { render } from "./11-rendering";
 import { renderDetailPanel } from "./15-detail-panel";
 import { applySimMultiplier, resetSimulation, toggleSimulationMode } from "./14-simulation-panel";
+import { confirmAction } from "./04c-confirm";
 import {
   cloneBuilderState,
   closeBuilder,
@@ -95,8 +96,6 @@ interface TutorialUserInterfaceSnapshot {
   selectedNodeIds: string[];
   selectedEdgeId: string | null;
   uiMode: "read" | "edit";
-  sidebarPinned: boolean;
-  detailPanelPinned: boolean;
   sidebarWidth: number;
   detailPanelWidth: number;
   zoomLevel: number;
@@ -234,8 +233,6 @@ function captureUserInterface(): TutorialUserInterfaceSnapshot {
     selectedNodeIds: Array.from(state.selectedNodeIds),
     selectedEdgeId: state.selectedEdgeId,
     uiMode: state.uiMode === "edit" ? "edit" : "read",
-    sidebarPinned: !!state.sidebarPinned,
-    detailPanelPinned: !!state.detailPanelPinned,
     sidebarWidth: state.sidebarWidth,
     detailPanelWidth: state.detailPanelWidth,
     zoomLevel: state.zoomLevel,
@@ -2383,8 +2380,17 @@ export function openLearnHub(): boolean {
   return true;
 }
 
-function resetAllLearnProgress(): void {
-  if (!window.confirm("Reset all lesson progress? Your map will not be changed.")) return;
+async function resetAllLearnProgress(): Promise<void> {
+  if (!await confirmAction({
+    eyebrow: "Learn",
+    title: "Reset all lesson progress?",
+    detail: [
+      "Every lesson goes back to not started, and finished steps are forgotten.",
+      "Your map is not touched.",
+    ],
+    confirmLabel: "Reset progress",
+    danger: true,
+  })) return;
   try { localStorage.removeItem(LEARN_PROGRESS_KEY); }
   catch (_) {}
   openLearnHub();
@@ -2780,7 +2786,7 @@ function handleTutorialAction(action: string): void {
     return;
   }
   if (action === "close-learn") { hideTutorialLayer(); return; }
-  if (action === "reset-all-progress") { resetAllLearnProgress(); return; }
+  if (action === "reset-all-progress") { void resetAllLearnProgress(); return; }
   if (action === "lesson" || action === "restart-lesson") return;
   if (action === "learn") {
     if (tutorialSession) exitTutorial({ markDismissed: false });

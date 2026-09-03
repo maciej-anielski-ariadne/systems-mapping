@@ -867,8 +867,21 @@ export function renderQuantFrame(node: GraphNode, editMode: boolean): string {
         "How the arrows into this box add up: standard compounds each effect, additive stops related inputs overstating the total, weakest link lets the smallest input gate the result.");
     }
 
-    html += row("Formula", '<span class="detail-quant-formula-cell"><input type="text" class="detail-edit-input detail-quant-input detail-quant-formula" data-field="formula" value="' + escapeHtml(node.formula || "") + '" placeholder="none" spellcheck="false">' + calculationHelpButton() + '</span>',
-      "Overrides the arrows' maths — e.g. min(a, b), clamp(x, lo, hi), delay(x). Every box named here must also have an arrow into this box.");
+    // The formula gets a row to itself rather than the 150px value slot every
+    // other quantity uses. Those hold "160" or "Standard"; a formula on this map
+    // runs to 120 characters, of which that slot showed 21. It is a textarea so
+    // it WRAPS — no single line of any width fits a formula in a side panel, and
+    // the panel is 340px. It grows to the text and shrinks back again.
+    html += '<div class="detail-formula-row">' +
+      '<div class="detail-formula-head">' +
+      '<span class="detail-quant-label" data-tooltip="' +
+      escapeHtml("Overrides the arrows' maths — e.g. min(a, b), clamp(x, lo, hi), delay(x). " +
+        "Every box named here must also have an arrow into this box.") +
+      '">Formula</span>' + calculationHelpButton() + '</div>' +
+      '<textarea class="detail-edit-input detail-quant-formula detail-formula-input" ' +
+      'data-field="formula" rows="1" placeholder="none" spellcheck="false" ' +
+      'autocapitalize="off" autocorrect="off">' +
+      escapeHtml(node.formula || "") + '</textarea></div>';
     html += renderEvidenceEditor({ metadata: node.formulaEvidence, scope: "formula" });
 
     html += row("Lowest allowed", '<input type="number" step="any" class="detail-edit-input detail-edit-number detail-quant-input" data-field="minValue" value="' + (node.minValue !== undefined && node.minValue !== null ? node.minValue : "") + '" placeholder="none">',
@@ -1833,7 +1846,61 @@ function wireReviewCardHandlers(node: GraphNode, contentState: HTMLElement): voi
   }
 }
 
+/**
+ * The formula field wraps rather than scrolling sideways, so it has to grow and
+ * shrink with its content — and it is a textarea only for the wrapping. A
+ * formula is one expression: Enter means "done", exactly as it did when this was
+ * a single-line input, and a newline pasted in from a document is folded to a
+ * space before the parser ever sees it.
+ */
+function wireFormulaField(field: HTMLTextAreaElement): void {
+  const fitToContent = (): void => {
+    field.style.height = "auto";
+    // A panel rendered while hidden reports no scroll height. Leaving the
+    // height at "auto" then is right; forcing 0px would erase the field.
+    if (field.scrollHeight > 0) field.style.height = field.scrollHeight + "px";
+    else field.style.removeProperty("height");
+  };
+
+  field.addEventListener("input", () => {
+    if (field.value.includes("\n")) {
+      const caret = field.selectionStart;
+      field.value = field.value.replace(/\s*\n+\s*/g, " ");
+      field.setSelectionRange(caret, caret);
+    }
+    fitToContent();
+  });
+
+  field.addEventListener("keydown", event => {
+    if (event.key !== "Enter" || event.altKey || event.ctrlKey || event.metaKey) return;
+    event.preventDefault();
+    field.blur();
+  });
+
+  // Re-fit whenever the reader arrives at the field, which covers any case the
+  // measurement below could not settle.
+  field.addEventListener("focus", fitToContent);
+
+  // The panel animates open, so the first measurements can land while it still
+  // has no layout and report a scroll height of zero. Keep looking for a few
+  // frames rather than leaving a one-line box on a three-line formula, and stop
+  // as soon as there is something real to measure.
+  let attemptsLeft = 12;
+  const fitWhenMeasurable = (): void => {
+    fitToContent();
+    attemptsLeft -= 1;
+    if (field.scrollHeight > 0 || attemptsLeft <= 0) return;
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(fitWhenMeasurable);
+  };
+  fitWhenMeasurable();
+}
+
 export function wireEditModeHandlers(node: GraphNode, contentState: HTMLElement): void {
+  // Wired before the generic [data-field] loop below, so the newline guard runs
+  // ahead of the handler that reads .value and commits it.
+  const formulaField = contentState.querySelector<HTMLTextAreaElement>(".detail-formula-input");
+  if (formulaField) wireFormulaField(formulaField);
+
   // Node-field edits.
   contentState.querySelectorAll("[data-field]").forEach(input => {
     if (input.hasAttribute("data-edge-field")) return;     // edge inputs wired below

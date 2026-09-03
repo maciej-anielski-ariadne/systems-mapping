@@ -34,92 +34,6 @@
   z-index: 1;
 }
 
-/* When unpinned, the grid track for the panel collapses to 0 so the viz
- * extends edge-to-edge. The strip is an absolutely-positioned overlay on
- * top of the viz (width still --panel-strip-w from 04-sidebar.css /
- * 06-detail-panel.css), so the transparent strip reveals the viz content
- * behind it rather than the body's --bg-deepest backdrop. */
-.app.sidebar-unpinned { --sidebar-w: 0; }
-.app.detail-unpinned  { --detail-w:  0; }
-
-/* === Panel header ===
- * Sticky strip at the top of each side panel that holds the pin button.
- * Living in a real header (rather than absolute-positioning the pin over
- * content) means filter rows and detail content can never overlap or
- * obscure the pin. The header sticks to the top of the panel's scroll
- * area so the pin is always reachable. */
-.panel-header {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  flex-shrink: 0;
-  height: 40px;   /* Compact: matches NODE_HEIGHT / --panel-strip-w (the 44→40 rhyme) */
-  background: var(--bg-deep);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 var(--space-1);
-  margin-bottom: var(--heading-gap);
-}
-
-/* === Collapse / expand handle ===
- * A minimal chevron button in each panel header. Clicking collapses the panel
- * to a thin strip (which still hover-expands); the chevron flips to point
- * inward as the "expand" affordance when collapsed. Replaces the old verbose
- * "Click here to (un)pin" pin with always-docked panels + a quiet handle. */
-.panel-pin {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-1_5);
-  background: transparent;
-  color: var(--text-tertiary);
-  cursor: pointer;
-  border-radius: var(--radius-interactive);
-  transition: background var(--dur-base), color var(--dur-base);
-}
-
-.panel-pin svg {
-  flex-shrink: 0;
-  transition: transform var(--dur-slow) ease;
-}
-
-/* Visible action label beside the chevron ("Collapse" / "Expand"),
-   filled by applyPanelPinnedClasses() in 17-events.ts. Quiet uppercase-mono
-   treatment matches the sidebar section titles so it reads as an affordance,
-   not a loud button. */
-.panel-pin { gap: var(--space-1_5); }
-
-/* "Collapse" is a control, not a section label — so it reads as a word, at body
- * size, like every other button. Caps are for eyebrows only. */
-.panel-pin-label {
-  font-size: var(--fs-body);
-  color: var(--text-tertiary);
-  white-space: nowrap;
-}
-
-.panel-pin:hover {
-  color: var(--text-primary);
-  background: var(--act-tint);
-}
-
-.panel-pin:hover .panel-pin-label {
-  color: var(--text-secondary);
-}
-
-/* Collapsed → flip the chevron to point inward ("expand"). */
-.app.sidebar-unpinned .sidebar-pin svg,
-.app.detail-unpinned  .detail-pin  svg {
-  transform: rotate(180deg);
-}
-
-/* The panels get dimmed + pointer-events: none in the no-data state
- * (see 10-misc.css). Keep the pin buttons clickable so users are never
- * trapped with an unpinned panel they can't pin again. */
-body.no-data .panel-pin {
-  pointer-events: auto;
-}
-
 /* === Header bar (spans all three columns) ===
  * z-index 40 so that the search dropdown (which is a child of the header
  * via .search-wrap) renders ABOVE the unpinned sidebar strips at z-index
@@ -359,13 +273,6 @@ body.no-data .publish-html-trigger:hover {
   background: color-mix(in srgb, var(--act) 55%, transparent);
 }
 
-/* Resize handle only makes sense when its panel is in pinned (full-width)
- * mode — when unpinned the panel collapses to a hover-expand strip. */
-.app.sidebar-unpinned .sidebar-resize-handle,
-.app.detail-unpinned  .detail-resize-handle {
-  display: none;
-}
-
 /* While dragging, suppress text selection app-wide and force the
  * col-resize cursor even when the pointer drifts off the handle. */
 body.panel-resizing {
@@ -403,14 +310,19 @@ html.app-booting .detail-panel {
 /* Simulation is the exception: its sliders ARE the left panel, and you work
  * them against the map, so while simulating the panel docks exactly as it does
  * while editing rather than sliding over the picture. */
-body.reading:not(.sim-mode) .app         { --sidebar-w: 0; }
+body:not(.sim-mode) .app                 { --sidebar-w: 0; }
 body.reading .app:not(.has-selection)    { --detail-w:  0; }
 
 /* === Left panel as a drawer ===
  * Out of the grid entirely and slid off the left edge, so the map is full
  * width; the header's Filters button brings it over the map, and a click
- * anywhere else (or Esc) sends it back. */
-body.reading:not(.sim-mode) .sidebar {
+ * anywhere else (or Esc) sends it back.
+ *
+ * The same in EDIT mode. It used to dock open there on the reasoning that the
+ * panel is where rows, columns and tags are edited — but that took 220px of map
+ * away from everyone who entered Edit to move a box, which is most of the time.
+ * The button is there when the panel is wanted. */
+body:not(.sim-mode) .sidebar {
   position: absolute;
   top: 64px;
   left: 0;
@@ -426,16 +338,10 @@ body.reading:not(.sim-mode) .sidebar {
   transition: transform var(--dur-slow) var(--ease), visibility var(--dur-slow);
 }
 
-body.reading:not(.sim-mode) .app.filters-open .sidebar {
+body:not(.sim-mode) .app.filters-open .sidebar {
   transform: none;
   visibility: visible;
 }
-
-/* The drawer's handle is the header button, so the in-panel collapse chevron
- * and the drag-to-resize strip would both be answering a question nobody
- * asked. Same for the right panel, which opens and closes with the selection. */
-body.reading .panel-header,
-body.reading .panel-resize-handle { display: none; }
 
 /* === Right panel opens on a selection === */
 body.reading .app:not(.has-selection) .detail-panel {

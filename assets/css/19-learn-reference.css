@@ -253,18 +253,6 @@
 
 /* The formula row now holds an input and the "?" side by side, so the pair
  * takes the width the input alone used to (06-detail-panel.css). */
-.detail-quant-row .detail-quant-formula-cell {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1_5);
-  flex: 0 0 124px;
-}
-
-.detail-quant-row .detail-quant-formula-cell .detail-quant-input {
-  flex: 1 1 auto;
-  width: auto;
-  min-width: 0;
-}
 
 @media (max-width: 860px) {
   .learn-reference-backdrop { padding: 0; }

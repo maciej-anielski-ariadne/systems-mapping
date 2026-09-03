@@ -21,7 +21,7 @@ import { refreshSelectionStyling, render, scheduleRender, updateSimulationValues
 import { patchDetailPanelValues, renderDetailPanel } from "./15-detail-panel";
 import { saveUiStateToStorage, scheduleUiStateSave } from "./04a-storage";
 import { renderSidebar } from "./13-sidebar";
-import { applyPanelPinnedClasses, setFiltersOpen, setUiMode } from "./17-events";
+import { setFiltersOpen, setUiMode } from "./17-events";
 import { focusNode, scrollNodeIntoView } from "./09-graph-selection";
 import { atlasIsOpen, refreshAtlasValues } from "./21-atlas-view";
 import { syncReviewRail } from "./25-review-rail";
@@ -527,10 +527,6 @@ export function toggleSimulationMode(): void {
   // take them away every time you looked at what moved. The docking is CSS
   // off body.sim-mode; what's needed here is to make sure no half-open
   // drawer is left over it.
-  if (state.simulationMode && !state.sidebarPinned) {
-    state.sidebarPinned = true;
-    if (typeof applyPanelPinnedClasses === "function") applyPanelPinnedClasses();
-  }
   if (state.simulationMode && typeof setFiltersOpen === "function") setFiltersOpen(false);
 
   document.body.classList.toggle("sim-mode", state.simulationMode);

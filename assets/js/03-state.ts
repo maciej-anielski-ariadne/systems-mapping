@@ -81,8 +81,6 @@ export const state: AppState = {
   // True while the left panel is open as a drawer (reading mode only — in edit
   // mode it is docked and this is ignored).
   filtersOpen: false,
-  sidebarPinned: true, // when false, left sidebar shows as a narrow strip and expands on hover
-  detailPanelPinned: true, // when false, right detail panel shows as a narrow strip and expands on hover
   sidebarWidth: 280, // pinned left sidebar width in px (drag the divider to change; double-click resets)
   detailPanelWidth: 340, // pinned right detail panel width in px (same UX as sidebarWidth)
   zoomLevel: 1.0, // map zoom multiplier (0.25 .. 3.0). Applied to the SVG width/height.

@@ -16,14 +16,24 @@ const HOSTED_OUTPUT_DIRECTORY = "dist-hosted";
 // or spreadsheet library in that figure — the browser deflates natively through
 // CompressionStream, so the only code here is the zip container, the OOXML
 // parts and the mapping between sheets and CSV sections.
+//
+// Raised again 2026-09-03 for the in-app confirm dialog (04c-confirm.ts).
+// window.confirm() is suppressed in embedded browsers and silenced for the
+// session once someone ticks the browser's "block additional dialogs" box, and
+// a suppressed confirm returns false — so five destructive actions silently did
+// nothing. About 2KB raw for a dialog the app controls and can test.
+//
+// Nudged 2026-09-03 for the formula field, which became a wrapping textarea on
+// a row of its own: the 143px value slot showed 21 characters of a 120-character
+// formula. Under a kilobyte of JavaScript for the auto-size and newline guard.
 const performanceBudgets = {
-  offlineRawBytes: 928_000,
-  offlineGzipBytes: 305_000,
-  hostedMainJavaScriptRawBytes: 634_000,
+  offlineRawBytes: 931_000,
+  offlineGzipBytes: 306_000,
+  hostedMainJavaScriptRawBytes: 636_000,
   hostedWorkerJavaScriptRawBytes: 6_000,
-  hostedTotalJavaScriptRawBytes: 639_000,
-  hostedCssRawBytes: 165_000,
-  hostedColdTransferBytes: 301_000,
+  hostedTotalJavaScriptRawBytes: 641_000,
+  hostedCssRawBytes: 166_000,
+  hostedColdTransferBytes: 302_000,
   offlineEmbeddedFontPayloads: 4,
 };
 

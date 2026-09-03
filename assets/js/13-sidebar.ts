@@ -562,9 +562,9 @@ export function wireRowHandlers(container: HTMLElement, kind: string): void {
     if (delBtn) {
       delBtn.addEventListener("click", event => {
         event.stopPropagation();
-        if (kind === "stream"   && typeof deleteStreamWithCascade   === "function") deleteStreamWithCascade(id);
-        if (kind === "stage"    && typeof deleteStageWithCascade    === "function") deleteStageWithCascade(id);
-        if (kind === "category" && typeof deleteCategoryWithCascade === "function") deleteCategoryWithCascade(id);
+        if (kind === "stream"   && typeof deleteStreamWithCascade   === "function") void deleteStreamWithCascade(id);
+        if (kind === "stage"    && typeof deleteStageWithCascade    === "function") void deleteStageWithCascade(id);
+        if (kind === "category" && typeof deleteCategoryWithCascade === "function") void deleteCategoryWithCascade(id);
       });
     }
 

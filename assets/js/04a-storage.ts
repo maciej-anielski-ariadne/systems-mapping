@@ -167,8 +167,6 @@ export function saveUiStateToStorage(): void {
       userOverrides:        state.userOverrides || {},
       selectedNodeId:       state.selectedNodeId || null,
       uiMode:               state.uiMode === "edit" ? "edit" : "read",
-      sidebarPinned:        !!state.sidebarPinned,
-      detailPanelPinned:    !!state.detailPanelPinned,
       sidebarWidth:         typeof state.sidebarWidth      === "number" ? state.sidebarWidth      : 280,
       detailPanelWidth:     typeof state.detailPanelWidth  === "number" ? state.detailPanelWidth  : 340,
       zoomLevel:            typeof state.zoomLevel === "number" ? state.zoomLevel : 1.0,
@@ -222,16 +220,9 @@ export function applyRestoredUiState(ui: any): void {
   // who is at the keyboard, and it is the same person whichever map they open.
   if (typeof ui.reviewer === "string") state.reviewer = ui.reviewer;
 
-  if (typeof ui.sidebarPinned === "boolean") {
-    state.sidebarPinned = ui.sidebarPinned;
-  } else if (typeof ui.sidebarCollapsed === "boolean") {
-    state.sidebarPinned = !ui.sidebarCollapsed;
-  }
-  if (typeof ui.detailPanelPinned === "boolean") {
-    state.detailPanelPinned = ui.detailPanelPinned;
-  } else if (typeof ui.detailPanelCollapsed === "boolean") {
-    state.detailPanelPinned = !ui.detailPanelCollapsed;
-  }
+  // sidebarPinned / detailPanelPinned used to live here. The panels no longer
+  // collapse, so a stored value has nothing to restore into; it is ignored
+  // rather than migrated, and drops out of the file on the next save.
   // The restore path applies all remaining data-dependent state below and then
   // performs its final render. Updating the shell classes now is necessary;
   // rebuilding both panels with half-restored filters and values is not.
