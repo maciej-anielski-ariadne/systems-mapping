@@ -76,7 +76,7 @@ disabled, and no command is duplicated in the header.
 - **New map** replaces the current document with an empty grid.
 - **Import…** loads a spreadsheet from disk — same as dragging one onto the window.
 - **Export** groups the output formats by what the recipient needs:
-  - **Spreadsheet** downloads the current map as a `.csv` (re-importable). With a box selected, saves only its highlighted boxes and links.
+  - **Spreadsheet** downloads the current map as an `.xlsx` workbook — one sheet per part of the map, with dropdowns on the columns that take a fixed set of values — and imports it back. With a box selected, saves only its highlighted boxes and links. `.csv` files are still accepted on import.
   - **Review log** downloads the assurance history as a `.csv` for governance and follow-up.
   - **Image** copies the map to your clipboard as a high-resolution PNG (rendered vector-sharp at up to 3× pixel density, backed off automatically to stay inside what browsers can allocate — one side at most 16384px, at most 64 megapixels total) and shows a "copied" toast — paste it straight into a doc, slide, or chat. It captures what's on screen, so zoom / pan to frame the part you want (only boxes overlapping the visible area are included, along with the links whose two ends are both on screen; if the whole map already fits, you get all of it). If a box is selected, only its highlighted boxes and links (out to the current **highlight depth**) are copied — rendered in the map's normal, un-highlighted style (the highlight only selects what to include). Either way the export is reflowed: empty columns and rows are dropped and the surviving rows reordered so connected boxes sit closer together. A map so large that even 1× exceeds those canvas limits still exports, but the toast tells you the percentage it came out at and suggests selecting a box to get that part at full quality; if the browser refuses the image outright, the toast says so rather than failing silently. (Clipboard image copy needs a secure context — works over http/localhost or https.)
   - **Web page** downloads `systems-map.html` — a self-contained, view-only page of the same framed map (same viewport / selection framing as **Image**) with pan / zoom / hover-for-details (no editing, importing, or simulating).
@@ -349,13 +349,27 @@ boxes it waits to be asked rather than running on open.
 
 ## Spreadsheet format
 
-One CSV document containing named sections delimited by `# SECTION: <name>` lines.
+The map is one document of named sections. As an `.xlsx` workbook each section is a
+sheet — Rows, Columns, Categories, Defaults, Constants, Boxes, Links, Reviews, plus
+a Read me carrying the notes that would otherwise be comment lines. As a `.csv` the
+same sections are delimited by `# SECTION: <name>` lines.
+
 `streams`, `stages`, `categories` and `nodes` are required; `defaults`, `params`,
 `edges` and `reviews` are optional. Each section has its own column headers on the
-first non-comment row. Lines starting with `#` are comments, empty lines are
-ignored. Order does not matter to the parser, though exports use build order.
+first row. In CSV, lines starting with `#` are comments and empty lines are ignored.
+Order does not matter to the parser, though exports use build order.
 
-Edit in any spreadsheet app — each section appears as its own distinct table block. Quote cells with embedded commas; use `""` to escape literal quotes.
+The workbook is a transcoder around the CSV, not a second format: an export is built
+from the generated CSV, and an import is turned back into one before it reaches the
+loader. There is therefore one parser, one validator and one set of error messages
+whichever file you hand it. `05c-workbook.ts` holds the zip container, the OOXML
+parts and the sheet-to-section mapping; the browser deflates natively, so no
+compression or spreadsheet library ships with the app.
+
+Editing by hand: in a workbook, use the sheet tabs. In a CSV, each section appears as
+its own table block — quote cells with embedded commas; use `""` to escape literal
+quotes. Sheets the app does not recognise are ignored on import, so notes of your own
+are safe to add.
 
 Every `id` uses the same formula-safe grammar: start with a letter or underscore,
 then use only letters, numbers or underscores. IDs are unique within their section;
@@ -616,6 +630,7 @@ systems_mapping/
     │   ├── 05b-csv-import-protocol.ts Worker message types + advisory preflight
     │   ├── 05b-input-validation.ts  Canonical identifiers, colours and strict numbers
     │   ├── 05c-csv-import-worker.ts Background CSV decode, parse and preflight entry
+    │   ├── 05c-workbook.ts         .xlsx read/write — a sheet per CSV section
     │   ├── 05d-csv-import-worker-factory.ts Hosted hashed-worker constructor
     │   ├── 05d-csv-import-worker-factory-inline.ts Offline embedded-worker constructor
     │   ├── 06-data-loader.ts        loadDataFromCsv + rebuildIndexes

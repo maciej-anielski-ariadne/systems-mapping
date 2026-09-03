@@ -9,14 +9,21 @@ const HOSTED_OUTPUT_DIRECTORY = "dist-hosted";
 // out of the guided tour into a browsable shelf (26a-learn-reference.ts), and a
 // second, smaller example map joined the bundle. The prose compresses well, so
 // the cost users actually pay is +8.2KB on cold transfer, about 2.9%.
+//
+// Raised again 2026-09-03 for the workbook format (05c-workbook.ts), which
+// replaced the .csv as the map's editable export and import. It is +12.3KB of
+// JavaScript raw, +4.2KB gzipped, about 1.4% on cold transfer. There is no zip
+// or spreadsheet library in that figure — the browser deflates natively through
+// CompressionStream, so the only code here is the zip container, the OOXML
+// parts and the mapping between sheets and CSV sections.
 const performanceBudgets = {
-  offlineRawBytes: 915_000,
-  offlineGzipBytes: 300_000,
-  hostedMainJavaScriptRawBytes: 620_000,
+  offlineRawBytes: 928_000,
+  offlineGzipBytes: 305_000,
+  hostedMainJavaScriptRawBytes: 634_000,
   hostedWorkerJavaScriptRawBytes: 6_000,
-  hostedTotalJavaScriptRawBytes: 625_000,
+  hostedTotalJavaScriptRawBytes: 639_000,
   hostedCssRawBytes: 165_000,
-  hostedColdTransferBytes: 296_000,
+  hostedColdTransferBytes: 301_000,
   offlineEmbeddedFontPayloads: 4,
 };
 

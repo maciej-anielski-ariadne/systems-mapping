@@ -32,7 +32,7 @@ import { toggleSimulationMode } from "./14-simulation-panel";
 import { renderSidebar } from "./13-sidebar";
 import { renderDetailPanel } from "./15-detail-panel";
 import { atlasIsOpen, closeAtlas } from "./21-atlas-view";
-import { downloadCsvBlob, readCsvFile } from "./16-file-io";
+import { downloadWorkbook, readMapFile } from "./16-file-io";
 import { closeBuilder, openBuilder } from "./16a-builder-state";
 import { bootEmptyStateGrid } from "./16e-canvas-edit";
 import { clearSearch } from "./17a-search";
@@ -73,7 +73,7 @@ export const hiddenFileInput = document.getElementById("hidden-file-input") as H
 if (hiddenFileInput) {
   hiddenFileInput.addEventListener("change", event => {
     const file = (event.target as HTMLInputElement).files && (event.target as HTMLInputElement).files![0];
-    if (file) void readCsvFile(file);
+    if (file) void readMapFile(file);
     (event.target as HTMLInputElement).value = "";       // reset so picking the same file twice works
   });
 }
@@ -85,18 +85,20 @@ document.querySelectorAll(".import-data-trigger").forEach(button => {
   });
 });
 
-// "CSV" — downloads the map as a CSV. With a box selected, its highlighted
-// boxes and links; otherwise the whole map (matching the PNG / HTML exports).
-// getExportSelection (19-export.js) decides the subset.
+// "Spreadsheet" — downloads the map as a workbook, one sheet per section. With a
+// box selected, its highlighted boxes and links; otherwise the whole map
+// (matching the PNG / HTML exports). getExportSelection (19-export.js) decides
+// the subset. The workbook is built from the same CSV the app has always
+// written, so the two can never describe a map differently.
 document.querySelectorAll(".save-data-trigger").forEach(button => {
   button.addEventListener("click", () => {
     if (!state.dataLoaded) return;
-    if (typeof serializeLiveStateToCsv !== "function" || typeof downloadCsvBlob !== "function") return;
+    if (typeof serializeLiveStateToCsv !== "function") return;
     const sel = getExportSelection(true); // allEdges=true: every real edge among the chosen boxes
     const subset = sel.selectionActive
       ? { nodeIds: sel.nodeIds, edgeIds: new Set(sel.edges.map(e => e.id).filter((id): id is string => !!id)) }
       : undefined;
-    downloadCsvBlob(serializeLiveStateToCsv(subset), "systems_map.csv");
+    void downloadWorkbook(serializeLiveStateToCsv(subset), "systems_map");
   });
 });
 
@@ -1383,7 +1385,7 @@ window.addEventListener("drop", event => {
   event.preventDefault();
   document.body.classList.remove("drag-active");
   const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
-  if (file) void readCsvFile(file);
+  if (file) void readMapFile(file);
 });
 
 // ───── Sidebar "Map appearance" accordion ────────────────────────────────

@@ -12,6 +12,7 @@
 import { SAMPLE_CSV } from "./01-sample-data";
 import { state } from "./03-state";
 import { loadDataFromCsv, loadDataFromParsedCsv } from "./06-data-loader";
+import { csvToWorkbookBlob, workbookBufferToCsv, workbookIsSupported } from "./05c-workbook";
 import type { ParsedCsvDocument } from "./05-csv-parser";
 import type {
   CsvImportProgressMessage,
@@ -335,9 +336,40 @@ export function showDropZone(): void {
 }
 
 // ───── Read a File object (from picker or drop) and load it ──────────────
+/**
+ * The single entry point for opening a map. A workbook is transcoded to CSV and
+ * then handed to exactly the same reader, worker, validator and error messages a
+ * .csv gets — there is one importer here, not two.
+ *
+ * .csv is still accepted. It is the format this app wrote for its whole life,
+ * and refusing it would strand every map anyone has already saved.
+ */
+export async function readMapFile(file: File): Promise<CsvImportOutcome> {
+  if (/\.xlsx$/i.test(file.name)) {
+    if (!workbookIsSupported()) {
+      showLoadFeedback("This browser cannot open .xlsx files. Try a .csv.", true);
+      return "invalid-file";
+    }
+    let csvText: string;
+    try {
+      csvText = await workbookBufferToCsv(await file.arrayBuffer());
+    } catch (error) {
+      const reason = error instanceof Error && error.message === "no-recognised-sheets"
+        ? "None of its sheets are ones this app writes — expected Boxes, Links, Rows and Columns."
+        : "It could not be read as a workbook.";
+      showLoadFeedback("Could not open " + file.name + ". " + reason, true);
+      return "invalid-file";
+    }
+    return readCsvFile(new File([csvText], file.name.replace(/\.xlsx$/i, ".csv"), {
+      type: "text/csv",
+    }));
+  }
+  return readCsvFile(file);
+}
+
 export function readCsvFile(file: File): Promise<CsvImportOutcome> {
   if (!/\.csv$/i.test(file.name)) {
-    showLoadFeedback("Expected a .csv file. Got: " + file.name, true);
+    showLoadFeedback("Expected a spreadsheet (.xlsx) or .csv file. Got: " + file.name, true);
     return Promise.resolve("invalid-file");
   }
   if (activeCsvImport) cancelCsvImport();
@@ -402,9 +434,8 @@ document.addEventListener("keydown", event => {
   }
 });
 
-// ───── Trigger a download of a CSV string in the browser ────────────────
-export function downloadCsvBlob(csvString: string, fileName: string): void {
-  const blob = new Blob([csvString], { type: "text/csv;charset=utf-8" });
+// ───── Trigger a download of a blob in the browser ──────────────────────
+function downloadBlob(blob: Blob, fileName: string): void {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
@@ -413,6 +444,28 @@ export function downloadCsvBlob(csvString: string, fileName: string): void {
   anchor.click();
   document.body.removeChild(anchor);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+export function downloadCsvBlob(csvString: string, fileName: string): void {
+  downloadBlob(new Blob([csvString], { type: "text/csv;charset=utf-8" }), fileName);
+}
+
+/**
+ * The map as a workbook — the one editable format the app hands out. The CSV
+ * still exists underneath as the transcoder's input, and is used verbatim if a
+ * browser cannot deflate, so nobody is ever left unable to save their map.
+ */
+export async function downloadWorkbook(csvString: string, baseName: string): Promise<void> {
+  if (!workbookIsSupported()) {
+    downloadCsvBlob(csvString, baseName + ".csv");
+    return;
+  }
+  try {
+    downloadBlob(await csvToWorkbookBlob(csvString), baseName + ".xlsx");
+  } catch {
+    showLoadFeedback("Could not build the workbook. Saved as a .csv instead.", true);
+    downloadCsvBlob(csvString, baseName + ".csv");
+  }
 }
 
 export function downloadSampleCsv(): void {

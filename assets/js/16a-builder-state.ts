@@ -48,7 +48,7 @@ import {
 } from "./05b-input-validation";
 import { serializeBuilderToCsv } from "./05a-csv-serializer";
 import { loadDataFromCsv } from "./06-data-loader";
-import { downloadCsvBlob, showLoadFeedback } from "./16-file-io";
+import { downloadWorkbook, showLoadFeedback } from "./16-file-io";
 import { renderBuilder } from "./16b-builder-render";
 import { hideCellEditor } from "./16c-builder-editor";
 
@@ -669,8 +669,7 @@ export function applyBuilderToMap(): void {
 }
 
 export function downloadBuilderCsv(): void {
-  const csv = serializeBuilderToCsv(state.builder);
-  downloadCsvBlob(csv, "systems_map.csv");
+  void downloadWorkbook(serializeBuilderToCsv(state.builder), "systems_map");
 }
 
 // ───── Row data mutations ─────────────────────────────────────────────────

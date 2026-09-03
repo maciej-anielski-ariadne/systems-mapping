@@ -17,9 +17,9 @@
                      Excel or Google Sheets.
 
  ─── To edit the map ──────────────────────────────────────────────────────
-   1. Open assets/data/sample.csv (or empty_template.csv) in Excel.
-   2. Edit the rows.
-   3. Save as a spreadsheet (.csv) file.
+   1. Export the map as a spreadsheet, or open assets/data/sample.csv in Excel.
+   2. Edit the rows. Each part of the map has its own sheet.
+   3. Save it (.xlsx, or .csv for the bundled samples).
    4. Drag-and-drop it onto the app.
 
  ─── To change colours / fonts ────────────────────────────────────────────
@@ -139,7 +139,7 @@
                 data-tooltip="Download this map for editing, review, presentation or sharing.">Export<span class="header-caret" aria-hidden="true">▾</span></button>
         <div id="export-menu" class="menu" role="menu" hidden>
           <button class="menu-item save-data-trigger" role="menuitem">
-            <b>Spreadsheet</b><span>A .csv you can edit in Excel or Sheets and load back in.</span>
+            <b>Spreadsheet</b><span>An .xlsx workbook — a sheet per part of the map — to edit in Excel or Sheets and load back in.</span>
           </button>
           <button class="menu-item export-review-log-trigger" role="menuitem">
             <b>Review log</b><span>A .csv of every box: checked or not, by whom, when, the comments, and whether they have been dealt with.</span>
@@ -168,7 +168,9 @@
   </header>
 
   <!-- Hidden file picker. Clicking any .import-data-trigger button triggers it. -->
-  <input type="file" id="hidden-file-input" accept=".csv,text/csv" style="display: none;">
+  <input type="file" id="hidden-file-input"
+         accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
+         style="display: none;">
   <!-- Toast container — JS fills it via showLoadFeedback() -->
   <div id="load-feedback" class="load-feedback" role="status" aria-live="polite"
        aria-atomic="true" style="display: none;"></div>

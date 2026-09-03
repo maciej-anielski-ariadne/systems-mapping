@@ -460,7 +460,7 @@ export function renderBuilderFooter(): string {
            '<button class="builder-action" id="builder-next-button"' + nextDisabled + '>Next →</button>' +
            '<div class="builder-footer-spacer"></div>' +
            status +
-           '<button class="builder-action" id="builder-download-button">Download CSV</button>' +
+           '<button class="builder-action" id="builder-download-button">Download spreadsheet</button>' +
            '<button class="builder-action primary" id="builder-apply-button">Apply to map</button>' +
          '</div>';
 }

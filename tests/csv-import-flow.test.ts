@@ -17,6 +17,7 @@ import {
   formattedFileSize,
   largeMapAdvisoryReasons,
   readCsvFile,
+  readMapFile,
   resetCsvImportWorkerFactory,
   setCsvImportWorkerFactory,
   type CsvImportWorkerPort,
@@ -122,6 +123,20 @@ describe("background CSV import flow", () => {
     expect(document.getElementById("csv-import-layer")!.hidden).toBe(true);
     expect(NODES.map(node => node.id)).toEqual(["n"]);
     expect(document.getElementById("load-feedback")!.textContent).toContain("Found 1 box and 0 links");
+  });
+
+  it("still opens a .csv through the one file entry point the picker uses", async () => {
+    // The workbook replaced the .csv as the format this app WRITES. It must not
+    // have replaced the format this app READS: every map anyone saved before the
+    // change is a .csv, and refusing those would strand all of them.
+    const outcomePromise = readMapFile(new File([MULTICAT_CSV], "saved_last_year.csv", {
+      type: "text/csv",
+    }));
+    const worker = await waitForWorker(workers);
+    worker.respond(readyMessage(worker, MULTICAT_CSV));
+
+    await expect(outcomePromise).resolves.toBe("opened");
+    expect(NODES.map(node => node.id)).toEqual(["n"]);
   });
 
   it("shows accessible progress only after the delayed reveal and can cancel safely", async () => {

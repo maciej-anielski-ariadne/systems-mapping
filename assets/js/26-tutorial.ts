@@ -1783,7 +1783,7 @@ const REVIEW_EVIDENCE_STEPS: TutorialStep[] = [
   },
   {
     title: "Record where each claim came from",
-    body: "In Edit mode, each formula and link can carry a status, rationale, source and last-reviewed date. Those fields travel with the CSV and remain visible to reviewers without cluttering the map itself.",
+    body: "In Edit mode, each formula and link can carry a status, rationale, source and last-reviewed date. Those fields travel with the spreadsheet and remain visible to reviewers without cluttering the map itself.",
     targetSelector: ".evidence-editor--formula",
     enter: () => enterEditExample(FORMULA_IDENTIFIER),
   },
@@ -1898,7 +1898,7 @@ const PROTECT_EDITABLE_SOURCE_STEPS: TutorialStep[] = [
   },
   {
     title: "Use the Spreadsheet as the editable source",
-    body: "The spreadsheet holds a named section for each part of the map: rows, columns, categories, defaults, constants, boxes, links and review records. Evidence gets its own columns, so nothing is lost when the file goes out and comes back.",
+    body: "The spreadsheet holds a sheet for each part of the map: rows, columns, categories, defaults, constants, boxes, links and review records. Evidence gets its own columns, and the choices a column allows are dropdowns, so nothing is lost or mistyped when the file goes out and comes back.",
     targetSelector: ".save-data-trigger",
     enter: () => {
       enterReadingSurface();
