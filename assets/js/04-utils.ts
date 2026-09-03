@@ -6,6 +6,8 @@
 //   • escapeHtml      – make user text safe to inject into HTML/SVG strings
 //   • formatScalar    – format a number for display ("9,000", "1.25", etc.)
 //   • getMapTextScale – font-scale multiplier for the map when zoomed out
+//   • showAnchoredMenu   – open a menu at <body> level, under its trigger
+//   • keepWithinViewport – nudge an open popup back inside the window
 // =============================================================================
 
 import { TEXT_SCALE_MAX, TEXT_SCALE_RATIO, FAN_SPACING, FAN_MARGIN } from "./02-config";
@@ -521,4 +523,90 @@ export function simEffectFill(merit: string, strength: number): string {
   return s <= SIM_PASTEL_AT
     ? mixHex(SIM_FLAT_FILL, pastel, 0.18 + (s / SIM_PASTEL_AT) * 0.82)
     : mixHex(pastel, deep, (s - SIM_PASTEL_AT) / (1 - SIM_PASTEL_AT));
+}
+
+// ── Keeping popups on screen ────────────────────────────────────────────────
+// A menu anchored to its trigger can hang off the window: `.menu` pins its
+// RIGHT edge to the button, so a wide menu on a button near the left edge runs
+// off to the left, and a long one runs off the bottom. Rather than hand-tuning
+// each anchor, every popup gets nudged back inside after it opens.
+//
+// The nudge is a transform, not a new left/top, so it composes with whatever
+// CSS anchoring the popup already has instead of replacing it. Call this while
+// the popup is visible — a hidden element measures as zero.
+export function keepWithinViewport(popup: HTMLElement, margin = 8): void {
+  // Clear last time's correction first, or the measurement compounds.
+  popup.style.transform = "";
+  popup.style.maxHeight = "";
+  popup.style.maxWidth = "";
+
+  // A popup wider than the window cannot be rescued by moving it, so cap the
+  // width before measuring. The export menu carries a line of explanation per
+  // item and runs to 555px, which is wider than a narrow window on its own.
+  popup.style.maxWidth = Math.max(180, window.innerWidth - margin * 2) + "px";
+
+  const rect = popup.getBoundingClientRect();
+  if (!rect.width && !rect.height) return;
+
+  let horizontalShift = 0;
+  const overflowRight = rect.right - (window.innerWidth - margin);
+  if (overflowRight > 0) horizontalShift = -overflowRight;
+  // A popup wider than the window would now hang off the left instead; pinning
+  // the left edge is the lesser evil, since that is where reading starts.
+  if (rect.left + horizontalShift < margin) horizontalShift = margin - rect.left;
+  if (horizontalShift) {
+    popup.style.transform = "translateX(" + Math.round(horizontalShift) + "px)";
+  }
+
+  // Too tall to fit below its trigger: cap it and let it scroll, so the last
+  // item is always reachable rather than sitting under the window edge.
+  const availableHeight = window.innerHeight - rect.top - margin;
+  if (rect.height > availableHeight && availableHeight > 0) {
+    popup.style.maxHeight = Math.max(120, Math.round(availableHeight)) + "px";
+    popup.style.overflowY = "auto";
+  }
+}
+
+// ── Menus that escape their panel ───────────────────────────────────────────
+// A menu anchored inside a panel inherits that panel's clipping and stacking.
+// #viz-container is `overflow: hidden`, so the Atlas start picker was cut off
+// at the edge of the map area and the detail panel showed through — it read as
+// the menu hiding BEHIND the panel. z-index cannot fix that: clipping happens
+// first, and an ancestor's stacking context caps the child's z-index anyway.
+//
+// So an open menu moves to <body>, is positioned from its trigger's viewport
+// rect, and goes home when it closes. This is the same trick the typeable
+// dropdown uses. Both menus are dismissed by document-level handlers that read
+// the click target, so moving them does not affect closing or item clicks.
+const menuHomes = new WeakMap<HTMLElement, HTMLElement>();
+
+export function showAnchoredMenu(menu: HTMLElement, trigger: HTMLElement): void {
+  if (!menuHomes.has(menu) && menu.parentElement) menuHomes.set(menu, menu.parentElement);
+  if (menu.parentElement !== document.body) document.body.appendChild(menu);
+
+  const triggerRect = trigger.getBoundingClientRect();
+  menu.style.position = "fixed";
+  // The stylesheet pins the menu's right edge to its trigger. Once it is
+  // fixed-positioned that has to become an explicit left, and `right` must be
+  // released or the two together would stretch it across the window.
+  menu.style.right = "auto";
+  menu.style.top = Math.round(triggerRect.bottom + 6) + "px";
+  menu.style.left = "0px";
+  const menuWidth = menu.getBoundingClientRect().width;
+  menu.style.left = Math.round(triggerRect.right - menuWidth) + "px";
+
+  keepWithinViewport(menu);
+}
+
+export function hideAnchoredMenu(menu: HTMLElement): void {
+  menu.style.position = "";
+  menu.style.right = "";
+  menu.style.top = "";
+  menu.style.left = "";
+  menu.style.transform = "";
+  menu.style.maxHeight = "";
+  menu.style.maxWidth = "";
+  menu.style.overflowY = "";
+  const home = menuHomes.get(menu);
+  if (home?.isConnected && menu.parentElement !== home) home.appendChild(menu);
 }

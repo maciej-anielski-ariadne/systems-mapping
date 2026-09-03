@@ -103,6 +103,103 @@ describe("the right panel opens on a selection", () => {
     applySelectionClass();
     expect(app().classList.contains("has-selection")).toBe(false);
   });
+
+  it("renders finite box settings as styled, non-typeable dropdowns", () => {
+    loadDataFromCsv(sampleCsv);
+    setUiMode("edit");
+    selectNode(NODES[0].id);
+    renderDetailPanel();
+
+    for (const fieldName of ["stream", "stage", "controllable", "direction", "combine"]) {
+      const selectElement = document.querySelector<HTMLSelectElement>(
+        '#detail-panel select[data-field="' + fieldName + '"]',
+      )!;
+      expect(selectElement.getAttribute("data-dropdown-mode")).toBe("select-only");
+      expect(selectElement.classList.contains("typeable-dropdown-native")).toBe(true);
+      expect(selectElement.closest(".selection-only-dropdown")).not.toBeNull();
+      expect(
+        selectElement.closest(".selection-only-dropdown")?.querySelector(".typeable-dropdown-button"),
+      ).not.toBeNull();
+      expect(
+        selectElement.closest(".selection-only-dropdown")?.querySelector(".typeable-dropdown-input"),
+      ).toBeNull();
+    }
+
+    expect(document.querySelector("#detail-panel .typeable-dropdown-input")).toBeNull();
+  });
+
+  it("routes Command-Z from a focused box field through model history", () => {
+    initCanvasEdit();
+    loadDataFromCsv(sampleCsv);
+    setUiMode("edit");
+    selectNode(NODES[0].id);
+    renderDetailPanel();
+
+    const originalLabel = NODES[0].label;
+    const boxNameInput = document.querySelector<HTMLInputElement>(
+      '#detail-panel input[data-field="label"]',
+    )!;
+    boxNameInput.value = "Temporary label";
+    boxNameInput.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(NODES[0].label).toBe("Temporary label");
+
+    const undoEvent = new KeyboardEvent("keydown", {
+      key: "z",
+      metaKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    boxNameInput.dispatchEvent(undoEvent);
+
+    expect(undoEvent.defaultPrevented).toBe(true);
+    expect(NODES[0].label).toBe(originalLabel);
+  });
+
+  it("mounts an open finite-choice popup at viewport level", () => {
+    loadDataFromCsv(sampleCsv);
+    setUiMode("edit");
+    selectNode(NODES[0].id);
+    renderDetailPanel();
+
+    const dropdownWrapper = document.querySelector<HTMLElement>(
+      '#detail-panel .selection-only-dropdown:has(select[data-field="stream"])',
+    )!;
+    const dropdownButton = dropdownWrapper.querySelector<HTMLButtonElement>(
+      ".typeable-dropdown-button",
+    )!;
+    const dropdownPopupIdentifier = dropdownButton.getAttribute("aria-controls")!;
+
+    dropdownButton.click();
+    const openDropdownPopup = document.getElementById(dropdownPopupIdentifier)!;
+    expect(openDropdownPopup.parentElement).toBe(document.body);
+    expect(openDropdownPopup.hidden).toBe(false);
+
+    dropdownButton.click();
+    expect(openDropdownPopup.parentElement).toBe(dropdownWrapper);
+    expect(openDropdownPopup.hidden).toBe(true);
+  });
+
+  it("adds a box to the current group on Shift-click while editing", () => {
+    loadDataFromCsv(sampleCsv);
+    setUiMode("edit");
+    const firstNodeIdentifier = NODES[0].id;
+    const secondNodeIdentifier = NODES[1].id;
+    selectNode(firstNodeIdentifier);
+    render();
+
+    document.querySelector<SVGGElement>(
+      '.node-group[data-node-id="' + secondNodeIdentifier + '"]',
+    )!.dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: true }));
+
+    expect(state.selectedNodeIds.has(firstNodeIdentifier)).toBe(true);
+    expect(state.selectedNodeIds.has(secondNodeIdentifier)).toBe(true);
+    expect(state.selectedNodeIds.size).toBe(2);
+    const multiSelectBar = document.getElementById("multi-select-bar")!;
+    expect(multiSelectBar.querySelectorAll(".selection-only-dropdown")).toHaveLength(3);
+    expect(multiSelectBar.querySelectorAll("select.typeable-dropdown-native")).toHaveLength(3);
+    expect(multiSelectBar.querySelectorAll(".typeable-dropdown-input")).toHaveLength(0);
+  });
+
 });
 
 describe("the filters drawer", () => {
@@ -424,6 +521,13 @@ describe("floating map headings", () => {
   it("floats both axes after panning, keeps them actionable, and becomes a low-zoom index", () => {
     loadDataFromCsv(sampleCsv);
     frameOf(640, 480);
+    // Loading fits the zoom to the scroller's width, and frameOf's property
+    // override outlives the test that set it — so the fit landed on whichever
+    // frame the previously-run test happened to leave behind. Below 0.7 the
+    // headings switch to the overview index and never hide, which is a
+    // different assertion from the one this test is making. Pin the zoom so
+    // this test is about panning, not about fitting.
+    state.zoomLevel = 1;
     const scroller = document.getElementById("viz-scroll")!;
     const visualizationContainer = document.getElementById("viz-container")!;
     const stickyColumns = document.getElementById("viz-sticky-columns")!;

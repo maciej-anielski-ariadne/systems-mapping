@@ -59,6 +59,26 @@ interface OpenInstance {
   reposition: () => void;
 }
 
+// A fixed-position popup is only viewport-relative while none of its ancestors
+// establishes a containing block. Tutorial highlighting deliberately uses a
+// visual filter, which does establish one; leaving the popup inside a
+// highlighted panel therefore applies viewport coordinates relative to the
+// panel a second time and can place the options off-screen. Mount open popups
+// directly under <body>, then return them to their wrapper when they close.
+function mountPopupAtViewportLevel(popup: HTMLElement): void {
+  if (document.body && popup.parentElement !== document.body) {
+    document.body.appendChild(popup);
+  }
+}
+
+function restorePopupToWrapper(popup: HTMLElement, wrapper: HTMLElement): void {
+  if (wrapper.isConnected) {
+    wrapper.appendChild(popup);
+  } else {
+    popup.remove();
+  }
+}
+
 // Shared bookkeeping for the popup that is currently open. Only one popup
 // can be open at a time — opening another closes any in-flight one.
 let openInstance: OpenInstance | null = null;
@@ -76,6 +96,22 @@ export function upgradeSelectsIn(container: ParentNode | null | undefined): void
     "select:not(.typeable-dropdown-native)",
   );
   selects.forEach(upgradeSelect);
+}
+
+// Finite app controls use the same non-typeable dropdown as the box-edit
+// sidebar. Renderers call this after replacing their markup so no native
+// browser picker remains visible on small, fixed option sets.
+export function upgradeSelectionOnlySelectsIn(
+  container: ParentNode | null | undefined,
+): void {
+  if (!container || typeof container.querySelectorAll !== "function") return;
+  const selects = container.querySelectorAll<HTMLSelectElement>(
+    "select:not(.typeable-dropdown-native)",
+  );
+  selects.forEach(selectElement => {
+    selectElement.setAttribute("data-dropdown-mode", "select-only");
+    upgradeSelect(selectElement);
+  });
 }
 
 // Lazy entry point — for containers holding a great many <select>s, where
@@ -117,7 +153,9 @@ export function upgradeSelectsLazilyIn(container: HTMLElement | null | undefined
 function pendingSelectFrom(target: EventTarget | null): HTMLSelectElement | null {
   const el = target as HTMLElement | null;
   if (!el || typeof el.closest !== "function") return null;
-  return el.closest("select:not(.typeable-dropdown-native)") as HTMLSelectElement | null;
+  return el.closest(
+    'select:not(.typeable-dropdown-native):not([data-dropdown-mode="select-only"])',
+  ) as HTMLSelectElement | null;
 }
 
 // Optional hook run against a <select> immediately before it is upgraded.
@@ -141,6 +179,233 @@ function upgradeAndFocus(select: HTMLSelectElement | null): void {
 }
 
 function upgradeSelect(select: HTMLSelectElement): void {
+  if (select.getAttribute("data-dropdown-mode") === "select-only") {
+    upgradeSelectionOnlySelect(select);
+    return;
+  }
+  upgradeTypeableSelect(select);
+}
+
+let selectionOnlyDropdownIdentifier = 0;
+let typeableDropdownIdentifier = 0;
+
+function upgradeSelectionOnlySelect(select: HTMLSelectElement): void {
+  if (!select || select.classList.contains("typeable-dropdown-native")) return;
+
+  const wrapper = document.createElement("span");
+  wrapper.className = "typeable-dropdown selection-only-dropdown";
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "typeable-dropdown-button" + (select.className ? " " + select.className : "");
+  button.setAttribute("role", "combobox");
+  button.setAttribute("aria-autocomplete", "none");
+  button.setAttribute("aria-haspopup", "listbox");
+  button.setAttribute("aria-expanded", "false");
+  const accessibleLabel = select.getAttribute("aria-label");
+  if (accessibleLabel) button.setAttribute("aria-label", accessibleLabel);
+
+  const popup = document.createElement("div");
+  popup.className = "typeable-dropdown-popup";
+  popup.setAttribute("role", "listbox");
+  popup.hidden = true;
+  const popupIdentifier = "selection-only-dropdown-" + (++selectionOnlyDropdownIdentifier);
+  popup.id = popupIdentifier;
+  button.setAttribute("aria-controls", popupIdentifier);
+
+  const parent = select.parentNode!;
+  parent.insertBefore(wrapper, select);
+  wrapper.appendChild(button);
+  wrapper.appendChild(select);
+  wrapper.appendChild(popup);
+  select.classList.add("typeable-dropdown-native");
+  select.setAttribute("aria-hidden", "true");
+  select.tabIndex = -1;
+
+  let dropdownItems: DropdownItem[] = [];
+  let highlightedItemIndex = 0;
+
+  const syncButtonFromSelect = (): void => {
+    button.textContent = currentSelectedLabel(select);
+  };
+
+  const renderedItemCount = (): number => Math.min(dropdownItems.length, POPUP_MAX_RENDERED);
+
+  const scrollHighlightedItemIntoView = (): void => {
+    const highlightedElement = popup.children[highlightedItemIndex] as HTMLElement | undefined;
+    if (!highlightedElement) return;
+    const visibleTop = popup.scrollTop;
+    const visibleBottom = visibleTop + popup.clientHeight;
+    const highlightedTop = highlightedElement.offsetTop;
+    const highlightedBottom = highlightedTop + highlightedElement.offsetHeight;
+    if (highlightedTop < visibleTop) {
+      popup.scrollTop = highlightedTop;
+    } else if (highlightedBottom > visibleBottom) {
+      popup.scrollTop = highlightedBottom - popup.clientHeight;
+    }
+  };
+
+  const renderPopupBody = (): void => {
+    let popupMarkup = "";
+    for (let itemIndex = 0; itemIndex < renderedItemCount(); itemIndex++) {
+      const dropdownItem = dropdownItems[itemIndex];
+      const className = "typeable-dropdown-item" +
+        (itemIndex === highlightedItemIndex ? " highlighted" : "") +
+        (dropdownItem.value === select.value ? " current" : "");
+      popupMarkup += '<div class="' + className + '" data-item-index="' + itemIndex +
+        '" role="option" aria-selected="' + (dropdownItem.value === select.value) + '">' +
+        escapeForHtml(dropdownItem.label) + '</div>';
+    }
+    popup.innerHTML = popupMarkup;
+  };
+
+  const rebuildDropdownItems = (): void => {
+    dropdownItems = Array.from(select.options).map((option, optionIndex) => ({
+      value: option.value,
+      label: option.text || "",
+      optionIndex: optionIndex,
+    }));
+    const selectedItemIndex = dropdownItems.findIndex(dropdownItem => dropdownItem.value === select.value);
+    highlightedItemIndex = selectedItemIndex >= 0 ? selectedItemIndex : 0;
+    if (highlightedItemIndex >= renderedItemCount()) highlightedItemIndex = 0;
+    renderPopupBody();
+  };
+
+  const positionPopup = (): void => {
+    const buttonRectangle = button.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - buttonRectangle.bottom;
+    const spaceAbove = buttonRectangle.top;
+    const desiredMaximumHeight = 240;
+    let maximumHeight = Math.min(desiredMaximumHeight, Math.max(80, spaceBelow - 8));
+    let popupTop = buttonRectangle.bottom + 2;
+    if (spaceBelow < 140 && spaceAbove > spaceBelow) {
+      maximumHeight = Math.min(desiredMaximumHeight, Math.max(80, spaceAbove - 8));
+      popupTop = buttonRectangle.top - 2 - maximumHeight;
+    }
+    popup.style.top = popupTop + "px";
+    popup.style.minWidth = buttonRectangle.width + "px";
+    popup.style.maxHeight = maximumHeight + "px";
+    // Left-align with the trigger, then pull back inside if the list is wider
+    // than the room to its right — a dropdown on a control near the right edge
+    // would otherwise run off the window.
+    popup.style.left = buttonRectangle.left + "px";
+    const popupWidth = popup.getBoundingClientRect().width;
+    const rightmostLeft = window.innerWidth - 8 - popupWidth;
+    popup.style.left = Math.max(8, Math.min(buttonRectangle.left, rightmostLeft)) + "px";
+  };
+
+  const closeDropdown = (): void => {
+    if (popup.hidden) return;
+    popup.hidden = true;
+    wrapper.classList.remove("open");
+    button.setAttribute("aria-expanded", "false");
+    window.removeEventListener("scroll", positionPopup, true);
+    window.removeEventListener("resize", positionPopup);
+    restorePopupToWrapper(popup, wrapper);
+    if (openInstance?.close === closeDropdown) openInstance = null;
+  };
+
+  const closeWithoutChange = (): boolean => {
+    closeDropdown();
+    return false;
+  };
+
+  const openDropdown = (): void => {
+    if (openInstance && openInstance.close !== closeDropdown) openInstance.close();
+    rebuildDropdownItems();
+    mountPopupAtViewportLevel(popup);
+    popup.hidden = false;
+    wrapper.classList.add("open");
+    button.setAttribute("aria-expanded", "true");
+    positionPopup();
+    openInstance = {
+      close: closeDropdown,
+      commitOrRevert: closeWithoutChange,
+      reposition: positionPopup,
+    };
+    window.addEventListener("scroll", positionPopup, true);
+    window.addEventListener("resize", positionPopup);
+    scrollHighlightedItemIntoView();
+  };
+
+  const setHighlightedItem = (itemIndex: number): void => {
+    if (itemIndex < 0 || itemIndex >= renderedItemCount()) return;
+    const previousElement = popup.children[highlightedItemIndex];
+    if (previousElement) previousElement.classList.remove("highlighted");
+    highlightedItemIndex = itemIndex;
+    const nextElement = popup.children[highlightedItemIndex];
+    if (nextElement) nextElement.classList.add("highlighted");
+    scrollHighlightedItemIntoView();
+  };
+
+  const commitDropdownItem = (dropdownItem: DropdownItem | undefined): void => {
+    if (!dropdownItem) return;
+    const valueChanged = select.value !== dropdownItem.value;
+    select.value = dropdownItem.value;
+    syncButtonFromSelect();
+    closeDropdown();
+    if (valueChanged) select.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+
+  syncButtonFromSelect();
+
+  button.addEventListener("click", () => {
+    if (popup.hidden) openDropdown();
+    else closeDropdown();
+  });
+
+  button.addEventListener("keydown", event => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      if (popup.hidden) {
+        openDropdown();
+        return;
+      }
+      const itemIndexDelta = event.key === "ArrowDown" ? 1 : -1;
+      setHighlightedItem(Math.max(0, Math.min(
+        highlightedItemIndex + itemIndexDelta,
+        renderedItemCount() - 1,
+      )));
+    } else if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      event.stopPropagation();
+      if (popup.hidden) openDropdown();
+      else commitDropdownItem(dropdownItems[highlightedItemIndex]);
+    } else if (event.key === "Escape" && !popup.hidden) {
+      event.preventDefault();
+      event.stopPropagation();
+      closeDropdown();
+    }
+  });
+
+  popup.addEventListener("mousedown", event => {
+    const itemElement = (event.target as HTMLElement).closest(".typeable-dropdown-item");
+    if (!itemElement) return;
+    event.preventDefault();
+    event.stopPropagation();
+  });
+
+  popup.addEventListener("click", event => {
+    const itemElement = (event.target as HTMLElement).closest(".typeable-dropdown-item");
+    if (!itemElement) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const itemIndex = Number.parseInt(itemElement.getAttribute("data-item-index") || "", 10);
+    if (Number.isFinite(itemIndex)) commitDropdownItem(dropdownItems[itemIndex]);
+  });
+
+  popup.addEventListener("mousemove", event => {
+    const itemElement = (event.target as HTMLElement).closest(".typeable-dropdown-item");
+    if (!itemElement) return;
+    const itemIndex = Number.parseInt(itemElement.getAttribute("data-item-index") || "", 10);
+    if (!Number.isFinite(itemIndex) || itemIndex === highlightedItemIndex) return;
+    setHighlightedItem(itemIndex);
+  });
+
+  select.addEventListener("change", syncButtonFromSelect);
+}
+
+function upgradeTypeableSelect(select: HTMLSelectElement): void {
   if (!select || select.classList.contains("typeable-dropdown-native")) return;
 
   // Wrapper sits inline where the <select> used to. The native select is
@@ -169,6 +434,9 @@ function upgradeSelect(select: HTMLSelectElement): void {
   popup.className = "typeable-dropdown-popup";
   popup.setAttribute("role", "listbox");
   popup.hidden = true;
+  const popupIdentifier = "typeable-dropdown-" + (++typeableDropdownIdentifier);
+  popup.id = popupIdentifier;
+  input.setAttribute("aria-controls", popupIdentifier);
 
   // Splice the wrapper in where the select used to be.
   const parent = select.parentNode!;
@@ -178,6 +446,8 @@ function upgradeSelect(select: HTMLSelectElement): void {
   wrap.appendChild(popup);
 
   select.classList.add("typeable-dropdown-native");
+  select.setAttribute("aria-hidden", "true");
+  select.tabIndex = -1;
 
   // Reflect the select's current selection in the input's display.
   syncInputFromSelect(select, input);
@@ -264,10 +534,16 @@ function upgradeSelect(select: HTMLSelectElement): void {
       maxHeight = Math.min(desiredMax, Math.max(80, spaceAbove - 8));
       top = rect.top - 2 - maxHeight;
     }
-    popup.style.left = rect.left + "px";
     popup.style.top = top + "px";
     popup.style.minWidth = rect.width + "px";
     popup.style.maxHeight = maxHeight + "px";
+    // Left-align with the field, then pull back inside if the list is wider
+    // than the room to its right. The detail panel sits flush against the
+    // window edge, so its dropdowns are the ones that would run off.
+    popup.style.left = rect.left + "px";
+    const popupWidth = popup.getBoundingClientRect().width;
+    const rightmostLeft = window.innerWidth - 8 - popupWidth;
+    popup.style.left = Math.max(8, Math.min(rect.left, rightmostLeft)) + "px";
   };
 
   // Commit pending typed text if it differs from the current selection,
@@ -294,6 +570,7 @@ function upgradeSelect(select: HTMLSelectElement): void {
     // Close any other open popup first — only one at a time.
     if (openInstance && openInstance.close !== close) openInstance.close();
     rebuildItems(initialQuery !== undefined ? initialQuery : "");
+    mountPopupAtViewportLevel(popup);
     popup.hidden = false;
     wrap.classList.add("open");
     input.setAttribute("aria-expanded", "true");
@@ -311,13 +588,21 @@ function upgradeSelect(select: HTMLSelectElement): void {
     input.setAttribute("aria-expanded", "false");
     window.removeEventListener("scroll", positionPopup, true);
     window.removeEventListener("resize", positionPopup);
+    restorePopupToWrapper(popup, wrap);
     if (openInstance && openInstance.close === close) openInstance = null;
   };
 
   const scrollHighlightedIntoView = () => {
-    const el = popup.children[highlighted] as HTMLElement | undefined;
-    if (el && typeof el.scrollIntoView === "function") {
-      el.scrollIntoView({ block: "nearest" });
+    const highlightedElement = popup.children[highlighted] as HTMLElement | undefined;
+    if (!highlightedElement) return;
+    const visibleTop = popup.scrollTop;
+    const visibleBottom = visibleTop + popup.clientHeight;
+    const highlightedTop = highlightedElement.offsetTop;
+    const highlightedBottom = highlightedTop + highlightedElement.offsetHeight;
+    if (highlightedTop < visibleTop) {
+      popup.scrollTop = highlightedTop;
+    } else if (highlightedBottom > visibleBottom) {
+      popup.scrollTop = highlightedBottom - popup.clientHeight;
     }
   };
 
@@ -429,14 +714,22 @@ function upgradeSelect(select: HTMLSelectElement): void {
 
   // ─── Popup events ─────────────────────────────────────────────────────
   popup.addEventListener("mousedown", (event) => {
-    // mousedown (not click) so the event fires before the input's blur.
-    // preventDefault keeps focus on the input — the popup's click handler
-    // is then what commits.
+    // Keep focus on the input until click commits the highlighted option.
+    // Removing the popup during mousedown lets the later click hit whatever
+    // was underneath it, which is especially destructive over Review cards.
     const item = (event.target as HTMLElement).closest(".typeable-dropdown-item");
     if (!item) return;
     event.preventDefault();
-    const idx = parseInt(item.getAttribute("data-i")!, 10);
-    if (!isNaN(idx) && items[idx]) commitItem(items[idx]);
+    event.stopPropagation();
+  });
+
+  popup.addEventListener("click", (event) => {
+    const item = (event.target as HTMLElement).closest(".typeable-dropdown-item");
+    if (!item) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const itemIndex = Number.parseInt(item.getAttribute("data-i")!, 10);
+    if (Number.isFinite(itemIndex) && items[itemIndex]) commitItem(items[itemIndex]);
   });
 
   popup.addEventListener("mousemove", (event) => {

@@ -177,6 +177,7 @@ describe("detail panel patching during a scrub", () => {
 
     const breakdownBefore = document.querySelector("#detail-content .calc-breakdown")!;
     const inputRowBefore = breakdownBefore.querySelector(".calc-input")!;
+    const resultValueBefore = breakdownBefore.querySelector(".calc-result-value")!;
     const deltaCellBefore = document.querySelectorAll(
       "#detail-content .detail-quant-row",
     )[2].querySelector(".detail-quant-value")!;
@@ -191,8 +192,12 @@ describe("detail panel patching during a scrub", () => {
     expect(breakdownBefore.querySelector(".calc-input")).toBe(inputRowBefore);
     // Carrying the new numbers: C = 20 × √4 = 40, driven by B = 100.
     expect(deltaCellBefore.textContent).toBe("+100.0%");
-    expect(inputRowBefore.querySelector(".calc-input-value")!.textContent).toBe("100 units");
-    expect(inputRowBefore.querySelector(".calc-input-detail")!.textContent).toBe("×2.00");
+    expect(inputRowBefore.querySelector(".calc-input-value")).toBeNull();
+    expect(inputRowBefore.querySelector(".calc-input-detail")!.textContent).toBe("2.00");
+    expect(inputRowBefore.getAttribute("data-tooltip")).toContain("current value: 100 units");
+    expect(breakdownBefore.querySelector(".calc-equation-output")!.textContent).toBe("= 40.0");
+    expect(breakdownBefore.querySelector(".calc-result-value")).toBe(resultValueBefore);
+    expect(resultValueBefore.textContent).toBe("40.0 units");
 
     deselectAll();
   });
@@ -261,36 +266,84 @@ describe("calculation breakdown — link-based rules", () => {
   it("names the standard rule and shows each link's factor", () => {
     showPanel("mult", { overrides: { a: 1.5, b: 1.2 } });
     expect(breakdown()!.getAttribute("data-calc-rule")).toBe("multiplicative");
-    expect(ruleText()).toContain("compound");
+    expect(ruleText()).toBe("Multiply the independent proportional effects.");
     expect(inputRows().map(rowCells)).toEqual([
-      ["Input A", "150 units", "×1.50"],
-      ["Input B", "120 units", "×1.20"],
+      ["Input A", "1.50"],
+      ["Input B", "× 1.20"],
     ]);
+    expect(breakdown()!.querySelector(".calc-equation-term")!.textContent).toBe("100 × (");
+    expect(breakdown()!.querySelector(".calc-equation-output")!.textContent).toBe("= 180");
+    expect(breakdown()!.querySelector(".calc-equation-summary")!.textContent).toBe(
+      "Every input factor shapes the result.",
+    );
   });
 
   it("shows additive terms as signed shares, not factors", () => {
     showPanel("add", { overrides: { a: 1.5, b: 0.8 } });
     expect(breakdown()!.getAttribute("data-calc-rule")).toBe("additive");
-    expect(ruleText()).toContain("adds up");
+    expect(ruleText()).toBe("Add each proportional change to the starting value.");
     expect(inputRows().map(rowCells)).toEqual([
-      ["Input A", "150 units", "+50.0%"],
-      ["Input B", "80.0 units", "-20.0%"],
+      ["Input A", "+50.0%"],
+      ["Input B", "-20.0%"],
     ]);
+    expect(breakdown()!.querySelector(".calc-equation-term")!.textContent).toBe("100 × (1");
+    expect(breakdown()!.querySelector(".calc-equation-output")!.textContent).toBe("= 130");
+    expect(breakdown()!.querySelector(".calc-equation-summary")!.textContent).toBe(
+      "The input changes combine without compounding.",
+    );
   });
 
   it("marks the winning input for the weakest-link rule", () => {
     showPanel("gate", { overrides: { a: 1.5, b: 1.2 } });
     expect(breakdown()!.getAttribute("data-calc-rule")).toBe("min");
-    expect(ruleText()).toContain("Weakest input");
+    expect(ruleText()).toBe("Use the smallest proportional factor from the inputs.");
 
     const rows = inputRows();
+    expect(rows.map(rowCells)).toEqual([
+      ["Input A", "1.50"],
+      ["Input B", "1.20"],
+    ]);
     expect(rows.map((row) => row.classList.contains("calc-input--winner"))).toEqual([
       false,
       true,
     ]);
-    // The winner is called out in words too, not just with a colour.
-    expect(rows[1].textContent).toContain("gates this");
-    expect(rows[0].textContent).not.toContain("gates this");
+    expect(breakdown()!.querySelector(".calc-equation-term")!.textContent).toBe(
+      "100 × min(",
+    );
+    expect(breakdown()!.querySelector(".calc-equation-output")!.textContent).toBe(
+      "= 120",
+    );
+    expect(breakdown()!.querySelector(".calc-equation-summary")!.textContent).toBe(
+      "Input B sets the result because 1.20× is the smallest proportional factor.",
+    );
+
+    expect(rows[1].getAttribute("data-tooltip")).toContain(
+      "Input B — current value: 120 units · proportional factor: 1.20×",
+    );
+    const inputBDrivenByRow = document.querySelector<HTMLElement>(
+      '#detail-content .drow[data-edge-direction="from"][data-target-node="b"]',
+    )!;
+    rows[1].dispatchEvent(new MouseEvent("mouseenter"));
+    expect(inputBDrivenByRow.classList.contains("is-formula-variable-highlight")).toBe(true);
+    rows[1].dispatchEvent(new MouseEvent("mouseleave"));
+    expect(inputBDrivenByRow.classList.contains("is-formula-variable-highlight")).toBe(false);
+  });
+
+  it("shows every tied weakest-link input instead of choosing one by row order", () => {
+    showPanel("gate");
+
+    const rows = inputRows();
+    expect(rows.map((row) => row.classList.contains("calc-input--winner"))).toEqual([
+      true,
+      true,
+    ]);
+    expect(rows.map(rowCells)).toEqual([
+      ["Input A", "1.00"],
+      ["Input B", "1.00"],
+    ]);
+    expect(breakdown()!.querySelector(".calc-equation-summary")!.textContent).toBe(
+      "Input A and Input B are tied at 1.00×. The first one to fall becomes the gate.",
+    );
   });
 
   it("says so plainly when nothing quantified feeds the box", () => {
@@ -298,13 +351,34 @@ describe("calculation breakdown — link-based rules", () => {
     expect(breakdown()!.getAttribute("data-calc-rule")).toBe("baseline");
     expect(ruleText()).toContain("starting value");
     expect(inputRows()).toHaveLength(0);
+    expect(breakdown()!.querySelector(".calc-equation-line")!.textContent).toBe("100= 100");
+    expect(breakdown()!.querySelector(".calc-equation-summary")!.textContent).toBe(
+      "Starting value sets the result.",
+    );
   });
 
-  it("reports a slider-held box as pinned, with no working to show", () => {
+  it("shows the slider multiplier for a pinned box", () => {
     showPanel("a", { overrides: { a: 1.5 } });
     expect(breakdown()!.getAttribute("data-calc-rule")).toBe("pinned");
     expect(ruleText()).toContain("slider");
     expect(inputRows()).toHaveLength(0);
+    expect(breakdown()!.querySelector(".calc-equation-pinned-term")!.textContent).toBe(
+      "100 × 1.50",
+    );
+    expect(breakdown()!.querySelector(".calc-equation-output")!.textContent).toBe("= 150");
+    expect(breakdown()!.querySelector(".calc-equation-summary")!.textContent).toBe(
+      "Your slider sets the result.",
+    );
+    expect(breakdown()!.querySelector(".calc-result-value")!.textContent).toBe("150 units");
+  });
+
+  it("still explains a box that has no numeric starting value", () => {
+    expect(loadDataFromCsv(FORMULA_INVALID_CSV)).toBe(true);
+    showPanel("nb");
+    expect(breakdown()).not.toBeNull();
+    expect(breakdown()!.getAttribute("data-calc-rule")).toBe("unavailable");
+    expect(ruleText()).toContain("No numeric starting value");
+    expect(breakdown()!.querySelector(".calc-result-value")!.textContent).toBe("Not calculated");
   });
 
   it("is absent outside simulation mode, and while editing", () => {
@@ -321,33 +395,59 @@ describe("calculation breakdown — formulas", () => {
     expect(loadDataFromCsv(FORMULA_CSV)).toBe(true);
   });
 
-  it("prints the expression and every value it read", () => {
+  it("prints the expression without repeating its variables underneath", () => {
     showPanel("seizures");
     expect(breakdown()!.getAttribute("data-calc-rule")).toBe("formula");
     expect(
       document.querySelector("#detail-content .calc-formula")!.textContent,
     ).toBe("traffic * exam_coverage * detection_rate");
-    // A formula reads plain values, so no per-input factor column. The two box
-    // values keep the display formatter; the CONSTANT is written exactly as its
-    // author wrote it — formatScalar turns 0.0004 into "0.000", which on a value
-    // rail is a rounding and on a constant is a different number.
-    expect(inputRows().map(rowCells)).toEqual([
-      ["Traffic", "1000 items"],
-      ["Exam coverage", "0.200 share"],
-      ["◆ detection_rate", "0.6"],
-    ]);
+    expect(inputRows()).toHaveLength(0);
+    expect(breakdown()!.querySelector(".calc-equation-output")!.textContent).toBe("= 120");
+    expect(breakdown()!.querySelector(".calc-equation-summary")!.textContent).toBe(
+      "The formula sets the result directly.",
+    );
+    expect(breakdown()!.querySelector(".calc-result-value")!.textContent).toBe("120 items");
   });
 
-  it("styles a hidden constant as a chip carrying its description", () => {
+  it("labels a global variable in the formula and explains it on hover", () => {
     showPanel("seizures");
-    const chip = document.querySelector("#detail-content .calc-input-param")!;
-    expect(chip.textContent).toContain("detection_rate");
-    expect(chip.getAttribute("data-tooltip")).toBe(
+    const globalVariable = document.querySelector(
+      '#detail-content .calc-formula [data-formula-param-id="detection_rate"]',
+    )!;
+    expect(globalVariable.getAttribute("data-formula-kind")).toBe("global-variable");
+    expect(globalVariable.getAttribute("data-tooltip")).toContain(
+      "Global variable — value: 0.6",
+    );
+    expect(globalVariable.getAttribute("data-tooltip")).toContain(
       "Probability an examined item is detected",
     );
-    // The boxes beside it are named by their labels, not their ids.
-    expect(document.querySelector("#detail-content .calc-input-name")!.textContent).toBe(
-      "Traffic",
+  });
+
+  it("shows formula values and links box variables to Driven by", () => {
+    showPanel("seizures", { overrides: { traffic: 1.2345 } });
+
+    const trafficVariable = document.querySelector<HTMLElement>(
+      '#detail-content .calc-formula .fx-box[data-formula-node-id="traffic"]',
+    )!;
+    expect(trafficVariable.getAttribute("data-tooltip")).toContain(
+      "Traffic — current value: 1234.5 items",
+    );
+
+    const trafficDrivenByRow = document.querySelector<HTMLElement>(
+      '#detail-content .drow[data-edge-direction="from"][data-target-node="traffic"]',
+    )!;
+    expect(trafficDrivenByRow.classList.contains("is-formula-variable-highlight")).toBe(false);
+    trafficVariable.dispatchEvent(new MouseEvent("mouseenter"));
+    expect(trafficDrivenByRow.classList.contains("is-formula-variable-highlight")).toBe(true);
+    trafficVariable.dispatchEvent(new MouseEvent("mouseleave"));
+    expect(trafficDrivenByRow.classList.contains("is-formula-variable-highlight")).toBe(false);
+
+    const globalVariable = document.querySelector<HTMLElement>(
+      '#detail-content .calc-formula [data-formula-param-id="detection_rate"]',
+    )!;
+    expect(globalVariable.getAttribute("data-formula-kind")).toBe("global-variable");
+    expect(globalVariable.getAttribute("data-tooltip")).toContain(
+      "Global variable — value: 0.6",
     );
   });
 
@@ -361,13 +461,16 @@ describe("calculation breakdown — formulas", () => {
 });
 
 describe("calculation breakdown — delayed reads, bounds and missing names", () => {
-  it("badges a value read from the previous solver step", () => {
+  it("labels a formula value read from the previous solver step", () => {
     expect(loadDataFromCsv(DELAY_LOOP_CSV)).toBe(true);
     showPanel("p", { overrides: { a: 1.2 } });
 
-    const rows = inputRows();
-    expect(rows).toHaveLength(1);
-    expect(rows[0].querySelector(".calc-badge")!.textContent).toBe("previous step");
+    expect(inputRows()).toHaveLength(0);
+    const delayedVariable = document.querySelector(
+      '#detail-content .calc-formula [data-formula-node-id="q"]',
+    )!;
+    expect(delayedVariable.getAttribute("data-formula-delayed")).toBe("true");
+    expect(delayedVariable.getAttribute("data-tooltip")).toContain("previous-step value");
   });
 
   it("explains a bound that bit, naming the number it would have been", () => {

@@ -1,0 +1,91 @@
+# Ariadne Maps — Tutorial map (small)
+# A twelve-box teaching map for First look, a learner's first three minutes. It is the same
+# community-workshop programme as tutorial_map.csv, cut down to three rows and
+# four columns so the whole model fits on one screen and can be traced by eye.
+#
+# QUESTION: Can we serve more residents without booking more venues?
+#
+# The map carries one feedback loop, two formulas, four adjustable inputs and
+# one lower-is-better box, and nothing else. There is no delay(), no clamp()
+# and no max() here — those belong to the full tutorial map.
+#
+#   Loop (three hops): Registrations → Unserved participant interest →
+#   Community confidence → Registrations. More confidence brings more
+#   registrations; registrations the programme cannot seat become unserved
+#   interest; unserved interest takes confidence back down again. A balancing
+#   loop, so the map settles rather than running away.
+#
+#   Rate conversion: People reached = Outreach effort × people reached per hour.
+#   Capacity gate:   Workshops delivered = the smaller of the sessions demand
+#                    asks for and the sessions the venues can host. At the
+#                    starting values the venues are the binding arm, which is
+#                    the map's answer to the question above.
+#
+# Every box id is shared with tutorial_map.csv, so a learner moving up to the
+# full map meets names they already know. Every calculated box rests exactly at
+# its stated baseline when the map is loaded with no user input.
+
+# SECTION: streams
+id,label,short,color
+planning,Planning,PLAN,#60a5fa
+delivery,Delivery,DELIV,#34d399
+community,Community,COMM,#fbbf24
+
+# SECTION: stages
+id,label
+inputs,Inputs
+preparedness,Preparedness
+participation,Participation
+outcomes,Outcomes
+
+# SECTION: categories
+id,label,color,text_color,class
+resource,Resource,#d4a373,#1c1917,primary
+capability,Capability,#7dd3fc,#082f49,primary
+activity,Activity,#5eead4,#042f2e,primary
+outcome,Outcome,#86efac,#052e16,primary
+learning,Learning point,#c4b5fd,#1e1b4b,secondary
+access,Access consideration,#fca5a5,#450a0a,secondary
+
+# SECTION: defaults
+key,value
+elasticity_enables,0.3
+elasticity_increases,0.25
+elasticity_decreases,-0.25
+
+# SECTION: params
+id,value,description
+people_reached_per_hour,5,People reached by one hour of outreach
+seats_per_workshop,20,Usable places in each workshop
+
+# SECTION: nodes
+id,label,description,stream,stage,category,baseline,unit,controllable,direction,slider_max,combine,formula,min,max,formula_evidence_status,formula_evidence_rationale,formula_evidence_source,formula_evidence_last_reviewed
+volunteer_hours,Volunteer time,Volunteer preparation time available each month.,planning,inputs,resource,100,hours/month,true,,2.5,,,,,unspecified,,,
+workshop_readiness,Workshop readiness,How prepared the team and materials are for delivery.,planning,preparedness,capability,100,index,,higher_better,,multiplicative,,,,unspecified,,,
+venue_slots,Venue availability,Workshop sessions with an accessible room available.,delivery,inputs,resource|access,8,sessions/month,true,,2.5,,,,,unspecified,,,
+workshops_delivered,Workshops delivered,Sessions actually run: the smaller of what demand asks for and what the venues can host.,delivery,participation,activity,8,sessions/month,,higher_better,,,"min(registrations / seats_per_workshop, venue_slots)",,,supported,Capacity rule matches the programme definition,Programme operating definitions,2026-09-01
+attendees_served,Attendees served,People attending delivered workshop places.,delivery,outcomes,outcome,160,people/month,,higher_better,,multiplicative,,0,,unspecified,,,
+participant_satisfaction,Participant satisfaction,Average participant rating after a workshop.,delivery,outcomes,outcome|learning,85,index,,higher_better,,multiplicative,,0,100,unspecified,,,
+outreach_effort,Outreach effort,Time spent inviting residents and partner groups.,community,inputs,resource,80,hours/month,true,,2.5,,,,,unspecified,,,
+access_barriers,Access barriers,Combined pressure from timing travel language and cost barriers.,community,inputs,resource|access,100,index,true,lower_better,2,,,,,unspecified,,,
+outreach_reach,People reached,Residents reached through the monthly outreach effort.,community,participation,activity,400,people/month,,higher_better,,,outreach_effort * people_reached_per_hour,,,calibrated,Rate fitted to the tutorial observation set,Tutorial observations A,2026-09-01
+registrations,Registrations,Residents who ask for a place on a workshop.,community,participation,activity,200,people/month,,higher_better,,multiplicative,,0,,unspecified,,,
+unserved_interest,Unserved participant interest,Residents who register but are not offered a place. An estimate of the pressure rather than an exact balance.,community,outcomes,outcome|learning,40,people/month,,lower_better,,multiplicative,,0,,unspecified,,,
+community_confidence,Community confidence,Confidence that the programme is useful welcoming and reliable.,community,outcomes,outcome|learning,70,index,,higher_better,,additive,,0,100,unspecified,,,
+
+# SECTION: edges
+from,to,effect,elasticity,style,description,evidence_status,evidence_rationale,evidence_source,evidence_last_reviewed
+volunteer_hours,workshop_readiness,enables,0.35,,Preparation time enables stronger workshop readiness.,supported,Consistent with facilitator planning records,Tutorial planning review,2026-09-01
+workshop_readiness,participant_satisfaction,increases,0.3,,Better-prepared workshops tend to receive stronger ratings.,supported,Participant feedback themes,Tutorial feedback review,2026-09-01
+outreach_effort,outreach_reach,increases,,,Outreach effort is converted to estimated people reached.,hypothesis,Association fitted but causal effect not established,Tutorial observations A,2026-09-01
+outreach_reach,registrations,increases,0.5,,Reach supplies the pool of possible registrations.,supported,Registration funnel definition,Programme operating definitions,2026-09-01
+access_barriers,registrations,decreases,0.3,,Greater access barriers stop residents completing a registration.,supported,Community access review,Tutorial access review,2026-09-01
+community_confidence,registrations,increases,0.25,,Residents who trust the programme are readier to register.,hypothesis,Causal strength remains to be tested,Community engagement workshop,2026-09-01
+registrations,workshops_delivered,increases,,,Registration demand is one arm of the capacity gate.,supported,Programme scheduling rule,Programme operating definitions,2026-09-01
+venue_slots,workshops_delivered,enables,,,Available rooms are the other arm of the capacity gate.,validated,Capacity rule checked against scheduling cases,Tutorial validation cases,2026-09-01
+workshops_delivered,attendees_served,increases,1,,Every delivered session fills its twenty places so attendance moves one for one with sessions. Strength 1 is deliberate: it means a one percent change here is a one percent change there.,validated,Seat count checked against the delivery records,Tutorial validation cases,2026-09-01
+registrations,unserved_interest,increases,0.6,,Registrations the programme cannot seat become unserved interest.,supported,Part of the participant-flow balance,Programme operating definitions,2026-09-01
+venue_slots,unserved_interest,decreases,0.5,,More rooms convert waiting interest into offered places.,supported,Part of the participant-flow balance,Programme operating definitions,2026-09-01
+participant_satisfaction,community_confidence,increases,0.4,,Positive experiences can strengthen community confidence.,hypothesis,Causal direction remains to be tested,Workshop design assumption,2026-09-01
+unserved_interest,community_confidence,decreases,0.2,,Residents turned away lose confidence in the programme.,hypothesis,Causal strength remains to be tested,Community engagement workshop,2026-09-01
+access_barriers,community_confidence,decreases,0.25,,Greater access barriers reduce confidence and participation.,supported,Community access review,Tutorial access review,2026-09-01

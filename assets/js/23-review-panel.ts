@@ -24,6 +24,7 @@
 
 import { state, EDGES, NODES, nodeById } from "./03-state";
 import { escapeHtml, formatScalar } from "./04-utils";
+import { upgradeSelectionOnlySelectsIn } from "./04b-typeable-dropdown";
 import {
   EVIDENCE_STATUSES,
   evidenceBadgeHtml,
@@ -72,6 +73,7 @@ const EVIDENCE_PREVIEW_LIMIT = 100;
 let sweepRequestedFor = -1;
 let fullListOpen = false;
 let logOpen = false;
+let evidenceSectionOpen = true;
 let listenersWired = false;
 let expandedIssueKey: string | null = null;
 let pinnedIssueKey: string | null = null;
@@ -142,6 +144,14 @@ export function reviewIsOpen(): boolean {
 export function openReview(): void {
   const stage = stageEl();
   if (!stage) return;
+  // Opening is a fresh presentation. closeReview() already clears the expanded
+  // card, but not every route out of the panel goes through it — replacing the
+  // map, restoring a tutorial session or resetting state all leave the panel
+  // hidden with a card still marked open, and it would come back expanded.
+  // Only on a real open: the banner and the guided lessons both call this again
+  // while the panel is already up, where it means "refresh", and the banner's
+  // own Back and Next set the card they want immediately afterwards.
+  if (!reviewIsOpen()) expandedIssueKey = null;
   stage.hidden = false;
   document.body.classList.add("review-open");
   renderReview();
@@ -157,8 +167,14 @@ export function closeReview(): void {
   document.body.classList.remove("review-open");
   fullListOpen = false;
   expandedIssueKey = null;
+  evidenceSectionOpen = true;
   renderPinnedIssueBanner();
   syncReviewButton();
+}
+
+export function setSensitivityListOpen(open: boolean): void {
+  fullListOpen = open;
+  if (reviewIsOpen()) renderReview();
 }
 
 export function toggleReview(): void {
@@ -238,9 +254,37 @@ export function refreshReview(): void {
 // ═════════════════════════════════════════════════════════════════════════════
 // RENDER
 // ═════════════════════════════════════════════════════════════════════════════
+interface ReviewScrollPosition {
+  bodyScrollTop: number;
+  columnScrollTops: number[];
+}
+
+function captureReviewScrollPosition(stage: HTMLElement): ReviewScrollPosition {
+  const reviewBody = stage.querySelector<HTMLElement>(".review-body");
+  return {
+    bodyScrollTop: reviewBody?.scrollTop || 0,
+    columnScrollTops: Array.from(stage.querySelectorAll<HTMLElement>(".review-column"))
+      .map(reviewColumn => reviewColumn.scrollTop),
+  };
+}
+
+function restoreReviewScrollPosition(
+  stage: HTMLElement,
+  scrollPosition: ReviewScrollPosition,
+): void {
+  const reviewBody = stage.querySelector<HTMLElement>(".review-body");
+  if (reviewBody) reviewBody.scrollTop = scrollPosition.bodyScrollTop;
+  const reviewColumns = stage.querySelectorAll<HTMLElement>(".review-column");
+  scrollPosition.columnScrollTops.forEach((scrollTop, columnIndex) => {
+    const reviewColumn = reviewColumns[columnIndex];
+    if (reviewColumn) reviewColumn.scrollTop = scrollTop;
+  });
+}
+
 export function renderReview(): void {
   const stage = stageEl();
   if (!stage || stage.hidden) return;
+  const scrollPosition = captureReviewScrollPosition(stage);
 
   const summary = groupFindings(state.loadErrors);
 
@@ -259,6 +303,8 @@ export function renderReview(): void {
   html += '</div>';
 
   stage.innerHTML = html;
+  upgradeSelectionOnlySelectsIn(stage);
+  restoreReviewScrollPosition(stage, scrollPosition);
 }
 
 export interface ReviewEvidenceItem {
@@ -318,11 +364,17 @@ export function renderEvidenceSection(): string {
     : allItems.filter(item => normaliseEvidenceStatus(item.metadata.status) === evidenceStatusFilter);
   const visibleItems = matchingItems.slice(0, evidenceVisibleLimit);
 
-  let html = '<div class="review-section-head review-evidence-head">';
+  let html = '<button type="button" class="review-section-head review-section-toggle review-evidence-head" ' +
+    'id="review-evidence-toggle" aria-expanded="' + String(evidenceSectionOpen) + '" ' +
+    'aria-controls="review-evidence-content">';
+  html += '<span class="review-section-disclosure" aria-hidden="true">' +
+    (evidenceSectionOpen ? "▾" : "▸") + '</span>';
   html += '<span class="review-section-title">Evidence provenance</span>';
-  html += '<span class="review-section-count">' + allItems.length + '</span></div>';
+  html += '<span class="review-section-count">' + allItems.length + '</span></button>';
+  if (!evidenceSectionOpen) return html;
+  html += '<div id="review-evidence-content">';
   html += '<div class="review-hint">The status of each causal link and formula. These are informational records: they do not change the model\'s calculations.</div>';
-  html += '<label class="review-evidence-filter"><span>Show</span><select id="review-evidence-filter">';
+  html += '<label class="review-evidence-filter"><span>Show</span><select class="review-evidence-select" id="review-evidence-filter" aria-label="Show evidence status">';
   html += '<option value="all"' + (evidenceStatusFilter === "all" ? " selected" : "") + '>All statuses</option>';
   for (const status of EVIDENCE_STATUSES) {
     html += '<option value="' + status + '"' + (evidenceStatusFilter === status ? " selected" : "") + '>' +
@@ -331,7 +383,7 @@ export function renderEvidenceSection(): string {
   html += '</select></label>';
 
   if (!matchingItems.length) {
-    html += '<div class="review-empty"><b>No matching evidence records.</b> Choose another status to see the rest.</div>';
+    html += '<div class="review-empty"><b>No matching evidence records.</b> Choose another status to see the rest.</div></div>';
     return html;
   }
   html += '<div class="review-evidence-list">';
@@ -361,7 +413,7 @@ export function renderEvidenceSection(): string {
     html += '<button class="review-fold-toggle" id="review-evidence-more">Show ' +
       nextBatchCount + ' more · ' + remainingItemCount + ' remaining</button>';
   }
-  return html;
+  return html + '</div>';
 }
 
 // Counted in CARDS and in CONSEQUENCES, never in findings. One box can be wrong
@@ -538,7 +590,7 @@ function renderOperationEditors(issueKey: string, operations: ReviewFixOperation
               '" data-review-operation="' + operationIndex + '" data-review-issue-key="' + escapeHtml(issueKey) +
               '" value="' + escapeHtml(String(operation.value ?? "")) + '" /></label>';
     } else if (operation.kind === "add-connection" || operation.kind === "update-connection") {
-      html += '<label><span>Connection type</span><select data-review-operation="' + operationIndex +
+      html += '<label><span>Connection type</span><select class="review-editor-select" aria-label="Connection type" data-review-operation="' + operationIndex +
               '" data-review-issue-key="' + escapeHtml(issueKey) + '">';
       for (const effect of ["enables", "increases", "decreases"]) {
         html += '<option value="' + effect + '"' + (operation.effect === effect ? " selected" : "") + '>' + effect + '</option>';
@@ -1107,6 +1159,14 @@ export function initReviewStage(): void {
     if (target.closest("#review-log-toggle")) {
       logOpen = !logOpen;
       renderReview();
+      return;
+    }
+
+    if (target.closest("#review-evidence-toggle")) {
+      evidenceSectionOpen = !evidenceSectionOpen;
+      renderReview();
+      document.getElementById("review-evidence-toggle")
+        ?.scrollIntoView({ block: "nearest" });
       return;
     }
 

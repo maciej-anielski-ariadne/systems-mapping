@@ -17,6 +17,7 @@
 // =============================================================================
 
 import { escapeHtml } from "./04-utils";
+import { upgradeSelectionOnlySelectsIn } from "./04b-typeable-dropdown";
 import { state, CATEGORIES, STREAMS, STAGES, streamById, stageById, nodeById } from "./03-state";
 import { deleteSelection } from "./16e-canvas-edit";
 import { applyCanvasMutation } from "./16f-canvas-mutations";
@@ -38,7 +39,8 @@ export function multiSelectFieldMarkup(
   placeholder: string,
   options: { value: string; label: string }[],
 ): string {
-  let html = '<select class="msb-select" data-msb="' + field + '">';
+  let html = '<select class="msb-select" data-msb="' + field + '" aria-label="' +
+    escapeHtml(placeholder.replace("…", "")) + '">';
   html += '<option value="">' + escapeHtml(placeholder) + '</option>';
   for (const opt of options) {
     html += '<option value="' + escapeHtml(opt.value) + '">' + escapeHtml(opt.label) + '</option>';
@@ -76,6 +78,7 @@ export function renderMultiSelectBar(): void {
   el.querySelector('[data-msb="category"]')!.addEventListener("change", e => batchSetProperty("category", (e.target as HTMLSelectElement).value));
   el.querySelector('[data-msb="stream"]')!.addEventListener("change",   e => batchSetProperty("stream",   (e.target as HTMLSelectElement).value));
   el.querySelector('[data-msb="stage"]')!.addEventListener("change",    e => batchSetProperty("stage",    (e.target as HTMLSelectElement).value));
+  upgradeSelectionOnlySelectsIn(el);
   el.querySelector('.msb-delete')!.addEventListener("click", () => {
     if (typeof deleteSelection === "function") deleteSelection();
   });

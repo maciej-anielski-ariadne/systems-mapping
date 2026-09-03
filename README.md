@@ -29,7 +29,7 @@ file to open.
 ## Quick start
 
 1. **To use the app:** run `npm install` once, then `npm run build`, and open the generated `dist/systems-map.html` in any modern browser. It is a single self-contained file — fully offline, fonts and code bundled in. (**To develop:** `npm run dev` starts a live-reloading server — see [Development & build](#development--build).)
-2. On the first open, choose **Start guided tour** for the short Quick start on a temporary neutral example, or **Start blank** to enter the empty 3×3 starter grid. The Quick start remains available as the first lesson in **Learn**. The header's **Learn** section contains the complete six-course curriculum: 29 independent lessons for reading, navigation, Simulation, Atlas, formula choice, editing, Review, evidence, import and export. Lessons remember progress and temporarily borrow the tutorial map without replacing your own work. From the blank grid you have three paths:
+2. On the first open, choose **First look** for a three-minute introduction on a small temporary example, **Browse all lessons** to pick your own starting point, or **Start blank** to enter the empty 3×3 starter grid. The header's **Learn** section holds eight lessons grouped by what you came to do — read someone else's map, build your own, or trust it and pass it on — plus a browsable reference for choosing how a box calculates (also reachable from the **?** beside any box's calculation). First look uses a 12-box map so a newcomer's first screen is readable whole; every lesson after it uses the full 50-box map, which is the only one wide enough to pan across and deep enough to carry every stage, formula shape and feedback loop they teach. Lessons remember progress and temporarily borrow the example map without replacing your own work. From the blank grid you have three paths:
    - **Build directly on the map** (recommended for non-technical users). Click any empty cell to add a box, then rename it in the right panel. Drag from the right edge of a box to another box to draw a link. Switch to **Edit map** first — the left panel docks and grows its rename / reorder / **+ Add** affordances.
    - **Import an existing spreadsheet** — click **Import** in the header, or drag-drop a `.csv` onto the window.
    - **Bulk edit via the wizard** — switch to editing and click **Bulk edit** to open a seven-step form (rows → columns → categories → boxes → links → constants → review). Useful for big edits where the map is too fiddly. Hit **Apply to map** to re-render, or **Download CSV** to save a snapshot.
@@ -534,7 +534,7 @@ value_target = baseline_target × ∏ (current_source / baseline_source) ^ elast
 
 That default rule is what a box uses when the `combine` / `formula` / `min` / `max` columns are blank — which is every box in an older spreadsheet, so old maps compute exactly as they always did. A box can opt into something else: `combine` changes how its incoming links aggregate (`additive` effects add instead of compounding, `min` lets the weakest input gate the box), a `formula` replaces that aggregation with an explicit expression in the boxes' own units (ratios, capacity limits, share splits, and — through `delay()` — well-defined feedback), `min` / `max` put hard limits on the result, and hidden `params` hold the constants those formulas need. The precedence is fixed: an adjustable box's slider beats its formula, a formula beats `combine`. Anything the loader can't square — a formula it can't read, a name that is neither box nor constant, a formula reading a box with no arrow drawn from it — comes back as a plain-language warning on load; the map still loads and still computes.
 
-In Edit mode, **“How should this box calculate?”** explains the choice between an Adjustable scenario multiplier, proportional link Strength, Combine rules and an explicit formula at the point of authoring. In Simulation mode the detail panel then shows a **"How this number is calculated"** breakdown: which rule ran, each input with its value and its share of the answer (constants marked as hidden, delayed reads marked "previous step", the gating input on a `min` box flagged), plus a note whenever a limit bit, something divided by zero, or a name couldn't be resolved. `assets/data/tutorial_map.csv` is the neutral interactive formula lab used by the guided learning material: its named cases cover proportional links, rate conversion, Additive and Weakest-link combines, capacity, bounded shares, a joint product, a non-negative balance and delayed feedback. `assets/data/advanced_sample.csv` remains a compact calculation-rule fixture; [`docs/CALCULATION-ENGINE-DESIGN.md`](docs/CALCULATION-ENGINE-DESIGN.md) has the full design and the maths, and [`docs/formula-modelling-guide.html`](docs/formula-modelling-guide.html) provides scenario-led choice guidance.
+In Edit mode, **“How should this box calculate?”** explains the choice between an Adjustable scenario multiplier, proportional link Strength, Combine rules and an explicit formula at the point of authoring. In Simulation mode the detail panel then shows a **"How this number is calculated"** breakdown: which rule ran, each input with its value and its share of the answer (constants marked as hidden, delayed reads marked "previous step", the gating input on a `min` box flagged), plus a note whenever a limit bit, something divided by zero, or a name couldn't be resolved. `assets/data/tutorial_map.csv` is the neutral interactive formula lab used by the guided learning material: its named cases cover proportional links, rate conversion, Additive and Weakest-link combines, capacity, bounded shares, a joint product, a non-negative balance and delayed feedback. `assets/data/advanced_sample.csv` remains a compact calculation-rule fixture; [`docs/CALCULATION-ENGINE-DESIGN.md`](docs/CALCULATION-ENGINE-DESIGN.md) has the full design and the maths. Scenario-led choice guidance now lives in the app itself, in the Learn reference shelf — 18 entries on combine rules, caps and shares, feedback and formula syntax, opened from **Learn** or from the **?** beside any box's calculation.
 
 #### Evidence status does not change the maths
 
@@ -599,12 +599,13 @@ systems_mapping/
     │   ├── 14-typeable-dropdown.css Typable / filterable <select> replacement
     │   ├── 16-atlas.css             Pathway atlas: the picture, the wheel inside a tangle, the panel
     │   ├── 17-review.css            Review panel + the review rail / dock: cards, marks, the queue
-    │   └── 18-tutorial.css          First-open welcome + Learn library, lesson runner and target highlight
-    │                                (flat look = `border: 0` in 02-base.css;
-    │                                 state shown via drop-shadow / box-shadow rings)
+    │   ├── 18-tutorial.css          First-open welcome + Learn library, lesson runner and target highlight
+    │   │                            (flat look = `border: 0` in 02-base.css;
+    │   │                             state shown via drop-shadow / box-shadow rings)
+    │   └── 19-learn-reference.css   The Learn reference shelf: title list beside the reading pane
     ├── js/
     │   ├── 01-sample-data.ts        Embedded SAMPLE_CSV string (sample.csv copy)
-    │   ├── 01a-tutorial-map-data.ts Embedded TUTORIAL_MAP_CSV string (tutorial_map.csv copy)
+    │   ├── 01a-tutorial-map-data.ts Embedded TUTORIAL_MAP_CSV + TUTORIAL_MAP_SMALL_CSV strings
     │   ├── 02-config.ts             Pixel sizes (NODE_WIDTH etc.) + shared option lists
     │   ├── 03-state.ts              Shared globals (state, NODES, EDGES, …)
     │   ├── 04-utils.ts              wrapLabel / escapeHtml / formatScalar / clone helpers
@@ -656,7 +657,8 @@ systems_mapping/
     │   ├── 23-review-panel.ts       Review UI: the overlay, the cards, the header count badge
     │   ├── 24-review-record.ts      The review pass: the queue, verdicts, staleness, families
     │   ├── 25-review-rail.ts        The review queue docked beside the map, and the log export
-    │   ├── 26-tutorial.ts           Reversible Quick start + six-course Learn library across every surface
+    │   ├── 26-tutorial.ts           Reversible First look + eight-lesson Learn library across every surface
+    │   ├── 26a-learn-reference.ts   Browsable reference for choosing a box's calculation rule
     │   └── types.ts                 Shared TypeScript types every module imports (the data model)
     └── data/
         ├── sample.csv               Small neutral example (3 rows, 12 boxes, 12 links).
@@ -664,8 +666,11 @@ systems_mapping/
         ├── advanced_sample.csv      Worked example of every calculation rule
         │                            (params, combine, formula, bounds, delay()).
         │                            Reference only — drag it in to load it.
-        ├── tutorial_map.csv         Neutral 21-box Learn map covering every formula shape,
-        │                            evidence status, simulation and a long feedback loop.
+        ├── tutorial_map.csv         Neutral 50-box Learn map covering every formula shape,
+        │                            evidence status, simulation and two feedback loops.
+        │                            Carries deliberate evidence gaps for the Review lesson.
+        ├── tutorial_map_small.csv   12-box cut of the same programme, used by First look
+        │                            so a newcomer's first screen is readable whole.
         └── empty_template.csv       Empty starter with structure + inline comments.
                                      Reference only — no button loads it.
 ```
@@ -733,8 +738,9 @@ The two biggest features are split across multiple files:
 | When the map greys the outside instead of fading it | `assets/js/09-graph-selection.ts` (`applyFocusBreadth`), `assets/css/05-visualization.css` |
 | Search behaviour / fuzzy matching | `assets/js/17a-search.ts`, `assets/css/13-search.css` |
 | Button behaviour | `assets/js/17-events.ts` |
-| First-open guided tour | `assets/js/26-tutorial.ts`, `assets/css/18-tutorial.css`, `assets/data/tutorial_map.csv`, `assets/js/01a-tutorial-map-data.ts` |
-| Sample data datasets | `assets/data/sample.csv` (starter) · `assets/data/advanced_sample.csv` (calculation rules) · `assets/data/tutorial_map.csv` (guided tour) |
+| First-open guided tour | `assets/js/26-tutorial.ts`, `assets/css/18-tutorial.css`, `assets/data/tutorial_map.csv`, `assets/data/tutorial_map_small.csv`, `assets/js/01a-tutorial-map-data.ts` |
+| Learn reference shelf | `assets/js/26a-learn-reference.ts`, `assets/css/19-learn-reference.css` |
+| Sample data datasets | `assets/data/sample.csv` (starter) · `assets/data/advanced_sample.csv` (calculation rules) · `assets/data/tutorial_map.csv` (guided tour) · `assets/data/tutorial_map_small.csv` (first lessons) |
 | Colours, fonts &amp; design tokens (radius / spacing / motion scales) | `assets/css/01-variables.css` |
 | The flat look (no borders) | `border: 0` in `assets/css/02-base.css`; state shown as box-shadow rings in the component files |
 

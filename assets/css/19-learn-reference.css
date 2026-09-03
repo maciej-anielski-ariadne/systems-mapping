@@ -1,0 +1,281 @@
+/* =============================================================================
+ * LEARN — CALCULATION REFERENCE SHELF
+ * -----------------------------------------------------------------------------
+ * A browsable shelf, not a tour: titles down the left, one entry read on the
+ * right. It borrows the Learn library's surface (same backdrop, same raised
+ * panel, same close button) so opening it from the hub feels like the same
+ * room, and it carries the "?" entry point in the detail panel that opens it.
+ * Every colour is a token from 01-variables.css, so both themes are covered.
+ * ========================================================================== */
+
+.learn-reference-layer[hidden] { display: none; }
+
+.learn-reference-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 530;   /* above the tutorial layer (520): it opens on top of Learn */
+}
+
+.learn-reference-backdrop {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  background: color-mix(in srgb, var(--bg-deep) 76%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.learn-reference {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(940px, calc(100vw - 32px));
+  height: min(760px, calc(100vh - 32px));
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-surface);
+  background: var(--bg-light);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-float);
+}
+
+.learn-reference:focus { outline: none; }
+.learn-reference:focus-visible { box-shadow: var(--shadow-float), var(--focus-ring); }
+
+/* === Header ============================================================== */
+
+.learn-reference-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-5);
+  padding: clamp(20px, 3vw, 32px) clamp(20px, 3vw, 36px) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.learn-reference-kicker {
+  color: var(--accent-purple);
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--tracking-cap);
+  text-transform: uppercase;
+}
+
+.learn-reference-header h1 {
+  margin: var(--space-2) 0;
+  font-family: var(--font-display);
+  font-size: clamp(24px, 3vw, 32px);
+  font-weight: 500;
+  line-height: 1.06;
+}
+
+.learn-reference-header p {
+  max-width: 640px;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
+  line-height: 1.5;
+}
+
+.learn-reference-close {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 26px;
+  line-height: 1;
+}
+
+.learn-reference-close:hover { color: var(--text-primary); background: var(--act-tint); }
+
+/* === Two panes =========================================================== */
+
+.learn-reference-body {
+  display: grid;
+  grid-template-columns: minmax(0, 260px) minmax(0, 1fr);
+  min-height: 0;
+}
+
+.learn-reference-index {
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-3) var(--space-5);
+  border-right: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--bg-deep) 45%, transparent);
+}
+
+.learn-reference-group + .learn-reference-group { margin-top: var(--space-4); }
+
+.learn-reference-group h2 {
+  margin: 0 0 var(--space-1) var(--space-2);
+  color: var(--text-tertiary);
+  font-family: var(--font-ui);
+  font-size: var(--fs-eyebrow);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-cap);
+  text-transform: uppercase;
+}
+
+.learn-reference-group-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.learn-reference-link {
+  display: block;
+  width: 100%;
+  padding: var(--space-1_5) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-interactive);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-body);
+  line-height: 1.4;
+  text-align: left;
+}
+
+.learn-reference-link:hover { background: var(--act-tint); color: var(--text-primary); }
+.learn-reference-link:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+.learn-reference-link.is-current {
+  background: var(--act-on);
+  color: var(--text-primary);
+  font-weight: var(--fw-medium);
+}
+
+.learn-reference-reading {
+  min-height: 0;
+  overflow-y: auto;
+  padding: clamp(20px, 3vw, 32px) clamp(20px, 3vw, 36px) var(--space-6);
+}
+
+.learn-reference-reading:focus { outline: none; }
+
+/* === One entry ===========================================================
+ * `learn-reference-entry`, not `-card`: `.learn-reference-card` is the Learn
+ * hub's own tile that opens this shelf, and it lives in 18-tutorial.css. */
+
+.learn-reference-eyebrow {
+  color: var(--text-tertiary);
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--tracking-cap);
+  text-transform: uppercase;
+}
+
+.learn-reference-entry h3 {
+  max-width: 46ch;
+  margin: var(--space-2) 0 var(--space-3);
+  font-family: var(--font-display);
+  font-size: clamp(19px, 2.2vw, 24px);
+  font-weight: 500;
+  line-height: 1.15;
+}
+
+/* The one new sentence per entry — it answers "is this the page I want?", so it
+ * is the only body text set larger than the four paragraphs beneath it. */
+.learn-reference-use-when {
+  max-width: 62ch;
+  margin: 0 0 var(--space-5);
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--accent-purple);
+  color: var(--text-primary);
+  font-size: var(--fs-title);
+  font-weight: var(--fw-medium);
+  line-height: 1.4;
+}
+
+.learn-reference-detail {
+  display: grid;
+  gap: var(--space-1) 0;
+  max-width: 68ch;
+  margin: 0;
+}
+
+.learn-reference-detail dt {
+  color: var(--text-primary);
+  font-size: var(--fs-eyebrow);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-cap);
+  text-transform: uppercase;
+}
+
+.learn-reference-detail dd {
+  margin: 0 0 var(--space-4);
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
+  line-height: 1.6;
+}
+
+.learn-reference-detail dd:last-of-type { margin-bottom: var(--space-3); }
+
+.learn-reference-example {
+  max-width: 68ch;
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--fs-body);
+}
+
+.learn-reference-example code {
+  padding: 1px var(--space-1);
+  border-radius: var(--radius-interactive);
+  background: color-mix(in srgb, var(--bg-deep) 60%, transparent);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+/* === The "?" that opens it from the detail panel ========================= */
+
+.calc-help {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-eyebrow);
+  line-height: 1;
+}
+
+.calc-help:hover { border-color: var(--act); background: var(--act-tint); color: var(--text-primary); }
+.calc-help:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+/* The formula row now holds an input and the "?" side by side, so the pair
+ * takes the width the input alone used to (06-detail-panel.css). */
+.detail-quant-row .detail-quant-formula-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1_5);
+  flex: 0 0 124px;
+}
+
+.detail-quant-row .detail-quant-formula-cell .detail-quant-input {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+
+@media (max-width: 860px) {
+  .learn-reference-backdrop { padding: 0; }
+  .learn-reference { width: 100vw; height: 100vh; border-radius: 0; }
+  .learn-reference-header { padding: var(--space-4); }
+  .learn-reference-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .learn-reference-index {
+    max-height: 34vh;
+    padding: var(--space-3);
+    border-right: 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .learn-reference-reading { padding: var(--space-4) var(--space-4) var(--space-6); }
+}

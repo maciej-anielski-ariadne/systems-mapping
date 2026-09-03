@@ -294,10 +294,15 @@ describe("painting a formula", () => {
   it("says what a box id is called on the map — the connection nothing else makes", () => {
     // Formulas name boxes by id. `officers` in an expression is "HMRC Customs
     // FTE" in the list beside it, and until this tooltip nothing said so.
-    expect(paint("officers").querySelector(".fx-box")!.getAttribute("data-tooltip"))
-      .toBe("HMRC Customs FTE");
-    expect(paint("exams_per_fte_yr").querySelector(".fx-const")!.getAttribute("data-tooltip"))
-      .toContain("0.0004");
+    const boxVariable = paint("officers").querySelector(".fx-box")!;
+    expect(boxVariable.getAttribute("data-formula-node-id")).toBe("officers");
+    expect(boxVariable.getAttribute("data-tooltip")).toBe(
+      "HMRC Customs FTE — current value: 100 FTE",
+    );
+
+    const globalVariable = paint("exams_per_fte_yr").querySelector(".fx-const")!;
+    expect(globalVariable.getAttribute("data-formula-kind")).toBe("global-variable");
+    expect(globalVariable.getAttribute("data-tooltip")).toContain("Global variable — value: 0.0004");
   });
 
   it("gives back exactly the text it was handed", () => {

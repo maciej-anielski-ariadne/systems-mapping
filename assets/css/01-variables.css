@@ -196,8 +196,8 @@
   --z-overlay:     200;
   --z-edge-picker: 250;
   --z-cell-editor: 300;
-  --z-dropdown:    400;
-  --z-tooltip:     500;   /* hover popup sits above everything, incl. the builder overlay */
+  --z-tooltip:     500;   /* hover popup sits above panels and editing overlays */
+  --z-dropdown:    600;   /* every open dropdown sits above tutorials, tooltips and overlays */
 
   /* ===== Fonts ========================================================== *
    * Two faces only: IBM Plex Sans (UI + titles) and IBM Plex Mono (numbers /

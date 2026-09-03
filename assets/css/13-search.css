@@ -12,7 +12,7 @@
   top: calc(100% + 4px);
   left: 0;
   right: 0;
-  z-index: var(--z-header);                /* above the viz, below the builder overlay */
+  z-index: var(--z-dropdown);
   max-height: min(420px, 60vh);
   overflow-y: auto;
   background: var(--bg-deep);

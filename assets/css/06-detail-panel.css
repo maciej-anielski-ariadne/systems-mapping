@@ -15,6 +15,11 @@
 .detail-panel {
   background: var(--bg-deep);
   overflow-y: auto;
+  /* `overflow-y: auto` alone makes overflow-x compute to `auto` too, so any
+   * child wider than the panel turns this sidebar into a horizontal scroller —
+   * and a form that slides sideways under the labels just reads as broken.
+   * Content wraps here; it never scrolls across. */
+  overflow-x: hidden;
   /* No top padding so the sticky .panel-header sits flush against the top.
    * Side + bottom padding give the rest of the content breathing room. */
   padding: 0 var(--gutter) var(--gutter) var(--gutter);
@@ -288,6 +293,14 @@ body.review-open .detail-scope-actions {
   transition: background var(--dur-fast) ease;
 }
 .drow:hover::before { background: var(--bg-mid); }
+.drow.is-formula-variable-highlight::before {
+  background: var(--act-tint);
+  box-shadow: inset 3px 0 0 var(--act);
+}
+.drow.is-formula-variable-highlight .drow-name {
+  color: var(--act);
+  font-weight: var(--fw-semibold);
+}
 .drow:focus-visible { outline: none; }
 .drow:focus-visible::before { background: var(--bg-mid); }
 .drow:focus-visible { box-shadow: var(--focus-ring); }
@@ -450,9 +463,11 @@ body.review-open .detail-scope-actions {
 .detail-quant-row select,
 .detail-quant-row .detail-quant-value,
 .detail-quant-row .typeable-dropdown-input,
+.detail-quant-row .typeable-dropdown-button,
 .detail-edit-row input,
 .detail-edit-row select,
-.detail-edit-row .typeable-dropdown-input {
+.detail-edit-row .typeable-dropdown-input,
+.detail-edit-row .typeable-dropdown-button {
   text-align: right;
   padding-right: 0;
 }
@@ -466,7 +481,8 @@ body.review-open .detail-scope-actions {
  * nothing. Scoped to this panel: the builder's dropdowns keep the inline
  * chevron, where a table cell has no such band to spare. */
 .detail-panel .typeable-dropdown { position: relative; }
-.detail-panel .typeable-dropdown-input { background-image: none; }
+.detail-panel .typeable-dropdown-input,
+.detail-panel .typeable-dropdown-button { background-image: none; }
 .detail-panel .typeable-dropdown::after {
   content: "";
   position: absolute;
@@ -589,6 +605,73 @@ body.review-open .detail-scope-actions {
   overflow-wrap: break-word;
 }
 
+/* One calculation language across every rule: a compact worked equation,
+ * followed by one interpretation and the fully-unitised current result. */
+.calc-equation {
+  font-family: var(--font-mono);
+  font-size: var(--fs-cap);
+  line-height: 1.45;
+  color: var(--text-primary);
+  background: var(--bg-mid);
+  border-radius: var(--radius-interactive);
+  padding: var(--pad-card);
+  margin-bottom: var(--space-2);
+}
+
+.calc-equation-line,
+.calc-equation-formula-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.calc-equation-formula-line {
+  flex-wrap: wrap;
+}
+
+.calc-equation .calc-formula {
+  flex: 1 1 180px;
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border-radius: 0;
+}
+
+.calc-equation-start {
+  color: var(--text-secondary);
+  margin-bottom: var(--space-1);
+}
+
+.calc-equation-term,
+.calc-equation-output {
+  font-variant-numeric: tabular-nums;
+}
+
+.calc-equation-end {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+  color: var(--text-secondary);
+}
+
+.calc-equation-output {
+  flex-shrink: 0;
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+}
+
+.calc-equation-summary {
+  margin: 0 0 var(--heading-gap);
+  font-size: var(--fs-cap);
+  font-weight: var(--fw-semibold);
+  line-height: 1.45;
+  color: var(--act);
+}
+
 /* One input row: name left, its value and its share of the answer on the
  * right-hand rail. The quiet inset stripe echoes the edge rows below without
  * claiming an effect colour it doesn't have. */
@@ -604,6 +687,38 @@ body.review-open .detail-scope-actions {
   padding: 2px calc(var(--space-2) + 1px) 2px 0;
   margin: 0;
   font-size: var(--fs-body);
+}
+
+.calc-equation .calc-input {
+  padding: 7px var(--space-1);
+  margin: 3px 0;
+  border-radius: 3px;
+}
+
+.calc-equation .calc-input-label {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.calc-equation .calc-input--winner {
+  background: var(--act-tint);
+  box-shadow: none;
+}
+
+.calc-equation .calc-input[data-calculation-node-id] {
+  cursor: help;
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
+}
+
+.calc-equation .calc-input[data-calculation-node-id]:hover {
+  background: var(--act-tint);
+  color: var(--act);
+}
+
+.calc-equation .calc-input[data-calculation-node-id]:hover .calc-input-label,
+.calc-equation .calc-input[data-calculation-node-id]:hover .calc-input-detail {
+  color: var(--act);
 }
 
 .calc-input-label {
@@ -632,8 +747,34 @@ body.review-open .detail-scope-actions {
   flex-shrink: 0;
 }
 
+/* Every explanation finishes with the number it produced. Rules with no input
+ * rows (a pinned slider or a plain baseline) otherwise looked unfinished, and
+ * formula readers had to scroll back up to reconcile the working with Current. */
+.calc-result {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-top: var(--heading-gap);
+  padding-top: var(--heading-gap);
+  border-top: 1px solid var(--border-light);
+}
+.calc-result-label {
+  font-size: var(--fs-cap);
+  color: var(--text-tertiary);
+}
+.calc-result-value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 /* The input the `min` rule settled on — the weakest link IS the answer here,
- * so it gets the interactive accent on both the stripe and the factor. */
+ * so its factor gets the interactive accent. The equation itself supplies the
+ * flat row highlight used by the selected mockup. */
 .calc-input--winner {
   box-shadow: inset 3px 0 0 var(--act);
 }
@@ -661,6 +802,13 @@ body.review-open .detail-scope-actions {
 .fx-box {
   color: var(--text-primary);
   font-weight: var(--fw-medium);
+  border-radius: 3px;
+  cursor: help;
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
+}
+.fx-box:hover {
+  color: var(--act);
+  background: var(--act-tint);
 }
 .fx-num { color: var(--text-primary); }
 .fx-fn {
@@ -676,6 +824,18 @@ body.review-open .detail-scope-actions {
   border-radius: 3px;
   padding: 0 3px;
   cursor: help;
+}
+.fx-const::after {
+  content: "global";
+  margin-left: 4px;
+  padding-left: 4px;
+  border-left: 1px solid var(--border-mid);
+  font-family: var(--font-ui);
+  font-size: 0.7em;
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-cap);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
 }
 /* Structure recedes: brackets and operators are how the expression is shaped,
  * not what it says. */

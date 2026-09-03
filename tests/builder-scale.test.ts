@@ -334,17 +334,19 @@ describe("typeable dropdowns upgrade on first focus", () => {
     (host.querySelector("select") as HTMLSelectElement)
       .dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
 
-    const popup = host.querySelector(".typeable-dropdown-popup")!;
+    const input = host.querySelector(".typeable-dropdown-input") as HTMLInputElement;
+    const popupIdentifier = input.getAttribute("aria-controls")!;
+    const popup = document.getElementById(popupIdentifier)!;
     expect(popup.querySelectorAll(".typeable-dropdown-item").length).toBe(POPUP_MAX_RENDERED);
     const more = popup.querySelector(".typeable-dropdown-more")!;
     expect(more.textContent).toBe(total - POPUP_MAX_RENDERED + " more — keep typing to narrow");
 
     // Typing narrows the list back under the cap, and the notice goes away.
-    const input = host.querySelector(".typeable-dropdown-input") as HTMLInputElement;
     input.value = "option 12";
     input.dispatchEvent(new Event("input", { bubbles: true }));
     expect(popup.querySelectorAll(".typeable-dropdown-item").length).toBeLessThan(POPUP_MAX_RENDERED);
     expect(popup.querySelector(".typeable-dropdown-more")).toBe(null);
+    document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
     host.remove();
   });
 });

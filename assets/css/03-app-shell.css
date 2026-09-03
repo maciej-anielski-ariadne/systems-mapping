@@ -146,6 +146,15 @@ body.no-data .panel-pin {
   min-width: 0;
 }
 
+/* The search dropdown stays inside the header, so lift the header's stacking
+ * context while it is open to keep it above tutorials and full-screen
+ * surfaces. `.menu` no longer needs this: an open menu moves to <body> (see
+ * showAnchoredMenu in 04-utils.ts), because a panel that clips its overflow
+ * would otherwise cut the menu off however high its z-index. */
+.app-header:has(.search-results:not([hidden])) {
+  z-index: var(--z-dropdown);
+}
+
 /* One run of related controls. Tight inside, so the run reads as one thing. */
 .header-group {
   display: flex;
@@ -161,6 +170,26 @@ body.no-data .panel-pin {
   .app {
     width: 100vw;
     min-width: 0;
+  }
+
+  /* A 340px inspector cannot remain a grid column on a phone: it used to
+   * squeeze the map to roughly one node-handle's width as soon as a Learn
+   * step selected a box. Keep the map full-width and use a bottom sheet so
+   * enough of the map remains exposed to choose a related box. */
+  body.reading .app.has-selection { --detail-w: 0; }
+
+  body.reading .app.has-selection .detail-panel {
+    position: absolute;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100vw;
+    height: min(46vh, 360px);
+    z-index: var(--z-panel-strip);
+    background: var(--bg-deep);
+    border-top: 1px solid var(--border-subtle);
+    box-shadow: var(--shadow-panel);
   }
 
   .app-header {
@@ -468,7 +497,7 @@ body.editing #mode-toggle-button:hover { background: var(--act-tint); color: var
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-surface);
   box-shadow: var(--shadow-panel);
-  z-index: var(--z-header);
+  z-index: var(--z-dropdown);
   display: flex;
   flex-direction: column;
   gap: 2px;

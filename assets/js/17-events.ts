@@ -7,7 +7,7 @@
 // =============================================================================
 
 import { serializeLiveStateToCsv } from "./05a-csv-serializer";
-import { getMapTextScale } from "./04-utils";
+import { getMapTextScale, hideAnchoredMenu, showAnchoredMenu } from "./04-utils";
 import {
   NODE_WIDTH,
   OVERVIEW_COLUMN_MINIMUM_SCREEN_WIDTH,
@@ -325,6 +325,8 @@ export function setExportMenuOpen(open: boolean): void {
   // opened, so it gets out of the way.
   if (show && typeof hideTooltip === "function") hideTooltip();
   menu.hidden = !show;
+  if (show) showAnchoredMenu(menu, button);
+  else hideAnchoredMenu(menu);
   button.classList.toggle("active", show);
   button.setAttribute("aria-expanded", show ? "true" : "false");
 }

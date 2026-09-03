@@ -88,6 +88,7 @@ import { rebuildIndexes } from "./06-data-loader";
 import { computeLayout, measureNode } from "./08-layout";
 import {
   deselectAll,
+  focusNode,
   selectEdge,
   selectNode,
   setSelection,
@@ -147,6 +148,31 @@ export function initCanvasEdit(): void {
         state.canvasEdit.hoverCell = null;
         setLayout(computeLayout());
         render();
+      }
+    });
+
+    // A double-click fires two complete click cycles before `dblclick`. In Edit
+    // mode those two cycles can select and then deselect an initially unselected
+    // box, leaving the detail panel empty even though the user's intent was to
+    // edit that box. Make the final event authoritative: keep the box selected,
+    // return the detail panel to its identity fields, and put the name in focus.
+    vizSvg.addEventListener("dblclick", (event: MouseEvent) => {
+      if (state.uiMode !== "edit") return;
+      const eventTarget = event.target instanceof Element ? event.target : null;
+      const nodeGroup = eventTarget?.closest<SVGGElement>(".node-group[data-node-id]");
+      const nodeIdentifier = nodeGroup?.dataset.nodeId;
+      if (!nodeIdentifier) return;
+      event.preventDefault();
+      event.stopPropagation();
+      focusNode(nodeIdentifier);
+      const detailPanel = document.getElementById("detail-panel");
+      if (detailPanel) detailPanel.scrollTop = 0;
+      const nameInput = document.querySelector<HTMLInputElement>(
+        '#detail-panel .detail-name-input[data-field="label"]',
+      );
+      if (nameInput) {
+        nameInput.focus({ preventScroll: true });
+        nameInput.select();
       }
     });
     // Shift+mousedown on blank grid arms a marquee candidate: a drag past the
@@ -261,12 +287,48 @@ export function initCanvasEdit(): void {
   //                       rename on the selected node; or create a node in
   //                       the empty cursor cell seeded with the typed char
   document.addEventListener("keydown", (event: KeyboardEvent) => {
-    // Bail when the user is typing in a real form field — Backspace must not
-    // nuke a node while they're editing a label or filter.
-    const target = event.target as HTMLElement | null;
-    if (target && target.matches && target.matches("input, textarea, select, [contenteditable]")) return;
+    const target = event.target instanceof HTMLElement ? event.target : null;
     // Builder wizard owns its own keyboard handling.
     if (state.builder && state.builder.open) return;
+
+    // Model fields in the box panel write through Ariadne's history as they
+    // change, so Command/Ctrl-Z must reach that history even while the field
+    // retains focus. Other text surfaces (search, Review, sidebar renaming and
+    // filterable dropdown typing) keep the browser's local text undo instead.
+    const commandOrControlIsPressed = event.metaKey || event.ctrlKey;
+    const targetIsInsideDetailPanel = !!target?.closest("#detail-panel");
+    const targetIsFormField = !!target?.matches(
+      "input, textarea, select, [contenteditable]",
+    );
+    const targetIsTextEditingControl = target instanceof HTMLTextAreaElement ||
+      !!target?.closest("[contenteditable]") ||
+      (target instanceof HTMLInputElement && [
+        "text", "search", "email", "url", "tel", "password",
+      ].includes(target.type));
+    const targetUsesLocalTextUndo = !!target?.closest(
+      "#search-input, #builder-overlay, #review-stage, .typeable-dropdown-input, " +
+      ".sidebar input, .sidebar textarea, .sidebar [contenteditable]",
+    ) || (targetIsTextEditingControl && !targetIsInsideDetailPanel);
+    if (commandOrControlIsPressed && (event.key === "z" || event.key === "Z")) {
+      if (targetUsesLocalTextUndo || (targetIsFormField && !targetIsInsideDetailPanel)) return;
+      if (typeof commitInlineRename === "function") commitInlineRename();
+      if (event.shiftKey) {
+        if (typeof historyRedo === "function" && historyRedo()) event.preventDefault();
+      } else if (typeof historyUndo === "function" && historyUndo()) {
+        event.preventDefault();
+      }
+      return;
+    }
+    if (commandOrControlIsPressed && (event.key === "y" || event.key === "Y")) {
+      if (targetUsesLocalTextUndo || (targetIsFormField && !targetIsInsideDetailPanel)) return;
+      if (typeof commitInlineRename === "function") commitInlineRename();
+      if (typeof historyRedo === "function" && historyRedo()) event.preventDefault();
+      return;
+    }
+
+    // Bail for non-history keys when the user is typing in a real form field —
+    // Backspace must not remove a box while they edit a label or filter.
+    if (targetIsFormField) return;
 
     if (event.key === "Escape") {
       // Edge picker first — it's overlaid on the canvas and the most-recent
@@ -300,27 +362,12 @@ export function initCanvasEdit(): void {
       }
     }
 
-    // Multi-level undo / redo (caught BEFORE the printable-key handlers
-    // below so Cmd-Z doesn't route into the rename as a stray character).
-    const cmdOrCtrl = event.metaKey || event.ctrlKey;
-    if (cmdOrCtrl && (event.key === "z" || event.key === "Z")) {
-      if (typeof commitInlineRename === "function") commitInlineRename();
-      if (event.shiftKey) { if (typeof historyRedo === "function" && historyRedo()) event.preventDefault(); }
-      else                { if (typeof historyUndo === "function" && historyUndo()) event.preventDefault(); }
-      return;
-    }
-    if (cmdOrCtrl && (event.key === "y" || event.key === "Y")) {
-      if (typeof commitInlineRename === "function") commitInlineRename();
-      if (typeof historyRedo === "function" && historyRedo()) event.preventDefault();
-      return;
-    }
-
     // Arrow keys on a selected edge → cycle its effect. Up/Left = previous
     // effect in EFFECT_OPTIONS, Down/Right = next. The first arrow press of
     // a session pushes the pre-cycle snapshot to history; subsequent presses
     // mutate live without growing history (coalesced undo). Session ends on
     // 1.5s debounce, blur, or selecting a different edge.
-    if (!cmdOrCtrl && !event.altKey && state.dataLoaded && state.uiMode === "edit" &&
+    if (!commandOrControlIsPressed && !event.altKey && state.dataLoaded && state.uiMode === "edit" &&
         !state.simulationMode && state.selectedEdgeId &&
         (event.key === "ArrowUp" || event.key === "ArrowDown" ||
          event.key === "ArrowLeft" || event.key === "ArrowRight")) {
@@ -336,7 +383,7 @@ export function initCanvasEdit(): void {
     // preventDefault is unconditional once we've decided this is "our" key —
     // the browser would otherwise scroll the viewport on ArrowDown/Up at
     // the grid edges, which feels broken next to a contained navigation.
-    if (!cmdOrCtrl && !event.altKey && state.dataLoaded &&
+    if (!commandOrControlIsPressed && !event.altKey && state.dataLoaded &&
         (event.key === "ArrowUp" || event.key === "ArrowDown" ||
          event.key === "ArrowLeft" || event.key === "ArrowRight")) {
       event.preventDefault();
@@ -359,7 +406,7 @@ export function initCanvasEdit(): void {
     // Tab / Shift-Tab — horizontal step, creating a node if the destination
     // cell is empty. Routes through commitInlineRename for the same
     // history-keeping reason as Arrow.
-    if (event.key === "Tab" && hasCanvasPosition && state.dataLoaded && !cmdOrCtrl) {
+    if (event.key === "Tab" && hasCanvasPosition && state.dataLoaded && !commandOrControlIsPressed) {
       if (typeof commitInlineRename === "function") commitInlineRename();
       const direction = event.shiftKey ? "prev" : "next";
       if (typeof handleCanvasTab === "function" && handleCanvasTab(direction)) {
@@ -371,7 +418,7 @@ export function initCanvasEdit(): void {
     // Enter — commit any pending rename, then create a new node below
     // (stacked in the same cell). Same logic regardless of whether a rename
     // was in flight — chains naturally for spreadsheet-style data entry.
-    if (event.key === "Enter" && hasCanvasPosition && state.dataLoaded && !cmdOrCtrl && !event.shiftKey) {
+    if (event.key === "Enter" && hasCanvasPosition && state.dataLoaded && !commandOrControlIsPressed && !event.shiftKey) {
       if (typeof commitInlineRename === "function") commitInlineRename();
       if (typeof handleCanvasEnterCreate === "function" && handleCanvasEnterCreate()) {
         event.preventDefault();

@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { FORMULA_INVALID_CSV } from "../fixtures/graphs";
+import { COMBINE_CSV, FORMULA_CSV, FORMULA_INVALID_CSV } from "../fixtures/graphs";
 
 const sampleCsvPath = resolve(process.cwd(), "assets/data/sample.csv");
 
@@ -18,6 +18,28 @@ async function openCleanBuiltApp(page: Page): Promise<void> {
   await page.reload();
   await dismissFirstOpenTutorial(page);
   await expect(page.locator("#viz-svg")).toBeVisible();
+}
+
+async function openConsolidatedLessonAtStep(
+  page: Page,
+  lessonIdentifier: string,
+  stepIndex: number,
+): Promise<void> {
+  await page.evaluate(({ selectedLessonIdentifier, selectedStepIndex }) => {
+    localStorage.setItem("systems-map.learn.progress.v1", JSON.stringify({
+      curriculumVersion: 5,
+      completedLessonIds: [],
+      lastLessonId: selectedLessonIdentifier,
+      lastStepIndex: selectedStepIndex,
+      completedCheckpointIdentifiersByLesson: {},
+    }));
+  }, { selectedLessonIdentifier: lessonIdentifier, selectedStepIndex: stepIndex });
+  const closeLearnButton = page.locator('[data-tutorial-action="close-learn"]');
+  if (await closeLearnButton.isVisible()) await closeLearnButton.click();
+  await page.getByRole("button", { name: "Learn", exact: true }).click();
+  await page.locator(
+    '[data-lesson-card="' + lessonIdentifier + '"] [data-tutorial-action="lesson"]',
+  ).click();
 }
 
 async function importCsv(page: Page, csv: string, name = "map.csv"): Promise<void> {
@@ -211,7 +233,7 @@ test("built artifact boots, restores, imports, exports, searches and changes mod
 
   await page.locator("#learn-button").click();
   await page.locator(
-    '[data-tutorial-action="lesson"][data-lesson-id="map-essentials"]',
+    '[data-tutorial-action="lesson"][data-lesson-id="move-around-map"]',
   ).click();
   await expect(page.locator('[data-tutorial-action="highlight-style"]')).toHaveCount(0);
   await expect.poll(() => page.locator(".tutorial-target").evaluate(
@@ -283,8 +305,786 @@ test("built artifact boots, restores, imports, exports, searches and changes mod
   await expect.poll(() => page.locator(".tutorial-target-thread-path").getAttribute("d"))
     .not.toBe(tutorialThreadPathBeforeDrag);
   await expect.poll(tutorialMarkerOffset).toBeLessThan(1);
-  await page.locator('[data-tutorial-action="skip-lesson"]').click();
+  await page.locator('[data-tutorial-action="exit-lesson"]').click();
   await page.locator('[data-tutorial-action="close-learn"]').click();
+});
+
+test("Learn Next waits for every ordered action in a step", async ({ page }) => {
+  await openCleanBuiltApp(page);
+
+  await page.locator("#learn-button").click();
+  await page.locator(
+    '[data-tutorial-action="lesson"][data-lesson-id="move-around-map"]',
+  ).click();
+
+  const nextButton = page.locator('[data-tutorial-action="next"]');
+  const zoomCheckpoint = page.locator('[data-tutorial-checkpoint="change-zoom"]');
+
+  await expect(nextButton).toBeDisabled();
+  await expect(nextButton).toHaveAttribute("aria-describedby", "tutorial-task-requirements");
+  await expect(page.locator("#tutorial-task-requirements")).toContainText(
+    "Complete all actions to unlock Next",
+  );
+
+  await page.locator("#viz-zoom-readout").click();
+  await expect(zoomCheckpoint).not.toHaveClass(/is-complete/);
+  await expect(nextButton).toBeDisabled();
+
+  await page.locator("#viz-zoom-in").click();
+  await expect(zoomCheckpoint).toHaveClass(/is-complete/);
+  await expect(page.locator("#tutorial-task-requirements")).toContainText(
+    "All actions complete",
+  );
+  await expect(nextButton).toBeEnabled();
+
+  await nextButton.click();
+  await expect(page.getByRole("heading", { name: "Move from the beginning to the end" })).toBeVisible();
+  const availableHorizontalTravel = await page.locator("#viz-scroll").evaluate(
+    element => element.scrollWidth - element.clientWidth,
+  );
+  expect(availableHorizontalTravel).toBeGreaterThanOrEqual(160);
+  await page.locator("#viz-scroll").evaluate(element => {
+    element.scrollLeft = element.scrollWidth - element.clientWidth;
+    element.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+  await expect(page.locator('[data-tutorial-checkpoint="pan-to-learning-end"]')).toHaveClass(/is-complete/);
+  await expect(page.locator('[data-tutorial-checkpoint="pan-back-to-inputs"]')).not.toHaveClass(/is-complete/);
+  await expect(nextButton).toBeDisabled();
+  await page.locator("#viz-scroll").evaluate(element => {
+    element.scrollLeft = 0;
+    element.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+  await expect(page.locator('[data-tutorial-checkpoint="pan-back-to-inputs"]')).toHaveClass(/is-complete/);
+  await expect(nextButton).toBeEnabled();
+
+  await nextButton.click();
+  await expect(page.getByRole("heading", { name: "Frame the whole map again" })).toBeVisible();
+  await expect(nextButton).toBeDisabled();
+  await page.locator("#viz-zoom-readout").click();
+  await expect(page.locator('[data-tutorial-checkpoint="fit-map"]')).toHaveClass(/is-complete/);
+  await expect(nextButton).toBeEnabled();
+  await nextButton.click();
+
+  await expect(page.getByRole("heading", { name: "Read rows as parts of the system" })).toBeVisible();
+  await expect(page.locator(".node-group.selected")).toHaveCount(0);
+  await expect(page.locator('[data-tutorial-action="exit-lesson"]')).toHaveText("Exit lesson");
+
+  await page.locator('[data-tutorial-action="exit-lesson"]').click();
+  const unfinishedLessonActions = page.locator('[data-lesson-card="move-around-map"] .learn-lesson-actions');
+  await expect(unfinishedLessonActions.locator("button")).toHaveCount(1);
+  await expect(unfinishedLessonActions.locator('[data-tutorial-action="lesson"]')).toHaveText("Resume");
+
+  page.once("dialog", dialog => dialog.accept());
+  await page.locator('[data-tutorial-action="reset-all-progress"]').click();
+  await expect(page.locator(".learn-progress-summary")).toContainText("0 of 5 journeys complete");
+  await expect(page.locator('[data-tutorial-action="reset-all-progress"]')).toBeDisabled();
+  await expect(page.locator('[data-tutorial-action="restart-lesson"]')).toHaveCount(0);
+
+  await page.locator(
+    '[data-tutorial-action="lesson"][data-lesson-id="edit-map"]',
+  ).click();
+  const detailPanel = page.locator("#detail-panel");
+  const columnDropdown = detailPanel.locator('select[data-field="stage"]');
+  await detailPanel.evaluate(panel => { panel.scrollTop = 0; });
+  await expect(columnDropdown).toBeHidden();
+  await expect(detailPanel.locator(".typeable-dropdown-input")).toHaveCount(0);
+  for (const fieldName of ["stream", "stage", "controllable", "direction", "combine"]) {
+    const selectionOnlyDropdown = detailPanel.locator(
+      '.selection-only-dropdown:has(select[data-field="' + fieldName + '"])',
+    );
+    await expect(selectionOnlyDropdown.locator(".typeable-dropdown-button")).toBeVisible();
+    await expect(selectionOnlyDropdown.locator(".typeable-dropdown-input")).toHaveCount(0);
+  }
+  const rowDropdown = detailPanel.locator(
+    '.selection-only-dropdown:has(select[data-field="stream"])',
+  );
+  const rowDropdownButton = rowDropdown.locator(".typeable-dropdown-button");
+  const rowDropdownPopupIdentifier = await rowDropdownButton.getAttribute("aria-controls");
+  expect(rowDropdownPopupIdentifier).toBeTruthy();
+  const rowDropdownPopup = page.locator("#" + rowDropdownPopupIdentifier);
+  await rowDropdownButton.click();
+  await expect(rowDropdownPopup).toBeVisible();
+  await expect(rowDropdownPopup).toContainText("Partnerships");
+  const rowDropdownPopupBounds = await rowDropdownPopup.boundingBox();
+  expect(rowDropdownPopupBounds).not.toBeNull();
+  expect(rowDropdownPopupBounds!.x).toBeGreaterThanOrEqual(0);
+  expect(rowDropdownPopupBounds!.y).toBeGreaterThanOrEqual(0);
+  expect(rowDropdownPopupBounds!.x + rowDropdownPopupBounds!.width).toBeLessThanOrEqual(
+    page.viewportSize()!.width,
+  );
+  expect(rowDropdownPopupBounds!.y + rowDropdownPopupBounds!.height).toBeLessThanOrEqual(
+    page.viewportSize()!.height,
+  );
+  await rowDropdownPopup.locator('.typeable-dropdown-item:has-text("Partnerships")').click();
+  await expect(
+    page.locator('.node-group[data-node-id="workshop_readiness"]'),
+  ).toHaveAttribute("aria-label", /row Partnerships/);
+  await expect(detailPanel.locator(".detail-name-input")).toBeVisible();
+
+  const materialsBudgetBox = page.locator(
+    '.node-group[data-node-id="materials_budget"]',
+  );
+  await materialsBudgetBox.dblclick();
+  await expect(materialsBudgetBox).toHaveClass(/selected/);
+  await expect(detailPanel.locator(".detail-name-input")).toHaveValue("Materials budget");
+  await expect(detailPanel.locator(".detail-name-input")).toBeFocused();
+  await expect.poll(() => detailPanel.evaluate(panel => panel.scrollTop)).toBe(0);
+
+  const descriptionInput = page.locator("#detail-panel .detail-desc-input");
+  await descriptionInput.fill("The first edit must complete the task");
+  await expect(page.locator('[data-tutorial-action="next"]')).toBeEnabled();
+  await expect(page.locator('[data-tutorial-checkpoint="edit-box-field"]')).toHaveClass(/is-complete/);
+
+  await page.locator('[data-tutorial-action="exit-lesson"]').click();
+  await openConsolidatedLessonAtStep(page, "move-around-map", 8);
+  const searchInput = page.locator("#search-input");
+  await searchInput.fill("workshop");
+  await searchInput.press("Enter");
+  await expect(page.locator('[data-tutorial-action="next"]')).toBeEnabled();
+  await page.locator('[data-tutorial-action="next"]').click();
+  const categoryFilter = page.locator('#sidebar [data-kind="category"][data-id]').first();
+  await categoryFilter.click();
+  await expect(page.locator('[data-tutorial-action="next"]')).toBeEnabled();
+  await expect(page.locator('[data-tutorial-checkpoint="hide-filter"]')).toHaveClass(/is-complete/);
+});
+
+test("Foundations points desirability at the Outcome field", async ({ page }) => {
+  await openCleanBuiltApp(page);
+  await openConsolidatedLessonAtStep(page, "move-around-map", 6);
+
+  const outcomeField = page.locator('#detail-panel [data-detail-quantity="outcome"]');
+  await expect(page.getByRole("heading", { name: "Distinguish link direction from desirability" }))
+    .toBeVisible();
+  await expect(outcomeField).toBeVisible();
+  await expect(outcomeField).toHaveClass(/tutorial-target/);
+  await expect(outcomeField).toContainText("Outcome");
+  await expect(outcomeField).toContainText("higher is better");
+});
+
+test("Shift-click adds a box to the tutorial multi-selection", async ({ page }) => {
+  await openCleanBuiltApp(page);
+  await openConsolidatedLessonAtStep(page, "edit-map", 25);
+
+  await expect(page.locator(".node-group.selected")).toHaveCount(3);
+  await expect(page.locator("#multi-select-bar .selection-only-dropdown")).toHaveCount(3);
+  await expect(page.locator("#multi-select-bar .typeable-dropdown-input")).toHaveCount(0);
+  const moveToRowDropdown = page.getByRole("combobox", { name: "Move to row" });
+  await moveToRowDropdown.click();
+  await expect(page.locator("body > .typeable-dropdown-popup:not([hidden])")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expectVisibleControlsNotToOverlap(page, [".tutorial-card", "#multi-select-bar"]);
+  const additionalBox = page.locator('.node-group[data-node-id="materials_budget"]');
+  await additionalBox.click({ modifiers: ["Shift"] });
+
+  await expect(page.locator(".node-group.selected")).toHaveCount(4);
+  await expect(additionalBox).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator('[data-tutorial-action="next"]')).toBeEnabled();
+  await page.locator('[data-tutorial-action="next"]').click();
+  await expect(page.getByRole("heading", { name: "Change the group in one undo step" })).toBeVisible();
+  await expectVisibleControlsNotToOverlap(page, [".tutorial-card", "#multi-select-bar"]);
+});
+
+test("custom multi-select dropdowns fit a narrow screen", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openCleanBuiltApp(page);
+  await openConsolidatedLessonAtStep(page, "edit-map", 25);
+
+  const selectionBarBounds = await page.locator("#multi-select-bar").boundingBox();
+  expect(selectionBarBounds).not.toBeNull();
+  expect(selectionBarBounds!.x).toBeGreaterThanOrEqual(8);
+  expect(selectionBarBounds!.x + selectionBarBounds!.width).toBeLessThanOrEqual(382);
+  await expectVisibleControlsNotToOverlap(page, [".tutorial-card", "#multi-select-bar"]);
+
+  await page.getByRole("combobox", { name: "Move to row" }).click();
+  const popupBounds = await page.locator(
+    "body > .typeable-dropdown-popup:not([hidden])",
+  ).boundingBox();
+  expect(popupBounds).not.toBeNull();
+  expect(popupBounds!.x).toBeGreaterThanOrEqual(0);
+  expect(popupBounds!.x + popupBounds!.width).toBeLessThanOrEqual(390);
+  const dropdownLayerOrder = await page.evaluate(() => ({
+    dropdown: Number(getComputedStyle(document.querySelector(
+      "body > .typeable-dropdown-popup:not([hidden])",
+    )!).zIndex),
+    tutorial: Number(getComputedStyle(document.querySelector("#tutorial-layer")!).zIndex),
+  }));
+  expect(dropdownLayerOrder.dropdown).toBeGreaterThan(dropdownLayerOrder.tutorial);
+
+  await page.keyboard.press("Escape");
+  await page.locator("#export-button").click();
+  await expect(page.locator("#export-menu")).toBeVisible();
+  const headerMenuLayerOrder = await page.evaluate(() => ({
+    header: Number(getComputedStyle(document.querySelector(".app-header")!).zIndex),
+    menu: Number(getComputedStyle(document.querySelector("#export-menu")!).zIndex),
+    tutorial: Number(getComputedStyle(document.querySelector("#tutorial-layer")!).zIndex),
+  }));
+  expect(headerMenuLayerOrder.header).toBeGreaterThan(headerMenuLayerOrder.tutorial);
+  expect(headerMenuLayerOrder.menu).toBe(headerMenuLayerOrder.header);
+});
+
+test("Command-Z and Control-Z undo while a box field retains focus", async ({ page }) => {
+  await openCleanBuiltApp(page);
+  await page.getByRole("button", { name: "Learn", exact: true }).click();
+  await page.locator(
+    '[data-lesson-card="edit-map"] [data-tutorial-action="lesson"]',
+  ).click();
+
+  const boxNameInput = page.getByRole("textbox", { name: "Box name" });
+  await expect(boxNameInput).toHaveValue("Workshop readiness");
+  await boxNameInput.fill("Temporary Command label");
+  await boxNameInput.press("Meta+z");
+  await expect(boxNameInput).toHaveValue("Workshop readiness");
+
+  await boxNameInput.fill("Temporary Control label");
+  await boxNameInput.press("Control+z");
+  await expect(boxNameInput).toHaveValue("Workshop readiness");
+});
+
+test("Review uses the shared dropdown without clicking through its panel", async ({ page }) => {
+  await openCleanBuiltApp(page);
+  await page.getByRole("button", { name: "Learn", exact: true }).click();
+  await page.locator(
+    '[data-lesson-card="review-evidence"] [data-tutorial-action="lesson"]',
+  ).click();
+
+  await page.locator('[data-tutorial-action="next"]').click();
+  await expect(page.getByRole("heading", { name: "Compare formula and link evidence" }))
+    .toBeVisible();
+
+  const evidenceStatusDropdown = page.getByRole("combobox", {
+    name: "Show evidence status",
+  });
+  await expect(evidenceStatusDropdown.locator("xpath=..")).toHaveClass(/selection-only-dropdown/);
+  await expect(evidenceStatusDropdown).toHaveClass(/tutorial-target/);
+  await expect(evidenceStatusDropdown).toBeVisible();
+  await evidenceStatusDropdown.click();
+  await page.locator(
+    'body > .typeable-dropdown-popup:not([hidden]) .typeable-dropdown-item[data-item-index="3"]',
+  ).click();
+
+  await expect(page.locator("#review-stage")).toBeVisible();
+  await expect(evidenceStatusDropdown).toHaveText("Supported");
+  await expect(page.locator("#review-stage select:not(.typeable-dropdown-native)")).toHaveCount(0);
+});
+
+test("Review folding keeps the reader in place and Evidence provenance can collapse", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 480 });
+  await openCleanBuiltApp(page);
+  await importCsv(page, FORMULA_INVALID_CSV, "review-folding.csv");
+  await page.locator("#review-button").click();
+
+  const leftReviewColumn = page.locator("#review-stage .review-column").first();
+  const lastIssueToggle = page.locator("[data-review-issue]").last();
+  await lastIssueToggle.scrollIntoViewIfNeeded();
+  const scrollTopBeforeExpansion = await leftReviewColumn.evaluate(
+    reviewColumn => reviewColumn.scrollTop,
+  );
+  expect(scrollTopBeforeExpansion).toBeGreaterThan(0);
+
+  await lastIssueToggle.click();
+  await expect(lastIssueToggle).toHaveAttribute("aria-expanded", "true");
+  await expect.poll(() => leftReviewColumn.evaluate(reviewColumn => reviewColumn.scrollTop))
+    .toBe(scrollTopBeforeExpansion);
+
+  const evidenceToggle = page.locator("#review-evidence-toggle");
+  await evidenceToggle.scrollIntoViewIfNeeded();
+  await evidenceToggle.click();
+  await expect(evidenceToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator("#review-evidence-content")).toHaveCount(0);
+  await expect(evidenceToggle).toBeInViewport();
+
+  await evidenceToggle.click();
+  await expect(evidenceToggle).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator("#review-evidence-content")).toBeVisible();
+});
+
+test("Share lesson keeps each export target open and connected", async ({ page }) => {
+  await openCleanBuiltApp(page);
+  await page.getByRole("button", { name: "Learn", exact: true }).click();
+  await page.locator(
+    '[data-lesson-card="image-view-only"] [data-tutorial-action="lesson"]',
+  ).click();
+
+  const expectedExportTargets = [
+    ".save-data-trigger",
+    ".export-image-trigger",
+    ".publish-html-trigger",
+    ".export-review-log-trigger",
+  ];
+  for (let stepIndex = 0; stepIndex < expectedExportTargets.length; stepIndex++) {
+    const exportTarget = page.locator(expectedExportTargets[stepIndex]);
+    await expect(page.locator("#export-menu")).toBeVisible();
+    await expect(exportTarget).toBeVisible();
+    await expect(exportTarget).toHaveClass(/tutorial-target/);
+    if (stepIndex < expectedExportTargets.length - 1) {
+      await page.locator('[data-tutorial-action="next"]').click();
+    }
+  }
+});
+
+test("Learn Skip step bypasses one gate and leaves it unfinished", async ({ page }) => {
+  await openCleanBuiltApp(page);
+  await page.locator("#learn-button").click();
+  await page.locator(
+    '[data-tutorial-action="lesson"][data-lesson-id="move-around-map"]',
+  ).click();
+
+  const firstStepTitle = await page.locator(".tutorial-card h2").textContent();
+  await expect(page.locator('[data-tutorial-action="next"]')).toBeDisabled();
+  await expect(page.locator('[data-tutorial-action="skip-step"]')).toBeEnabled();
+  await page.locator('[data-tutorial-action="skip-step"]').click();
+  await expect(page.locator(".tutorial-step-number")).toContainText("Step 2 of 16");
+  await expect(page.locator(".tutorial-card h2")).not.toHaveText(firstStepTitle || "");
+
+  await page.locator('[data-tutorial-action="back"]').click();
+  await expect(page.locator(".tutorial-card h2")).toHaveText(firstStepTitle || "");
+  await expect(page.locator('[data-tutorial-action="next"]')).toBeDisabled();
+  await expect(page.locator(".tutorial-task-checkpoint.is-complete")).toHaveCount(0);
+});
+
+test("Sensitivity interpretation points at the opened result rows", async ({ page }) => {
+  await openCleanBuiltApp(page);
+  await openConsolidatedLessonAtStep(page, "review-evidence", 5);
+
+  await page.locator("#review-fold-toggle").click();
+  await expect(page.locator('[data-tutorial-action="next"]')).toBeEnabled();
+  await page.locator('[data-tutorial-action="next"]').click();
+
+  await expect(page.getByRole("heading", { name: "Use sensitivity as a diagnostic, not proof" }))
+    .toBeVisible();
+  await expect(page.locator(".review-rows.tutorial-target")).toBeVisible();
+  await expect(page.locator("#review-fold-toggle")).toHaveAttribute("aria-expanded", "true");
+});
+
+test("Atlas lesson teaches the user to open Atlas before showing pathways", async ({ page }) => {
+  await openCleanBuiltApp(page);
+  await openConsolidatedLessonAtStep(page, "simulate-change", 6);
+
+  const nextButton = page.locator('[data-tutorial-action="next"]');
+  const openAtlasButton = page.locator('[data-action="open-atlas"]');
+  const volunteerTimeSlider = page.locator(
+    '.sim-slider-row[data-node-id="volunteer_hours"] .sim-value-input',
+  );
+  await expect(page.getByRole("heading", { name: "Open Atlas while simulating" })).toBeVisible();
+  await expect(page.locator("body")).not.toHaveClass(/atlas-open/);
+  await expect(volunteerTimeSlider).toHaveClass(/tutorial-target/);
+  await expect(nextButton).toBeDisabled();
+  await volunteerTimeSlider.fill("120");
+  await volunteerTimeSlider.press("Tab");
+  await expect(page.locator('[data-tutorial-checkpoint="change-input-before-atlas"]'))
+    .toHaveClass(/is-complete/);
+  await expect(openAtlasButton).toHaveClass(/tutorial-target/);
+  await openAtlasButton.click();
+  await expect(page.locator('[data-tutorial-checkpoint="open-atlas-while-simulating"]'))
+    .toHaveClass(/is-complete/);
+  await expect(page.locator("body")).toHaveClass(/atlas-open/);
+  await expect(nextButton).toBeEnabled();
+
+  await nextButton.click();
+  await expect(page.getByRole("heading", { name: "Open Atlas from a starting box" })).toBeVisible();
+  await expect(page.locator("body")).not.toHaveClass(/atlas-open/);
+  await expect(page.locator('.node-group[data-node-id="community_confidence"]')).toHaveClass(/selected/);
+  await expect(openAtlasButton).toBeVisible();
+  await expect(nextButton).toBeDisabled();
+
+  await openAtlasButton.click();
+
+  await expect(page.locator("body")).toHaveClass(/atlas-open/);
+  await expect(page.locator('[data-tutorial-checkpoint="open-atlas"]')).toHaveClass(/is-complete/);
+  await expect(nextButton).toBeEnabled();
+
+  await nextButton.click();
+  await expect(page.getByRole("heading", { name: "Explore the Atlas picture" })).toBeVisible();
+  await expect(nextButton).toBeDisabled();
+  await page.locator(".atlas g.n[data-el]:not([data-loop]) > circle.bub").first().click();
+  await expect(page.locator('[data-tutorial-checkpoint="select-atlas-element"]'))
+    .toHaveClass(/is-complete/);
+  await expect(nextButton).toBeEnabled();
+
+  await nextButton.click();
+  await expect(page.getByRole("heading", { name: "Read a grouped circle carefully" })).toBeVisible();
+  await expect(page.locator(".atlas-group-legend")).toHaveClass(/tutorial-target/);
+  await expect(nextButton).toBeEnabled();
+
+  await nextButton.click();
+  await expect(page.getByRole("heading", { name: "Frame the Atlas view" })).toBeVisible();
+  await expect(nextButton).toBeDisabled();
+  await page.locator("#atlas-zoom-readout").click();
+  await expect(page.locator('[data-tutorial-checkpoint="fit-atlas-picture"]'))
+    .toHaveClass(/is-complete/);
+  await expect(nextButton).toBeEnabled();
+
+  await nextButton.click();
+  await expect(page.getByRole("heading", { name: "Change the starting question" })).toBeVisible();
+  await expect(page.locator("#atlas-button")).toHaveClass(/tutorial-target/);
+  await expect(nextButton).toBeDisabled();
+  await page.locator("#atlas-button").click();
+  await expect(page.locator('[data-tutorial-checkpoint="open-atlas-start-menu"]'))
+    .toHaveClass(/is-complete/);
+  await expect(page.locator("[data-atlas-start]").first()).toHaveClass(/tutorial-target/);
+  await page.locator("[data-atlas-start]").first().click();
+  await expect(page.locator('[data-tutorial-checkpoint="change-atlas-start"]'))
+    .toHaveClass(/is-complete/);
+  await expect(nextButton).toBeEnabled();
+
+  await nextButton.click();
+  await expect(page.getByRole("heading", { name: "Isolate one pathway in the sidebar" }))
+    .toBeVisible();
+  await expect(nextButton).toBeDisabled();
+  await expect(page.locator("#detail-content [data-fork]").first()).toHaveClass(/tutorial-target/);
+  await page.getByRole("button", { name: "Registration share", exact: true }).click();
+  await expect(page.locator('[data-tutorial-checkpoint="isolate-atlas-pathway"]'))
+    .toHaveClass(/is-complete/);
+  await expect(nextButton).toBeEnabled();
+
+  await nextButton.click();
+  await expect(page.getByRole("heading", { name: "Open a feedback loop" })).toBeVisible();
+  await expect(page.locator(".atlas g.n[data-loop]").first()).toHaveClass(/tutorial-target/);
+  await expect(nextButton).toBeDisabled();
+  await page.locator(".atlas g.n[data-loop]").first().click();
+  await expect(page.locator('[data-tutorial-checkpoint="select-feedback-group"]'))
+    .toHaveClass(/is-complete/);
+  await expect(page.locator("[data-open-feedback]")).toHaveClass(/tutorial-target/);
+  await page.locator("[data-open-feedback]").click();
+  await expect(page.locator('[data-tutorial-checkpoint="open-feedback-loops"]'))
+    .toHaveClass(/is-complete/);
+  await expect(nextButton).toBeEnabled();
+
+  await nextButton.click();
+  await expect(page.getByRole("heading", { name: "Play and scrub a feedback route" }))
+    .toBeVisible();
+  const positionScrubber = page.getByRole("slider", {
+    name: "Feedback loop animation position",
+  });
+  const playbackSpeedDropdown = page.getByRole("combobox", {
+    name: "Feedback loop animation speed",
+  });
+  await expect(positionScrubber).toBeVisible();
+  await expect(page.locator("#atlas-loopctl")).toHaveClass(/tutorial-target/);
+  await expect(playbackSpeedDropdown.locator("xpath=..")).toHaveClass(/selection-only-dropdown/);
+  await expect(positionScrubber).toHaveAttribute("max", "1000");
+  const playbackCheckpoint = page.locator(
+    '[data-tutorial-checkpoint="control-feedback-route"]',
+  );
+  await expect(playbackCheckpoint).not.toHaveClass(/is-complete/);
+  await expect(nextButton).toBeDisabled();
+  await playbackSpeedDropdown.click();
+  await page.locator(
+    'body > .typeable-dropdown-popup:not([hidden]) .typeable-dropdown-item[data-item-index="2"]',
+  ).click();
+  await expect(playbackSpeedDropdown).toHaveText("2×");
+  const scrubberBounds = await positionScrubber.boundingBox();
+  expect(scrubberBounds).not.toBeNull();
+  const scrubberVerticalCentre = scrubberBounds!.y + scrubberBounds!.height / 2;
+  await page.mouse.click(scrubberBounds!.x + 3, scrubberVerticalCentre);
+  await page.mouse.move(scrubberBounds!.x + 3, scrubberVerticalCentre);
+  await page.mouse.down();
+  await page.mouse.move(
+    scrubberBounds!.x + scrubberBounds!.width * 0.7,
+    scrubberVerticalCentre,
+    { steps: 8 },
+  );
+  await page.mouse.up();
+  await expect.poll(async () => Number(await positionScrubber.inputValue()))
+    .toBeGreaterThan(600);
+  await expect.poll(async () => Number(await positionScrubber.inputValue()))
+    .toBeLessThan(800);
+  await expect(page.getByRole("button", { name: "Play feedback loop animation" }))
+    .toBeVisible();
+  await expect(playbackCheckpoint).toHaveClass(/is-complete/);
+  await expect(nextButton).toBeEnabled();
+
+  const animationPreviousButton = page.getByRole("button", { name: "Previous", exact: true });
+  const animationNextButton = page.getByRole("button", { name: "Next", exact: true });
+  for (
+    let stepIndex = 0;
+    stepIndex < 20 && !(await animationPreviousButton.isDisabled());
+    stepIndex++
+  ) {
+    await animationPreviousButton.click();
+  }
+  await expect(positionScrubber).toHaveValue("0");
+  await expect(animationPreviousButton).toBeDisabled();
+  await expect(animationNextButton).toBeEnabled();
+
+  await animationNextButton.click();
+  const firstBoxStepPosition = Number(await positionScrubber.inputValue());
+  expect(firstBoxStepPosition).toBeGreaterThan(0);
+  expect(firstBoxStepPosition).toBeLessThan(1000);
+  await expect(page.locator("#atlas-loop-animation-status")).toContainText("Box 2 of");
+  await expect(animationPreviousButton).toBeEnabled();
+  await expect(animationNextButton).toBeEnabled();
+
+  await animationNextButton.click();
+  expect(Number(await positionScrubber.inputValue())).toBeGreaterThan(firstBoxStepPosition);
+  await expect(page.locator("#atlas-loop-animation-status")).toContainText("Box 3 of");
+  await animationPreviousButton.click();
+  await expect(positionScrubber).toHaveValue(String(firstBoxStepPosition));
+  await expect(page.locator("#atlas-loop-animation-status")).toContainText("Box 2 of");
+
+  const toggleButton = page.locator("[data-loop-animation-toggle]");
+  const scrubberPositionBeforeEndDrag = await positionScrubber.boundingBox();
+  expect(scrubberPositionBeforeEndDrag).not.toBeNull();
+  const scrubberCentreY = scrubberPositionBeforeEndDrag!.y +
+    scrubberPositionBeforeEndDrag!.height / 2;
+  await page.mouse.move(
+    scrubberPositionBeforeEndDrag!.x + scrubberPositionBeforeEndDrag!.width * 0.97,
+    scrubberCentreY,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    scrubberPositionBeforeEndDrag!.x + scrubberPositionBeforeEndDrag!.width - 1,
+    scrubberCentreY,
+    { steps: 4 },
+  );
+  await expect(toggleButton).toHaveText("Play");
+  await page.mouse.move(
+    scrubberPositionBeforeEndDrag!.x + scrubberPositionBeforeEndDrag!.width * 0.97,
+    scrubberCentreY,
+    { steps: 4 },
+  );
+  await page.mouse.move(
+    scrubberPositionBeforeEndDrag!.x + scrubberPositionBeforeEndDrag!.width - 1,
+    scrubberCentreY,
+    { steps: 4 },
+  );
+  await expect(toggleButton).toHaveText("Play");
+  const scrubberPositionDuringEndDrag = await positionScrubber.boundingBox();
+  expect(scrubberPositionDuringEndDrag!.x).toBeCloseTo(scrubberPositionBeforeEndDrag!.x, 0);
+  await page.mouse.up();
+  await expect(positionScrubber).toHaveValue("1000");
+  await expect(toggleButton).toHaveText("Replay");
+});
+
+test("Atlas overview labels remain readable around a selected pathway", async ({ page }) => {
+  await openCleanBuiltApp(page);
+  await openConsolidatedLessonAtStep(page, "simulate-change", 7);
+  const nextButton = page.locator('[data-tutorial-action="next"]');
+  await page.locator('[data-action="open-atlas"]').click();
+  await expect(nextButton).toBeEnabled();
+  await nextButton.click();
+  await expect(page.getByRole("heading", { name: "Explore the Atlas picture" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Improvement backlog ×4", exact: true }).click();
+  await expect(page.locator(".atlas g.n.on > .atlas-overview-label")).toHaveCount(10);
+  await expect.poll(() => page.evaluate(() => {
+    const atlas = document.querySelector<SVGSVGElement>("svg.atlas");
+    return atlas?.dataset.overviewLabelLayoutViewBox === atlas?.getAttribute("viewBox");
+  })).toBe(true);
+  const overviewLabelLayout = await page.evaluate(() => {
+    const atlasBounds = document.querySelector("svg.atlas")!.getBoundingClientRect();
+    const labels = [...document.querySelectorAll<SVGTextElement>(
+      ".atlas g.n.on > .atlas-overview-label",
+    )].map(label => {
+      const bounds = label.getBoundingClientRect();
+      return {
+        name: label.getAttribute("aria-label") || "unnamed Atlas label",
+        left: bounds.left,
+        right: bounds.right,
+        top: bounds.top,
+        bottom: bounds.bottom,
+        side: label.dataset.layoutSide,
+      };
+    });
+    return {
+      atlas: {
+        left: atlasBounds.left,
+        right: atlasBounds.right,
+        top: atlasBounds.top,
+        bottom: atlasBounds.bottom,
+      },
+      labels,
+    };
+  });
+  for (const label of overviewLabelLayout.labels) {
+    expect(label.left, `${label.name} left edge`).toBeGreaterThanOrEqual(
+      overviewLabelLayout.atlas.left - 1,
+    );
+    expect(label.right, `${label.name} right edge`).toBeLessThanOrEqual(
+      overviewLabelLayout.atlas.right + 1,
+    );
+    expect(label.top, `${label.name} top edge`).toBeGreaterThanOrEqual(
+      overviewLabelLayout.atlas.top - 1,
+    );
+    expect(label.bottom, `${label.name} bottom edge`).toBeLessThanOrEqual(
+      overviewLabelLayout.atlas.bottom + 1,
+    );
+  }
+  for (let firstIndex = 0; firstIndex < overviewLabelLayout.labels.length; firstIndex++) {
+    for (let secondIndex = firstIndex + 1; secondIndex < overviewLabelLayout.labels.length; secondIndex++) {
+      const firstLabel = overviewLabelLayout.labels[firstIndex];
+      const secondLabel = overviewLabelLayout.labels[secondIndex];
+      const overlaps = !(
+        firstLabel.right <= secondLabel.left ||
+        secondLabel.right <= firstLabel.left ||
+        firstLabel.bottom <= secondLabel.top ||
+        secondLabel.bottom <= firstLabel.top
+      );
+      expect(overlaps, `${firstLabel.name} overlaps ${secondLabel.name}`).toBe(false);
+    }
+  }
+  expect(new Set(
+    overviewLabelLayout.labels.map(label => Math.round(label.top)),
+  ).size).toBeGreaterThan(2);
+  expect(new Set(overviewLabelLayout.labels.map(label => label.side)))
+    .toEqual(new Set(["above", "below"]));
+  expect(overviewLabelLayout.labels.map(label => label.name)).toContain("Improvement backlog");
+});
+
+test("simulation lesson accepts dragging a numerical input", async ({ page }) => {
+  await openCleanBuiltApp(page);
+  await page.locator("#learn-button").click();
+  await page.locator(
+    '[data-lesson-card="simulate-change"] .learn-lesson-actions button',
+  ).click();
+
+  const percentageInput = page.locator(
+    '.sim-slider-row[data-node-id="volunteer_hours"] .sim-pct-input',
+  );
+  await percentageInput.dispatchEvent("pointerdown", {
+    bubbles: true,
+    clientX: 100,
+    pointerId: 1,
+  });
+  await percentageInput.dispatchEvent("pointermove", {
+    bubbles: true,
+    clientX: 125,
+    pointerId: 1,
+  });
+  await percentageInput.dispatchEvent("pointerup", {
+    bubbles: true,
+    clientX: 125,
+    pointerId: 1,
+  });
+
+  await expect(percentageInput).not.toHaveValue("100");
+  await expect(page.locator('[data-tutorial-checkpoint="change-volunteer-time"]')).toHaveClass(/is-complete/);
+  await expect(page.locator('[data-tutorial-action="next"]')).toBeEnabled();
+
+  await page.locator('[data-tutorial-action="next"]').click();
+  const outreachEffortVariable = page.locator(
+    '.calc-formula .fx-box[data-formula-node-id="outreach_effort"]',
+  );
+  const outreachEffortDrivenByRow = page.locator(
+    '.drow[data-edge-direction="from"][data-target-node="outreach_effort"]',
+  );
+  await expect(page.locator('[data-tutorial-action="next"]')).toBeDisabled();
+  await expect(outreachEffortVariable).toHaveAttribute("data-tooltip", /current value: 80 hours\/month/);
+  await outreachEffortVariable.hover();
+  await expect(outreachEffortDrivenByRow).toHaveClass(/is-formula-variable-highlight/);
+  await expect(page.locator('[data-tutorial-checkpoint="hover-formula-box"]')).toHaveClass(/is-complete/);
+  await page.locator(".calc-rule").hover();
+  await expect(outreachEffortDrivenByRow).not.toHaveClass(/is-formula-variable-highlight/);
+
+  const globalVariable = page.locator(
+    '.calc-formula [data-formula-param-id="people_reached_per_hour"]',
+  );
+  await expect(globalVariable).toHaveAttribute("data-formula-kind", "global-variable");
+  await expect(globalVariable).toHaveAttribute("data-tooltip", /Global variable — value: 5/);
+  await expect(globalVariable).toHaveCSS("cursor", "help");
+  expect(await globalVariable.evaluate(element =>
+    getComputedStyle(element, "::after").content,
+  )).toBe('"global"');
+  await globalVariable.hover();
+  await expect(page.locator('[data-tutorial-checkpoint="hover-formula-global"]')).toHaveClass(/is-complete/);
+  await expect(page.locator('[data-tutorial-action="next"]')).toBeEnabled();
+  await expect(page.locator(".calc-breakdown .calc-input")).toHaveCount(0);
+  const formulaCurrentResult = await page.locator(".calc-result-value").textContent();
+  const formulaEquationResult = await page.locator(
+    '.calc-equation--formula .calc-equation-output',
+  ).textContent();
+  expect(formulaCurrentResult).toContain("people/month");
+  expect(formulaCurrentResult).toContain(formulaEquationResult!.replace(/^=\s*/, ""));
+  await expect(page.locator(".calc-equation-summary")).toHaveText(
+    "The formula sets the result directly.",
+  );
+
+  const deliveryCapacityBox = page.locator('.node-group[data-node-id="delivery_capacity"]');
+  await deliveryCapacityBox.focus();
+  await page.keyboard.press("Enter");
+  const minimumCalculation = page.locator('.calc-breakdown[data-calc-rule="min"]');
+  await expect(minimumCalculation).toBeVisible();
+  await expect(minimumCalculation.locator(".calc-equation-term")).toHaveText(
+    "8.00 × min(",
+  );
+  await expect(minimumCalculation.locator(".calc-equation-output")).toHaveText(
+    "= 8.00",
+  );
+  await expect(minimumCalculation.locator(".calc-input--winner")).toHaveCount(2);
+  await expect(minimumCalculation.locator(".calc-input-detail")).toHaveText([
+    "1.00",
+    "1.00",
+  ]);
+  const facilitatorCapacityInput = minimumCalculation.locator(
+    '.calc-input[data-calculation-node-id="facilitator_slots"]',
+  );
+  const facilitatorCapacityDrivenByRow = page.locator(
+    '.drow[data-edge-direction="from"][data-target-node="facilitator_slots"]',
+  );
+  await expect(facilitatorCapacityInput).toHaveCSS("box-shadow", "none");
+  await expect(facilitatorCapacityInput).toHaveAttribute(
+    "data-tooltip",
+    /Facilitator capacity — current value: 10 sessions\/month · proportional factor: 1.00×/,
+  );
+  await facilitatorCapacityInput.hover();
+  await expect(facilitatorCapacityDrivenByRow).toHaveClass(/is-formula-variable-highlight/);
+  await minimumCalculation.locator(".calc-equation-start").hover();
+  await expect(facilitatorCapacityDrivenByRow).not.toHaveClass(/is-formula-variable-highlight/);
+  await expect(minimumCalculation.locator(".calc-equation-summary")).toHaveText(
+    "Facilitator capacity and Venue availability are tied at 1.00×. " +
+      "The first one to fall becomes the gate.",
+  );
+
+  await page.locator('.sim-slider-name[data-node-id="follow_up_readiness"]').click();
+  await expect(page.locator('.calc-breakdown[data-calc-rule="pinned"]')).toBeVisible();
+  await expect(page.locator(".calc-result-value")).toHaveText("0.900 share");
+});
+
+test("worked-equation styling covers every calculation rule", async ({ page }) => {
+  await openCleanBuiltApp(page);
+  await importCsv(page, COMBINE_CSV, "calculation-rules.csv");
+  await page.locator("#sim-toggle-button").click();
+
+  const ruleExamples = [
+    { nodeIdentifier: "lone", rule: "baseline", interpretation: "Starting value sets the result." },
+    { nodeIdentifier: "a", rule: "pinned", interpretation: "Your slider sets the result." },
+    { nodeIdentifier: "mult", rule: "multiplicative", interpretation: "Every input factor shapes the result." },
+    { nodeIdentifier: "add", rule: "additive", interpretation: "The input changes combine without compounding." },
+    { nodeIdentifier: "gate", rule: "min", interpretation: "Input A and Input B are tied at 1.00×." },
+  ];
+
+  for (const ruleExample of ruleExamples) {
+    const mapBox = page.locator(`.node-group[data-node-id="${ruleExample.nodeIdentifier}"]`);
+    await mapBox.focus();
+    await page.keyboard.press("Enter");
+    const calculationBreakdown = page.locator(
+      `.calc-breakdown[data-calc-rule="${ruleExample.rule}"]`,
+    );
+    await expect(calculationBreakdown.locator(".calc-equation")).toBeVisible();
+    await expect(calculationBreakdown.locator(".calc-equation-output")).toBeVisible();
+    await expect(calculationBreakdown.locator(".calc-equation-summary")).toContainText(
+      ruleExample.interpretation,
+    );
+  }
+
+  await importCsv(page, FORMULA_CSV, "formula-calculation.csv");
+  const formulaBox = page.locator('.node-group[data-node-id="seizures"]');
+  await expect(formulaBox).toBeVisible();
+  const simulationIsActive = await page.locator("body").evaluate(
+    bodyElement => bodyElement.classList.contains("sim-mode"),
+  );
+  if (!simulationIsActive) await page.locator("#sim-toggle-button").click();
+  await formulaBox.focus();
+  await page.keyboard.press("Enter");
+  const formulaCalculation = page.locator('.calc-breakdown[data-calc-rule="formula"]');
+  await expect(formulaCalculation.locator(".calc-equation")).toBeVisible();
+  await expect(formulaCalculation.locator(".calc-formula")).toContainText(
+    "traffic * exam_coverage * detection_rate",
+  );
+  await expect(formulaCalculation.locator(".calc-equation-output")).toHaveText("= 120");
+  await expect(formulaCalculation.locator(".calc-equation-summary")).toHaveText(
+    "The formula sets the result directly.",
+  );
 });
 
 test("390 by 844 keeps the page pinned and fits the global header", async ({ page }) => {
@@ -319,6 +1119,28 @@ test("390 by 844 keeps the page pinned and fits the global header", async ({ pag
     "#map-scope-bar",
     ".viz-controls-cluster",
   ]);
+
+  await page.evaluate(() => {
+    localStorage.setItem("systems-map.learn.progress.v1", JSON.stringify({
+      curriculumVersion: 4,
+      completedLessonIds: ["move-around-map"],
+      lastLessonId: "move-around-map",
+      lastStepIndex: 0,
+      completedCheckpointIdentifiersByLesson: {},
+    }));
+  });
+  await page.locator("#learn-button").click();
+  const mobileCompletedLessonActions = page.locator('[data-lesson-card="move-around-map"] .learn-lesson-actions');
+  await expect(mobileCompletedLessonActions.locator("button")).toHaveCount(1);
+  await expect(mobileCompletedLessonActions.locator('[data-tutorial-action="restart-lesson"]')).toHaveText("Restart lesson");
+  await expect(mobileCompletedLessonActions.locator('[data-tutorial-action="lesson"]')).toHaveCount(0);
+  await expect(page.locator('[data-tutorial-action="reset-all-progress"]')).toBeInViewport();
+  await page.locator(
+    '[data-tutorial-action="lesson"][data-lesson-id="edit-map"]',
+  ).click();
+  await expect(page.locator("#detail-panel")).toBeVisible();
+  const tutorialMapWidth = await page.locator("#viz-scroll").evaluate(element => element.clientWidth);
+  expect(tutorialMapWidth).toBeGreaterThanOrEqual(300);
 });
 
 test("the floating Review handoff sits borderless at the top of the map", async ({ page }) => {
@@ -683,8 +1505,7 @@ test("floating controls clear content and scrolling never shows browser chrome",
     const library = document.querySelector<HTMLElement>(".learn-library")!;
     const scrollSurfaces = [
       document.querySelector<HTMLElement>(".learn-library-body"),
-      document.querySelector<HTMLElement>(".learn-curriculum-rail"),
-      document.querySelector<HTMLElement>(".learn-library-groups"),
+      document.querySelector<HTMLElement>(".learn-journey-list"),
     ].filter((element): element is HTMLElement => !!element);
     return {
       borderTopWidth: getComputedStyle(library).borderTopWidth,

@@ -18,7 +18,14 @@
 // =============================================================================
 
 import { EDGES, NODES, nodeById, outgoingEdges, state } from "./03-state";
-import { escapeHtml, formatScalar, measureLabelLines } from "./04-utils";
+import {
+  escapeHtml,
+  formatScalar,
+  hideAnchoredMenu,
+  measureLabelLines,
+  showAnchoredMenu,
+} from "./04-utils";
+import { upgradeSelectionOnlySelectsIn } from "./04b-typeable-dropdown";
 import {
   EFFECT_FLOOR_PCT,
   formatNodeDelta,
@@ -239,6 +246,7 @@ interface LoopAnimationPlayback {
 let loopAnimationPlayback: LoopAnimationPlayback | null = null;
 let loopAnimationFrameRequest = 0;
 let loopAnimationSpeed = 1;
+let loopAnimationScrubberIsActive = false;
 const CARD_MAX = 12;                  // loop diagrams listed in the panel
 
 // ───── One strand at a time ───────────────────────────────────────────────
@@ -473,7 +481,14 @@ export function openAtlas(startId: string): void {
 }
 
 export function closeAtlas(): void {
-  if (!state.atlas) return;
+  // `state.atlas` can already be null while this module is still holding the
+  // last reading: bootEmptyStateGrid() clears the flag directly when a new map
+  // replaces the old one. Returning early on the flag alone would strand START,
+  // the graph and the picked circle here, and the next open would resurface a
+  // selection belonging to a map that no longer exists. START is set only on
+  // open and cleared only here, so it is the honest test for "anything to
+  // clean up".
+  if (!state.atlas && !START) return;
   cancelDeferredAtlasRendering();
   stopTour();
   stopLoopAnimation();
@@ -669,6 +684,10 @@ export function setAtlasMenuOpen(open: boolean): void {
   if (show && typeof hideTooltip === "function") hideTooltip();
   if (show) menu.innerHTML = atlasMenuHtml();
   menu.hidden = !show;
+  // The Atlas bar lives inside #viz-container, which clips its overflow, so
+  // this list has to leave the panel entirely to be seen in full.
+  if (show) showAnchoredMenu(menu, button);
+  else hideAnchoredMenu(menu);
   button.classList.toggle("active", show || atlasIsOpen());
   button.setAttribute("aria-expanded", show ? "true" : "false");
 }
@@ -780,6 +799,7 @@ interface AtlasRenderFrameScheduler {
 let atlasRenderFrameSchedulerForTests: AtlasRenderFrameScheduler | null = null;
 let atlasRenderGeneration = 0;
 let atlasRenderFrameRequestIdentifier: number | null = null;
+let atlasOverviewLabelLayoutFrameRequestIdentifier: number | null = null;
 let atlasRevealTimer: ReturnType<typeof setTimeout> | null = null;
 let atlasViewBoxToRestoreAfterProgressiveRender: AtlasFrame | null = null;
 let atlasRenderFailed = false;
@@ -804,6 +824,10 @@ function cancelDeferredAtlasRendering(): void {
     }
     atlasRenderFrameRequestIdentifier = null;
   }
+  if (atlasOverviewLabelLayoutFrameRequestIdentifier !== null) {
+    cancelAnimationFrame(atlasOverviewLabelLayoutFrameRequestIdentifier);
+    atlasOverviewLabelLayoutFrameRequestIdentifier = null;
+  }
   if (atlasRevealTimer !== null) {
     clearTimeout(atlasRevealTimer);
     atlasRevealTimer = null;
@@ -821,6 +845,38 @@ function scheduleAtlasRenderFrame(callback: () => void): void {
   atlasRenderFrameRequestIdentifier = import.meta.env.MODE === "test" && atlasRenderFrameSchedulerForTests
     ? atlasRenderFrameSchedulerForTests.requestFrame(scheduledCallback)
     : requestAnimationFrame(scheduledCallback);
+}
+
+function scheduleAtlasOverviewLabelLayout(
+  generation: number,
+  atlas: AtlasData,
+  stage: HTMLElement,
+  svg: SVGSVGElement,
+): void {
+  // Unit interactions intentionally remain synchronous. In the browser, label
+  // collision work waits until the completed Atlas has had two opportunities
+  // to paint, keeping first-open and cached-reopen controls responsive.
+  if (import.meta.env.MODE === "test") {
+    if (WORLD && !R.inside) layoutAtlasOverviewLabels(WORLD, svg);
+    return;
+  }
+  const scheduleNextFrame = (remainingFrameCount: number): void => {
+    atlasOverviewLabelLayoutFrameRequestIdentifier = requestAnimationFrame(() => {
+      atlasOverviewLabelLayoutFrameRequestIdentifier = null;
+      if (!atlasRenderStillCurrent(generation, atlas, stage, svg) || !WORLD || R.inside) return;
+      if (remainingFrameCount > 1) {
+        scheduleNextFrame(remainingFrameCount - 1);
+        return;
+      }
+      const appendedLabels = appendAtlasOverviewLabels(atlas, WORLD, svg);
+      if (appendedLabels) {
+        rebuildAtlasPaintReferences();
+        paintAtlas(false);
+      }
+      layoutAtlasOverviewLabels(WORLD, svg);
+    });
+  };
+  scheduleNextFrame(3);
 }
 
 function atlasRenderStillCurrent(
@@ -857,7 +913,12 @@ function completeProgressiveAtlasRender(
 ): void {
   if (!atlasRenderStillCurrent(generation, atlas, stage, svg) || !WORLD) return;
   try {
-    appendAtlasNodeDetails(atlas, WORLD, svg);
+    appendAtlasNodeDetails(
+      atlas,
+      WORLD,
+      svg,
+      import.meta.env.MODE === "test",
+    );
 
     _structurallyRenderedAtlas = atlas;
     rebuildAtlasPaintReferences();
@@ -871,6 +932,7 @@ function completeProgressiveAtlasRender(
 
     setAtlasRenderPhase(stage, "complete");
     revealAtlas(generation);
+    scheduleAtlasOverviewLabelLayout(generation, atlas, stage, svg);
     if (R.inside) playTour();
   } catch {
     if (atlasRenderStillCurrent(generation, atlas, stage, svg)) {
@@ -910,6 +972,7 @@ export function renderAtlas(): void {
     stage.hidden = true;
     setAtlasRenderPhase(stage, renderProgressively ? "structure" : "complete");
     stage.innerHTML = viewAtlas(ATLAS, measure(ATLAS), !renderProgressively);
+    upgradeSelectionOnlySelectsIn(stage);
     const newSvg = svgEl();
     if (!newSvg || !WORLD) {
       setAtlasRenderPhase(stage, "complete");
@@ -937,6 +1000,10 @@ export function renderAtlas(): void {
   paintAtlas();
   setAtlasRenderPhase(stage, "complete");
   stage.hidden = false;
+  const completedSvg = svgEl();
+  if (completedSvg) {
+    scheduleAtlasOverviewLabelLayout(atlasRenderGeneration, ATLAS, stage, completedSvg);
+  }
   if (R.inside) playTour();
 }
 
@@ -1108,6 +1175,7 @@ function viewAtlas(
 
   return `<div class="atlas-legend">
       <span><i class="sw sw-el"></i>an element — its <b>area</b> is the share of readings through it</span>
+      <span class="atlas-group-legend"><b>◇ name ×3</b> — similarly named boxes grouped only when they share the same onward structure</span>
       <span><i class="sw sw-loop"></i>↻ feedback — <b>select</b> to trace it, then choose <b>Open feedback loops</b> · double-click is a shortcut</span>
       <span class="sim-only"><i class="sw sw-good"></i>colour is what <b>simulating</b> did to it —
         red worse, green better, amber moved · grey has not moved · size still says how much
@@ -1131,7 +1199,7 @@ function viewAtlas(
           <button class="atlas-btn" type="button" data-loop-animation-toggle>Pause</button>
           <button class="atlas-btn" type="button" data-loop-animation-step="1">Next</button>
           <label class="atlas-loop-speed">Speed
-            <select data-loop-animation-speed aria-label="Feedback loop animation speed">
+            <select class="atlas-loop-speed-select" data-loop-animation-speed aria-label="Feedback loop animation speed">
               <option value="0.5">0.5×</option>
               <option value="1" selected>1×</option>
               <option value="2">2×</option>
@@ -1139,7 +1207,7 @@ function viewAtlas(
           </label>
           <label class="atlas-loop-scrubber">
             <span class="sr-only">Feedback loop animation position</span>
-            <input type="range" min="0" max="1" step="1" value="0" data-loop-animation-scrub
+            <input type="range" min="0" max="1000" step="1" value="0" data-loop-animation-scrub
               aria-label="Feedback loop animation position">
           </label>
           <output id="atlas-loop-animation-status" aria-live="polite"></output>
@@ -1162,9 +1230,22 @@ function atlasNodeDetails(
   radius: number,
 ): string {
   return (node.loop ? tangleWheel(node, centreX, centreY, radius) : "") +
-    `<text x="${centreX.toFixed(1)}" y="${(centreY + radius + 15).toFixed(1)}" text-anchor="middle">${
-      node.loop ? "↻ " : ""}${escapeHtml(clip(labelOf(identifier), 30))}${
-      node.boxes.length > 1 && !node.loop ? " ×" + node.boxes.length : ""}` +
+    atlasOverviewLabelMarkup(node, identifier, centreX, centreY, radius);
+}
+
+function atlasOverviewLabelMarkup(
+  node: AtlasNode,
+  identifier: AtlasElementIdentifier,
+  centreX: number,
+  centreY: number,
+  radius: number,
+): string {
+  return `<path class="atlas-overview-label-leader"></path>` +
+    `<text class="atlas-overview-label" x="${centreX.toFixed(1)}" y="${(centreY + radius + 15).toFixed(1)}"
+      text-anchor="middle" aria-label="${escapeHtml(labelOf(identifier))}">` +
+    `<tspan class="atlas-overview-label-line" x="${centreX.toFixed(1)}">${
+      node.loop ? "↻ " : ""}${escapeHtml(labelOf(identifier))}${
+      node.boxes.length > 1 && !node.loop ? " ×" + node.boxes.length : ""}</tspan>` +
     // The move goes in the LABEL, not on the disc. A tangle's disc already
     // has its wheel drawn inside it, and the smallest circles here are a few
     // pixels across — so there is no room in the middle that is room on every
@@ -1183,21 +1264,311 @@ function atlasNodeDetails(
     `<tspan class="mag" x="${centreX.toFixed(1)}" dy="1.25em"></tspan></text>`;
 }
 
+interface AtlasScreenRectangle {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+interface AtlasOverviewLabelPlacement {
+  identifier: AtlasElementIdentifier;
+  group: SVGGElement;
+  text: SVGTextElement;
+  leader: SVGPathElement;
+  lines: string[];
+  nodeScreenX: number;
+  nodeScreenY: number;
+  radiusScreen: number;
+  labelScreenX: number;
+  labelWidthPixels: number;
+  labelHeightPixels: number;
+  desiredBelowTop: number;
+  desiredAboveTop: number;
+  columnIndex: number;
+}
+
+let overviewLabelMeasurementContext: CanvasRenderingContext2D | null = null;
+
+function overviewLabelLineWidthPixels(line: string): number {
+  if (!overviewLabelMeasurementContext) {
+    overviewLabelMeasurementContext = document.createElement("canvas").getContext("2d");
+  }
+  if (!overviewLabelMeasurementContext) return line.length * 7;
+  overviewLabelMeasurementContext.font = "500 12px Arial, Helvetica, sans-serif";
+  return overviewLabelMeasurementContext.measureText(line).width;
+}
+
+function splitOverviewLabelLineToWidth(line: string, maximumWidthPixels: number): string[] {
+  if (overviewLabelLineWidthPixels(line) <= maximumWidthPixels) return [line];
+  const parts: string[] = [];
+  let currentPart = "";
+  for (const character of Array.from(line)) {
+    const candidatePart = currentPart + character;
+    if (currentPart && overviewLabelLineWidthPixels(candidatePart) > maximumWidthPixels) {
+      parts.push(currentPart);
+      currentPart = character;
+    } else {
+      currentPart = candidatePart;
+    }
+  }
+  if (currentPart) parts.push(currentPart);
+  return parts.length ? parts : [line];
+}
+
+function overviewLabelLines(label: string, maximumWidthPixels: number): string[] {
+  return measureLabelLines(label, maximumWidthPixels)
+    .flatMap(line => splitOverviewLabelLineToWidth(line, maximumWidthPixels));
+}
+
+function screenRectanglesOverlap(
+  firstRectangle: AtlasScreenRectangle,
+  secondRectangle: AtlasScreenRectangle,
+  gapPixels: number,
+): boolean {
+  return !(
+    firstRectangle.right + gapPixels <= secondRectangle.left ||
+    secondRectangle.right + gapPixels <= firstRectangle.left ||
+    firstRectangle.bottom + gapPixels <= secondRectangle.top ||
+    secondRectangle.bottom + gapPixels <= firstRectangle.top
+  );
+}
+
+function layoutAtlasOverviewLabels(world: AtlasWorld, svg: SVGSVGElement): void {
+  const svgBounds = svg.getBoundingClientRect();
+  const viewportWidth = svgBounds.width || 800;
+  const viewportHeight = svgBounds.height || 450;
+  const visibleFrame = VB || wholePicture();
+  const pixelsPerWorldUnit = Math.min(
+    viewportWidth / visibleFrame.w,
+    viewportHeight / visibleFrame.h,
+  ) || 1;
+  const worldUnitsPerPixel = 1 / pixelsPerWorldUnit;
+  const frameMarginPixels = 8;
+  const labelLineHeightPixels = 14;
+  const magnitudeLineHeightPixels = 16;
+  const labelGapPixels = 4;
+  const labelHorizontalSafetyPixels = 12;
+
+  const columnWorldPositions = [...new Set(
+    [...world.at.values()].map(coordinates => coordinates[0]),
+  )].sort((firstPosition, secondPosition) => firstPosition - secondPosition);
+  let minimumColumnSeparationPixels = Infinity;
+  for (let columnIndex = 1; columnIndex < columnWorldPositions.length; columnIndex++) {
+    minimumColumnSeparationPixels = Math.min(
+      minimumColumnSeparationPixels,
+      (columnWorldPositions[columnIndex] - columnWorldPositions[columnIndex - 1]) * pixelsPerWorldUnit,
+    );
+  }
+  const availableColumnWidthPixels = Number.isFinite(minimumColumnSeparationPixels)
+    ? minimumColumnSeparationPixels - 18
+    : viewportWidth * 0.55;
+  const maximumLineWidthPixels = Math.max(
+    76,
+    Math.min(180, availableColumnWidthPixels, viewportWidth - frameMarginPixels * 2),
+  );
+
+  const circleRectangles: AtlasScreenRectangle[] = [...world.at].flatMap(([identifier, coordinates]) => {
+    const radiusScreen = (world.rOf.get(identifier) || 0) * pixelsPerWorldUnit;
+    const nodeScreenX = (coordinates[0] - visibleFrame.x) * pixelsPerWorldUnit;
+    const nodeScreenY = (coordinates[1] - visibleFrame.y) * pixelsPerWorldUnit;
+    if (
+      nodeScreenX + radiusScreen < 0 || nodeScreenX - radiusScreen > viewportWidth ||
+      nodeScreenY + radiusScreen < 0 || nodeScreenY - radiusScreen > viewportHeight
+    ) return [];
+    return [{
+      left: nodeScreenX - radiusScreen,
+      right: nodeScreenX + radiusScreen,
+      top: nodeScreenY - radiusScreen,
+      bottom: nodeScreenY + radiusScreen,
+    }];
+  });
+
+  const placements: AtlasOverviewLabelPlacement[] = [];
+  for (const group of svg.querySelectorAll<SVGGElement>("g.n")) {
+    const identifier = group.dataset.el;
+    if (!identifier) continue;
+    const coordinates = world.at.get(identifier);
+    const text = group.querySelector<SVGTextElement>(":scope > .atlas-overview-label");
+    const leader = group.querySelector<SVGPathElement>(":scope > .atlas-overview-label-leader");
+    if (!coordinates || !text || !leader) continue;
+    const node = world.A.nodes.get(identifier);
+    if (!node) continue;
+    const completeLabel = `${node.loop ? "↻ " : ""}${labelOf(identifier)}${
+      node.boxes.length > 1 && !node.loop ? " ×" + node.boxes.length : ""}`;
+    const lines = overviewLabelLines(completeLabel, maximumLineWidthPixels);
+    const labelWidthPixels = Math.max(...lines.map(overviewLabelLineWidthPixels), 1) +
+      labelHorizontalSafetyPixels;
+    const labelHeightPixels = lines.length * labelLineHeightPixels + magnitudeLineHeightPixels;
+    const radiusScreen = (world.rOf.get(identifier) || 0) * pixelsPerWorldUnit;
+    const nodeScreenX = (coordinates[0] - visibleFrame.x) * pixelsPerWorldUnit;
+    const nodeScreenY = (coordinates[1] - visibleFrame.y) * pixelsPerWorldUnit;
+    if (
+      nodeScreenX + radiusScreen < 0 || nodeScreenX - radiusScreen > viewportWidth ||
+      nodeScreenY + radiusScreen < 0 || nodeScreenY - radiusScreen > viewportHeight
+    ) continue;
+    const halfLabelWidth = labelWidthPixels / 2;
+    const labelScreenX = Math.max(
+      frameMarginPixels + halfLabelWidth,
+      Math.min(viewportWidth - frameMarginPixels - halfLabelWidth, nodeScreenX),
+    );
+    const columnIndex = columnWorldPositions.indexOf(coordinates[0]);
+    const staggerPixels = Math.max(0, columnIndex) % 3 * 12;
+    placements.push({
+      identifier,
+      group,
+      text,
+      leader,
+      lines,
+      nodeScreenX,
+      nodeScreenY,
+      radiusScreen,
+      labelScreenX,
+      labelWidthPixels,
+      labelHeightPixels,
+      desiredBelowTop: nodeScreenY + radiusScreen + 8 + staggerPixels,
+      desiredAboveTop: nodeScreenY - radiusScreen - 8 - labelHeightPixels - staggerPixels,
+      columnIndex,
+    });
+  }
+
+  placements.sort((firstPlacement, secondPlacement) =>
+    firstPlacement.nodeScreenY - secondPlacement.nodeScreenY ||
+    firstPlacement.columnIndex - secondPlacement.columnIndex);
+  const placedLabelRectangles: AtlasScreenRectangle[] = [];
+  const verticalSearchStepPixels = 14;
+  const maximumSearchSteps = Math.ceil(viewportHeight / verticalSearchStepPixels) + 2;
+
+  for (const placement of placements) {
+    const minimumTop = frameMarginPixels;
+    const maximumTop = Math.max(
+      minimumTop,
+      viewportHeight - frameMarginPixels - placement.labelHeightPixels,
+    );
+    let selectedRectangle: AtlasScreenRectangle | null = null;
+    for (let searchStep = 0; searchStep <= maximumSearchSteps && !selectedRectangle; searchStep++) {
+      const downwardCandidateTop = placement.desiredBelowTop + searchStep * verticalSearchStepPixels;
+      const upwardCandidateTop = placement.desiredAboveTop - searchStep * verticalSearchStepPixels;
+      const prefersUpwardPlacement = placement.columnIndex % 2 === 1;
+      const candidateTops = prefersUpwardPlacement
+        ? [upwardCandidateTop, downwardCandidateTop]
+        : [downwardCandidateTop, upwardCandidateTop];
+      for (const candidateTop of candidateTops) {
+        const clampedTop = Math.max(minimumTop, Math.min(maximumTop, candidateTop));
+        const candidateRectangle = {
+          left: placement.labelScreenX - placement.labelWidthPixels / 2,
+          right: placement.labelScreenX + placement.labelWidthPixels / 2,
+          top: clampedTop,
+          bottom: clampedTop + placement.labelHeightPixels,
+        };
+        const overlapsCircle = circleRectangles.some(circleRectangle =>
+          screenRectanglesOverlap(candidateRectangle, circleRectangle, labelGapPixels));
+        const overlapsLabel = placedLabelRectangles.some(labelRectangle =>
+          screenRectanglesOverlap(candidateRectangle, labelRectangle, labelGapPixels));
+        if (!overlapsCircle && !overlapsLabel) {
+          selectedRectangle = candidateRectangle;
+          break;
+        }
+      }
+    }
+    if (!selectedRectangle) {
+      const fallbackTop = Math.max(minimumTop, Math.min(maximumTop, placement.desiredBelowTop));
+      selectedRectangle = {
+        left: placement.labelScreenX - placement.labelWidthPixels / 2,
+        right: placement.labelScreenX + placement.labelWidthPixels / 2,
+        top: fallbackTop,
+        bottom: fallbackTop + placement.labelHeightPixels,
+      };
+    }
+    placedLabelRectangles.push(selectedRectangle);
+
+    const labelWorldX = visibleFrame.x + placement.labelScreenX * worldUnitsPerPixel;
+    const firstBaselineWorldY = visibleFrame.y +
+      (selectedRectangle.top + labelLineHeightPixels * 0.82) * worldUnitsPerPixel;
+    const lineElements = placement.lines.map((line, lineIndex) =>
+      `<tspan class="atlas-overview-label-line" x="${labelWorldX.toFixed(1)}" y="${(
+        firstBaselineWorldY + lineIndex * labelLineHeightPixels * worldUnitsPerPixel
+      ).toFixed(1)}">${escapeHtml(line)}</tspan>`).join("");
+    placement.text.querySelectorAll(".atlas-overview-label-line").forEach(line => line.remove());
+    const magnitude = placement.text.querySelector<SVGTSpanElement>(".mag");
+    magnitude?.insertAdjacentHTML("beforebegin", lineElements);
+    const magnitudeWorldY = firstBaselineWorldY +
+      placement.lines.length * labelLineHeightPixels * worldUnitsPerPixel;
+    if (magnitude) {
+      magnitude.setAttribute("x", labelWorldX.toFixed(1));
+      magnitude.setAttribute("y", magnitudeWorldY.toFixed(1));
+      magnitude.removeAttribute("dy");
+    }
+    placement.text.setAttribute("x", labelWorldX.toFixed(1));
+    placement.text.setAttribute("y", firstBaselineWorldY.toFixed(1));
+    placement.text.dataset.layoutLeftPixels = selectedRectangle.left.toFixed(1);
+    placement.text.dataset.layoutTopPixels = selectedRectangle.top.toFixed(1);
+    placement.text.dataset.layoutWidthPixels = placement.labelWidthPixels.toFixed(1);
+    placement.text.dataset.layoutHeightPixels = placement.labelHeightPixels.toFixed(1);
+
+    const labelIsBelowNode = selectedRectangle.top >= placement.nodeScreenY;
+    placement.text.dataset.layoutSide = labelIsBelowNode ? "below" : "above";
+    const leaderStartScreenY = placement.nodeScreenY +
+      (labelIsBelowNode ? placement.radiusScreen + 3 : -placement.radiusScreen - 3);
+    const leaderEndScreenY = labelIsBelowNode
+      ? selectedRectangle.top - 2
+      : selectedRectangle.bottom + 2;
+    const leaderStartWorldX = visibleFrame.x + placement.nodeScreenX * worldUnitsPerPixel;
+    const leaderStartWorldY = visibleFrame.y + leaderStartScreenY * worldUnitsPerPixel;
+    const leaderEndWorldY = visibleFrame.y + leaderEndScreenY * worldUnitsPerPixel;
+    placement.leader.setAttribute(
+      "d",
+      `M ${leaderStartWorldX.toFixed(1)} ${leaderStartWorldY.toFixed(1)} L ${
+        labelWorldX.toFixed(1)} ${leaderEndWorldY.toFixed(1)}`,
+    );
+  }
+  svg.dataset.overviewLabelLayoutViewBox = svg.getAttribute("viewBox") || "";
+}
+
 function appendAtlasNodeDetails(
   atlas: AtlasData,
   world: AtlasWorld,
   svg: SVGSVGElement,
+  includeOverviewLabels: boolean,
 ): void {
   for (const group of svg.querySelectorAll<SVGGElement>("g.n")) {
     const identifier = group.dataset.el!;
     const node = atlas.nodes.get(identifier)!;
     const coordinates = world.at.get(identifier)!;
     const radius = world.rOf.get(identifier)!;
+    const feedbackDetails = node.loop
+      ? tangleWheel(node, coordinates[0], coordinates[1], radius)
+      : "";
+    const overviewLabel = includeOverviewLabels
+      ? atlasOverviewLabelMarkup(node, identifier, coordinates[0], coordinates[1], radius)
+      : "";
+    if (feedbackDetails || overviewLabel) {
+      group.insertAdjacentHTML("beforeend", feedbackDetails + overviewLabel);
+    }
+  }
+}
+
+function appendAtlasOverviewLabels(
+  atlas: AtlasData,
+  world: AtlasWorld,
+  svg: SVGSVGElement,
+): boolean {
+  let appendedLabels = false;
+  for (const group of svg.querySelectorAll<SVGGElement>("g.n")) {
+    if (group.querySelector(":scope > .atlas-overview-label")) continue;
+    const identifier = group.dataset.el;
+    if (!identifier) continue;
+    const node = atlas.nodes.get(identifier);
+    const coordinates = world.at.get(identifier);
+    const radius = world.rOf.get(identifier);
+    if (!node || !coordinates || radius === undefined) continue;
     group.insertAdjacentHTML(
       "beforeend",
-      atlasNodeDetails(node, identifier, coordinates[0], coordinates[1], radius),
+      atlasOverviewLabelMarkup(node, identifier, coordinates[0], coordinates[1], radius),
     );
+    appendedLabels = true;
   }
+  return appendedLabels;
 }
 
 // The share every percentage on this page is a share of. Said once, in the
@@ -1538,7 +1909,14 @@ function frameOn(identifier: AtlasElementIdentifier): AtlasFrame {
 function zoomTo(target: AtlasFrame, then?: () => void): void {
   cancelAnimationFrame(vbRAF);
   const from = VB || wholePicture();
-  if (reduced()) { VB = target; setScale(); if (then) then(); return; }
+  if (reduced()) {
+    VB = target;
+    setScale();
+    const svg = svgEl();
+    if (svg && WORLD && !R.inside) layoutAtlasOverviewLabels(WORLD, svg);
+    if (then) then();
+    return;
+  }
   const t0 = performance.now(), MS = 620;
   const ease = (progress: number): number => progress < 0.5
     ? 4 * progress * progress * progress
@@ -1550,8 +1928,13 @@ function zoomTo(target: AtlasFrame, then?: () => void): void {
       w: from.w + (target.w - from.w) * e, h: from.h + (target.h - from.h) * e,
     };
     setScale();
-    if (f < 1) vbRAF = requestAnimationFrame(step);
-    else if (then) then();
+    if (f < 1) {
+      vbRAF = requestAnimationFrame(step);
+    } else {
+      const svg = svgEl();
+      if (svg && WORLD && !R.inside) layoutAtlasOverviewLabels(WORLD, svg);
+      if (then) then();
+    }
   };
   vbRAF = requestAnimationFrame(step);
 }
@@ -1820,6 +2203,16 @@ function openChain(): Fork[] {
   const out = forksAlong(R.current);
   if (out.length !== R.current.length) R.current = out.map(f => f.via);
   return out;
+}
+
+/** Number of complete pathways represented by the sidebar row the reader has
+ * chosen. Null means no sidebar row is selected yet. Learn uses this public
+ * reading-state query so its pathway task is gated by meaning rather than by a
+ * particular label or depth in one example map. */
+export function atlasSelectedPathwayCount(): number | null {
+  const selectedForks = openChain();
+  const selectedFork = selectedForks[selectedForks.length - 1];
+  return selectedFork ? selectedFork.paths.length : null;
 }
 
 // ── What is open ──────────────────────────────────────────────────────────
@@ -2627,43 +3020,45 @@ function syncLoopAnimationControls(): void {
   if (!playback) return;
 
   const toggleButton = controls.querySelector<HTMLButtonElement>("[data-loop-animation-toggle]");
+  const previousButton = controls.querySelector<HTMLButtonElement>(
+    '[data-loop-animation-step="-1"]',
+  );
+  const nextButton = controls.querySelector<HTMLButtonElement>(
+    '[data-loop-animation-step="1"]',
+  );
   const speedSelect = controls.querySelector<HTMLSelectElement>("[data-loop-animation-speed]");
   const scrubber = controls.querySelector<HTMLInputElement>("[data-loop-animation-scrub]");
   const status = controls.querySelector<HTMLOutputElement>("#atlas-loop-animation-status");
   const atEnd = playback.positionMilliseconds >= playback.durationMilliseconds;
+  const shouldOfferReplay = atEnd && !loopAnimationScrubberIsActive;
   const motionIsReduced = reduced();
   if (toggleButton) {
     toggleButton.disabled = motionIsReduced;
     toggleButton.textContent = motionIsReduced
       ? "Motion off"
-      : atEnd
+      : shouldOfferReplay
         ? "Replay"
         : playback.paused
           ? "Play"
           : "Pause";
     toggleButton.setAttribute("aria-label", motionIsReduced
       ? "Automatic feedback loop animation is off because reduced motion is enabled"
-      : atEnd
+      : shouldOfferReplay
         ? "Replay feedback loop animation"
         : playback.paused
           ? "Play feedback loop animation"
           : "Pause feedback loop animation");
   }
+  if (previousButton) previousButton.disabled = playback.positionMilliseconds <= 0;
+  if (nextButton) nextButton.disabled = atEnd;
   if (speedSelect) speedSelect.value = String(loopAnimationSpeed);
   if (scrubber) {
-    const stepPositions = playback.stepPositionsMilliseconds;
-    const animationStep = stepPositions
-      ? stepPositions.reduce((closestStep, position, stepIndex) =>
-        Math.abs(position - playback.positionMilliseconds)
-          < Math.abs(stepPositions[closestStep] - playback.positionMilliseconds)
-          ? stepIndex
-          : closestStep, 0)
-      : Math.min(
-        playback.stepCount,
-        Math.round(playback.positionMilliseconds / playback.stepMilliseconds),
-      );
-    scrubber.max = String(playback.stepCount);
-    scrubber.value = String(animationStep);
+    const scrubberResolution = 1000;
+    const animationProgress = playback.durationMilliseconds > 0
+      ? playback.positionMilliseconds / playback.durationMilliseconds
+      : 0;
+    scrubber.max = String(scrubberResolution);
+    scrubber.value = String(Math.round(animationProgress * scrubberResolution));
     scrubber.setAttribute("aria-valuetext", playback.describe(playback.positionMilliseconds));
   }
   if (status) status.textContent = playback.describe(playback.positionMilliseconds);
@@ -2673,7 +3068,14 @@ function stopLoopAnimation(kind?: LoopAnimationKind): void {
   if (kind && loopAnimationPlayback?.kind !== kind) return;
   cancelAnimationFrame(loopAnimationFrameRequest);
   loopAnimationFrameRequest = 0;
+  loopAnimationScrubberIsActive = false;
   loopAnimationPlayback = null;
+  syncLoopAnimationControls();
+}
+
+function finishLoopAnimationScrubbing(): void {
+  if (!loopAnimationScrubberIsActive) return;
+  loopAnimationScrubberIsActive = false;
   syncLoopAnimationControls();
 }
 
@@ -2739,16 +3141,32 @@ function toggleLoopAnimation(): void {
 function seekLoopAnimationStep(animationStep: number): void {
   const playback = loopAnimationPlayback;
   if (!playback) return;
+  const boundedStep = Math.max(0, Math.min(playback.stepCount, animationStep));
+  const stepPosition = playback.stepPositionsMilliseconds?.[boundedStep]
+    ?? boundedStep * playback.stepMilliseconds;
+  seekLoopAnimationPosition(stepPosition);
+}
+
+function seekLoopAnimationPosition(positionMilliseconds: number): void {
+  const playback = loopAnimationPlayback;
+  if (!playback) return;
   playback.paused = true;
   playback.lastFrameTimestamp = null;
   cancelAnimationFrame(loopAnimationFrameRequest);
   loopAnimationFrameRequest = 0;
-  const boundedStep = Math.max(0, Math.min(playback.stepCount, animationStep));
-  const stepPosition = playback.stepPositionsMilliseconds?.[boundedStep]
-    ?? boundedStep * playback.stepMilliseconds;
-  playback.positionMilliseconds = Math.min(playback.durationMilliseconds, stepPosition);
+  playback.positionMilliseconds = Math.max(
+    0,
+    Math.min(playback.durationMilliseconds, positionMilliseconds),
+  );
   playback.render(playback.positionMilliseconds);
   syncLoopAnimationControls();
+}
+
+function seekLoopAnimationProgress(animationProgress: number): void {
+  const playback = loopAnimationPlayback;
+  if (!playback) return;
+  const boundedProgress = Math.max(0, Math.min(1, animationProgress));
+  seekLoopAnimationPosition(playback.durationMilliseconds * boundedProgress);
 }
 
 function stepLoopAnimation(direction: number): void {
@@ -2838,7 +3256,12 @@ function playTour() {
     accumulatedMilliseconds = endMilliseconds;
     return { startMilliseconds, drawMilliseconds, endMilliseconds };
   });
-  const totalDurationMilliseconds = accumulatedMilliseconds;
+  const totalDurationMilliseconds = Math.max(0, accumulatedMilliseconds - holdMilliseconds);
+  const boxStepPositionsMilliseconds = loopTimings.flatMap((timing, loopIndex) => [
+    timing.startMilliseconds,
+    ...loops[loopIndex].links.map((_link, linkIndex) =>
+      timing.startMilliseconds + (linkIndex + 1) * drawMillisecondsPerLink),
+  ]);
   const renderTour = (positionMilliseconds: number) => {
     const activeLoopIndex = loopTimings.findIndex(timing =>
       positionMilliseconds < timing.endMilliseconds);
@@ -2893,20 +3316,32 @@ function playTour() {
     identity: loops.map(loop => canonicalCycle(loop.cycle)).join("\u0001"),
     positionMilliseconds: 0,
     durationMilliseconds: totalDurationMilliseconds,
-    stepMilliseconds: 1,
-    stepCount: loops.length,
-    stepPositionsMilliseconds: [
-      ...loopTimings.map(timing => timing.startMilliseconds),
-      totalDurationMilliseconds,
-    ],
+    stepMilliseconds: drawMillisecondsPerLink,
+    stepCount: Math.max(0, boxStepPositionsMilliseconds.length - 1),
+    stepPositionsMilliseconds: boxStepPositionsMilliseconds,
     paused: false,
     lastFrameTimestamp: null,
     render: renderTour,
     describe: positionMilliseconds => {
       const activeLoopIndex = loopTimings.findIndex(timing =>
         positionMilliseconds < timing.endMilliseconds);
-      const loopNumber = activeLoopIndex < 0 ? loops.length : activeLoopIndex + 1;
-      return `Loop ${loopNumber} of ${loops.length}`;
+      const boundedActiveLoopIndex = activeLoopIndex < 0 ? loops.length - 1 : activeLoopIndex;
+      const activeLoop = loops[boundedActiveLoopIndex];
+      const activeTiming = loopTimings[boundedActiveLoopIndex];
+      const exactLinkPosition = Math.max(0, Math.min(
+        activeLoop.links.length,
+        (positionMilliseconds - activeTiming.startMilliseconds) / drawMillisecondsPerLink,
+      ));
+      const completedLinkCount = Math.floor(exactLinkPosition);
+      const currentBoxIndex = (
+        completedLinkCount + (exactLinkPosition - completedLinkCount >= 0.5 ? 1 : 0)
+      ) % activeLoop.cycle.length;
+      const loopIsClosed = exactLinkPosition >= activeLoop.links.length;
+      const boxProgress = loopIsClosed
+        ? `Back to box 1 of ${activeLoop.cycle.length}`
+        : `Box ${currentBoxIndex + 1} of ${activeLoop.cycle.length}`;
+      return `Loop ${boundedActiveLoopIndex + 1} of ${loops.length} · ${boxProgress} · ${
+        clip(boxLabel(activeLoop.cycle[currentBoxIndex]), 22)}`;
     },
   });
 }
@@ -3055,8 +3490,23 @@ function selectLoopCard(i: number) {
 
 function paintWheel() {
   const svg = svgEl();
+  if (!svg) return;
   const insideIdentifier = R.inside;
-  if (!svg || !insideIdentifier) return;
+  if (!insideIdentifier) {
+    // Nothing is open, so nothing is picked — and saying so has to be done, not
+    // assumed. closeAtlas() keeps the structural drawing so reopening the same
+    // start is instant, which means the previous reading's picked circle and
+    // its wheel labels are still in the DOM. Returning early here would leave
+    // them drawn over an atlas that has nothing picked at all.
+    for (const stalePick of svg.querySelectorAll<SVGElement>("g.n.picked")) {
+      stalePick.classList.remove("picked");
+    }
+    for (const staleLabels of svg.querySelectorAll<SVGGElement>("g.n .labs")) {
+      staleLabels.innerHTML = "";
+      delete staleLabels.dataset.animationLabelKey;
+    }
+    return;
+  }
   const g = svg.querySelector<SVGGElement>("g.n.focus");
   if (!g) return;
   const w = WHEELS.get(insideIdentifier);
@@ -4498,7 +4948,13 @@ export function initAtlasStage(): void {
   stage.dataset.wired = "1";
 
   stage.addEventListener("pointerdown", event => {
-    if (eventTargetElement(event.target)?.closest("svg.atlas")) atlasPointerDown(event);
+    const target = eventTargetElement(event.target);
+    if (target?.closest("[data-loop-animation-scrub]")) {
+      loopAnimationScrubberIsActive = true;
+      syncLoopAnimationControls();
+      return;
+    }
+    if (target?.closest("svg.atlas")) atlasPointerDown(event);
   });
 
   // Ctrl / Cmd + wheel and trackpad pinch zoom about the cursor; a plain wheel
@@ -4517,8 +4973,14 @@ export function initAtlasStage(): void {
     atlasPanBy(event.deltaX * perPx, event.deltaY * perPx);
   }, { passive: false });
   stage.addEventListener("pointermove", atlasPointerMove);
-  stage.addEventListener("pointerup", atlasPointerUp);
-  stage.addEventListener("pointercancel", atlasPointerUp);
+  stage.addEventListener("pointerup", event => {
+    atlasPointerUp(event);
+    finishLoopAnimationScrubbing();
+  });
+  stage.addEventListener("pointercancel", event => {
+    atlasPointerUp(event);
+    finishLoopAnimationScrubbing();
+  });
 
   stage.addEventListener("click", event => {
     if (atlasRenderIsPending()) return;
@@ -4564,7 +5026,8 @@ export function initAtlasStage(): void {
     const target = eventTargetElement(event.target);
     const scrubber = target?.closest<HTMLInputElement>("[data-loop-animation-scrub]");
     if (!scrubber) return;
-    seekLoopAnimationStep(Number(scrubber.value));
+    const scrubberMaximum = Math.max(1, Number(scrubber.max));
+    seekLoopAnimationProgress(Number(scrubber.value) / scrubberMaximum);
   });
 
   stage.addEventListener("change", event => {
@@ -4803,4 +5266,6 @@ addEventListener("resize", () => {
   // fixed-size labels must be laid out for the new viewport.
   if (VB.w >= wholePicture().w - 1) VB = wholePicture();
   setScale();
+  const svg = svgEl();
+  if (svg && WORLD) layoutAtlasOverviewLabels(WORLD, svg);
 });

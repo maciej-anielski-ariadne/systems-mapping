@@ -14,8 +14,8 @@
 // =============================================================================
 
 import type { Category, GraphNode, NodePosition } from "./types";
-import { CATEGORIES, EDGES, NODES, STAGES, STREAMS, edgeGeometryRevision, layout, nodeById, setLayout, stageById, state, streamById } from "./03-state";
-import { deselectAll, selectNode, notifySelectionChanged } from "./09-graph-selection";
+import { CATEGORIES, EDGES, NODES, STAGES, STREAMS, edgeGeometryRevision, layout, nodeById, setLayout, stageById, stageNodeCount, state, streamById, streamNodeCount } from "./03-state";
+import { deselectAll, selectNode, toggleNodeInSelection, notifySelectionChanged } from "./09-graph-selection";
 import { computeEdgeAnchorOffsets, deltaColorFor, edgeBezierPath, effectMarkerName, escapeHtml, getMapTextScale, isBackwardEdge, simEffectFill, wrapLabel, SIM_FLAT_FILL, SIM_INK, type AnchorOffset } from "./04-utils";
 import { COL_GAP, COL_HEADER_HEIGHT, LABEL_INSET, NODE_GAP_Y, NODE_HEIGHT, NODE_WIDTH, ROW_HEADER_WIDTH, ROW_PADDING, SVG_PADDING_LEFT, SVG_PADDING_TOP } from "./02-config";
 import { computeLayout, layoutGeometryRevision, slotTopY } from "./08-layout";
@@ -36,6 +36,12 @@ const OVERVIEW_HEADING_ZOOM_THRESHOLD = 0.7;
 const OVERVIEW_COLUMN_HEADING_HEIGHT = 48;
 const OVERVIEW_ROW_HEADING_WIDTH = 88;
 const STANDARD_COLUMN_HEADING_HEIGHT = 32;
+
+function axisHeadingContent(label: string, nodeCount: number, isCollapsed: boolean): string {
+  const mainContent = isCollapsed ? "+" : escapeHtml(label);
+  return '<span class="axis-heading-main">' + mainContent + '</span>' +
+    '<span class="axis-heading-count" aria-hidden="true">' + String(nodeCount) + '</span>';
+}
 
 // Keep fixed-screen HTML copies of both axes. HTML is intentional: SVG children
 // cannot stay fixed to the surrounding scroll frame. Above the overview zoom
@@ -60,20 +66,22 @@ export function renderFloatingHeadings(): void {
   stickyColumnHeadings.innerHTML = STAGES.map(stage => {
     const isCollapsed = state.hiddenStages.has(stage.id);
     const action = isCollapsed ? "Expand" : "Collapse";
+    const nodeCount = stageNodeCount[stage.id] || 0;
     return '<button type="button" class="viz-sticky-column' + (isCollapsed ? " collapsed" : "") +
       '" data-stage-id="' + escapeHtml(stage.id) + '" data-tooltip="' +
       escapeHtml(action + " " + stage.label + " on the map.") + '" aria-expanded="' +
       String(!isCollapsed) + '" aria-label="' + escapeHtml(action + " column " + stage.label) + '">' +
-      (isCollapsed ? "+ " : "") + escapeHtml(stage.label) + "</button>";
+      axisHeadingContent(stage.label, nodeCount, isCollapsed) + "</button>";
   }).join("");
   stickyRowHeadings.innerHTML = STREAMS.map(stream => {
     const isCollapsed = state.hiddenStreams.has(stream.id);
     const action = isCollapsed ? "Expand" : "Collapse";
+    const nodeCount = streamNodeCount[stream.id] || 0;
     return '<button type="button" class="viz-sticky-row' + (isCollapsed ? " collapsed" : "") +
       '" data-stream-id="' + escapeHtml(stream.id) + '" data-tooltip="' +
       escapeHtml(action + " " + stream.label + " on the map.") + '" aria-expanded="' +
       String(!isCollapsed) + '" aria-label="' + escapeHtml(action + " row " + stream.label) + '">' +
-      (isCollapsed ? "+ " : "") + escapeHtml(stream.short) + "</button>";
+      axisHeadingContent(stream.label, nodeCount, isCollapsed) + "</button>";
   }).join("");
 
   for (const button of stickyRowHeadings.querySelectorAll<HTMLElement>("[data-stream-id]")) {
@@ -194,7 +202,12 @@ svg.addEventListener("click", event => {
   const nodeGroup = t.closest(".node-group");
   if (nodeGroup) {
     event.stopPropagation();
-    selectNode(nodeGroup.getAttribute("data-node-id")!);
+    const nodeIdentifier = nodeGroup.getAttribute("data-node-id")!;
+    if ((event as MouseEvent).shiftKey && state.uiMode === "edit") {
+      toggleNodeInSelection(nodeIdentifier);
+    } else {
+      selectNode(nodeIdentifier);
+    }
     return;
   }
   const rowLabel = t.closest(".row-label-group");
@@ -1373,6 +1386,7 @@ export function render(): void {
     const colW = (layout.colWidths && layout.colWidths[stage.id]) || NODE_WIDTH;
     const colLeft = layout.colX[stage.id];
     const isStageCollapsed = state.hiddenStages.has(stage.id);
+    const nodeCount = stageNodeCount[stage.id] || 0;
 
     const cx = colLeft + colW / 2;
     const stageTip = (isStageCollapsed ? "Click to expand " : "Click to collapse ") + stage.label + " on the map.";
@@ -1385,11 +1399,13 @@ export function render(): void {
       // clicked anywhere down its length; a "+" invites expansion and the label
       // runs vertically down the band.
       content += '<rect class="collapsed-col-band" x="' + colLeft + '" y="' + headerBandBottom + '" width="' + colW + '" height="' + (layout.totalHeight - headerBandBottom) + '"></rect>';
-      content += '<text class="col-header-text col-header-plus" x="' + cx + '" y="' + (SVG_PADDING_TOP + 24) + '" text-anchor="middle">+</text>';
+      content += '<text class="col-header-text col-header-plus" x="' + cx + '" y="' + (SVG_PADDING_TOP + 17) + '" text-anchor="middle">+</text>';
+      content += '<text class="col-header-count col-header-collapsed-count" x="' + cx + '" y="' + (SVG_PADDING_TOP + 30) + '" text-anchor="middle">' + nodeCount + '</text>';
       const labelY = headerBandBottom + (layout.totalHeight - headerBandBottom) / 2;
       content += '<text class="col-header-text col-header-stub" x="' + cx + '" y="' + labelY + '" text-anchor="middle" transform="rotate(-90 ' + cx + ' ' + labelY + ')">' + escapeHtml(stage.label) + '</text>';
     } else {
-      content += '<text class="col-header-text" x="' + cx + '" y="' + (SVG_PADDING_TOP + 24) + '" text-anchor="middle">' + escapeHtml(stage.label) + '</text>';
+      content += '<text class="col-header-text" x="' + (cx - 10) + '" y="' + (SVG_PADDING_TOP + 24) + '" text-anchor="middle">' + escapeHtml(stage.label) + '</text>';
+      content += '<text class="col-header-count" x="' + (colLeft + colW - 8) + '" y="' + (SVG_PADDING_TOP + 24) + '" text-anchor="end">' + nodeCount + '</text>';
     }
     content += '</g>';
 
@@ -1427,14 +1443,28 @@ export function render(): void {
     const isCollapsed = state.hiddenStreams.has(stream.id);
     const rowYPos = layout.rowY[stream.id];
     const rowHeight = layout.rowHeights[stream.id];
-    const labelText = isCollapsed ? "+ " + stream.short : stream.short;
+    const nodeCount = streamNodeCount[stream.id] || 0;
 
     const streamTip = (isCollapsed ? "Click to expand " : "Click to collapse ") + stream.label + " on the map.";
     content += '<g class="row-label-group' + (isCollapsed ? ' collapsed' : '') + '" data-stream-id="' + escapeHtml(stream.id) + '" data-tooltip="' + escapeHtml(streamTip) + '" role="button" tabindex="0" aria-label="' + escapeHtml((isCollapsed ? "Expand row " : "Collapse row ") + stream.label) + '" aria-expanded="' + String(!isCollapsed) + '">';
     content += '<rect class="row-label-bg" x="0" y="' + rowYPos + '" width="' + ROW_HEADER_WIDTH + '" height="' + rowHeight + '"></rect>';
     // Thin coloured stripe on the right edge of the strip
     content += '<rect x="' + (ROW_HEADER_WIDTH - 4) + '" y="' + rowYPos + '" width="4" height="' + rowHeight + '" fill="' + escapeHtml(stream.color) + '" opacity="' + (isCollapsed ? 0.4 : 0.7) + '"></rect>';
-    content += '<text class="row-label-text" fill="' + escapeHtml(stream.color) + '" x="' + (ROW_HEADER_WIDTH / 2) + '" y="' + (rowYPos + rowHeight / 2) + '" text-anchor="middle" dominant-baseline="middle">' + escapeHtml(labelText) + '</text>';
+    if (isCollapsed) {
+      content += '<text class="row-label-text row-label-collapsed" fill="' + escapeHtml(stream.color) + '" x="' + (ROW_HEADER_WIDTH / 2 - 7) + '" y="' + (rowYPos + rowHeight / 2) + '" text-anchor="middle" dominant-baseline="middle">+</text>';
+      content += '<text class="row-label-count" x="' + (ROW_HEADER_WIDTH / 2 + 8) + '" y="' + (rowYPos + rowHeight / 2) + '" text-anchor="middle" dominant-baseline="middle">' + nodeCount + '</text>';
+    } else {
+      const rowLabelLines = wrapLabel(stream.label, 15);
+      const rowLabelLineHeight = 11;
+      const rowLabelBlockHeight = rowLabelLines.length * rowLabelLineHeight + 10;
+      const firstRowLabelY = rowYPos + (rowHeight - rowLabelBlockHeight) / 2 + 5;
+      content += '<text class="row-label-text" fill="' + escapeHtml(stream.color) + '" x="' + (ROW_HEADER_WIDTH / 2) + '" y="' + firstRowLabelY + '" text-anchor="middle" dominant-baseline="middle">';
+      for (let lineIndex = 0; lineIndex < rowLabelLines.length; lineIndex++) {
+        content += '<tspan x="' + (ROW_HEADER_WIDTH / 2) + '" dy="' + (lineIndex === 0 ? 0 : rowLabelLineHeight) + '">' + escapeHtml(rowLabelLines[lineIndex]) + '</tspan>';
+      }
+      content += '</text>';
+      content += '<text class="row-label-count" x="' + (ROW_HEADER_WIDTH / 2) + '" y="' + (firstRowLabelY + rowLabelLines.length * rowLabelLineHeight + 2) + '" text-anchor="middle" dominant-baseline="middle">' + nodeCount + ' boxes</text>';
+    }
     content += '</g>';
   }
 

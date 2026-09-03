@@ -299,11 +299,14 @@ body.review-open .atlas-surface-bar { display: none; }
   border-right: 1px solid var(--border-subtle);
   background: transparent;
   color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-ui);
   font-size: var(--fs-cap);
-  font-weight: 650;
-  letter-spacing: var(--tracking-cap);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-weight: var(--fw-semibold);
+  letter-spacing: normal;
+  text-align: left;
   pointer-events: auto;
   cursor: pointer;
 }
@@ -323,8 +326,6 @@ body.review-open .atlas-surface-bar { display: none; }
   padding: 4px 6px;
   font-size: 10px;
   line-height: 1.15;
-  text-overflow: clip;
-  white-space: normal;
 }
 
 .viz-sticky-rows {
@@ -356,13 +357,14 @@ body.review-open .atlas-surface-bar { display: none; }
   border-left: 4px solid var(--text-tertiary);
   background: transparent;
   color: var(--text-secondary);
-  font-family: var(--font-mono);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-ui);
   font-size: var(--fs-cap);
   font-weight: var(--fw-semibold);
-  letter-spacing: var(--tracking-cap);
+  letter-spacing: normal;
   text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   pointer-events: auto;
   cursor: pointer;
 }
@@ -376,6 +378,37 @@ body.review-open .atlas-surface-bar { display: none; }
 .viz-sticky-row.collapsed {
   color: var(--act-hi);
   opacity: 0.75;
+}
+
+.axis-heading-main {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.axis-heading-count {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--text-tertiary);
+  font-size: 0.9em;
+  font-variant-numeric: tabular-nums;
+}
+
+.viz-sticky-column.collapsed,
+.viz-sticky-row.collapsed {
+  justify-content: center;
+}
+
+.viz-sticky-column.collapsed .axis-heading-main,
+.viz-sticky-row.collapsed .axis-heading-main {
+  overflow: visible;
+}
+
+.viz-sticky-column.collapsed .axis-heading-count,
+.viz-sticky-row.collapsed .axis-heading-count {
+  margin-left: 0;
+  color: currentColor;
 }
 
 /* Each axis has one visible representation at a time. Preserve the SVG groups
@@ -757,11 +790,21 @@ body.focus-wide .edge-casing.dimmed {
 }
 
 .row-label-text {
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: calc(var(--fs-map-note) * var(--map-text-scale, 1));
   font-weight: var(--fw-semibold);
-  letter-spacing: var(--tracking-cap);
-  text-transform: uppercase;
+  letter-spacing: normal;
+  pointer-events: none;
+}
+
+.row-label-count,
+.col-header-count {
+  fill: var(--text-tertiary);
+  font-family: var(--font-ui);
+  font-size: calc(var(--fs-map-note) * 0.82 * var(--map-text-scale, 1));
+  font-weight: var(--fw-medium);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: normal;
   pointer-events: none;
 }
 
@@ -798,11 +841,10 @@ body.focus-wide .edge-casing.dimmed {
 }
 
 .col-header-text {
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: calc(var(--fs-map-note) * var(--map-text-scale, 1));
   font-weight: var(--fw-semibold);
-  letter-spacing: var(--tracking-cap);
-  text-transform: uppercase;
+  letter-spacing: normal;
   fill: var(--text-secondary);
   pointer-events: none;
 }

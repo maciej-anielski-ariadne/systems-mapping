@@ -1462,12 +1462,70 @@ describe("feedback", () => {
     expect(animationControls.hidden).toBe(false);
     expect(document.querySelectorAll("#atlas-stage g.n.focus .nd.on")).toHaveLength(1);
 
-    scrubber.value = "1";
+    scrubber.value = "500";
     scrubber.dispatchEvent(new Event("input", { bubbles: true }));
     const selectedChords = document.querySelectorAll("#atlas-stage g.n.focus .ch.on");
     expect(selectedChords.length).toBeGreaterThan(0);
     expect(document.querySelectorAll("#atlas-stage g.n.focus .nd.on").length).toBeGreaterThan(1);
     expect(document.querySelectorAll("#atlas-stage g.n.focus .bl.animation-current")).toHaveLength(1);
+  });
+
+  it("wraps, staggers and contains every overview label without overlap", () => {
+    const originalSvgBoundingClientRect = SVGSVGElement.prototype.getBoundingClientRect;
+    SVGSVGElement.prototype.getBoundingClientRect = () => ({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 800,
+      bottom: 600,
+      width: 800,
+      height: 600,
+      toJSON: () => ({}),
+    });
+    try {
+      loadDataFromCsv(advancedCsv);
+      const start = NODES.find(node => node.label === "Website visits") || NODES[0];
+      openAtlas(start.id);
+
+      const labels = [...document.querySelectorAll<SVGTextElement>(
+        "#atlas-stage .atlas-overview-label",
+      )];
+      expect(labels.length).toBeGreaterThan(3);
+      const rectangles = labels.map(label => ({
+        name: label.getAttribute("aria-label") || "unnamed Atlas label",
+        left: Number(label.dataset.layoutLeftPixels),
+        top: Number(label.dataset.layoutTopPixels),
+        width: Number(label.dataset.layoutWidthPixels),
+        height: Number(label.dataset.layoutHeightPixels),
+      }));
+      for (const rectangle of rectangles) {
+        expect(rectangle.left, rectangle.name).toBeGreaterThanOrEqual(0);
+        expect(rectangle.top, rectangle.name).toBeGreaterThanOrEqual(0);
+        expect(rectangle.left + rectangle.width, rectangle.name).toBeLessThanOrEqual(800);
+        expect(rectangle.top + rectangle.height, rectangle.name).toBeLessThanOrEqual(600);
+      }
+      for (let firstIndex = 0; firstIndex < rectangles.length; firstIndex++) {
+        for (let secondIndex = firstIndex + 1; secondIndex < rectangles.length; secondIndex++) {
+          const firstRectangle = rectangles[firstIndex];
+          const secondRectangle = rectangles[secondIndex];
+          const overlaps = !(
+            firstRectangle.left + firstRectangle.width <= secondRectangle.left ||
+            secondRectangle.left + secondRectangle.width <= firstRectangle.left ||
+            firstRectangle.top + firstRectangle.height <= secondRectangle.top ||
+            secondRectangle.top + secondRectangle.height <= firstRectangle.top
+          );
+          expect(overlaps, `${firstRectangle.name} overlaps ${secondRectangle.name}`).toBe(false);
+        }
+      }
+      expect(new Set(rectangles.map(rectangle => rectangle.top)).size).toBeGreaterThan(1);
+      expect(new Set(labels.map(label => label.dataset.layoutSide)))
+        .toEqual(new Set(["above", "below"]));
+      expect(labels.some(label => label.querySelectorAll(".atlas-overview-label-line").length > 1))
+        .toBe(true);
+    } finally {
+      SVGSVGElement.prototype.getBoundingClientRect = originalSvgBoundingClientRect;
+    }
   });
 
   it("pauses, changes speed and scrubs through a long feedback loop", () => {
@@ -1485,14 +1543,22 @@ describe("feedback", () => {
 
     const animationControls = document.getElementById("atlas-loopctl") as HTMLElement;
     const toggleButton = animationControls.querySelector<HTMLButtonElement>("[data-loop-animation-toggle]")!;
+    const previousButton = animationControls.querySelector<HTMLButtonElement>("[data-loop-animation-step='-1']")!;
+    const nextButton = animationControls.querySelector<HTMLButtonElement>("[data-loop-animation-step='1']")!;
     const speedSelect = animationControls.querySelector<HTMLSelectElement>("[data-loop-animation-speed]")!;
     const scrubber = animationControls.querySelector<HTMLInputElement>("[data-loop-animation-scrub]")!;
     const status = animationControls.querySelector<HTMLOutputElement>("#atlas-loop-animation-status")!;
     const atlasSvg = document.querySelector("#atlas-stage svg.atlas") as SVGSVGElement;
     const stableWheelFrame = atlasSvg.getAttribute("viewBox");
     expect(animationControls.hidden).toBe(false);
-    expect(scrubber.max).toBe("18");
+    expect(speedSelect.classList.contains("typeable-dropdown-native")).toBe(true);
+    expect(speedSelect.closest(".selection-only-dropdown")?.querySelector(
+      ".typeable-dropdown-button",
+    )).not.toBeNull();
+    expect(scrubber.max).toBe("1000");
     expect(toggleButton.textContent).toBe("Pause");
+    expect(previousButton.disabled).toBe(true);
+    expect(nextButton.disabled).toBe(false);
 
     toggleButton.click();
     expect(toggleButton.textContent).toBe("Play");
@@ -1500,7 +1566,7 @@ describe("feedback", () => {
     speedSelect.dispatchEvent(new Event("change", { bubbles: true }));
     expect(speedSelect.value).toBe("2");
 
-    scrubber.value = "9";
+    scrubber.value = "500";
     scrubber.dispatchEvent(new Event("input", { bubbles: true }));
     const halfwayNodes = document.querySelectorAll("#atlas-stage g.n.focus .nd.on").length;
     expect(halfwayNodes).toBeGreaterThan(1);
@@ -1508,6 +1574,8 @@ describe("feedback", () => {
     expect(document.querySelectorAll("#atlas-stage g.n.focus .bl")).toHaveLength(halfwayNodes);
     expect(status.textContent).toContain("Box 10 of 18");
     expect(atlasSvg.getAttribute("viewBox")).toBe(stableWheelFrame);
+    expect(previousButton.disabled).toBe(false);
+    expect(nextButton.disabled).toBe(false);
     const halfwayLabelPositions = new Map(
       [...atlasSvg.querySelectorAll<SVGTextElement>("g.n.focus .bl")].map(label => [
         label.getAttribute("aria-label"),
@@ -1517,11 +1585,18 @@ describe("feedback", () => {
 
     const pathwayRow = panel().querySelector("[data-fork]") as HTMLButtonElement;
     pathwayRow.click();
-    expect(scrubber.value).toBe("9");
+    expect(scrubber.value).toBe("500");
     expect(toggleButton.textContent).toBe("Play");
     expect(status.textContent).toContain("Box 10 of 18");
     expect(document.querySelectorAll("#atlas-stage g.n.focus .nd.on")).toHaveLength(halfwayNodes);
     expect(document.querySelectorAll("#atlas-stage g.n.focus .bl")).toHaveLength(halfwayNodes);
+
+    previousButton.click();
+    expect(scrubber.value).toBe(String(Math.round((8 / 18) * 1000)));
+    expect(status.textContent).toContain("Box 9 of 18");
+    nextButton.click();
+    expect(scrubber.value).toBe("500");
+    expect(status.textContent).toContain("Box 10 of 18");
 
     scrubber.value = scrubber.max;
     scrubber.dispatchEvent(new Event("input", { bubbles: true }));
@@ -1529,6 +1604,8 @@ describe("feedback", () => {
     expect(document.querySelectorAll("#atlas-stage g.n.focus .bl")).toHaveLength(18);
     expect(status.textContent).toContain("Complete · 18 boxes");
     expect(toggleButton.textContent).toBe("Replay");
+    expect(previousButton.disabled).toBe(false);
+    expect(nextButton.disabled).toBe(true);
     expect(atlasSvg.getAttribute("viewBox")).toBe(stableWheelFrame);
     for (const label of atlasSvg.querySelectorAll<SVGTextElement>("g.n.focus .bl")) {
       const earlierPosition = halfwayLabelPositions.get(label.getAttribute("aria-label"));
@@ -1635,7 +1712,7 @@ describe("feedback", () => {
       expect(toggleButton.textContent).toBe("Motion off");
 
       previousButton.click();
-      expect(scrubber.value).toBe("17");
+      expect(scrubber.value).toBe(String(Math.round((17 / 18) * 1000)));
       expect(toggleButton.textContent).toBe("Motion off");
     } finally {
       Object.defineProperty(globalThis, "matchMedia", {

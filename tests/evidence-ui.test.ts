@@ -171,7 +171,24 @@ describe("evidence in Review", () => {
     expect(document.querySelector(".review-evidence-list")?.textContent).toContain("Supported");
 
     const filter = document.getElementById("review-evidence-filter") as HTMLSelectElement;
-    changeValue(filter, "supported");
+    expect(filter.classList.contains("typeable-dropdown-native")).toBe(true);
+    const filterWrapper = filter.closest(".selection-only-dropdown")!;
+    const filterButton = filterWrapper.querySelector<HTMLButtonElement>(
+      ".typeable-dropdown-button",
+    )!;
+    expect(filterButton).not.toBeNull();
+    filterButton.click();
+    const filterPopup = document.getElementById(filterButton.getAttribute("aria-controls")!)!;
+    const supportedOption = Array.from(
+      filterPopup.querySelectorAll<HTMLElement>(".typeable-dropdown-item"),
+    ).find(dropdownItem => dropdownItem.textContent === "Supported")!;
+    supportedOption.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    expect(filter.value).toBe("all");
+    supportedOption.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(document.getElementById("review-stage")!.hidden).toBe(false);
+    expect((document.getElementById("review-evidence-filter") as HTMLSelectElement).value)
+      .toBe("supported");
     expect(document.querySelectorAll(".review-evidence-item")).toHaveLength(1);
     const linkEvidenceItem = document.querySelector(".review-evidence-item") as HTMLElement;
     expect(linkEvidenceItem.textContent).toContain("Causal link");
@@ -206,6 +223,32 @@ describe("evidence in Review", () => {
     moreButton.click();
     expect(document.querySelectorAll(".review-evidence-item")).toHaveLength(207);
     expect(document.getElementById("review-evidence-more")).toBeNull();
+    closeReview();
+  });
+
+  it("collapses Evidence provenance without losing the Review position", () => {
+    initReviewStage();
+    openReview();
+    const leftReviewColumnBefore = document.querySelector<HTMLElement>(
+      "#review-stage .review-column:first-child",
+    )!;
+    leftReviewColumnBefore.scrollTop = 140;
+    const evidenceToggle = document.getElementById("review-evidence-toggle") as HTMLButtonElement;
+
+    expect(evidenceToggle.getAttribute("aria-expanded")).toBe("true");
+    expect(document.getElementById("review-evidence-content")).not.toBeNull();
+    evidenceToggle.click();
+
+    const collapsedEvidenceToggle = document.getElementById("review-evidence-toggle") as HTMLButtonElement;
+    expect(collapsedEvidenceToggle.getAttribute("aria-expanded")).toBe("false");
+    expect(document.getElementById("review-evidence-content")).toBeNull();
+    expect(document.querySelector<HTMLElement>("#review-stage .review-column:first-child")!.scrollTop)
+      .toBe(140);
+
+    collapsedEvidenceToggle.click();
+    expect(document.getElementById("review-evidence-toggle")?.getAttribute("aria-expanded"))
+      .toBe("true");
+    expect(document.getElementById("review-evidence-content")).not.toBeNull();
     closeReview();
   });
 });

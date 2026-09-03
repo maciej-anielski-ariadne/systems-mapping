@@ -5,14 +5,18 @@ import { gzipSync } from "node:zlib";
 const OFFLINE_ARTIFACT_PATH = "dist/systems-map.html";
 const HOSTED_OUTPUT_DIRECTORY = "dist-hosted";
 
+// Raised 2026-09-03 for the Learn restructure: the calculation reference moved
+// out of the guided tour into a browsable shelf (26a-learn-reference.ts), and a
+// second, smaller example map joined the bundle. The prose compresses well, so
+// the cost users actually pay is +8.2KB on cold transfer, about 2.9%.
 const performanceBudgets = {
-  offlineRawBytes: 825_000,
-  offlineGzipBytes: 285_000,
-  hostedMainJavaScriptRawBytes: 525_000,
+  offlineRawBytes: 915_000,
+  offlineGzipBytes: 300_000,
+  hostedMainJavaScriptRawBytes: 620_000,
   hostedWorkerJavaScriptRawBytes: 6_000,
-  hostedTotalJavaScriptRawBytes: 532_000,
-  hostedCssRawBytes: 155_000,
-  hostedColdTransferBytes: 270_000,
+  hostedTotalJavaScriptRawBytes: 625_000,
+  hostedCssRawBytes: 165_000,
+  hostedColdTransferBytes: 296_000,
   offlineEmbeddedFontPayloads: 4,
 };
 

@@ -178,6 +178,31 @@ describe("confirmed Review fixes", () => {
     expect(expandedToggles).toHaveLength(1);
   });
 
+  it("keeps both Review columns in place when an issue card is expanded", () => {
+    openReview();
+    const reviewBodyBefore = document.querySelector<HTMLElement>(
+      "#review-stage .review-body",
+    )!;
+    const reviewColumnsBefore = Array.from(
+      document.querySelectorAll<HTMLElement>("#review-stage .review-column"),
+    );
+    expect(reviewColumnsBefore).toHaveLength(2);
+    reviewBodyBefore.scrollTop = 45;
+    reviewColumnsBefore[0].scrollTop = 180;
+    reviewColumnsBefore[1].scrollTop = 95;
+
+    document.querySelector<HTMLButtonElement>("[data-review-issue]")!.click();
+
+    const reviewColumnsAfter = Array.from(
+      document.querySelectorAll<HTMLElement>("#review-stage .review-column"),
+    );
+    expect(document.querySelector<HTMLElement>("#review-stage .review-body")!.scrollTop)
+      .toBe(45);
+    expect(reviewColumnsAfter[0]).not.toBe(reviewColumnsBefore[0]);
+    expect(reviewColumnsAfter[0].scrollTop).toBe(180);
+    expect(reviewColumnsAfter[1].scrollTop).toBe(95);
+  });
+
   it("owns its exit without discarding Edit mode", () => {
     setUiMode("edit");
     openReview();

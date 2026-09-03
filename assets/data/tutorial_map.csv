@@ -1,26 +1,47 @@
 # Ariadne Maps — Tutorial map
 # A neutral community-workshop programme designed for learning the app. The
-# map is small enough to follow end to end while exercising the full modelling
-# toolkit: filters, search, simulation, Atlas feedback loops, calculation
-# rules, evidence metadata, formulas, bounds and hidden constants. Its worked
+# map has the scale and branching of a working programme model while retaining
+# a clear thread from resources to longer-term learning. It exercises filters,
+# search, panning, simulation, Atlas feedback loops, calculation rules,
+# evidence metadata, formulas, bounds and hidden constants. Its worked
 # formula cases contrast proportional links with rate conversion, capacity,
 # shares, balances, threshold conditions, joint requirements and delay().
 #
 # Every calculated box rests exactly at its stated baseline. Evidence statuses
 # are examples of documentation practice, not claims about a real programme.
+#
+# THE MAP IS DELIBERATELY IMPERFECT IN THREE PLACES so that Review has something
+# real to find. None of them breaks the maths — every box still rests at its
+# baseline and the spreadsheet still loads without findings. They are questions
+# about provenance, which is what an assurance pass is for:
+#   1. Participant satisfaction -> Community confidence is the strongest link
+#      into the box that closes the map's feedback loop and carries no recorded
+#      evidence at all.
+#   2. Shared invitation message -> Partner referrals was fitted to data in 2020
+#      and has not been looked at since.
+#   3. Partner referrals -> First-time attendees is the highest strength on the
+#      map outside the capacity gate and rests on a single workshop estimate.
 
 # SECTION: streams
 id,label,short,color
 planning,Planning,PLAN,#60a5fa
+partnerships,Partnerships,PART,#f472b6
 delivery,Delivery,DELIV,#34d399
 community,Community,COMM,#fbbf24
+learning,Learning and evidence,LEARN,#a78bfa
 
 # SECTION: stages
 id,label
 inputs,Inputs
+design,Design
 preparedness,Preparedness
+coordination,Coordination
+engagement,Reach and engagement
 participation,Participation
+experience,Delivery experience
 outcomes,Outcomes
+follow_up,Follow-up
+learning_cycle,Learning and adaptation
 
 # SECTION: categories
 id,label,color,text_color,class
@@ -42,7 +63,7 @@ id,value,description
 people_reached_per_hour,5,People reached by one hour of outreach
 registration_rate,0.4,Share of reached people who register at baseline
 seats_per_workshop,20,Usable places in each workshop
-attendance_rate,0.8,Share of registered places that are attended
+attendance_rate,0.75,Share of registered places that are attended
 confidence_feedback_strength,0.2,Strength of the delayed confidence feedback
 confidence_reference,70,Community confidence value that gives neutral feedback
 
@@ -58,24 +79,80 @@ walk_in_interest,Walk-in interest,Residents who may arrive without registering i
 completion_share,Completion share,Share of attendees who complete the programme activity.,delivery,inputs,capability|learning,0.75,share,true,higher_better,1.34,,,0,1,unspecified,,,
 follow_up_readiness,Follow-up readiness,Share of completed participants ready for a follow-up activity.,delivery,inputs,capability|learning,0.9,share,true,higher_better,1.12,,,0,1,unspecified,,,
 workshop_readiness,Workshop readiness,How prepared the team and materials are for delivery.,planning,preparedness,capability,100,index,,higher_better,,multiplicative,,30,140,unspecified,,,
+volunteer_coordination,Volunteer coordination,How clearly volunteer roles and rotas are coordinated.,planning,design,activity|capability,100,index,,higher_better,,multiplicative,,,,supported,Coordination checklist used in monthly planning,Programme operations review,2026-09-01
+delivery_plan,Delivery plan,How clearly the programme turns readiness into an agreed sequence of sessions.,planning,coordination,activity|capability,84,index,,higher_better,,multiplicative,,0,100,supported,Delivery plan is reviewed before each monthly cycle,Programme operations review,2026-09-01
+facilitator_confidence,Facilitator confidence,How confident facilitators feel about running an inclusive session.,planning,experience,capability|learning,75,index,,higher_better,,additive,,0,100,hypothesis,Confidence is expected to respond to preparation and experience,Facilitator reflection workshop,2026-09-01
+delivery_consistency,Delivery consistency,How reliably sessions follow the agreed programme standard.,planning,outcomes,outcome,80,index,,higher_better,,multiplicative,,0,100,supported,Monthly quality checks use the same delivery standard,Programme quality review,2026-09-01
+improvement_backlog,Improvement backlog,Improvements the programme has agreed to and has not made yet. It grows when demand goes unmet and shrinks as adaptations land.,planning,learning_cycle,learning,24,actions waiting,,lower_better,,additive,,0,,supported,Actions are counted from the monthly learning log,Programme learning log,2026-09-01
+partner_time,Partner time,Time partner organisations can contribute each month.,partnerships,inputs,resource,60,hours/month,true,,2.5,,,,,unspecified,,,
+referral_capacity,Referral capacity,People partner organisations can actively refer each month.,partnerships,inputs,resource,120,people/month,true,,2.5,,,,,unspecified,,,
+partner_readiness,Partner readiness,How ready partners are to explain and support the programme.,partnerships,preparedness,capability,80,index,,higher_better,,multiplicative,,0,100,supported,Readiness checklist agreed with delivery partners,Partner network review,2026-09-01
+shared_message,Shared invitation message,How consistently partners describe who the programme is for.,partnerships,design,activity|capability,85,index,,higher_better,,multiplicative,,0,100,supported,Shared copy is reviewed at partner meetings,Partner communications review,2026-09-01
+partner_briefing,Partner briefing,How consistently referring partners understand the timetable welcome and eligibility.,partnerships,coordination,activity|capability,82,index,,higher_better,,multiplicative,,0,100,supported,Briefing checklist is used before each referral cycle,Partner network review,2026-09-01
+partner_referrals,Partner referrals,Residents referred by trusted organisations each month.,partnerships,participation,activity,72,people/month,,higher_better,,multiplicative,,0,,calibrated,Referral level fitted to the tutorial observation set,Tutorial observations C,2026-09-01
+referral_welcome,Referral welcome,How well referred residents are supported into their first session.,partnerships,experience,access|capability,78,index,,higher_better,,multiplicative,,0,100,hypothesis,Welcome quality is based on an initial partner workshop,Partner design workshop,2026-09-01
+partner_confidence,Partner confidence,Confidence that referring residents leads to useful support.,partnerships,outcomes,outcome|learning,74,index,,higher_better,,multiplicative,,0,100,hypothesis,Causal strength remains to be tested,Partner design workshop,2026-09-01
 delivery_capacity,Delivery capacity,Workshop sessions possible after the scarcest prerequisite is considered.,delivery,preparedness,capability,8,sessions/month,,higher_better,,min,,,,unspecified,,,
+session_schedule,Session schedule,Workshop sessions placed on the monthly timetable.,delivery,coordination,activity,8,sessions/month,,higher_better,,multiplicative,,0,,supported,Schedule is drawn from the operating calendar,Programme operating definitions,2026-09-01
 feedback_uplift,Confidence feedback,Delayed multiplier showing how community confidence affects later outreach.,community,preparedness,capability|learning,1,multiplier,,,,,1 + confidence_feedback_strength * (delay(community_confidence) / confidence_reference - 1),0.5,1.5,hypothesis,Exploratory delayed feedback shape,Workshop design assumption,2026-09-01
 outreach_reach,People reached,Residents reached through the monthly outreach effort.,community,participation,activity,400,people/month,,higher_better,,,outreach_effort * people_reached_per_hour * feedback_uplift,,,calibrated,Rate fitted to the tutorial observation set,Tutorial observations A,2026-09-01
-registrations,Registrations,Places requested subject to reach and the programme capacity ceiling.,community,participation,activity,160,people/month,,higher_better,,,"min(outreach_reach * registration_rate, delivery_capacity * seats_per_workshop)",,,supported,Form follows the registration and capacity definitions,Programme operating definitions,2026-09-01
+registrations,Registrations,Places requested subject to reach referrals and the programme capacity ceiling.,community,participation,activity,160,people/month,,higher_better,,,"min((outreach_reach + partner_referrals + community_events) * registration_rate, delivery_capacity * seats_per_workshop)",,,supported,Form follows the registration and capacity definitions,Programme operating definitions,2026-09-01
 registration_share,Registration share,Share of reached people who register.,community,outcomes,outcome|learning,0.4,share,,higher_better,,,"clamp(registrations / outreach_reach, 0, 1)",0,1,validated,Ratio checked against separate tutorial cases,Tutorial validation cases,2026-09-01
-workshops_delivered,Workshops delivered,Sessions delivered within both demand and delivery capacity.,delivery,participation,activity,8,sessions/month,,higher_better,,,"min(registrations / seats_per_workshop, delivery_capacity)",,,supported,Capacity rule matches the programme definition,Programme operating definitions,2026-09-01
-attendees_served,Attendees served,People attending delivered workshop places.,delivery,outcomes,outcome,128,people/month,,higher_better,,,workshops_delivered * seats_per_workshop * attendance_rate,0,,calibrated,Attendance parameter fitted to tutorial observations,Tutorial observations B,2026-09-01
-completed_follow_ups,Completed follow-ups,Attendees who both complete the activity and are ready for follow-up.,delivery,outcomes,outcome|learning,86.4,people/month,,higher_better,,,attendees_served * completion_share * follow_up_readiness,0,,supported,Joint product follows the programme definitions,Programme operating definitions,2026-09-01
+workshops_delivered,Workshops delivered,Sessions delivered within demand capacity and the published schedule.,delivery,participation,activity,8,sessions/month,,higher_better,,,"min(registrations / seats_per_workshop, delivery_capacity, session_schedule)",,,supported,Capacity rule matches the programme definition,Programme operating definitions,2026-09-01
+delivery_experience,Delivery experience,How safe welcoming and well paced each session feels.,delivery,experience,capability|access,82,index,,higher_better,,multiplicative,,0,100,supported,Session observations use an agreed quality rubric,Tutorial delivery review,2026-09-01
+attendees_served,Attendees served,People attending delivered workshop places.,delivery,outcomes,outcome,120,people/month,,higher_better,,,workshops_delivered * seats_per_workshop * attendance_rate,0,,calibrated,Attendance parameter fitted to tutorial observations,Tutorial observations B,2026-09-01
+completed_follow_ups,Completed follow-ups,Attendees who both complete the activity and are ready for follow-up.,delivery,follow_up,outcome|learning,81,people/month,,higher_better,,,attendees_served * completion_share * follow_up_readiness,0,,supported,Joint product follows the programme definitions,Programme operating definitions,2026-09-01
+repeat_attendance,Repeat attendance,Participants who return for another activity or follow-up.,delivery,follow_up,outcome|learning,62,people/month,,higher_better,,multiplicative,,0,,hypothesis,Repeat attendance relationship is illustrative,Tutorial modelling exercise,2026-09-01
+accessible_information,Accessible information,How available invitations are across language format and channel needs.,community,design,access|capability,72,index,,higher_better,,additive,,0,100,supported,Accessibility checklist applied to current materials,Tutorial access review,2026-09-01
+outreach_calendar,Outreach calendar,How well community conversations are timed and coordinated across channels.,community,coordination,activity|access,78,index,,higher_better,,multiplicative,,0,100,supported,Calendar is reviewed with community partners each month,Community engagement workshop,2026-09-01
+community_events,Community conversations,Residents reached through open conversations and local events.,community,engagement,activity,14,events/month,,higher_better,,multiplicative,,0,,hypothesis,Event contribution is an initial programme assumption,Community engagement workshop,2026-09-01
+first_time_attendees,First-time attendees,Residents attending the programme for the first time.,community,experience,outcome|access,48,people/month,,higher_better,,multiplicative,,0,,calibrated,Count fitted to the tutorial observation set,Tutorial observations D,2026-09-01
 unserved_interest,Unserved participant interest,Registered and walk-in interest above the places the programme can offer.,community,outcomes,outcome|learning,16,people/month,,lower_better,,,"max(registrations + walk_in_interest - delivery_capacity * seats_per_workshop, 0)",0,,hypothesis,Illustrative balance with a non-negative floor,Tutorial modelling exercise,2026-09-01
 participant_satisfaction,Participant satisfaction,Average participant rating after a workshop.,delivery,outcomes,outcome|learning,85,index,,higher_better,,multiplicative,,,,unspecified,,,
-community_confidence,Community confidence,Confidence that the programme is useful welcoming and reliable.,community,outcomes,outcome|learning,70,index,,higher_better,,additive,,0,100,unspecified,,,
+community_confidence,Community confidence,Confidence that the programme is useful welcoming and reliable.,community,follow_up,outcome|learning,70,index,,higher_better,,additive,,0,100,unspecified,,,
+community_advocates,Community advocates,Residents who actively recommend or help shape the programme.,community,follow_up,outcome|learning,24,people/month,,higher_better,,multiplicative,,0,,hypothesis,Advocacy pathway is an exploratory causal claim,Community engagement workshop,2026-09-01
+survey_capacity,Survey capacity,Monthly capacity to collect and process participant feedback.,learning,inputs,resource|learning,100,responses/month,true,,2.5,,,,,unspecified,,,
+data_quality,Data quality,Completeness and reliability of programme monitoring data.,learning,preparedness,capability|learning,78,index,,higher_better,,multiplicative,,0,100,supported,Data quality checklist applied monthly,Programme learning log,2026-09-01
+response_campaign,Feedback invitation,How consistently participants are invited to share feedback.,learning,design,activity|learning,80,index,,higher_better,,multiplicative,,0,100,supported,Invitation process is documented in delivery guidance,Programme operating definitions,2026-09-01
+measurement_plan,Measurement plan,How clearly the team has agreed what to collect when and why.,learning,coordination,activity|learning,81,index,,higher_better,,multiplicative,,0,100,supported,Measurement plan is approved at the start of each cycle,Programme learning log,2026-09-01
+feedback_responses,Feedback responses,Participant feedback responses received each month.,learning,participation,activity|learning,64,responses/month,,higher_better,,multiplicative,,0,,calibrated,Response level fitted to the tutorial observation set,Tutorial observations E,2026-09-01
+insight_quality,Insight quality,How actionable and representative the collected feedback is.,learning,experience,capability|learning,76,index,,higher_better,,multiplicative,,0,100,hypothesis,Representativeness needs further testing,Programme learning log,2026-09-01
+evidence_confidence,Evidence confidence,Confidence that programme decisions reflect reliable evidence.,learning,outcomes,outcome|learning,73,index,,higher_better,,multiplicative,,0,100,supported,Assurance approach agreed with programme governance group,Governance review,2026-09-01
+service_adaptations,Service adaptations,Changes the programme actually makes for the next cycle. Partner delivery and resident learning all arrive here.,learning,learning_cycle,learning,10,changes/cycle,,higher_better,,additive,,0,,supported,Adaptations are recorded in the approved improvement plan,Programme learning log,2026-09-01
 
 # SECTION: edges
 from,to,effect,elasticity,style,description,evidence_status,evidence_rationale,evidence_source,evidence_last_reviewed
 volunteer_hours,workshop_readiness,enables,0.35,,Preparation time enables stronger workshop readiness.,supported,Consistent with facilitator planning records,Tutorial planning review,2026-09-01
 materials_budget,workshop_readiness,enables,0.25,,Materials enable practical workshop preparation.,hypothesis,Plausible programme design relationship,Facilitator workshop,2026-09-01
-facilitator_slots,delivery_capacity,enables,1,,Facilitators are required for every workshop session.,supported,Staffing requirement in programme design,Programme operating definitions,2026-09-01
-venue_slots,delivery_capacity,enables,1,,A suitable room is required for every workshop session.,validated,Capacity rule checked against scheduling cases,Tutorial validation cases,2026-09-01
+volunteer_hours,volunteer_coordination,enables,0.3,,Volunteer time enables clearer coordination.,supported,Consistent with monthly rota reviews,Programme operations review,2026-09-01
+materials_budget,volunteer_coordination,enables,0.15,,Planning tools support coordinated delivery.,hypothesis,Plausible programme design relationship,Facilitator workshop,2026-09-01
+volunteer_coordination,workshop_readiness,increases,0.25,,Clear coordination strengthens overall readiness.,supported,Consistent with facilitator planning records,Tutorial planning review,2026-09-01
+volunteer_coordination,delivery_plan,enables,0.3,,Clear volunteer roles support a workable delivery plan.,supported,Delivery planning uses the agreed rota,Programme operations review,2026-09-01
+workshop_readiness,delivery_plan,enables,0.35,,Prepared content and materials support final delivery planning.,supported,Readiness is checked before the plan is approved,Programme operations review,2026-09-01
+delivery_plan,facilitator_confidence,increases,0.25,,A clear delivery plan helps facilitators feel prepared.,hypothesis,Strength remains to be tested,Facilitator reflection workshop,2026-09-01
+workshop_readiness,facilitator_confidence,increases,0.35,,Prepared workshops strengthen facilitator confidence.,supported,Facilitator reflections identify preparation as a driver,Facilitator reflection workshop,2026-09-01
+attendees_served,facilitator_confidence,increases,0.1,,Experience with participants can strengthen confidence.,hypothesis,Causal strength remains to be tested,Facilitator reflection workshop,2026-09-01
+facilitator_confidence,delivery_consistency,increases,0.3,,Confident facilitators apply the delivery standard more consistently.,supported,Session observations follow the quality rubric,Tutorial delivery review,2026-09-01
+service_adaptations,improvement_backlog,decreases,0.4,,Implemented adaptations reduce the outstanding improvement backlog.,supported,Improvement plan tracks completed actions,Programme learning log,2026-09-01
+unserved_interest,improvement_backlog,increases,0.25,,Interest the programme cannot meet adds to the improvements still waiting to be made.,hypothesis,Contribution remains to be tested,Programme learning log,2026-09-01
+improvement_backlog,facilitator_confidence,decreases,0.15,,Improvements agreed and never made wear down how prepared facilitators feel.,hypothesis,Causal strength remains to be tested,Facilitator reflection workshop,2026-09-01
+partner_time,partner_readiness,enables,0.35,,Partner time enables preparation and briefing.,supported,Partner readiness checklist,Partner network review,2026-09-01
+referral_capacity,partner_readiness,enables,0.2,,Referral capacity supports active partner participation.,hypothesis,Relationship is an initial planning assumption,Partner design workshop,2026-09-01
+partner_readiness,shared_message,increases,0.4,,Prepared partners use the shared invitation more consistently.,supported,Shared message is covered in partner briefing,Partner communications review,2026-09-01
+partner_readiness,partner_briefing,enables,0.3,,Ready partners can engage fully with the referral briefing.,supported,Readiness checklist precedes the briefing,Partner network review,2026-09-01
+shared_message,partner_briefing,enables,0.35,,The agreed invitation message anchors the partner briefing.,supported,Briefing uses the approved shared copy,Partner communications review,2026-09-01
+partner_briefing,partner_referrals,increases,0.3,,A clear briefing supports appropriate and timely referrals.,hypothesis,Causal strength remains to be tested,Partner design workshop,2026-09-01
+shared_message,partner_referrals,increases,0.45,,A consistent invitation supports appropriate referrals.,calibrated,Relationship fitted to tutorial observations,Tutorial observations C,2020-11-06
+referral_capacity,partner_referrals,enables,0.35,,Referral capacity limits active referrals.,supported,Referral process definition,Partner network review,2026-09-01
+partner_referrals,registrations,increases,0.2,,Trusted referrals add to programme registrations.,hypothesis,Contribution is an illustrative modelling assumption,Tutorial modelling exercise,2026-09-01
+partner_referrals,referral_welcome,enables,0.2,,Referral context helps staff prepare a suitable welcome.,hypothesis,Relationship is based on an initial partner workshop,Partner design workshop,2026-09-01
+accessible_information,referral_welcome,enables,0.3,,Accessible information supports a better referral experience.,supported,Accessibility checklist informs the welcome process,Tutorial access review,2026-09-01
+referral_welcome,partner_confidence,increases,0.35,,A better welcome strengthens partner confidence.,hypothesis,Causal strength remains to be tested,Partner design workshop,2026-09-01
+partner_confidence,service_adaptations,increases,0.15,,Confident partners push changes into the next programme cycle.,hypothesis,Relationship is an exploratory learning claim,Partner design workshop,2026-09-01
+facilitator_slots,delivery_capacity,enables,1,,Facilitators are required for every workshop session. Strength 1 is deliberate and is the only place on this map where it is correct: Delivery capacity uses the min rule as a hard capacity gate so it tracks its scarcest input one for one. Half the facilitators is half the capacity - not 0.35 of it.,supported,Staffing requirement in programme design,Programme operating definitions,2026-09-01
+venue_slots,delivery_capacity,enables,1,,A suitable room is required for every workshop session. Strength 1 is deliberate for the same reason as the facilitator link: a room is a hard requirement rather than a partial influence so under the min rule capacity moves one for one with it.,validated,Capacity rule checked against scheduling cases,Tutorial validation cases,2026-09-01
+workshop_readiness,session_schedule,enables,0.4,,Ready workshops can be placed confidently on the schedule.,supported,Scheduling checklist requires readiness confirmation,Programme operating definitions,2026-09-01
+delivery_capacity,session_schedule,enables,0.6,,Available capacity limits the session schedule.,validated,Schedule checked against capacity cases,Tutorial validation cases,2026-09-01
 community_confidence,feedback_uplift,increases,,dashed,Confidence feeds into a later outreach cycle.,hypothesis,Causal direction is intentionally exploratory,Workshop design assumption,2026-09-01
 outreach_effort,outreach_reach,increases,,,Outreach effort is converted to estimated people reached.,hypothesis,Association fitted but causal effect not established,Tutorial observations A,2026-09-01
 feedback_uplift,outreach_reach,increases,,dashed,Delayed confidence can amplify or damp later outreach reach.,hypothesis,Exploratory feedback mechanism,Workshop design assumption,2026-09-01
@@ -85,15 +162,46 @@ registrations,registration_share,increases,,,Registrations are the numerator of 
 outreach_reach,registration_share,decreases,,,Reach is the denominator so more reach alone lowers the share.,supported,Ratio definition,Programme operating definitions,2026-09-01
 registrations,workshops_delivered,increases,,,Registration demand supports scheduling more sessions.,supported,Programme scheduling rule,Programme operating definitions,2026-09-01
 delivery_capacity,workshops_delivered,enables,,,Delivery capacity limits realised sessions.,validated,Capacity rule checked against scheduling cases,Tutorial validation cases,2026-09-01
+session_schedule,workshops_delivered,enables,0.5,,Scheduled sessions enable realised delivery.,supported,Programme scheduling rule,Programme operating definitions,2026-09-01
+workshops_delivered,delivery_experience,enables,0.2,,Delivered sessions create the setting for participant experience.,supported,Programme operating definition,Programme operating definitions,2026-09-01
+workshop_readiness,delivery_experience,increases,0.3,,Readiness improves the quality of delivery.,supported,Participant feedback themes,Tutorial feedback review,2026-09-01
 workshops_delivered,attendees_served,increases,,,Delivered sessions create available attended places.,calibrated,Attendance relationship fitted to observations,Tutorial observations B,2026-09-01
 attendees_served,completed_follow_ups,enables,,,Attendance supplies the people who may complete a follow-up.,supported,Required by the joint-product definition,Programme operating definitions,2026-09-01
 completion_share,completed_follow_ups,enables,,,Completion is required before a follow-up can be completed.,supported,Required by the joint-product definition,Programme operating definitions,2026-09-01
 follow_up_readiness,completed_follow_ups,enables,,,Readiness is required for a completed follow-up.,hypothesis,Readiness share is an illustrative modelling assumption,Tutorial modelling exercise,2026-09-01
+participant_satisfaction,repeat_attendance,increases,0.35,,Satisfied participants are more likely to return.,hypothesis,Causal strength remains to be tested,Tutorial modelling exercise,2026-09-01
+completed_follow_ups,repeat_attendance,increases,0.2,,Useful follow-up creates another route into participation.,hypothesis,Relationship is an illustrative modelling assumption,Tutorial modelling exercise,2026-09-01
+repeat_attendance,service_adaptations,increases,0.15,,Repeat participation supplies the evidence that delivery changes are built on.,hypothesis,Relationship is an exploratory learning claim,Facilitator reflection workshop,2026-09-01
 registrations,unserved_interest,increases,,,Registrations add to participant interest that needs a place.,supported,Part of the participant-flow balance,Programme operating definitions,2026-09-01
 walk_in_interest,unserved_interest,increases,,,Walk-in interest adds to demand beyond registrations.,hypothesis,Walk-in demand is included for scenario exploration,Tutorial modelling exercise,2026-09-01
 delivery_capacity,unserved_interest,decreases,,,Available session capacity is converted to places and subtracted from total interest.,supported,Part of the participant-flow balance,Programme operating definitions,2026-09-01
 workshop_readiness,participant_satisfaction,increases,0.3,,Better-prepared workshops tend to receive stronger ratings.,supported,Participant feedback themes,Tutorial feedback review,2026-09-01
 attendees_served,participant_satisfaction,increases,0.1,,A well-used programme can strengthen the participant experience.,unspecified,,,
-participant_satisfaction,community_confidence,increases,0.4,,Positive experiences can strengthen community confidence.,hypothesis,Causal direction remains to be tested,Workshop design assumption,2026-09-01
+participant_satisfaction,community_confidence,increases,0.4,,Positive experiences can strengthen community confidence.,unspecified,,,
 attendees_served,community_confidence,increases,0.15,,Visible participation can strengthen confidence in the programme.,supported,Consistent with community feedback,Tutorial feedback review,2026-09-01
 access_barriers,community_confidence,decreases,0.25,,Greater access barriers reduce confidence and participation.,supported,Community access review,Tutorial access review,2026-09-01
+materials_budget,accessible_information,enables,0.15,,Budget supports accessible formats and channels.,hypothesis,Plausible programme design relationship,Tutorial access review,2026-09-01
+access_barriers,accessible_information,decreases,0.3,,Greater barriers make information less accessible without mitigation.,supported,Community access review,Tutorial access review,2026-09-01
+accessible_information,community_events,enables,0.25,,Accessible information helps residents join open conversations.,supported,Community access review,Tutorial access review,2026-09-01
+accessible_information,outreach_calendar,enables,0.3,,Accessible formats shape where and when outreach is scheduled.,supported,Accessibility checklist informs the outreach plan,Tutorial access review,2026-09-01
+outreach_calendar,community_events,enables,0.35,,A coordinated calendar enables more consistent community conversations.,supported,Event schedule is reviewed monthly,Community engagement workshop,2026-09-01
+outreach_reach,community_events,increases,0.2,,Wider reach supports more community conversations.,hypothesis,Contribution remains to be tested,Community engagement workshop,2026-09-01
+community_events,registrations,increases,0.15,,Open conversations create another route into registration.,hypothesis,Contribution is an illustrative modelling assumption,Tutorial modelling exercise,2026-09-01
+workshops_delivered,first_time_attendees,enables,0.25,,Delivered sessions provide places for first-time attendees.,supported,Programme operating definition,Programme operating definitions,2026-09-01
+partner_referrals,first_time_attendees,increases,0.55,,Trusted referrals support first attendance.,hypothesis,Strength estimated once in a partner workshop and never checked against attendance records,Partner design workshop,2026-09-01
+first_time_attendees,community_advocates,increases,0.2,,A good first experience can create future advocates.,hypothesis,Relationship is an exploratory causal claim,Community engagement workshop,2026-09-01
+participant_satisfaction,community_advocates,increases,0.3,,Satisfied participants are more likely to advocate for the programme.,hypothesis,Causal strength remains to be tested,Community engagement workshop,2026-09-01
+community_advocates,community_confidence,increases,0.2,,Visible advocacy strengthens confidence in the programme.,hypothesis,Relationship is an exploratory causal claim,Community engagement workshop,2026-09-01
+community_advocates,service_adaptations,increases,0.2,,Advocates bring resident priorities into the changes that get made.,supported,Community reference group process,Community reference group,2026-09-01
+survey_capacity,data_quality,enables,0.4,,Survey capacity supports complete and timely data.,supported,Data quality checklist,Programme learning log,2026-09-01
+survey_capacity,measurement_plan,enables,0.25,,Available survey capacity makes the measurement plan deliverable.,supported,Plan is checked against collection capacity,Programme learning log,2026-09-01
+data_quality,measurement_plan,enables,0.35,,Known data quality shapes a credible measurement plan.,supported,Data quality review informs the plan,Programme learning log,2026-09-01
+measurement_plan,response_campaign,enables,0.3,,An agreed measurement plan supports consistent feedback invitations.,supported,Invitation schedule follows the measurement plan,Programme operating definitions,2026-09-01
+data_quality,response_campaign,enables,0.2,,Reliable contact data supports consistent feedback invitations.,supported,Invitation process uses current attendance records,Programme operating definitions,2026-09-01
+response_campaign,feedback_responses,increases,0.45,,Consistent invitations increase feedback responses.,calibrated,Relationship fitted to tutorial observations,Tutorial observations E,2026-09-01
+attendees_served,feedback_responses,increases,0.2,,More participants create more opportunities for feedback.,supported,Participant feedback process,Programme operating definitions,2026-09-01
+feedback_responses,insight_quality,enables,0.3,,More responses can improve the usefulness of the evidence base.,hypothesis,Representativeness needs further testing,Programme learning log,2026-09-01
+data_quality,insight_quality,enables,0.35,,Reliable data improves the quality of derived insight.,supported,Data quality checklist,Programme learning log,2026-09-01
+insight_quality,evidence_confidence,increases,0.4,,Actionable insight strengthens confidence in the evidence.,supported,Assurance approach,Governance review,2026-09-01
+evidence_confidence,service_adaptations,enables,0.35,,Confident evidence supports selecting service adaptations.,supported,Approved improvement process,Governance review,2026-09-01
+service_adaptations,data_quality,increases,0.25,,Adaptations change what gets recorded and how so monitoring data improves. This link closes the learning loop: better data gives better insight gives more confident evidence gives more adaptations.,supported,Improvement plan includes monitoring changes,Programme learning log,2026-09-01

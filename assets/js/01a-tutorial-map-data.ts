@@ -9,3 +9,9 @@
 import tutorialMapCsv from "../data/tutorial_map.csv?raw";
 
 export const TUTORIAL_MAP_CSV = tutorialMapCsv;
+
+// The first lessons run on a twelve-box cut of the same programme, small enough
+// to hold on one screen. Same file, same parser, same `?raw` route as above.
+import tutorialMapSmallCsv from "../data/tutorial_map_small.csv?raw";
+
+export const TUTORIAL_MAP_SMALL_CSV = tutorialMapSmallCsv;

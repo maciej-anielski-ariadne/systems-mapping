@@ -28,11 +28,30 @@
 }
 
 /* The native <select> stays in the DOM (existing code reads its .value), but
- * is taken out of layout so only the typable input is visible. */
+ * is taken out of layout so only the typable input is visible.
+ *
+ * `left`/`top` are NOT optional. Without them the select sits at its static
+ * position — immediately after the visible input, i.e. flush against the
+ * wrapper's RIGHT edge — and an absolutely positioned box still contributes to
+ * the scrollable overflow of the nearest scroll container even when it is
+ * clipped and transparent.
+ *
+ * The sizes carry `!important` for the same reason. Container rules that style
+ * form controls generically (`.detail-edit-control .detail-edit-input`,
+ * `.evidence-editor-body select`, both `width: 100%`) out-specify a single
+ * class, which re-inflated this select to the wrapper's full width and hung a
+ * 150-290px phantom box off the right of every dropdown. That made
+ * `.detail-panel` horizontally scrollable, so opening an outgoing link's editor
+ * scrolled the whole sidebar sideways. This is a visually-hidden utility: its
+ * geometry must not be negotiable by whatever container it lands in. */
 .typeable-dropdown-native {
   position: absolute;
-  width: 1px;
-  height: 1px;
+  left: 0;
+  top: 0;
+  width: 1px !important;
+  min-width: 0 !important;
+  max-width: 1px !important;
+  height: 1px !important;
   padding: 0;
   margin: 0;
   clip: rect(0 0 0 0);
@@ -47,7 +66,8 @@
  * in the detail panel. The rules below add ONLY what's specific to the
  * typeable behaviour — a chevron caret and a focus ring matched to the
  * popup. */
-.typeable-dropdown-input {
+.typeable-dropdown-input,
+.typeable-dropdown-button {
   cursor: text;
   padding-right: var(--space-6);                  /* room for the chevron */
   border-radius: var(--radius-interactive);
@@ -62,6 +82,28 @@
   background-repeat: no-repeat;
 }
 
+.typeable-dropdown-button {
+  width: 100%;
+  border: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.typeable-dropdown-button:hover {
+  background-color: var(--act-tint);
+}
+
+.typeable-dropdown-button:focus,
+.typeable-dropdown-button:focus-visible {
+  background-color: var(--act-on);
+  box-shadow: none;
+  outline: none;
+}
+
 
 
 /* The popup is position:fixed so it floats over scroll containers
@@ -69,7 +111,7 @@
  * clipped. JS sets left / top / minWidth / maxHeight per-open. */
 .typeable-dropdown-popup {
   position: fixed;
-  z-index: var(--z-dropdown);                                   /* above builder overlay (200) and cell editor (300) */
+  z-index: var(--z-dropdown);
   background: var(--bg-deep);
   border-radius: var(--radius-surface);
   box-shadow: var(--shadow-float);

@@ -67,6 +67,16 @@ import { applySelectionClass, setUiMode } from "./17-events";
 import { atlasIsOpen, atlasPanelHtml, openAtlas, putScroll, takeScroll } from "./21-atlas-view";
 import { deleteEdgeById, commitNewEdge, deleteSelection } from "./16e-canvas-edit";
 import { applyCanvasMutation } from "./16f-canvas-mutations";
+import { openLearnReference, referenceCardForNode } from "./26a-learn-reference";
+
+// The "?" beside the formula editor and the calculation breakdown. It opens the
+// reference shelf at whichever entry answers the question this box is posing,
+// so the explanation arrives where the decision is being made rather than in a
+// lesson the reader has to remember to take.
+function calculationHelpButton(): string {
+  return '<button type="button" class="calc-help" data-action="calculation-help"' +
+    ' aria-label="How to choose this box\'s calculation" data-tooltip="How to choose this box\'s calculation">?</button>';
+}
 
 export function renderDetailPanel(): void {
   const emptyState   = document.getElementById("detail-empty")!;
@@ -126,10 +136,27 @@ export function renderDetailPanel(): void {
   contentState.classList.toggle("is-editing", editMode);
   contentState.innerHTML = renderNodeSkeleton(node, editMode);
 
-  // Upgrade every freshly-rendered <select> into a typable filterable dropdown.
-  // Safe to call before the change handlers below are wired: picking an option
-  // dispatches `change` on the underlying <select>, which the wireXxx handlers
-  // then listen for.
+  // Finite choices in the detail panel are selection-only dropdowns. They must
+  // not turn into text fields: Row, Column, Adjustable, Outcome, Combine and
+  // the other short enumerations are picked from their lists. The one exception
+  // is the potentially long list of boxes when adding a link, where filtering
+  // by typing remains useful.
+  contentState.querySelectorAll<HTMLSelectElement>("select").forEach(selectElement => {
+    if (selectElement.getAttribute("data-action") !== "pick-add-target") {
+      selectElement.setAttribute("data-dropdown-mode", "select-only");
+      const fieldRow = selectElement.closest(".detail-edit-row, .detail-quant-row, .evidence-editor");
+      const fieldLabel = fieldRow?.querySelector(
+        ".detail-edit-label, .detail-quant-label, label > span",
+      )?.textContent?.trim();
+      if (fieldLabel && !selectElement.hasAttribute("aria-label")) {
+        selectElement.setAttribute("aria-label", fieldLabel);
+      }
+    }
+  });
+
+  // Upgrade only the long-list select left eligible above. Safe to call before
+  // change handlers are wired: picking an option dispatches `change` on the
+  // underlying select, which the field handlers then receive.
   if (typeof upgradeSelectsIn === "function") upgradeSelectsIn(contentState);
 
   // Wire up handlers for whichever mode just rendered.
@@ -252,8 +279,10 @@ export function renderNodeSkeleton(node: GraphNode, editMode: boolean): string {
 
   if (reading) {
     html += renderSelectedBoxActions(node, directImpacts.length > 0);
+    html += '<div class="detail-relationship-lists" role="group" aria-label="Relationships">';
     html += causes;
     html += effects;
+    html += '</div>';
     html += numbers;
     return html;
   }
@@ -428,16 +457,59 @@ function renderReviewFamily(node: GraphNode): string {
 const FORMULA_NUMBER = new RegExp("^" + FORMULA_NUMBER_PATTERN_SOURCE);
 const FORMULA_IDENTIFIER = new RegExp("^" + FORMULA_IDENTIFIER_PATTERN_SOURCE);
 
-function formulaToken(cls: string, text: string, tip?: string): string {
-  return '<span class="' + cls + '"' +
-    (tip ? ' data-tooltip="' + escapeHtml(tip) + '"' : "") +
+function formulaToken(
+  className: string,
+  text: string,
+  tooltip?: string,
+  attributes: Record<string, string> = {},
+): string {
+  const attributeMarkup = Object.entries(attributes)
+    .map(([name, value]) => ' ' + name + '="' + escapeHtml(value) + '"')
+    .join("");
+  return '<span class="' + className + '"' + attributeMarkup +
+    (tooltip ? ' data-tooltip="' + escapeHtml(tooltip) + '"' : "") +
     ">" + escapeHtml(text) + "</span>";
 }
 
-export function paintFormula(text: string): string {
+// Formula values need more precision than the map's compact labels. In the
+// People reached example, 1.005 is deliberately rendered as 1.01 on the box;
+// repeating that rounding in the hover would make 80 × 5 × 1.01 look as if it
+// should equal 404 rather than the actual 402.
+function formulaTooltipNumber(value: number): string {
+  if (!Number.isFinite(value)) return String(value);
+  return String(Number(value.toPrecision(6)));
+}
+
+function formulaBoxTooltip(
+  nodeIdentifier: string,
+  formulaInputs: TraceInput[],
+  delayed: boolean,
+): string {
+  const sourceNode = nodeById[nodeIdentifier];
+  if (!sourceNode) return nodeIdentifier;
+  const tracedInput = formulaInputs.find(input =>
+    input.kind === "node" && input.id === nodeIdentifier && !!input.delayed === delayed,
+  );
+  const value = tracedInput?.value ?? state.computedValues[nodeIdentifier] ?? sourceNode.baseline;
+  const valueText = value === undefined
+    ? "value unavailable"
+    : formulaTooltipNumber(value) + (sourceNode.unit ? " " + sourceNode.unit : "");
+  return sourceNode.label + " — " + (delayed ? "previous-step value" : "current value") + ": " + valueText;
+}
+
+function formulaGlobalVariableTooltip(parameterIdentifier: string): string {
+  const parameter = paramById[parameterIdentifier];
+  if (!parameter) return parameterIdentifier;
+  return "Global variable — value: " + constantText(parameter.value) +
+    ". Available to every formula; it is not a box." +
+    (parameter.description ? " " + parameter.description + "." : "");
+}
+
+export function paintFormula(text: string, formulaInputs: TraceInput[] = []): string {
   const source = String(text || "");
   let html = "";
   let at = 0;
+  let nextNodeReferenceIsDelayed = false;
   while (at < source.length) {
     const rest = source.slice(at);
 
@@ -455,15 +527,30 @@ export function paintFormula(text: string): string {
       // nothing else on screen makes.
       if (isFormulaFunction(word)) {
         html += formulaToken("fx-fn", word, FORMULA_FN_TIP[word] || "");
+        nextNodeReferenceIsDelayed = word === "delay";
       } else if (nodeById[word]) {
-        html += formulaToken("fx-box", word, nodeById[word].label);
+        html += formulaToken(
+          "fx-box",
+          word,
+          formulaBoxTooltip(word, formulaInputs, nextNodeReferenceIsDelayed),
+          {
+            "data-formula-node-id": word,
+            "data-formula-delayed": String(nextNodeReferenceIsDelayed),
+          },
+        );
+        nextNodeReferenceIsDelayed = false;
       } else if (paramById[word]) {
-        const param = paramById[word];
-        html += formulaToken("fx-const", word,
-          (param.description ? param.description + " — " : "") + constantText(param.value));
+        html += formulaToken(
+          "fx-const",
+          word,
+          formulaGlobalVariableTooltip(word),
+          { "data-formula-param-id": word, "data-formula-kind": "global-variable" },
+        );
+        nextNodeReferenceIsDelayed = false;
       } else {
         html += formulaToken("fx-unknown", word,
           "This is neither a box on this map nor a constant, so the engine cannot read it.");
+        nextNodeReferenceIsDelayed = false;
       }
       at += word.length;
       continue;
@@ -513,7 +600,7 @@ function renderReviewRule(node: GraphNode): string {
   if (node.formula) {
     // Verbatim first. Everything under it is a rendering of this, and a reader
     // has to be able to see what is being rendered.
-    html += '<div class="rv-expr">' + paintFormula(node.formula) + '</div>';
+    html += '<div class="rv-expr">' + paintFormula(node.formula, explainNode(node.id)?.inputs || []) + '</div>';
 
     if (formulaInLabelsFailed(node.id)) {
       // The loader already says so on the Review panel; it belongs here too,
@@ -536,9 +623,9 @@ function renderReviewRule(node: GraphNode): string {
             '<span class="rv-const-v">' + escapeHtml(constantText(param.value)) + '</span>' +
           '</div>';
         }
-        html += '<div class="rv-rule-note">' + consts.length + ' constant' +
-                (consts.length === 1 ? "" : "s") + ' — on no map anywhere, so this is the ' +
-                'only place they can be checked.</div>';
+        html += '<div class="rv-rule-note">' + consts.length + ' global variable' +
+                (consts.length === 1 ? "" : "s") + ' — available to every formula and not ' +
+                'shown as boxes, so this is where they can be checked.</div>';
         html += '</div>';
       }
       // An arrow the expression never reads is drawn and used by nothing. Not an
@@ -679,7 +766,14 @@ export function renderQuantFrame(node: GraphNode, editMode: boolean): string {
   // spending a line of panel height on it.
   const labelSpan = (label: string, tip?: string): string =>
     '<span class="detail-quant-label"' + (tip ? ' data-tooltip="' + escapeHtml(tip) + '"' : '') + '>' + escapeHtml(label) + '</span>';
-  const row = (label: string, leaf: string, tip?: string): string => '<div class="detail-quant-row">' + labelSpan(label, tip) + leaf + '</div>';
+  const row = (
+    label: string,
+    leaf: string,
+    tip?: string,
+    quantityIdentifier?: string,
+  ): string => '<div class="detail-quant-row"' +
+    (quantityIdentifier ? ' data-detail-quantity="' + escapeHtml(quantityIdentifier) + '"' : "") +
+    ">" + labelSpan(label, tip) + leaf + "</div>";
 
   // The box's own figures get a label like every other section, so the panel
   // reads as a stack of named blocks rather than as rows that run out.
@@ -725,13 +819,13 @@ export function renderQuantFrame(node: GraphNode, editMode: boolean): string {
 
   // Outcome direction — descriptor ↔ select
   if (editMode) {
-    html += row("Outcome", '<span class="detail-quant-control">' + selectInput("direction", directionOptions, node.direction || "") + '</span>');
+    html += row("Outcome", '<span class="detail-quant-control">' + selectInput("direction", directionOptions, node.direction || "") + '</span>', undefined, "outcome");
   } else {
     let d = "";
     if      (node.direction === "higher_better") d = '<span class="detail-quant-value" style="color: var(--status-good);">↑ higher is better</span>';
     else if (node.direction === "lower_better")  d = '<span class="detail-quant-value" style="color: var(--status-good);">↓ lower is better</span>';
     else if (node.direction === "neutral")       d = '<span class="detail-quant-value" style="color: var(--text-tertiary);">context-dependent</span>';
-    if (d) html += row("Outcome", d);
+    if (d) html += row("Outcome", d, undefined, "outcome");
   }
 
   // Slider max — only where there is a slider to cap. It used to sit here in
@@ -773,7 +867,7 @@ export function renderQuantFrame(node: GraphNode, editMode: boolean): string {
         "How the arrows into this box add up: standard compounds each effect, additive stops related inputs overstating the total, weakest link lets the smallest input gate the result.");
     }
 
-    html += row("Formula", '<input type="text" class="detail-edit-input detail-quant-input detail-quant-formula" data-field="formula" value="' + escapeHtml(node.formula || "") + '" placeholder="none" spellcheck="false">',
+    html += row("Formula", '<span class="detail-quant-formula-cell"><input type="text" class="detail-edit-input detail-quant-input detail-quant-formula" data-field="formula" value="' + escapeHtml(node.formula || "") + '" placeholder="none" spellcheck="false">' + calculationHelpButton() + '</span>',
       "Overrides the arrows' maths — e.g. min(a, b), clamp(x, lo, hi), delay(x). Every box named here must also have an arrow into this box.");
     html += renderEvidenceEditor({ metadata: node.formulaEvidence, scope: "formula" });
 
@@ -804,15 +898,15 @@ export function renderQuantFrame(node: GraphNode, editMode: boolean): string {
 // One plain-language sentence per rule. The jargon word stays in brackets so a
 // user who has read the CSV columns can still map the two together.
 const CALC_RULE_SENTENCE: Record<CalcRule, string> = {
-  pinned:         "Pinned by your slider — you are holding this box at this value.",
-  baseline:       "No quantified inputs — stays at its starting value.",
-  multiplicative: "Independent % effects, which compound (standard).",
-  additive:       "What drives this adds up instead of compounding (additive).",
-  min:            "Weakest input gates this box (min).",
-  formula:        "Formula — the arrows' maths is overridden by the expression below.",
+  pinned:         "Your slider is holding this box at its current setting.",
+  baseline:       "No quantified inputs, so it stays at its starting value.",
+  multiplicative: "Multiply the independent proportional effects.",
+  additive:       "Add each proportional change to the starting value.",
+  min:            "Use the smallest proportional factor from the inputs.",
+  formula:        "Use the values named in the formula.",
 };
 
-// "9,000 FTE" for a box; params are unitless constants, so just the number.
+// "9,000 FTE" for a box; global variables are unitless, so just the number.
 function calcInputValueText(input: TraceInput): string {
   const sourceNode = nodeById[input.id];
   const unit = sourceNode && sourceNode.unit ? " " + sourceNode.unit : "";
@@ -824,14 +918,15 @@ function calcInputValueText(input: TraceInput): string {
   return formatScalar(input.value) + unit;
 }
 
-// The input's name. A param is a HIDDEN CONSTANT — it never appears as a box on
-// the map, so it reads as a chip with its description on hover rather than as
-// something the user could click through to.
+// The input's name. A global variable never appears as a box on the map, so its
+// row says that explicitly instead of relying on a diamond whose meaning a new
+// reader has not yet been taught.
 function calcInputLabelHtml(input: TraceInput): string {
   if (input.kind === "param") {
     const param = paramById[input.id];
-    const tip = (param && param.description) ? param.description : "A hidden constant — part of the maths, not the map.";
-    return '<span class="calc-input-param" data-tooltip="' + escapeHtml(tip) + '">◆ ' + escapeHtml(input.id) + '</span>';
+    return '<span class="calc-input-param" data-tooltip="' +
+      escapeHtml(formulaGlobalVariableTooltip(input.id)) + '">◆ global · ' +
+      escapeHtml(input.id) + '</span>';
   }
   const sourceNode = nodeById[input.id];
   return '<span class="calc-input-name">' + escapeHtml(sourceNode ? sourceNode.label : input.id) + '</span>';
@@ -854,6 +949,33 @@ function calcInputDetailText(rule: CalcRule, input: TraceInput): string {
   return "";
 }
 
+function proportionalFactorValueText(input: TraceInput): string {
+  return input.contribution === undefined ? "—" : formatScalar(input.contribution);
+}
+
+function workedEquationInputValueText(
+  rule: CalcRule,
+  input: TraceInput,
+  inputIndex: number,
+): string {
+  if (rule === "multiplicative") {
+    const multiplicationOperator = inputIndex === 0 ? "" : "× ";
+    return multiplicationOperator + proportionalFactorValueText(input);
+  }
+  if (rule === "min") return proportionalFactorValueText(input);
+  return calcInputDetailText(rule, input);
+}
+
+function calculationInputTooltip(rule: CalcRule, input: TraceInput): string {
+  const currentValueText = formulaBoxTooltip(input.id, [input], !!input.delayed);
+  if (rule === "additive") {
+    return currentValueText + " · change added to the starting value: " +
+      calcInputDetailText(rule, input);
+  }
+  return currentValueText + " · proportional factor: " +
+    proportionalFactorValueText(input) + "×";
+}
+
 function calcInputDetailHtml(rule: CalcRule, input: TraceInput): string {
   const text = calcInputDetailText(rule, input);
   return text ? '<span class="calc-input-detail">' + escapeHtml(text) + '</span>' : "";
@@ -869,17 +991,85 @@ function missingInputsNoticeText(missingInputs: string[]): string {
   return "No value found for: " + missingInputs.join(", ") + ". Those parts were treated as 0.";
 }
 
-// Which input the `min` rule actually settled on — the smallest factor is the
-// one gating the box, so it's the single most useful thing on the whole panel
-// for a "why isn't this moving?" question.
-function winningMinInputIndex(inputs: TraceInput[]): number {
-  let winner = -1;
-  for (let i = 0; i < inputs.length; i++) {
-    const contribution = inputs[i].contribution;
+// Which inputs the `min` rule actually settled on. More than one input can have
+// the same smallest factor, especially at the starting state where every
+// factor is x1.00. Calling whichever row happened to come first the sole gate
+// would turn storage order into a mathematical claim, so ties stay ties.
+function winningMinInputIndices(inputs: TraceInput[]): number[] {
+  const contributions = inputs
+    .map(input => input.contribution)
+    .filter((contribution): contribution is number => contribution !== undefined);
+  if (contributions.length === 0) return [];
+
+  const smallestContribution = Math.min(...contributions);
+  const comparisonTolerance = 1e-9 * Math.max(1, Math.abs(smallestContribution));
+  const winningIndices: number[] = [];
+  for (let inputIndex = 0; inputIndex < inputs.length; inputIndex++) {
+    const contribution = inputs[inputIndex].contribution;
     if (contribution === undefined) continue;
-    if (winner === -1 || contribution < inputs[winner].contribution!) winner = i;
+    if (Math.abs(contribution - smallestContribution) <= comparisonTolerance) {
+      winningIndices.push(inputIndex);
+    }
   }
-  return winner;
+  return winningIndices;
+}
+
+function calcInputLabelText(input: TraceInput): string {
+  if (input.kind === "param") return input.id;
+  const sourceNode = nodeById[input.id];
+  return sourceNode ? sourceNode.label : input.id;
+}
+
+function joinInputLabels(labels: string[]): string {
+  if (labels.length <= 1) return labels[0] || "No input";
+  if (labels.length === 2) return labels[0] + " and " + labels[1];
+  return labels.slice(0, -1).join(", ") + ", and " + labels[labels.length - 1];
+}
+
+function minimumGateSummaryText(inputs: TraceInput[], winningIndices: number[]): string {
+  if (winningIndices.length === 0) {
+    return "No proportional input factor was available to set the result.";
+  }
+
+  const winningInputs = winningIndices.map(inputIndex => inputs[inputIndex]);
+  const winningFactor = proportionalFactorValueText(winningInputs[0]) + "×";
+  const winningLabels = joinInputLabels(winningInputs.map(calcInputLabelText));
+  if (winningInputs.length === 1) {
+    return winningLabels + " sets the result because " + winningFactor +
+      " is the smallest proportional factor.";
+  }
+  return winningLabels + " are tied at " + winningFactor +
+    ". The first one to fall becomes the gate.";
+}
+
+function calculationStartingValueText(node: GraphNode): string {
+  if (node.baseline === undefined || node.baseline === null) return "—";
+  return formatScalar(node.baseline);
+}
+
+function calculationEquationValue(explanation: NodeExplanation): number {
+  return explanation.clamp ? explanation.clamp.from : explanation.value;
+}
+
+function pinnedCalculationTermText(node: GraphNode, explanation: NodeExplanation): string {
+  if (node.baseline === undefined || node.baseline === null || node.baseline === 0) {
+    return "Your slider";
+  }
+  return calculationStartingValueText(node) + " × " +
+    formatScalar(explanation.value / node.baseline);
+}
+
+function calculationRoleText(
+  rule: CalcRule,
+  inputs: TraceInput[],
+  winningIndices: number[],
+): string {
+  if (rule === "baseline") return "Starting value sets the result.";
+  if (rule === "pinned") return "Your slider sets the result.";
+  if (rule === "multiplicative") return "Every input factor shapes the result.";
+  if (rule === "additive") return "The input changes combine without compounding.";
+  if (rule === "min") return minimumGateSummaryText(inputs, winningIndices);
+  return "The formula sets the result directly.";
 }
 
 // "Held at the highest allowed value, 100 % — it would have been 132 %."
@@ -898,45 +1088,112 @@ function calcClampNoticeText(clamp: NonNullable<NodeExplanation["clamp"]>, unit:
   return "Held at the " + which + ", " + formatScalar(bound) + suffix + " — " + wouldHave + ".";
 }
 
+function calculationResultText(node: GraphNode, value: number): string {
+  return formatScalar(value) + (node.unit ? " " + node.unit : "");
+}
+
+function calculationResultMarkup(node: GraphNode, value?: number): string {
+  const result = value === undefined ? "Not calculated" : calculationResultText(node, value);
+  return '<div class="calc-result"><span class="calc-result-label">Current result</span>' +
+    '<span class="calc-result-value">' + escapeHtml(result) + '</span></div>';
+}
+
 export function renderCalculationBreakdown(node: GraphNode): string {
   // Asked for by node, one box at a time: the engine works the breakdown out on
   // demand (and memoises it until the next solve) rather than tracing every box
   // on the map after every solve to have this one entry read. state.explanations
   // is the same thing keyed as a map, for consumers that want to enumerate.
   const explanation = explainNode(node.id);
-  if (!explanation) return "";
+  if (!explanation) {
+    return '<div class="calc-breakdown" data-calc-rule="unavailable">' +
+      '<div class="detail-list-title"><span>How this number is calculated</span>' + calculationHelpButton() + '</div>' +
+      '<div class="calc-rule">No numeric starting value has been set, so this box has no figure to calculate.</div>' +
+      calculationResultMarkup(node) + '</div>';
+  }
 
   const rule = explanation.rule;
   const unit = node.unit || "";
   const inputs = explanation.inputs || [];
-  const winnerIndex = rule === "min" ? winningMinInputIndex(inputs) : -1;
+  const winningIndices = rule === "min" ? winningMinInputIndices(inputs) : [];
+  const winningIndexSet = new Set(winningIndices);
 
   let html = '<div class="calc-breakdown" data-calc-rule="' + escapeHtml(rule) + '">';
-  html +=   '<div class="detail-list-title"><span>How this number is calculated</span></div>';
+  html +=   '<div class="detail-list-title"><span>How this number is calculated</span>' + calculationHelpButton() + '</div>';
   html +=   '<div class="calc-rule">' + escapeHtml(CALC_RULE_SENTENCE[rule]) + '</div>';
 
-  // The expression itself, verbatim, in a monospace block — it IS the rule for
-  // a formula box, so it reads before the inputs it names. Skipped exactly when
-  // the rule block a few rows above is showing it — reviewingBox(), the same
-  // question that decides whether that block exists — because a second copy of a
-  // 160-character expression is a third of a 340px panel.
-  if (rule === "formula" && explanation.formula && !reviewingBox(node)) {
-    html += '<div class="calc-formula">' + paintFormula(explanation.formula) + '</div>';
+  // Every rule uses the same worked-equation surface. Formula review already
+  // shows the expression in its dedicated rule block above, so that one context
+  // keeps only the review working and avoids printing a long expression twice.
+  const shouldRenderWorkedEquation = rule !== "formula" || !reviewingBox(node);
+  const equationValue = calculationEquationValue(explanation);
+  if (shouldRenderWorkedEquation) {
+    html += '<div class="calc-equation calc-equation--' + escapeHtml(rule) + '" aria-label="Worked equation">';
+    if (rule === "baseline") {
+      html += '<div class="calc-equation-line"><span>' +
+        escapeHtml(calculationStartingValueText(node)) + '</span>';
+      html += '<span class="calc-equation-output">= ' + escapeHtml(formatScalar(equationValue)) + '</span></div>';
+    } else if (rule === "pinned") {
+      html += '<div class="calc-equation-line"><span class="calc-equation-pinned-term">' +
+        escapeHtml(pinnedCalculationTermText(node, explanation)) + '</span>';
+      html += '<span class="calc-equation-output">= ' + escapeHtml(formatScalar(equationValue)) + '</span></div>';
+    } else if (rule === "formula") {
+      html += '<div class="calc-equation-formula-line">';
+      html += '<div class="calc-formula">' + paintFormula(explanation.formula || "", inputs) + '</div>';
+      html += '<span class="calc-equation-output">= ' + escapeHtml(formatScalar(equationValue)) + '</span></div>';
+    } else {
+      const openingTerm = rule === "multiplicative"
+        ? calculationStartingValueText(node) + " × ("
+        : rule === "additive"
+          ? calculationStartingValueText(node) + " × (1"
+          : calculationStartingValueText(node) + " × min(";
+      html += '<div class="calc-equation-start"><span class="calc-equation-term">' +
+        escapeHtml(openingTerm) + '</span></div>';
+    }
   }
 
-  for (let i = 0; i < inputs.length; i++) {
-    const input = inputs[i];
-    const isWinner = i === winnerIndex;
-    html += '<div class="calc-input' + (isWinner ? ' calc-input--winner' : '') + '" data-calc-input="' + escapeHtml(input.id) + '">';
-    html +=   '<span class="calc-input-label">' + calcInputLabelHtml(input);
-    // A delayed read is one solver sweep behind — that's the trick that makes a
-    // feedback loop well-defined, and worth saying out loud on the row.
-    if (input.delayed) html += ' <span class="calc-badge">previous step</span>';
-    if (isWinner)      html += ' <span class="calc-badge calc-badge--gate">gates this</span>';
-    html +=   '</span>';
-    html +=   '<span class="calc-input-value">' + escapeHtml(calcInputValueText(input)) + '</span>';
-    html +=   calcInputDetailHtml(rule, input);
+  // In the ordinary calculation panel, formula variables already carry their
+  // values in hover tooltips and connect to Driven by. Repeating every variable
+  // immediately underneath makes the reader reconcile two copies of the same
+  // list. A review pass deliberately folds the working away from the expression,
+  // so its opened working retains the input rows a reviewer asked to inspect.
+  // Link-based rules also retain rows because they have no expression to carry
+  // values, factors, delayed badges, or the weakest-link winner.
+  if (rule !== "formula" || reviewingBox(node)) {
+    for (let i = 0; i < inputs.length; i++) {
+      const input = inputs[i];
+      const isWinner = winningIndexSet.has(i);
+      const isWorkedEquationInput = rule === "multiplicative" || rule === "additive" || rule === "min";
+      const hoverAttributes = isWorkedEquationInput && input.kind === "node"
+        ? ' data-calculation-node-id="' + escapeHtml(input.id) + '" data-tooltip="' +
+          escapeHtml(calculationInputTooltip(rule, input)) + '"'
+        : "";
+      html += '<div class="calc-input' + (isWinner ? ' calc-input--winner' : '') +
+        '" data-calc-input="' + escapeHtml(input.id) + '"' + hoverAttributes + '>';
+      html +=   '<span class="calc-input-label">' + calcInputLabelHtml(input);
+      // A delayed read is one solver sweep behind — that's the trick that makes a
+      // feedback loop well-defined, and worth saying out loud on the row.
+      if (input.delayed) html += ' <span class="calc-badge">previous step</span>';
+      html +=   '</span>';
+      if (rule === "formula") {
+        html += '<span class="calc-input-value">' + escapeHtml(calcInputValueText(input)) + '</span>';
+        html += calcInputDetailHtml(rule, input);
+      } else {
+        html += '<span class="calc-input-detail">' +
+          escapeHtml(workedEquationInputValueText(rule, input, i)) + '</span>';
+      }
+      html += '</div>';
+    }
+  }
+
+  if (rule === "multiplicative" || rule === "additive" || rule === "min") {
+    html +=   '<div class="calc-equation-end"><span>)</span>';
+    html +=     '<span class="calc-equation-output">= ' + escapeHtml(formatScalar(equationValue)) + '</span>';
+    html +=   '</div>';
+  }
+  if (shouldRenderWorkedEquation) {
     html += '</div>';
+    html += '<div class="calc-equation-summary">' +
+      escapeHtml(calculationRoleText(rule, inputs, winningIndices)) + '</div>';
   }
 
   if (explanation.clamp) {
@@ -949,6 +1206,7 @@ export function renderCalculationBreakdown(node: GraphNode): string {
     html += '<div class="calc-notice calc-notice--warn">' + escapeHtml(missingInputsNoticeText(explanation.missingInputs)) + '</div>';
   }
 
+  html += calculationResultMarkup(node, explanation.value);
   html += '</div>';
   return html;
 }
@@ -1035,32 +1293,64 @@ function quantDeltaColor(node: GraphNode, pct: number): string {
 function patchCalculationBreakdown(node: GraphNode, content: HTMLElement): boolean {
   const block = content.querySelector(".calc-breakdown");
   const explanation = explainNode(node.id);
-  const shouldShow = state.simulationMode && !!explanation;
+  const shouldShow = state.simulationMode;
   if (!block) return !shouldShow;
   if (!shouldShow) return false;
 
-  const rule = explanation!.rule;
+  if (!explanation) {
+    if (block.getAttribute("data-calc-rule") !== "unavailable") return false;
+    const unavailableResult = block.querySelector(".calc-result-value");
+    if (!unavailableResult) return false;
+    unavailableResult.textContent = "Not calculated";
+    return true;
+  }
+
+  const rule = explanation.rule;
   if (block.getAttribute("data-calc-rule") !== rule) return false;
 
-  const inputs = explanation!.inputs || [];
+  const inputs = explanation.inputs || [];
   const rows = block.querySelectorAll(".calc-input");
-  if (rows.length !== inputs.length) return false;
+  const expectedRowCount = rule === "formula" && !reviewingBox(node) ? 0 : inputs.length;
+  if (rows.length !== expectedRowCount) return false;
 
-  const winnerIndex = rule === "min" ? winningMinInputIndex(inputs) : -1;
-  for (let i = 0; i < rows.length; i++) {
+  // Slider scrubbing patches this panel instead of rebuilding it. Keep formula
+  // hovers synchronized with the new trace values along with the visible rows.
+  block.querySelectorAll<HTMLElement>(".fx-box[data-formula-node-id]").forEach(formulaVariable => {
+    const nodeIdentifier = formulaVariable.getAttribute("data-formula-node-id");
+    if (!nodeIdentifier) return;
+    formulaVariable.setAttribute(
+      "data-tooltip",
+      formulaBoxTooltip(
+        nodeIdentifier,
+        inputs,
+        formulaVariable.getAttribute("data-formula-delayed") === "true",
+      ),
+    );
+  });
+
+  const winningIndices = rule === "min" ? winningMinInputIndices(inputs) : [];
+  const winningIndexSet = new Set(winningIndices);
+  for (let i = 0; i < expectedRowCount; i++) {
     const row = rows[i];
     const input = inputs[i];
     if (row.getAttribute("data-calc-input") !== input.id) return false;
     // Which input gates a `min` box is part of the story, not a number: if it
     // changed hands, the panel has to be re-rendered to move the badge.
-    if (row.classList.contains("calc-input--winner") !== (i === winnerIndex)) return false;
+    if (row.classList.contains("calc-input--winner") !== winningIndexSet.has(i)) return false;
 
     const valueCell = row.querySelector(".calc-input-value");
-    if (!valueCell) return false;
-    valueCell.textContent = calcInputValueText(input);
+    const isWorkedEquationInput = rule === "multiplicative" || rule === "additive" || rule === "min";
+    if (isWorkedEquationInput) {
+      if (valueCell) return false;
+    } else {
+      if (!valueCell) return false;
+      valueCell.textContent = calcInputValueText(input);
+    }
 
     const detailCell = row.querySelector(".calc-input-detail");
-    const detailText = calcInputDetailText(rule, input);
+    const detailText = isWorkedEquationInput
+      ? workedEquationInputValueText(rule, input, i)
+      : calcInputDetailText(rule, input);
     if (!detailCell) {
       if (detailText) return false;   // a factor column would have to appear
     } else if (!detailText) {
@@ -1068,21 +1358,43 @@ function patchCalculationBreakdown(node: GraphNode, content: HTMLElement): boole
     } else {
       detailCell.textContent = detailText;
     }
+
+    if (isWorkedEquationInput && input.kind === "node") {
+      if (row.getAttribute("data-calculation-node-id") !== input.id) return false;
+      row.setAttribute("data-tooltip", calculationInputTooltip(rule, input));
+    }
+  }
+
+  const shouldRenderWorkedEquation = rule !== "formula" || !reviewingBox(node);
+  if (shouldRenderWorkedEquation) {
+    const equationOutput = block.querySelector(".calc-equation-output");
+    const equationSummary = block.querySelector(".calc-equation-summary");
+    if (!equationOutput || !equationSummary) return false;
+    equationOutput.textContent = "= " + formatScalar(calculationEquationValue(explanation));
+    equationSummary.textContent = calculationRoleText(rule, inputs, winningIndices);
+    if (rule === "pinned") {
+      const pinnedTerm = block.querySelector(".calc-equation-pinned-term");
+      if (!pinnedTerm) return false;
+      pinnedTerm.textContent = pinnedCalculationTermText(node, explanation);
+    }
   }
 
   // Notices are conditional markup, so their presence — and the numbers inside
   // the clamp sentence — decide between patch and rebuild.
   const notices = block.querySelectorAll(".calc-notice");
   const expectedNotices: string[] = [];
-  if (explanation!.clamp) expectedNotices.push(calcClampNoticeText(explanation!.clamp, node.unit || ""));
-  if (explanation!.dividedByZero) expectedNotices.push(DIVIDED_BY_ZERO_NOTICE);
-  if (explanation!.missingInputs && explanation!.missingInputs.length) {
-    expectedNotices.push(missingInputsNoticeText(explanation!.missingInputs));
+  if (explanation.clamp) expectedNotices.push(calcClampNoticeText(explanation.clamp, node.unit || ""));
+  if (explanation.dividedByZero) expectedNotices.push(DIVIDED_BY_ZERO_NOTICE);
+  if (explanation.missingInputs && explanation.missingInputs.length) {
+    expectedNotices.push(missingInputsNoticeText(explanation.missingInputs));
   }
   if (notices.length !== expectedNotices.length) return false;
   for (let i = 0; i < notices.length; i++) {
     if (notices[i].textContent !== expectedNotices[i]) return false;
   }
+  const resultValue = block.querySelector(".calc-result-value");
+  if (!resultValue) return false;
+  resultValue.textContent = calculationResultText(node, explanation.value);
   return true;
 }
 
@@ -1321,6 +1633,13 @@ export function wireSharedHandlers(node: GraphNode, contentState: HTMLElement): 
     editBoxButton.addEventListener("click", () => setUiMode("edit"));
   }
 
+  // The "?" beside the formula editor and the calculation breakdown.
+  contentState.querySelectorAll("[data-action='calculation-help']").forEach(button => {
+    button.addEventListener("click", () => {
+      openLearnReference(referenceCardForNode(node).id);
+    });
+  });
+
   // Edge stripes navigate to the connected node — in BOTH modes. In edit, the
   // Direct Inputs are read-only links to the source node where they're edited.
   // Keyed on the attribute it reads, not on a styling class: the row's look has
@@ -1331,6 +1650,27 @@ export function wireSharedHandlers(node: GraphNode, contentState: HTMLElement): 
       focusNode(targetNodeId);
       scrollNodeIntoView(targetNodeId);
     });
+  });
+
+  // Calculation working and the list above name the same boxes in different
+  // ways. Hover joins those views so a reader can see which direct input the
+  // formula token or proportional factor is referring to.
+  contentState.querySelectorAll<HTMLElement>(
+    ".fx-box[data-formula-node-id], .calc-input[data-calculation-node-id]",
+  ).forEach(calculationInput => {
+    const nodeIdentifier = calculationInput.getAttribute("data-formula-node-id") ||
+      calculationInput.getAttribute("data-calculation-node-id");
+    if (!nodeIdentifier) return;
+    const matchingDrivenByRows = contentState.querySelectorAll<HTMLElement>(
+      '.drow[data-edge-direction="from"][data-target-node="' + CSS.escape(nodeIdentifier) + '"]',
+    );
+    const setHighlighted = (highlighted: boolean): void => {
+      matchingDrivenByRows.forEach(row =>
+        row.classList.toggle("is-formula-variable-highlight", highlighted),
+      );
+    };
+    calculationInput.addEventListener("mouseenter", () => setHighlighted(true));
+    calculationInput.addEventListener("mouseleave", () => setHighlighted(false));
   });
 }
 
@@ -1500,9 +1840,26 @@ export function wireEditModeHandlers(node: GraphNode, contentState: HTMLElement)
     if (input.classList.contains("detail-tag")) return;   // the tag pills are click-wired below
     const field = input.getAttribute("data-field");
     if (!field) return;
-    input.addEventListener("change", () => {
-      applyNodeFieldEdit(node, field, input as HTMLInputElement);
-    });
+    const editableInput = input as HTMLInputElement;
+    const commitsWhileTyping = editableInput.matches('input[type="text"], input[type="number"], textarea');
+    if (commitsWhileTyping) {
+      input.addEventListener("input", () => {
+        const continuingEdit = activeNodeTypingInputs.has(editableInput);
+        activeNodeTypingInputs.add(editableInput);
+        applyNodeFieldEdit(node, field, editableInput, continuingEdit);
+      });
+      input.addEventListener("change", () => {
+        const editWasAlreadyApplied = activeNodeTypingInputs.has(editableInput);
+        activeNodeTypingInputs.delete(editableInput);
+        // Keyboard editing emits input before change. A programmatic or
+        // assistive-technology change can arrive alone, so keep that path
+        // fully functional without adding a duplicate mutation on blur.
+        if (!editWasAlreadyApplied) applyNodeFieldEdit(node, field, editableInput);
+      });
+      input.addEventListener("blur", () => activeNodeTypingInputs.delete(editableInput));
+      return;
+    }
+    input.addEventListener("change", () => applyNodeFieldEdit(node, field, editableInput));
   });
 
   // Outgoing-edges row edits + delete. The controls sit in the unfolded panel
@@ -1635,6 +1992,11 @@ export function wireEditModeHandlers(node: GraphNode, contentState: HTMLElement)
   }
 }
 
+// Text and number fields update the map on every input event so the canvas,
+// calculations and tutorial gates respond immediately. Keep one history entry
+// for the entire focus session rather than adding an undo step per character.
+const activeNodeTypingInputs = new WeakSet<HTMLInputElement>();
+
 // Text provenance must reach the model on `input`, not only after blur: a tab
 // can be closed while the caret is still in the field. The first keystroke
 // captures the pre-edit undo snapshot; the rest of that focus session update
@@ -1679,7 +2041,12 @@ function syncEvidenceBadgeForInput(input: HTMLElement): void {
 // FIELD WRITES
 // =============================================================================
 
-export function applyNodeFieldEdit(node: GraphNode, field: string, input: HTMLInputElement): void {
+export function applyNodeFieldEdit(
+  node: GraphNode,
+  field: string,
+  input: HTMLInputElement,
+  skipHistoryCapture = false,
+): void {
   let value: string | number | boolean | undefined;
   if (input.type === "checkbox") value = input.checked;
   else if (input.type === "number") {
@@ -1825,6 +2192,7 @@ export function applyNodeFieldEdit(node: GraphNode, field: string, input: HTMLIn
       skipDetailRender: skipDetailRender,
       impact: mutationImpact,
       searchableDataChanged: searchableDataChanged,
+      skipHistoryCapture: skipHistoryCapture,
     });
   }
 }
@@ -1975,6 +2343,7 @@ export function renderEdgeItem(
   // Enter follows it, and the click handler in wireViewModeHandlers is untouched.
   const row = '<button type="button" class="drow"'
     + ' data-target-node="' + escapeHtml(otherNode.id) + '"'
+    + ' data-edge-direction="' + escapeHtml(direction) + '"'
     + ' data-tooltip="' + escapeHtml(tip) + '"'
     + ' aria-label="' + escapeHtml(otherNode.label) + ', strength ' + strength + ', '
     + escapeHtml(edge.effect) + ' ' + jumpDir + '. Jump to it.">'

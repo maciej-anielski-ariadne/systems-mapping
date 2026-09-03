@@ -179,6 +179,25 @@ svg.atlas.panning { cursor: grabbing; }
 .atlas g.n:hover > text,
 .atlas g.n.on > text { opacity: 1; }
 
+/* Overview labels are laid out in screen-sized lanes so neighbouring pathway
+ * names can wrap and stagger without colliding. A quiet leader preserves the
+ * connection to the circle when edge-clamping or collision avoidance moves a
+ * name away from its default position. */
+.atlas .atlas-overview-label-leader {
+  fill: none;
+  stroke: var(--text-tertiary);
+  stroke-width: 0.7px;
+  vector-effect: non-scaling-stroke;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-fast) ease;
+}
+
+.atlas g.n:hover > .atlas-overview-label-leader,
+.atlas g.n.on > .atlas-overview-label-leader { opacity: 0.45; }
+
+.atlas.inside g.n:not(.focus) > .atlas-overview-label-leader { opacity: 0; }
+
 /* A TRACE runs from the box asked about all the way back to the sliders, and on
  * a real map that is a dozen circles or more. Naming every one of them at once
  * buries the picture under its own labels — so only the box asked about is
@@ -326,9 +345,9 @@ svg.atlas.panning { cursor: grabbing; }
   font-size: var(--fs-cap);
 }
 
-.atlas-loop-speed select {
+.atlas-loop-speed .atlas-loop-speed-select {
   min-height: 30px;
-  padding-inline: var(--space-1_5);
+  padding: var(--space-1_5) var(--space-6) var(--space-1_5) var(--space-2);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-interactive);
   background: var(--bg-deep);
@@ -344,6 +363,10 @@ svg.atlas.panning { cursor: grabbing; }
 .atlas-loop-scrubber input {
   width: clamp(110px, 18vw, 220px);
   accent-color: var(--act);
+}
+
+.atlas-loopctl [data-loop-animation-toggle] {
+  min-inline-size: 6em;
 }
 
 #atlas-loop-animation-status {
@@ -364,6 +387,16 @@ svg.atlas.panning { cursor: grabbing; }
 }
 
 .atlas-btn:hover { background: var(--act-tint); color: var(--text-primary); }
+
+.atlas-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.atlas-btn:disabled:hover {
+  background: var(--bg-mid);
+  color: var(--text-secondary);
+}
 
 /* === Arriving === */
 @keyframes atlas-pop  { from { opacity: 0; transform: scale(0.45); } to { opacity: 1; transform: none; } }
