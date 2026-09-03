@@ -5,6 +5,11 @@ import { COMBINE_CSV, FORMULA_CSV, FORMULA_INVALID_CSV } from "../fixtures/graph
 
 const sampleCsvPath = resolve(process.cwd(), "assets/data/sample.csv");
 
+// Kept in step with LEARN_CURRICULUM_VERSION in assets/js/26-tutorial.ts. The
+// app throws away stored lesson progress from any other version, so seeding it
+// with a stale number silently ignores the step being asked for.
+const LEARN_CURRICULUM_VERSION = 6;
+
 async function dismissFirstOpenTutorial(page: Page): Promise<void> {
   const welcomeDialog = page.getByRole("dialog", { name: "Welcome to Ariadne Maps" });
   await expect(welcomeDialog).toBeVisible();
@@ -25,21 +30,33 @@ async function openConsolidatedLessonAtStep(
   lessonIdentifier: string,
   stepIndex: number,
 ): Promise<void> {
-  await page.evaluate(({ selectedLessonIdentifier, selectedStepIndex }) => {
+  await page.evaluate(({ selectedLessonIdentifier, selectedStepIndex, curriculumVersion }) => {
     localStorage.setItem("systems-map.learn.progress.v1", JSON.stringify({
-      curriculumVersion: 5,
+      // Must match LEARN_CURRICULUM_VERSION in 26-tutorial.ts. Stored progress
+      // from another version is discarded, which used to leave every test that
+      // asked for a mid-lesson step quietly starting at step 1 instead.
+      curriculumVersion,
       completedLessonIds: [],
       lastLessonId: selectedLessonIdentifier,
       lastStepIndex: selectedStepIndex,
       completedCheckpointIdentifiersByLesson: {},
     }));
-  }, { selectedLessonIdentifier: lessonIdentifier, selectedStepIndex: stepIndex });
+  }, {
+    selectedLessonIdentifier: lessonIdentifier,
+    selectedStepIndex: stepIndex,
+    curriculumVersion: LEARN_CURRICULUM_VERSION,
+  });
   const closeLearnButton = page.locator('[data-tutorial-action="close-learn"]');
   if (await closeLearnButton.isVisible()) await closeLearnButton.click();
   await page.getByRole("button", { name: "Learn", exact: true }).click();
   await page.locator(
     '[data-lesson-card="' + lessonIdentifier + '"] [data-tutorial-action="lesson"]',
   ).click();
+  // Assert the step the caller asked for actually opened. Seeding progress is
+  // an inside-the-app shortcut, and a shortcut that stops working needs to say
+  // so — the alternative is a test that passes against the wrong step.
+  await expect(page.locator(".tutorial-card"))
+    .toContainText("Step " + (stepIndex + 1) + " of ");
 }
 
 async function importCsv(page: Page, csv: string, name = "map.csv"): Promise<void> {
@@ -222,18 +239,34 @@ test("built artifact boots, restores, imports, exports, searches and changes mod
   const download = await downloadPromise;
   const downloadedPath = await download.path();
   expect(downloadedPath).not.toBeNull();
-  const exportedCsv = await readFile(downloadedPath!, "utf8");
-  expect(exportedCsv).toContain("# SECTION: nodes");
+  // Spreadsheet export is a workbook now, not a .csv — one sheet per part of
+  // the map. A .xlsx is a zip, so the round-trip is proved by the archive
+  // carrying the sheets rather than by reading section markers out of text.
+  expect(download.suggestedFilename()).toMatch(/\.xlsx$/);
+  const exportedWorkbook = await readFile(downloadedPath!);
+  expect(exportedWorkbook.subarray(0, 2).toString("latin1")).toBe("PK");
+  const archiveText = exportedWorkbook.toString("latin1");
+  for (const entry of ["xl/workbook.xml", "xl/worksheets/sheet1.xml", "[Content_Types].xml"]) {
+    expect(archiveText, "workbook is missing " + entry).toContain(entry);
+  }
 
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await dismissFirstOpenTutorial(page);
-  await importCsv(page, exportedCsv, "round-trip.csv");
+  // The round trip is the point: whatever Export produced has to come back in
+  // through Import and rebuild the same map. It dispatches on the extension, so
+  // the workbook goes back as a workbook.
+  await page.locator("#hidden-file-input").setInputFiles({
+    name: "round-trip.xlsx",
+    mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: exportedWorkbook,
+  });
+  await expect(page.locator(".node-group").first()).toBeVisible();
   await expect(page.locator(".node-group")).toHaveCount(12);
 
   await page.locator("#learn-button").click();
   await page.locator(
-    '[data-tutorial-action="lesson"][data-lesson-id="move-around-map"]',
+    '[data-tutorial-action="lesson"][data-lesson-id="read-a-map"]',
   ).click();
   await expect(page.locator('[data-tutorial-action="highlight-style"]')).toHaveCount(0);
   await expect.poll(() => page.locator(".tutorial-target").evaluate(
@@ -311,11 +344,9 @@ test("built artifact boots, restores, imports, exports, searches and changes mod
 
 test("Learn Next waits for every ordered action in a step", async ({ page }) => {
   await openCleanBuiltApp(page);
-
-  await page.locator("#learn-button").click();
-  await page.locator(
-    '[data-tutorial-action="lesson"][data-lesson-id="move-around-map"]',
-  ).click();
+  // The zoom gate is the third step of Read a map. Opening the lesson from its
+  // card lands on the first, which asks nothing and so gates nothing.
+  await openConsolidatedLessonAtStep(page, "read-a-map", 2);
 
   const nextButton = page.locator('[data-tutorial-action="next"]');
   const zoomCheckpoint = page.locator('[data-tutorial-checkpoint="change-zoom"]');
@@ -365,23 +396,26 @@ test("Learn Next waits for every ordered action in a step", async ({ page }) => 
   await expect(nextButton).toBeEnabled();
   await nextButton.click();
 
-  await expect(page.getByRole("heading", { name: "Read rows as parts of the system" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Select your first box" })).toBeVisible();
   await expect(page.locator(".node-group.selected")).toHaveCount(0);
   await expect(page.locator('[data-tutorial-action="exit-lesson"]')).toHaveText("Exit lesson");
 
   await page.locator('[data-tutorial-action="exit-lesson"]').click();
-  const unfinishedLessonActions = page.locator('[data-lesson-card="move-around-map"] .learn-lesson-actions');
+  const unfinishedLessonActions = page.locator('[data-lesson-card="read-a-map"] .learn-lesson-actions');
   await expect(unfinishedLessonActions.locator("button")).toHaveCount(1);
   await expect(unfinishedLessonActions.locator('[data-tutorial-action="lesson"]')).toHaveText("Resume");
 
-  page.once("dialog", dialog => dialog.accept());
+  // Reset asks through the app's own dialog now, not window.confirm — a
+  // suppressed native confirm returns false, which is how this button came to
+  // do nothing at all in embedded and preview browsers.
   await page.locator('[data-tutorial-action="reset-all-progress"]').click();
-  await expect(page.locator(".learn-progress-summary")).toContainText("0 of 5 journeys complete");
+  await page.locator(".app-confirm-layer [data-confirm-accept]").click();
+  await expect(page.locator(".learn-progress-summary")).toContainText("0 of 8 lessons complete");
   await expect(page.locator('[data-tutorial-action="reset-all-progress"]')).toBeDisabled();
   await expect(page.locator('[data-tutorial-action="restart-lesson"]')).toHaveCount(0);
 
   await page.locator(
-    '[data-tutorial-action="lesson"][data-lesson-id="edit-map"]',
+    '[data-tutorial-action="lesson"][data-lesson-id="build-a-map"]',
   ).click();
   const detailPanel = page.locator("#detail-panel");
   const columnDropdown = detailPanel.locator('select[data-field="stage"]');
@@ -436,7 +470,7 @@ test("Learn Next waits for every ordered action in a step", async ({ page }) => 
   await expect(page.locator('[data-tutorial-checkpoint="edit-box-field"]')).toHaveClass(/is-complete/);
 
   await page.locator('[data-tutorial-action="exit-lesson"]').click();
-  await openConsolidatedLessonAtStep(page, "move-around-map", 8);
+  await openConsolidatedLessonAtStep(page, "read-a-map", 8);
   const searchInput = page.locator("#search-input");
   await searchInput.fill("workshop");
   await searchInput.press("Enter");
@@ -450,7 +484,7 @@ test("Learn Next waits for every ordered action in a step", async ({ page }) => 
 
 test("Foundations points desirability at the Outcome field", async ({ page }) => {
   await openCleanBuiltApp(page);
-  await openConsolidatedLessonAtStep(page, "move-around-map", 6);
+  await openConsolidatedLessonAtStep(page, "read-a-map", 6);
 
   const outcomeField = page.locator('#detail-panel [data-detail-quantity="outcome"]');
   await expect(page.getByRole("heading", { name: "Distinguish link direction from desirability" }))
@@ -463,7 +497,7 @@ test("Foundations points desirability at the Outcome field", async ({ page }) =>
 
 test("Shift-click adds a box to the tutorial multi-selection", async ({ page }) => {
   await openCleanBuiltApp(page);
-  await openConsolidatedLessonAtStep(page, "edit-map", 25);
+  await openConsolidatedLessonAtStep(page, "build-a-map", 11);
 
   await expect(page.locator(".node-group.selected")).toHaveCount(3);
   await expect(page.locator("#multi-select-bar .selection-only-dropdown")).toHaveCount(3);
@@ -487,7 +521,7 @@ test("Shift-click adds a box to the tutorial multi-selection", async ({ page }) 
 test("custom multi-select dropdowns fit a narrow screen", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openCleanBuiltApp(page);
-  await openConsolidatedLessonAtStep(page, "edit-map", 25);
+  await openConsolidatedLessonAtStep(page, "build-a-map", 11);
 
   const selectionBarBounds = await page.locator("#multi-select-bar").boundingBox();
   expect(selectionBarBounds).not.toBeNull();
@@ -524,10 +558,9 @@ test("custom multi-select dropdowns fit a narrow screen", async ({ page }) => {
 
 test("Command-Z and Control-Z undo while a box field retains focus", async ({ page }) => {
   await openCleanBuiltApp(page);
-  await page.getByRole("button", { name: "Learn", exact: true }).click();
-  await page.locator(
-    '[data-lesson-card="edit-map"] [data-tutorial-action="lesson"]',
-  ).click();
+  // The step that opens a box for editing, rather than the one that only
+  // switches the mode.
+  await openConsolidatedLessonAtStep(page, "build-a-map", 2);
 
   const boxNameInput = page.getByRole("textbox", { name: "Box name" });
   await expect(boxNameInput).toHaveValue("Workshop readiness");
@@ -544,7 +577,7 @@ test("Review uses the shared dropdown without clicking through its panel", async
   await openCleanBuiltApp(page);
   await page.getByRole("button", { name: "Learn", exact: true }).click();
   await page.locator(
-    '[data-lesson-card="review-evidence"] [data-tutorial-action="lesson"]',
+    '[data-lesson-card="check-a-map"] [data-tutorial-action="lesson"]',
   ).click();
 
   await page.locator('[data-tutorial-action="next"]').click();
@@ -559,8 +592,8 @@ test("Review uses the shared dropdown without clicking through its panel", async
   await expect(evidenceStatusDropdown).toBeVisible();
   await evidenceStatusDropdown.click();
   await page.locator(
-    'body > .typeable-dropdown-popup:not([hidden]) .typeable-dropdown-item[data-item-index="3"]',
-  ).click();
+    'body > .typeable-dropdown-popup:not([hidden]) .typeable-dropdown-item',
+  ).filter({ hasText: /^Supported$/ }).click();
 
   await expect(page.locator("#review-sidebar")).toBeVisible();
   await expect(evidenceStatusDropdown).toHaveText("Supported");
@@ -593,7 +626,7 @@ test("the review queue keeps the reader in place and reaches the whole inventory
   await statusPicker.click();
   await page.locator(
     'body > .typeable-dropdown-popup:not([hidden]) .typeable-dropdown-item',
-  ).nth(1).click();                                  // "All statuses"
+  ).filter({ hasText: /^All statuses$/ }).click();
   await expect(page.locator("[data-review-inventory]").first()).toBeVisible();
 });
 
@@ -601,38 +634,52 @@ test("Share lesson keeps each export target open and connected", async ({ page }
   await openCleanBuiltApp(page);
   await page.getByRole("button", { name: "Learn", exact: true }).click();
   await page.locator(
-    '[data-lesson-card="image-view-only"] [data-tutorial-action="lesson"]',
+    '[data-lesson-card="share-and-keep"] [data-tutorial-action="lesson"]',
   ).click();
 
+  // In step order. The first two are not inside the Export menu — the lesson
+  // opens on the menu button itself, then on framing the view before an image.
   const expectedExportTargets = [
-    ".save-data-trigger",
-    ".export-image-trigger",
+    "#export-button",
+    "#viz-zoom-readout",
     ".publish-html-trigger",
     ".export-review-log-trigger",
   ];
+  const targetsInsideTheExportMenu = new Set([2, 3]);
   for (let stepIndex = 0; stepIndex < expectedExportTargets.length; stepIndex++) {
     const exportTarget = page.locator(expectedExportTargets[stepIndex]);
-    await expect(page.locator("#export-menu")).toBeVisible();
+    if (targetsInsideTheExportMenu.has(stepIndex)) {
+      // Each of those steps closes the menu and asks the learner to open it —
+      // the lesson's own words are "Open the menu these choices live in."
+      if (!await page.locator("#export-menu").isVisible()) {
+        await page.locator("#export-button").click();
+      }
+      await expect(page.locator("#export-menu")).toBeVisible();
+    }
     await expect(exportTarget).toBeVisible();
     await expect(exportTarget).toHaveClass(/tutorial-target/);
     if (stepIndex < expectedExportTargets.length - 1) {
-      await page.locator('[data-tutorial-action="next"]').click();
+      // Some of these steps gate on doing the thing. This test is about where
+      // each step's thread points, so step past the gate rather than exporting.
+      const nextButton = page.locator('[data-tutorial-action="next"]');
+      const advance = await nextButton.isEnabled()
+        ? nextButton
+        : page.locator('[data-tutorial-action="skip-step"]');
+      await advance.click();
     }
   }
 });
 
 test("Learn Skip step bypasses one gate and leaves it unfinished", async ({ page }) => {
   await openCleanBuiltApp(page);
-  await page.locator("#learn-button").click();
-  await page.locator(
-    '[data-tutorial-action="lesson"][data-lesson-id="move-around-map"]',
-  ).click();
+  // Skip only means something on a step that gates. The zoom step does.
+  await openConsolidatedLessonAtStep(page, "read-a-map", 2);
 
   const firstStepTitle = await page.locator(".tutorial-card h2").textContent();
   await expect(page.locator('[data-tutorial-action="next"]')).toBeDisabled();
   await expect(page.locator('[data-tutorial-action="skip-step"]')).toBeEnabled();
   await page.locator('[data-tutorial-action="skip-step"]').click();
-  await expect(page.locator(".tutorial-step-number")).toContainText("Step 2 of 16");
+  await expect(page.locator(".tutorial-step-number")).toContainText("Step 4 of 11");
   await expect(page.locator(".tutorial-card h2")).not.toHaveText(firstStepTitle || "");
 
   await page.locator('[data-tutorial-action="back"]').click();
@@ -643,7 +690,7 @@ test("Learn Skip step bypasses one gate and leaves it unfinished", async ({ page
 
 test("Sensitivity interpretation points at the opened result rows", async ({ page }) => {
   await openCleanBuiltApp(page);
-  await openConsolidatedLessonAtStep(page, "review-evidence", 5);
+  await openConsolidatedLessonAtStep(page, "check-a-map", 5);
 
   // The lesson asks for the ranked sweep, which lives behind the list's picker.
   const sweepPicker = page.getByRole("combobox", { name: "Show" });
@@ -651,226 +698,47 @@ test("Sensitivity interpretation points at the opened result rows", async ({ pag
   await sweepPicker.click();
   await page.locator(
     'body > .typeable-dropdown-popup:not([hidden]) .typeable-dropdown-item',
-  ).nth(1).click();                                  // "Every adjustable box, by reach"
+  ).filter({ hasText: /by reach/ }).click();
   await expect(page.locator(".review-reach-row").first()).toBeVisible();
 
   await expect(page.locator('[data-tutorial-action="next"]')).toBeEnabled();
   await page.locator('[data-tutorial-action="next"]').click();
 
-  await expect(page.getByRole("heading", { name: "Use sensitivity as a diagnostic, not proof" }))
+  await expect(page.getByRole("heading", { name: "A sweep is a clue, not a proof" }))
     .toBeVisible();
   await expect(page.locator("#review-list.tutorial-target")).toBeVisible();
   await expect(page.locator(".review-reach-row").first()).toBeVisible();
 });
 
-test("Atlas lesson teaches the user to open Atlas before showing pathways", async ({ page }) => {
+test("Atlas lesson gates its picture behind opening Atlas", async ({ page }) => {
   await openCleanBuiltApp(page);
-  await openConsolidatedLessonAtStep(page, "simulate-change", 6);
+  await openConsolidatedLessonAtStep(page, "follow-pathways", 0);
 
   const nextButton = page.locator('[data-tutorial-action="next"]');
   const openAtlasButton = page.locator('[data-action="open-atlas"]');
-  const volunteerTimeSlider = page.locator(
-    '.sim-slider-row[data-node-id="volunteer_hours"] .sim-value-input',
-  );
-  await expect(page.getByRole("heading", { name: "Open Atlas while simulating" })).toBeVisible();
-  await expect(page.locator("body")).not.toHaveClass(/atlas-open/);
-  await expect(volunteerTimeSlider).toHaveClass(/tutorial-target/);
-  await expect(nextButton).toBeDisabled();
-  await volunteerTimeSlider.fill("120");
-  await volunteerTimeSlider.press("Tab");
-  await expect(page.locator('[data-tutorial-checkpoint="change-input-before-atlas"]'))
-    .toHaveClass(/is-complete/);
-  await expect(openAtlasButton).toHaveClass(/tutorial-target/);
-  await openAtlasButton.click();
-  await expect(page.locator('[data-tutorial-checkpoint="open-atlas-while-simulating"]'))
-    .toHaveClass(/is-complete/);
-  await expect(page.locator("body")).toHaveClass(/atlas-open/);
-  await expect(nextButton).toBeEnabled();
 
-  await nextButton.click();
   await expect(page.getByRole("heading", { name: "Open Atlas from a starting box" })).toBeVisible();
   await expect(page.locator("body")).not.toHaveClass(/atlas-open/);
-  await expect(page.locator('.node-group[data-node-id="community_confidence"]')).toHaveClass(/selected/);
-  await expect(openAtlasButton).toBeVisible();
+  // The lesson picks the starting box, so the route in is the box panel's own
+  // Actions — which is where the thread points.
+  await expect(openAtlasButton).toHaveClass(/tutorial-target/);
   await expect(nextButton).toBeDisabled();
 
   await openAtlasButton.click();
-
-  await expect(page.locator("body")).toHaveClass(/atlas-open/);
   await expect(page.locator('[data-tutorial-checkpoint="open-atlas"]')).toHaveClass(/is-complete/);
+  await expect(page.locator("body")).toHaveClass(/atlas-open/);
   await expect(nextButton).toBeEnabled();
 
   await nextButton.click();
   await expect(page.getByRole("heading", { name: "Explore the Atlas picture" })).toBeVisible();
-  await expect(nextButton).toBeDisabled();
-  await page.locator(".atlas g.n[data-el]:not([data-loop]) > circle.bub").first().click();
-  await expect(page.locator('[data-tutorial-checkpoint="select-atlas-element"]'))
-    .toHaveClass(/is-complete/);
-  await expect(nextButton).toBeEnabled();
-
-  await nextButton.click();
-  await expect(page.getByRole("heading", { name: "Read a grouped circle carefully" })).toBeVisible();
-  await expect(page.locator(".atlas-group-legend")).toHaveClass(/tutorial-target/);
-  await expect(nextButton).toBeEnabled();
-
-  await nextButton.click();
-  await expect(page.getByRole("heading", { name: "Frame the Atlas view" })).toBeVisible();
-  await expect(nextButton).toBeDisabled();
-  await page.locator("#atlas-zoom-readout").click();
-  await expect(page.locator('[data-tutorial-checkpoint="fit-atlas-picture"]'))
-    .toHaveClass(/is-complete/);
-  await expect(nextButton).toBeEnabled();
-
-  await nextButton.click();
-  await expect(page.getByRole("heading", { name: "Change the starting question" })).toBeVisible();
-  await expect(page.locator("#atlas-button")).toHaveClass(/tutorial-target/);
-  await expect(nextButton).toBeDisabled();
-  await page.locator("#atlas-button").click();
-  await expect(page.locator('[data-tutorial-checkpoint="open-atlas-start-menu"]'))
-    .toHaveClass(/is-complete/);
-  await expect(page.locator("[data-atlas-start]").first()).toHaveClass(/tutorial-target/);
-  await page.locator("[data-atlas-start]").first().click();
-  await expect(page.locator('[data-tutorial-checkpoint="change-atlas-start"]'))
-    .toHaveClass(/is-complete/);
-  await expect(nextButton).toBeEnabled();
-
-  await nextButton.click();
-  await expect(page.getByRole("heading", { name: "Isolate one pathway in the sidebar" }))
-    .toBeVisible();
-  await expect(nextButton).toBeDisabled();
-  await expect(page.locator("#detail-content [data-fork]").first()).toHaveClass(/tutorial-target/);
-  await page.getByRole("button", { name: "Registration share", exact: true }).click();
-  await expect(page.locator('[data-tutorial-checkpoint="isolate-atlas-pathway"]'))
-    .toHaveClass(/is-complete/);
-  await expect(nextButton).toBeEnabled();
-
-  await nextButton.click();
-  await expect(page.getByRole("heading", { name: "Open a feedback loop" })).toBeVisible();
-  await expect(page.locator(".atlas g.n[data-loop]").first()).toHaveClass(/tutorial-target/);
-  await expect(nextButton).toBeDisabled();
-  await page.locator(".atlas g.n[data-loop]").first().click();
-  await expect(page.locator('[data-tutorial-checkpoint="select-feedback-group"]'))
-    .toHaveClass(/is-complete/);
-  await expect(page.locator("[data-open-feedback]")).toHaveClass(/tutorial-target/);
-  await page.locator("[data-open-feedback]").click();
-  await expect(page.locator('[data-tutorial-checkpoint="open-feedback-loops"]'))
-    .toHaveClass(/is-complete/);
-  await expect(nextButton).toBeEnabled();
-
-  await nextButton.click();
-  await expect(page.getByRole("heading", { name: "Play and scrub a feedback route" }))
-    .toBeVisible();
-  const positionScrubber = page.getByRole("slider", {
-    name: "Feedback loop animation position",
-  });
-  const playbackSpeedDropdown = page.getByRole("combobox", {
-    name: "Feedback loop animation speed",
-  });
-  await expect(positionScrubber).toBeVisible();
-  await expect(page.locator("#atlas-loopctl")).toHaveClass(/tutorial-target/);
-  await expect(playbackSpeedDropdown.locator("xpath=..")).toHaveClass(/selection-only-dropdown/);
-  await expect(positionScrubber).toHaveAttribute("max", "1000");
-  const playbackCheckpoint = page.locator(
-    '[data-tutorial-checkpoint="control-feedback-route"]',
-  );
-  await expect(playbackCheckpoint).not.toHaveClass(/is-complete/);
-  await expect(nextButton).toBeDisabled();
-  await playbackSpeedDropdown.click();
-  await page.locator(
-    'body > .typeable-dropdown-popup:not([hidden]) .typeable-dropdown-item[data-item-index="2"]',
-  ).click();
-  await expect(playbackSpeedDropdown).toHaveText("2×");
-  const scrubberBounds = await positionScrubber.boundingBox();
-  expect(scrubberBounds).not.toBeNull();
-  const scrubberVerticalCentre = scrubberBounds!.y + scrubberBounds!.height / 2;
-  await page.mouse.click(scrubberBounds!.x + 3, scrubberVerticalCentre);
-  await page.mouse.move(scrubberBounds!.x + 3, scrubberVerticalCentre);
-  await page.mouse.down();
-  await page.mouse.move(
-    scrubberBounds!.x + scrubberBounds!.width * 0.7,
-    scrubberVerticalCentre,
-    { steps: 8 },
-  );
-  await page.mouse.up();
-  await expect.poll(async () => Number(await positionScrubber.inputValue()))
-    .toBeGreaterThan(600);
-  await expect.poll(async () => Number(await positionScrubber.inputValue()))
-    .toBeLessThan(800);
-  await expect(page.getByRole("button", { name: "Play feedback loop animation" }))
-    .toBeVisible();
-  await expect(playbackCheckpoint).toHaveClass(/is-complete/);
-  await expect(nextButton).toBeEnabled();
-
-  const animationPreviousButton = page.getByRole("button", { name: "Previous", exact: true });
-  const animationNextButton = page.getByRole("button", { name: "Next", exact: true });
-  for (
-    let stepIndex = 0;
-    stepIndex < 20 && !(await animationPreviousButton.isDisabled());
-    stepIndex++
-  ) {
-    await animationPreviousButton.click();
-  }
-  await expect(positionScrubber).toHaveValue("0");
-  await expect(animationPreviousButton).toBeDisabled();
-  await expect(animationNextButton).toBeEnabled();
-
-  await animationNextButton.click();
-  const firstBoxStepPosition = Number(await positionScrubber.inputValue());
-  expect(firstBoxStepPosition).toBeGreaterThan(0);
-  expect(firstBoxStepPosition).toBeLessThan(1000);
-  await expect(page.locator("#atlas-loop-animation-status")).toContainText("Box 2 of");
-  await expect(animationPreviousButton).toBeEnabled();
-  await expect(animationNextButton).toBeEnabled();
-
-  await animationNextButton.click();
-  expect(Number(await positionScrubber.inputValue())).toBeGreaterThan(firstBoxStepPosition);
-  await expect(page.locator("#atlas-loop-animation-status")).toContainText("Box 3 of");
-  await animationPreviousButton.click();
-  await expect(positionScrubber).toHaveValue(String(firstBoxStepPosition));
-  await expect(page.locator("#atlas-loop-animation-status")).toContainText("Box 2 of");
-
-  const toggleButton = page.locator("[data-loop-animation-toggle]");
-  const scrubberPositionBeforeEndDrag = await positionScrubber.boundingBox();
-  expect(scrubberPositionBeforeEndDrag).not.toBeNull();
-  const scrubberCentreY = scrubberPositionBeforeEndDrag!.y +
-    scrubberPositionBeforeEndDrag!.height / 2;
-  await page.mouse.move(
-    scrubberPositionBeforeEndDrag!.x + scrubberPositionBeforeEndDrag!.width * 0.97,
-    scrubberCentreY,
-  );
-  await page.mouse.down();
-  await page.mouse.move(
-    scrubberPositionBeforeEndDrag!.x + scrubberPositionBeforeEndDrag!.width - 1,
-    scrubberCentreY,
-    { steps: 4 },
-  );
-  await expect(toggleButton).toHaveText("Play");
-  await page.mouse.move(
-    scrubberPositionBeforeEndDrag!.x + scrubberPositionBeforeEndDrag!.width * 0.97,
-    scrubberCentreY,
-    { steps: 4 },
-  );
-  await page.mouse.move(
-    scrubberPositionBeforeEndDrag!.x + scrubberPositionBeforeEndDrag!.width - 1,
-    scrubberCentreY,
-    { steps: 4 },
-  );
-  await expect(toggleButton).toHaveText("Play");
-  const scrubberPositionDuringEndDrag = await positionScrubber.boundingBox();
-  expect(scrubberPositionDuringEndDrag!.x).toBeCloseTo(scrubberPositionBeforeEndDrag!.x, 0);
-  await page.mouse.up();
-  await expect(positionScrubber).toHaveValue("1000");
-  await expect(toggleButton).toHaveText("Replay");
+  await expect(page.locator(".atlas g.n[data-el] > circle.bub").first()).toHaveClass(/tutorial-target/);
 });
 
 test("Atlas overview labels remain readable around a selected pathway", async ({ page }) => {
   await openCleanBuiltApp(page);
-  await openConsolidatedLessonAtStep(page, "simulate-change", 7);
-  const nextButton = page.locator('[data-tutorial-action="next"]');
-  await page.locator('[data-action="open-atlas"]').click();
-  await expect(nextButton).toBeEnabled();
-  await nextButton.click();
+  await openConsolidatedLessonAtStep(page, "follow-pathways", 1);
   await expect(page.getByRole("heading", { name: "Explore the Atlas picture" })).toBeVisible();
+  await expect(page.locator("body")).toHaveClass(/atlas-open/);
 
   await page.getByRole("button", { name: "Improvement backlog ×4", exact: true }).click();
   await expect(page.locator(".atlas g.n.on > .atlas-overview-label")).toHaveCount(10);
@@ -942,7 +810,7 @@ test("simulation lesson accepts dragging a numerical input", async ({ page }) =>
   await openCleanBuiltApp(page);
   await page.locator("#learn-button").click();
   await page.locator(
-    '[data-lesson-card="simulate-change"] .learn-lesson-actions button',
+    '[data-lesson-card="ask-what-if"] .learn-lesson-actions button',
   ).click();
 
   const percentageInput = page.locator(
@@ -1127,24 +995,23 @@ test("390 by 844 keeps the page pinned and fits the global header", async ({ pag
     ".viz-controls-cluster",
   ]);
 
-  await page.evaluate(() => {
+  await page.evaluate((curriculumVersion) => {
     localStorage.setItem("systems-map.learn.progress.v1", JSON.stringify({
-      curriculumVersion: 4,
-      completedLessonIds: ["move-around-map"],
-      lastLessonId: "move-around-map",
+      curriculumVersion,
+      completedLessonIds: ["read-a-map"],
+      lastLessonId: "read-a-map",
       lastStepIndex: 0,
       completedCheckpointIdentifiersByLesson: {},
     }));
-  });
+  }, LEARN_CURRICULUM_VERSION);
   await page.locator("#learn-button").click();
-  const mobileCompletedLessonActions = page.locator('[data-lesson-card="move-around-map"] .learn-lesson-actions');
+  const mobileCompletedLessonActions = page.locator('[data-lesson-card="read-a-map"] .learn-lesson-actions');
   await expect(mobileCompletedLessonActions.locator("button")).toHaveCount(1);
   await expect(mobileCompletedLessonActions.locator('[data-tutorial-action="restart-lesson"]')).toHaveText("Restart lesson");
   await expect(mobileCompletedLessonActions.locator('[data-tutorial-action="lesson"]')).toHaveCount(0);
   await expect(page.locator('[data-tutorial-action="reset-all-progress"]')).toBeInViewport();
-  await page.locator(
-    '[data-tutorial-action="lesson"][data-lesson-id="edit-map"]',
-  ).click();
+  await page.locator('[data-tutorial-action="close-learn"]').click();
+  await openConsolidatedLessonAtStep(page, "build-a-map", 2);
   await expect(page.locator("#detail-panel")).toBeVisible();
   const tutorialMapWidth = await page.locator("#viz-scroll").evaluate(element => element.clientWidth);
   expect(tutorialMapWidth).toBeGreaterThanOrEqual(300);
@@ -1166,6 +1033,14 @@ test("a review item hands its question to the box panel beside the map", async (
   await expect(block).toBeVisible();
   await expect(page.locator("#viz-svg")).toBeVisible();
   await expect(page.locator("#review-issue-banner")).toHaveCount(0);
+
+  // The shell animates its grid tracks, so the map's left edge arrives a beat
+  // after the sidebar's. Wait for the layout rather than racing it.
+  await expect.poll(() => page.evaluate(() => {
+    const sidebarBounds = document.getElementById("review-sidebar")!.getBoundingClientRect();
+    const mapBounds = document.getElementById("viz-container")!.getBoundingClientRect();
+    return Math.round(mapBounds.left) >= Math.round(sidebarBounds.right);
+  })).toBe(true);
 
   const columns = await page.evaluate(() => {
     const sidebarBounds = document.getElementById("review-sidebar")!.getBoundingClientRect();

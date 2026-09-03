@@ -784,6 +784,17 @@ export function initReviewSidebar(): void {
     listenersWired = true;
     onReviewRecordChanged(syncReviewSidebar);
     onSelectionChanged(syncReviewSidebar);
+    // The dock's height is measured, not declared — see publishDockHeight — so
+    // it has to be re-measured whenever the thing being measured could have
+    // changed size. Crossing the 1100px breakpoint turns a 300px column into a
+    // bar whose foot wraps differently, and without this the map's own controls
+    // went on clearing the height the column USED to be and sat on top of it.
+    if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+      window.addEventListener("resize", () => {
+        const sidebar = sidebarEl();
+        if (sidebar && !sidebar.hidden) publishDockHeight(sidebar);
+      });
+    }
   }
 
   const sidebar = sidebarEl();
