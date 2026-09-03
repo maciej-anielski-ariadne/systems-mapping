@@ -12,7 +12,7 @@
     "build": "vite build && node scripts/rename-dist.mjs && node scripts/check-brand.mjs",
     "build:white-label": "vite build --mode whitelabel && node scripts/rename-dist.mjs dist-white-label && node scripts/check-brand.mjs --absent --dir=dist-white-label",
     "build:hosted": "vite build --config vite.hosted.config.ts",
-    "build:all": "npm run build && npm run build:hosted",
+    "build:all": "npm run build && npm run build:hosted && npm run build:white-label",
     "check:performance": "node scripts/check-performance-budgets.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",

@@ -23,7 +23,6 @@ test-results/
 *.tsbuildinfo
 .vite/
 dist-hosted/
-dist-white-label/
 
 # Migration scratch artifacts (symbol map, etc.)
 .migration/
