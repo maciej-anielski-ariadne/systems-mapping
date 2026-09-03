@@ -185,6 +185,10 @@ export function renderDetailPanel(): void {
   // Wire up handlers for whichever mode just rendered.
   wireReviewItemBlock(contentState);
   wireSharedHandlers(node, contentState);
+  // The verdict controls belong to the review card, not to a mode: the card now
+  // renders in both, so it is wired in both. A no-op when no pass is running,
+  // because there is nothing matching to bind to.
+  wireReviewCardHandlers(node, contentState);
   if (editMode) {
     wireEditModeHandlers(node, contentState);
   } else {
@@ -369,10 +373,16 @@ function renderSelectedBoxActions(node: GraphNode, hasDirectImpacts: boolean): s
  * which simulation docks, so the queue cannot be shown beside a simulated map.
  * Without this the card stayed live with the queue gone — the verdict buttons
  * still recording, no progress, and no way back to the list.
+ *
+ * EDIT MODE IS NOT AN EXCLUSION. It was, and the effect was that the one place
+ * a reviewer can act on what they have just found — fix the strength, draw the
+ * missing link — was the one place they could not then record a verdict on it.
+ * The card is built from the same skeleton as the rest of the panel (the name,
+ * the fields and the outgoing links all render as their edit leaves inside it),
+ * so a pass now runs in either mode and the fields stay unlocked underneath.
  */
 function reviewingBox(node: GraphNode): boolean {
-  return state.uiMode !== "edit" && state.reviewPass && !state.simulationMode &&
-         queuePosition(node.id) > 0;
+  return state.reviewPass && !state.simulationMode && queuePosition(node.id) > 0;
 }
 
 function renderReviewStepper(node: GraphNode): string {
@@ -405,7 +415,18 @@ function renderReviewAsk(node: GraphNode): string {
   // "Wrong strengths" is false on a formula box — the engine never reads them.
   // Telling a third of the queue to check something that cannot be wrong is
   // worse than saying nothing, because it looks like the whole question.
-  let sub = node.formula
+  // A box nothing drives is asked the other half of the same question. It used
+  // to be asked nothing at all — it was kept out of the pass — which left the
+  // commonest way a large map goes wrong (a driver box nobody marked adjustable,
+  // or a link that was never drawn) as the one thing no verdict could settle.
+  const ask = count === 0
+    ? "Should anything drive this box?"
+    : "Is this everything that drives this box?";
+  let sub = count === 0
+    ? "Nothing drives it: every number it carries comes from the value typed on it. " +
+      "That is right for a box the map starts from — and it is what a missing link " +
+      "looks like from here."
+    : node.formula
     ? "This box is computed from the rule below, and the " + count + " link" +
       (count === 1 ? "" : "s") + " under it are what the rule draws on. Is the rule " +
       "right, and does it use everything it should?"
@@ -416,7 +437,7 @@ function renderReviewAsk(node: GraphNode): string {
     sub = "This box was signed off before, and something about what drives it has changed since. " + sub;
   }
   return '<div class="rv-ask' + (state_ === "stale" ? " is-stale" : "") + '">' +
-         '<b>Is this everything that drives this box?</b>' +
+         '<b>' + escapeHtml(ask) + '</b>' +
          '<span>' + escapeHtml(sub) + '</span></div>';
 }
 
@@ -1729,7 +1750,6 @@ export function wireViewModeHandlers(node: GraphNode, contentState: HTMLElement)
     });
   });
 
-  wireReviewCardHandlers(node, contentState);
 }
 
 // ───── The review card's controls ─────────────────────────────────────────

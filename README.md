@@ -212,7 +212,21 @@ does **not** invalidate it: a spelling fix is not a change to what drives the bo
 retiring verdicts for one would teach people to ignore the mark.
 
 While a pass is running the map marks coverage, so one glance answers the question no
-list can: **where have we not been?** `[` and `]` step the pass from the keyboard.
+list can: **where have we not been?** `[` and `]` step the pass from the keyboard. **The
+pass runs in edit mode as well as view mode**: the one place a reviewer can act on what
+they have just found is the one place they most need to be able to record it, and the
+card renders from the same skeleton as the rest of the panel — so the fields stay
+unlocked underneath it.
+
+**Every box is in the pass, including the ones nothing drives.** Those used to be left
+out, on the reasoning that "is this everything that drives this box?" has no answer for a
+starting box. It mistook a *different* question for no question: a box nothing drives is
+asked **should anything drive this box?**, which is one of the few a map gets badly
+wrong — a driver box nobody marked adjustable, or a link never drawn. It is also the
+question the sensitivity sweep asks arithmetically when it reports a box no input can
+reach, and leaving those boxes out of the queue meant they had nowhere to record an
+answer: no queue position, so no verdict card, so no way to say "yes, that is meant to be
+a starting box" and have it stick.
 
 **A box whose rule is not its arrows shows its rule.** A formula box is computed from its
 expression *alone* — the arrows into it go descriptive and their strengths are ignored
@@ -238,7 +252,7 @@ A box with a non-default combine rule gets a line saying how its arrows add up. 
 strengths still count, so nothing is struck.
 
 **The queue docks beside the map for the length of the pass.** A 260px rail on the left
-lists every box that has something driving it, grouped by the map's own columns, each
+lists every box on the map, grouped by the map's own columns, each
 with a mark for where it stands — agreed, flagged, changed since, not looked at — and
 filter chips over the top. Clicking a row goes to that box; the question and the verdict
 stay in the box panel on the right, so there is only ever one place to answer and one
@@ -329,8 +343,16 @@ left-hand column. It is just not what anyone intended:
   a `min()` at the top of a formula) and this input is not the arm that binds. The card
   spells out every arm with its value and marks the binding one, so "this slider is dead"
   arrives together with "and here is what is actually short".
-- **One that reaches exactly one box**, or **only ever pushes down**.
-- **Boxes nothing adjustable can reach at all.**
+- **One that reaches exactly one box** (one card each, for the same reason), or **only ever
+  pushes down**.
+- **A box no input can reach at all** — one card per box, so a reviewer can take them one at
+  a time rather than reading a tally. A box only earns this card when there is genuinely no
+  route to it: the check is structural, over the same dependency relation the solver reads
+  by, not "the sweep did not move it". A box behind a gate, one already sitting on a limit,
+  and one reached by a route too weak for the map to draw are all reached; they are listed
+  under **Held back** in the full sweep, and none of them is raised as work. This card and
+  the one below it settle on the box's own verdict — agree that the map is meant to start
+  there and the row closes, signed and dated, and comes back if what drives the box changes.
 - **A single point of leverage** — one box that carries much further than any other.
 
 Below the exceptions, the full sweep folds open: every adjustable box, ordered by how far it

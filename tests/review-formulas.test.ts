@@ -8,14 +8,14 @@
 // and leave the expression off screen. On those boxes the list was the wrong
 // list, and the right one was nowhere.
 // =============================================================================
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { loadDataFromCsv } from "../assets/js/06-data-loader";
 import { state } from "../assets/js/03-state";
 // focusNode, not selectNode: selectNode is a toggle, and calling it twice on
 // the same box in one test would deselect rather than re-render.
 import { focusNode } from "../assets/js/09-graph-selection";
 import { renderDetailPanel, setReviewWorkingOpen, paintFormula } from "../assets/js/15-detail-panel";
-import { startReviewPass } from "../assets/js/24-review-record";
+import { reviewAction, reviewStateOf, startReviewPass } from "../assets/js/24-review-record";
 import {
   formulaInLabels, formulaConstants, formulaReads, formulaInLabelsFailed,
 } from "../assets/js/07-simulation-engine";
@@ -332,5 +332,67 @@ describe("painting a formula", () => {
     expect(expr.querySelector(".fx-fn")!.textContent).toBe("min");
     // …and still reads back as the exact text in the spreadsheet.
     expect(expr.textContent).toBe("min(officers * exams_per_fte_yr, arrivals * referral_rate)");
+  });
+});
+
+// =============================================================================
+// THE PASS COVERS THE WHOLE MAP, IN EITHER MODE
+// -----------------------------------------------------------------------------
+// Two things a reviewer could not do. A box nothing drives was kept out of the
+// queue, so the commonest fault on a large map — a driver box nobody marked
+// adjustable, or a link never drawn — was the one thing no verdict could
+// settle. And the card was hidden in edit mode, so the one place a reviewer can
+// act on what they have just found was the one place they could not then record
+// a verdict on it.
+// =============================================================================
+describe("a box nothing drives", () => {
+  it("is in the pass, and is asked the other half of the question", () => {
+    const card = show("officers");
+    expect(card.querySelector(".rv-step")).not.toBeNull();
+    expect(card.querySelector(".rv-foot")).not.toBeNull();
+    expect(card.querySelector(".rv-ask b")!.textContent).toBe("Should anything drive this box?");
+    expect(card.querySelector(".rv-ask span")!.textContent)
+      .toContain("what a missing link looks like from here");
+  });
+
+  it("can be agreed, and the verdict sticks to the box", () => {
+    show("officers");
+    expect(reviewStateOf("officers")).toBe("unreviewed");
+    reviewAction("officers", "agree");
+    expect(reviewStateOf("officers")).toBe("agreed");
+  });
+});
+
+describe("the review card in edit mode", () => {
+  beforeEach(() => { state.uiMode = "edit"; });
+  afterEach(() => { state.uiMode = "read"; });
+
+  it("keeps the question and the verdict buttons", () => {
+    const card = show("plain");
+    expect(card.querySelector(".rv-step")).not.toBeNull();
+    expect(card.querySelector(".rv-ask")).not.toBeNull();
+    expect(card.querySelector('[data-review="agree"]')).not.toBeNull();
+    expect(card.querySelector('[data-review="flag"]')).not.toBeNull();
+    expect(card.querySelector('[data-review="skip"]')).not.toBeNull();
+  });
+
+  it("leaves the box editable underneath, which is the point of being here", () => {
+    const card = show("plain");
+    // The name is an input, not a display span: the fields are still unlocked.
+    expect(card.querySelector("input.detail-name-input")).not.toBeNull();
+    expect(card.querySelector(".detail-desc-input")).not.toBeNull();
+  });
+
+  it("records a verdict from edit mode", () => {
+    const card = show("plain");
+    (card.querySelector('[data-review="agree"]') as HTMLButtonElement).click();
+    expect(reviewStateOf("plain")).toBe("agreed");
+  });
+
+  it("still stands down for a simulated map", () => {
+    state.simulationMode = true;
+    const card = show("plain");
+    expect(card.querySelector(".rv-foot")).toBeNull();
+    state.simulationMode = false;
   });
 });

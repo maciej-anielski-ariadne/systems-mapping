@@ -30,7 +30,7 @@ c,Thing,#444,#fff
 
 `;
 
-// a and b feed c; c feeds d. Two boxes have inputs, so the queue is [c, d].
+// a, b and e feed c; c feeds d. Every box is in the queue, causes first.
 const CHAIN = HEAD + `# SECTION: nodes
 id,label,description,stream,stage,category,baseline,unit,controllable,direction,slider_max,combine,formula,min,max
 a,Lorry exam coverage,,main,s1,c,100,units,true,,2,,,,
@@ -50,16 +50,20 @@ c,d,increases,,
 describe("the queue", () => {
   beforeEach(() => { loadDataFromCsv(CHAIN); state.reviews = {}; });
 
-  it("holds only boxes that something feeds, causes before effects", () => {
-    // "Is this everything that drives this box?" has no useful answer for a
-    // starting box, so the three inputs are not in the queue.
-    expect(queueOrder()).toEqual(["c", "d"]);
-    expect(queuePosition("c")).toBe(1);
-    expect(queuePosition("a")).toBe(0);
+  it("holds every box, causes before effects", () => {
+    // A starting box is asked "should anything drive this?" — a different
+    // question, not no question, and the one a missing link answers wrongly.
+    expect(queueOrder()).toEqual(["a", "b", "e", "c", "d"]);
+    expect(queuePosition("a")).toBe(1);
+    expect(queuePosition("c")).toBe(4);
+    // Every box, so nothing on the map is unjudgeable.
+    expect(queueOrder()).toHaveLength(NODES.length);
   });
 
   it("hands back the next box still wanting a verdict, and wraps", () => {
-    expect(nextOutstanding(null)).toBe("c");
+    expect(nextOutstanding(null)).toBe("a");
+    for (const id of ["a", "b", "e"]) recordVerdict(id, "agreed");
+    expect(nextOutstanding("e")).toBe("c");
     recordVerdict("c", "agreed");
     expect(nextOutstanding("c")).toBe("d");
     recordVerdict("d", "agreed");
@@ -97,11 +101,11 @@ describe("a verdict expires when the thing it judged changes", () => {
   });
 
   it("puts a stale box back in the queue", () => {
+    for (const id of ["a", "b", "e", "d"]) recordVerdict(id, "agreed");
     recordVerdict("c", "agreed");
-    recordVerdict("d", "agreed");
-    expect(coverage()).toMatchObject({ agreed: 2, unreviewed: 0, stale: 0 });
+    expect(coverage()).toMatchObject({ total: 5, agreed: 5, unreviewed: 0, stale: 0 });
     incomingEdges.c[0].elasticity = 0.9;
-    expect(coverage()).toMatchObject({ agreed: 1, stale: 1 });
+    expect(coverage()).toMatchObject({ agreed: 4, stale: 1 });
     expect(nextOutstanding(null)).toBe("c");
   });
 });
@@ -242,6 +246,7 @@ describe("the log — finding the flags again afterwards", () => {
   });
 
   it("can reopen a box entirely, putting it back in the queue", () => {
+    for (const id of ["a", "b", "e"]) recordVerdict(id, "agreed");
     recordVerdict("c", "agreed");
     clearVerdict("c");
     expect(reviewStateOf("c")).toBe("unreviewed");
@@ -264,10 +269,12 @@ describe("running a pass", () => {
   });
 
   it("starts on the first box wanting a verdict and can be stopped", () => {
-    expect(startReviewPass()).toBe("c");
+    // The first box a pass opens on is now a starting box: causes first, and a
+    // starting box is the first cause there is.
+    expect(startReviewPass()).toBe("a");
     expect(state.reviewPass).toBe(true);
-    recordVerdict("c", "agreed");
-    expect(startReviewPass()).toBe("d");
+    for (const id of ["a", "b", "e"]) recordVerdict(id, "agreed");
+    expect(startReviewPass()).toBe("c");
     endReviewPass();
     expect(state.reviewPass).toBe(false);
   });
@@ -372,18 +379,22 @@ describe("the review log as a table", () => {
   it("accounts for every box on the map, not only the reviewed ones", () => {
     const rows = reviewReport();
     expect(rows.length).toBe(NODES.length);
-    // Queue first, causes before effects; the starting boxes bring up the rear.
-    expect(rows.slice(0, 2).map(r => r.boxId)).toEqual(["c", "d"]);
-    expect(rows.slice(2).map(r => r.boxId).sort()).toEqual(["a", "b", "e"]);
+    // Queue order, causes before effects — and the queue is every box.
+    expect(rows.map(r => r.boxId)).toEqual(queueOrder());
   });
 
-  it("says why a box is not in the queue rather than calling it unchecked", () => {
+  it("gives a starting box a place in the pass and a verdict of its own", () => {
     const starting = reviewReport().find(r => r.boxId === "a")!;
-    expect(starting.order).toBe(0);
-    expect(starting.state).toMatch(/not in the queue/);
-    const queued = reviewReport().find(r => r.boxId === "c")!;
-    expect(queued.order).toBe(1);
-    expect(queued.state).toBe("not checked");
+    expect(starting.order).toBe(1);
+    expect(starting.linksIn).toBe(0);
+    expect(starting.state).toBe("not checked");
+
+    // And it can be answered: the report carries the verdict, so an agreement
+    // that nothing is meant to drive this box is in the exported log.
+    recordVerdict("a", "agreed", { reviewer: "Ann Lee", date: "2026-09-03" });
+    const agreed = reviewReport().find(r => r.boxId === "a")!;
+    expect(agreed.state).toBe("agreed");
+    expect(agreed.reviewer).toBe("Ann Lee");
   });
 
   it("carries the comment, the flagged links and all three dates", () => {
@@ -617,11 +628,12 @@ describe("a note with no verdict on it", () => {
   });
 
   it("leaves the box unchecked and in the queue", () => {
+    for (const id of ["a", "b", "e"]) recordVerdict(id, "agreed");
     recordVerdict("c", "none", { note: "Not sure the strength is right" });
     expect(reviewStateOf("c")).toBe("unreviewed");
     expect(commentOn("c")).toBe("Not sure the strength is right");
     expect(nextOutstanding(null)).toBe("c");
-    expect(coverage()).toMatchObject({ unreviewed: 2, flagged: 0, agreed: 0 });
+    expect(coverage()).toMatchObject({ unreviewed: 2, flagged: 0, agreed: 3 });
   });
 
   it("is not an open item — it is an unfinished thought, not a concern", () => {
@@ -906,10 +918,11 @@ describe("when a reviewed box is deleted", () => {
     remove("c");
     expect(reviewLog().map((r) => r.entry.boxId)).not.toContain("c");
     expect(openItems()).toHaveLength(0);
-    // Deleting a box takes its outgoing links too, so `d` — which `c` was the
-    // only thing driving — falls out of the queue as well. Nothing to ask about
-    // a box nothing feeds.
-    expect(coverage().total).toBe(0);
+    // The four boxes still on the map are still in the pass — including `d`,
+    // which `c` was the only thing driving and which is now a starting box.
+    // What is gone is the record's hold on a box that is not there any more.
+    expect(coverage().total).toBe(4);
+    expect(queueOrder()).not.toContain("c");
   });
 
   it("survives the spreadsheet, where a row about a box this map never had does not", () => {

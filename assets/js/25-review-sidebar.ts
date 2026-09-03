@@ -37,15 +37,15 @@
 // second component.
 // =============================================================================
 
-import { NODES, state, nodeById } from "./03-state";
+import { NODES, state, incomingEdges, nodeById } from "./03-state";
 import { escapeHtml } from "./04-utils";
 import { upgradeSelectionOnlySelectsIn } from "./04b-typeable-dropdown";
 import { EVIDENCE_STATUSES, evidenceStatusLabel, normaliseEvidenceStatus } from "./07c-evidence";
 import { focusNode, scrollNodeIntoView, onSelectionChanged } from "./09-graph-selection";
 import { downloadTextBlob } from "./19-export";
 import { solverGeneration } from "./07-simulation-engine";
-import { currentSweep, invalidateSweep, sweepIsPossible } from "./22-review";
-import type { Sweep, SweepRow } from "./22-review";
+import { classifyUnreached, currentSweep, invalidateSweep, sweepIsPossible } from "./22-review";
+import type { Sweep, SweepMove, SweepRow } from "./22-review";
 import {
   KIND_CHIP, KIND_LABEL, REVIEW_FILTERS, markFor, requestSweep, reviewCounts,
   reviewQueue, sweepIsAwaitingRequest, coverageShare, reviewEvidenceItems,
@@ -492,22 +492,23 @@ function sweepHintHtml(): string {
     'and would pass every other check — it is only not what was intended.</div>';
 }
 
-// Why the pass counts fewer boxes than the map has. A box with nothing feeding
-// it has nothing to judge — there is no "is this everything that drives this?"
-// to answer — so it is outside the denominator, and a denominator nobody can
-// account for is one people stop trusting.
+// What the pass covers, and what it asks. Every box is in it, which is worth
+// saying plainly: the denominator used to be smaller than the map and nobody
+// could see why, and a denominator nobody can account for is one people stop
+// trusting. The starting boxes are called out because they are asked a
+// different question — and because they are the quick ones.
 function scopeNoteHtml(inQueue: number): string {
   const boxCount = NODES.length;
-  const sourceBoxCount = Math.max(0, boxCount - inQueue);
   if (!boxCount) return '<div class="review-scope-note">There are no boxes on this map.</div>';
-  const explanation = sourceBoxCount
-    ? sourceBoxCount + " source box" + (sourceBoxCount === 1 ? " has" : "es have") +
-      " no incoming links, so there is nothing feeding " +
-      (sourceBoxCount === 1 ? "it" : "them") + " to judge. " +
-      (sourceBoxCount === 1 ? "It is" : "They are") + " excluded from the pass."
-    : "Every box has at least one incoming link, so every box is included.";
-  return '<div class="review-scope-note"><b>Why ' + inQueue + " of " + boxCount + '?</b> ' +
-         escapeHtml(explanation) + '</div>';
+  const startingBoxCount = NODES.filter(node => (incomingEdges[node.id] || []).length === 0).length;
+  const explanation = startingBoxCount
+    ? "Each is asked whether what drives it is right and complete. " + startingBoxCount +
+      " of them " + (startingBoxCount === 1 ? "has" : "have") + " nothing driving " +
+      (startingBoxCount === 1 ? "it" : "them") + ", and " +
+      (startingBoxCount === 1 ? "is" : "are") + " asked whether anything should."
+    : "Each is asked whether what drives it is right and complete.";
+  return '<div class="review-scope-note"><b>All ' + inQueue + " of " + boxCount +
+         ' boxes are in the pass.</b> ' + escapeHtml(explanation) + '</div>';
 }
 
 function listHtml(queue: ReviewItem[]): string {
@@ -635,15 +636,52 @@ function sweepReachHtml(): string {
   let html = '<div class="review-group"><span>Every adjustable box, by reach</span>' +
              '<span class="review-group-count">' + sweep.rows.length + '</span></div>';
   for (const row of sweep.rows) html += sweepRowHtml(row, sweep);
-  if (sweep.unreached.length) {
-    html += '<div class="review-group"><span>Out of reach</span>' +
-            '<span class="review-group-count">' + sweep.unreached.length + '</span></div>';
-    html += '<div class="review-empty">No adjustable box moves ' +
-            escapeHtml(sweep.unreached.slice(0, 6).map(move => move.label).join(", ")) +
-            (sweep.unreached.length > 6 ? " and " + (sweep.unreached.length - 6) + " more" : "") +
-            '.</div>';
+  html += outOfReachHtml(sweep);
+  return html;
+}
+
+// Three groups, not one. Every box here is a box no nudge moved, and that is
+// where the resemblance ends: only the first is a box no input can REACH. The
+// last is reached and held — by a gate, by a limit, or by a route too weak to
+// draw — and under the old single heading the example map's one gate read as
+// four missing links.
+function outOfReachHtml(sweep: Sweep): string {
+  if (!sweep.unreached.length) return "";
+  const verdicts = classifyUnreached(sweep);
+  const stranded = sweep.unreached.filter(move => verdicts.get(move.id)?.kind === "stranded");
+  const inert = sweep.unreached.filter(move => verdicts.get(move.id)?.kind === "inert");
+  const held = sweep.unreached.filter(move => verdicts.get(move.id)?.kind === "held");
+
+  let html = "";
+  if (stranded.length) {
+    html += group("Out of reach", stranded.length);
+    html += '<div class="review-empty">Nothing the reader can move reaches ' +
+            escapeHtml(namesFrom(stranded)) + '. Each one is in the queue on its own.</div>';
+  }
+  if (inert.length) {
+    html += group("Reached, and never moves", inert.length);
+    html += '<div class="review-empty">A change arrives next door to ' +
+            escapeHtml(namesFrom(inert)) + ' and stops there, with no gate and no limit to ' +
+            'explain it. In the queue, one by one.</div>';
+  }
+  if (held.length) {
+    html += group("Held back", held.length);
+    html += '<div class="review-empty">An input does reach ' + escapeHtml(namesFrom(held)) +
+            ', and the map holds the change back — a box whose value is the smallest of ' +
+            'several, a limit already binding, or a route too weak to draw. Not a fault, ' +
+            'and not in the queue.</div>';
   }
   return html;
+}
+
+function group(title: string, count: number): string {
+  return '<div class="review-group"><span>' + escapeHtml(title) + '</span>' +
+         '<span class="review-group-count">' + count + '</span></div>';
+}
+
+function namesFrom(moves: SweepMove[]): string {
+  return moves.slice(0, 6).map(move => move.label).join(", ") +
+         (moves.length > 6 ? " and " + (moves.length - 6) + " more" : "");
 }
 
 function sweepRowHtml(row: SweepRow, sweep: Sweep): string {

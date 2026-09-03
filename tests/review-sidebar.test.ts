@@ -145,18 +145,19 @@ describe("what the queue holds", () => {
     expect(groups()).toContain("Evidence");
   });
 
-  it("lists every box with something feeding it, and no box without", () => {
+  it("lists every box on the map, starting boxes included", () => {
     setReviewFilter("unchecked");
-    expect(names()).toEqual(["Exam coverage", "Seizures", "Outcome"]);
-    expect(names()).not.toContain("Officers");   // nothing drives it
+    // Causes before effects, and a starting box is the first cause there is.
+    expect(names()).toEqual(["Officers", "Scanners", "Exam coverage", "Seizures", "Outcome"]);
+    expect(names()).toContain("Officers");   // nothing drives it, and it is asked why
   });
 
-  it("accounts for the boxes the pass leaves out", () => {
+  it("says what the pass covers and what the starting boxes are asked", () => {
     setReviewFilter("unchecked");
     const note = sidebar().querySelector(".review-scope-note") as HTMLElement;
-    expect(note.textContent).toContain("Why 3 of 5?");
-    expect(note.textContent).toContain("2 source boxes have no incoming links");
-    expect(note.textContent).toContain("excluded from the pass");
+    expect(note.textContent).toContain("All 5 of 5 boxes are in the pass");
+    expect(note.textContent).toContain("2 of them have nothing driving them");
+    expect(note.textContent).toContain("asked whether anything should");
   });
 
   it("marks each box with where it stands, in a glyph and in words", () => {
@@ -166,10 +167,11 @@ describe("what the queue holds", () => {
 
     const marks = rows().map(row =>
       (row.querySelector(".review-row-mark") as HTMLElement).textContent!.trim());
-    expect(marks).toEqual(["✓", "!", "○"]);
-    expect(rows()[0].getAttribute("aria-label")).toContain("agreed");
-    expect(rows()[1].getAttribute("aria-label")).toContain("flagged");
-    expect(rows()[2].getAttribute("aria-label")).toContain("not checked yet");
+    // Two starting boxes first, then the two judged, then the one left.
+    expect(marks).toEqual(["○", "○", "✓", "!", "○"]);
+    expect(rows()[2].getAttribute("aria-label")).toContain("agreed");
+    expect(rows()[3].getAttribute("aria-label")).toContain("flagged");
+    expect(rows()[4].getAttribute("aria-label")).toContain("not checked yet");
   });
 
   it("counts how far the whole review has got, not just the pass", () => {
@@ -306,7 +308,7 @@ describe("the records behind the queue", () => {
     const key = sidebar().querySelector(".review-cov-key")!;
     expect(key.textContent).toContain("1 agreed");
     expect(key.textContent).toContain("0 flagged");
-    expect(key.textContent).toContain("2 not looked at");
+    expect(key.textContent).toContain("4 not looked at");
   });
 
   it("keeps each chip's choice to itself", () => {

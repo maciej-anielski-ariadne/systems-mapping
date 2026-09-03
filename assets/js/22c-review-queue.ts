@@ -367,15 +367,26 @@ export function reviewQueue(solverGenerationNow: number, retain?: ReviewItem): R
   // down. Skipped entirely while the sweep is waiting to be asked for.
   if (sweepIsPossible() && !sweepIsAwaitingRequest(solverGenerationNow)) {
     for (const exception of sweepExceptions(currentSweep())) {
+      // A box no input can reach is a DECISION, not only an observation: it is
+      // either a box the map is meant to start from or a link nobody drew, and
+      // the reviewer is the one who knows which. So these two settle on the
+      // box's own verdict — the ordinary one, signed, travelling with the map
+      // and expiring by fingerprint if what drives the box ever changes. The
+      // other kinds are about an adjustable box's BEHAVIOUR, which no verdict
+      // on a single box answers, so they stay observations.
+      const answerable = exception.kind === "unreachable" || exception.kind === "inert";
+      const verdict = answerable ? reviewStateOf(exception.boxId) : "unreviewed";
+      const settled = verdict === "agreed" || verdict === "flagged";
+      const why = settled ? (verdict === "agreed" ? "Agreed" : "Flagged") : exception.detail;
       items.push({
         id: "input:" + exception.kind + ":" + exception.boxId,
         kind: "input",
         name: exception.title,
-        why: exception.detail,
+        why: why,
         boxId: exception.boxId,
         severity: exception.severity,
-        settled: false,
-        spoken: exception.title + " — " + exception.detail,
+        settled: settled,
+        spoken: exception.title + " — " + why,
         exception: exception,
       });
     }

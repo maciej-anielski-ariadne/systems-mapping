@@ -285,11 +285,23 @@ export interface Sweep {
   step: number;
   /** One row per adjustable box, furthest reach first. */
   rows: SweepRow[];
-  /** Quantified boxes no adjustable box reaches at all. */
+  /** Quantified boxes no adjustable box moves ENOUGH TO SHOW. Not the same
+   *  claim as "no input can reach them" — see classifyUnreached. */
   unreached: SweepMove[];
+  /** Of those, the ones something did move, by less than the map draws. They
+   *  are reached; the change is simply too small to see. */
+  faint: string[];
+  /** Boxes sitting on a hard limit at rest. A limit that is already binding
+   *  absorbs a nudge, so silence here is the limit's doing, not a missing link. */
+  atLimit: string[];
   /** How many boxes the sweep could move at all — the denominator on a row. */
   reachableCount: number;
 }
+
+/** Below this a difference is solver noise rather than a route: the solve stops
+ *  refining at a relative 1e-7, which is this figure expressed as a percentage.
+ *  The map's own drawing threshold sits four orders of magnitude above it. */
+const SWEEP_TOUCH_FLOOR_PCT = 1e-5;
 
 /**
  * Solve the map once per adjustable box. Read-only: the live sliders and the
@@ -320,8 +332,24 @@ export function runSweep(step: number = SWEEP_STEP): Sweep {
   state.userOverrides = {};
   const rest = computeNodeValues();
 
+  // A limit that is already binding at rest eats the nudge: the box computes a
+  // larger number and is put straight back on its ceiling. Recorded here, where
+  // the resting values exist, so the classification below can tell that apart
+  // from a box nothing reaches.
+  const atLimit: string[] = [];
+  for (const node of NODES) {
+    const value = rest[node.id];
+    if (value === undefined) continue;
+    if ((node.maxValue !== undefined && value >= node.maxValue) ||
+        (node.minValue !== undefined && value <= node.minValue)) atLimit.push(node.id);
+  }
+
   const rows: SweepRow[] = [];
   const everMoved = new Set<string>();
+  // Moved AT ALL, as against moved enough to draw. The difference is the whole
+  // of "reached, but faintly" — five weak links in a row multiply out to a
+  // hundredth of a percent, which is real influence the map declines to show.
+  const everTouched = new Set<string>();
 
   // try/finally, because the restore below is a PROMISE this function makes to
   // the rest of the app: the live sliders are exactly as they were when it
@@ -343,9 +371,11 @@ export function runSweep(step: number = SWEEP_STEP): Sweep {
         const value = values[target.id];
         if (value === undefined || from === undefined || from === 0) continue;
         const pct = ((value - from) / from) * 100;
+        if (!Number.isFinite(pct)) continue;
+        if (Math.abs(pct) >= SWEEP_TOUCH_FLOOR_PCT) everTouched.add(target.id);
         // The map's own "is this worth drawing?" threshold, so the sweep counts a
         // box as moved if and only if the map would show it moving.
-        if (!Number.isFinite(pct) || Math.abs(pct) < DELTA_DISPLAY_THRESHOLD_PCT) continue;
+        if (Math.abs(pct) < DELTA_DISPLAY_THRESHOLD_PCT) continue;
         moves.push({ id: target.id, label: target.label, pct: pct });
         everMoved.add(target.id);
       }
@@ -358,11 +388,13 @@ export function runSweep(step: number = SWEEP_STEP): Sweep {
   }
 
   rows.sort((a, b) => b.reach - a.reach || a.label.localeCompare(b.label));
+  const unmoved = targets.filter(t => !everMoved.has(t.id));
   return {
     step: step,
     rows: rows,
-    unreached: targets.filter(t => !everMoved.has(t.id))
-                      .map(t => ({ id: t.id, label: t.label, pct: 0 })),
+    unreached: unmoved.map(t => ({ id: t.id, label: t.label, pct: 0 })),
+    faint: unmoved.filter(t => everTouched.has(t.id)).map(t => t.id),
+    atLimit: atLimit,
     reachableCount: targets.length,
   };
 }
@@ -380,7 +412,7 @@ export function runSweep(step: number = SWEEP_STEP): Sweep {
 // stop asking. Neither is built yet, so it is not offered.
 
 export interface SweepException {
-  kind: "moves-nothing" | "single-effect" | "one-way" | "dominant";
+  kind: "moves-nothing" | "single-effect" | "one-way" | "dominant" | "unreachable" | "inert";
   severity: FindingSeverity;
   boxId: string;
   title: string;
@@ -388,6 +420,193 @@ export interface SweepException {
   fix: string;
   /** For "moves-nothing": the gate that explains it, when there is one. */
   gate?: { boxId: string; label: string; arms: { text: string; value: number; binding: boolean }[] };
+}
+
+// ───── "Nothing moved it" is not "nothing can reach it" ───────────────────
+// The sweep's finding is numeric: no nudge showed up in this box. The flag it
+// used to raise was structural: no input can reach it. Those are different
+// claims, and a map with a gate in it separates them immediately.
+//
+//   hold = min(short × 0.5, pump × 0.5)
+//
+// Nudge `pump` and `hold` does not move — the other arm is the smaller one and
+// min() takes it. Nudge `short` when the arms are level and it still does not
+// move. `hold` is connected, quantified, and behaving exactly as written, and
+// so is everything downstream of it; the sweep sees a box nothing moves and
+// reported a box no input can reach. That sends a reviewer looking for a
+// missing link that is not missing, once per box behind the gate.
+//
+// So the route is checked STRUCTURALLY, over the same dependency relation the
+// solver reads by — a formula's own references when it has one, the incoming
+// links when it does not — and only a box with no route at all keeps the name.
+
+export type UnreachedVerdict =
+  /** No route from any adjustable box. The flag, and it is now true of it. */
+  | { kind: "stranded" }
+  /** Reached, and something says where the change went. Not a fault, and not
+   *  in the queue: `boxId` is the box that absorbed it, when one can be named. */
+  | { kind: "held"; why: "gate" | "limit" | "faint" | "faded"; boxId?: string; label?: string }
+  /** A change arrived at the box next door, this box did not follow, and
+   *  nothing about it explains why. Worth a card — under its own name. */
+  | { kind: "inert"; from?: string };
+
+const verdictsBySweep = new WeakMap<Sweep, Map<string, UnreachedVerdict>>();
+
+/** Why each box in `sweep.unreached` did not move. Cached per sweep: the
+ *  sidebar and the queue ask the same question about the same object. */
+export function classifyUnreached(sweep: Sweep): Map<string, UnreachedVerdict> {
+  const cached = verdictsBySweep.get(sweep);
+  if (cached) return cached;
+  if (!sweep.unreached.length) {
+    const nothing = new Map<string, UnreachedVerdict>();
+    verdictsBySweep.set(sweep, nothing);
+    return nothing;
+  }
+
+  const arrivedFrom = structuralReach();
+  const faint = new Set(sweep.faint);
+  const atLimit = new Set(sweep.atLimit);
+  const unmoved = new Set(sweep.unreached.map(move => move.id));
+  const verdicts = new Map<string, UnreachedVerdict>();
+
+  for (const move of sweep.unreached) {
+    const node = nodeById[move.id];
+    if (!node) continue;
+
+    // 1. Nothing reads back to an adjustable box. The only case the flag fits.
+    if (!arrivedFrom.has(move.id)) { verdicts.set(move.id, { kind: "stranded" }); continue; }
+
+    // 2. It did move — by less than the map draws. Reached is reached.
+    if (faint.has(move.id)) { verdicts.set(move.id, { kind: "held", why: "faint" }); continue; }
+
+    // 3. Did a change even arrive next door? If not, whatever stopped it is
+    //    somewhere upstream and this box is a bystander — the box it actually
+    //    stopped at carries the finding, once, instead of every box behind it
+    //    carrying a copy.
+    const onTheDoorstep = readsFrom(node).some(source => {
+      const sourceNode = nodeById[source];
+      if (!sourceNode) return false;
+      if (sourceNode.controllable && sourceNode.baseline) return true;   // a nudged box
+      return !!sourceNode.baseline && !unmoved.has(source);              // one the sweep moved
+    });
+    if (!onTheDoorstep) {
+      verdicts.set(move.id, whatHoldsBack(move.id, unmoved, atLimit) || { kind: "held", why: "faded" });
+      continue;
+    }
+
+    // 4. A change arrived here and stopped. Either the box says why —
+    const label = node.label || move.id;
+    if (isGate(move.id)) {
+      verdicts.set(move.id, { kind: "held", why: "gate", boxId: move.id, label: label });
+      continue;
+    }
+    if (atLimit.has(move.id)) {
+      verdicts.set(move.id, { kind: "held", why: "limit", boxId: move.id, label: label });
+      continue;
+    }
+    // — or nothing does, and that is the finding.
+    verdicts.set(move.id, { kind: "inert", from: arrivedFrom.get(move.id) });
+  }
+  verdictsBySweep.set(sweep, verdicts);
+  return verdicts;
+}
+
+/**
+ * Every box some adjustable box can reach by any route, and the label of one
+ * such box — so a finding can name where the reader would have to start.
+ */
+function structuralReach(): Map<string, string> {
+  const dependants = new Map<string, string[]>();
+  for (const node of NODES) {
+    for (const source of readsFrom(node)) {
+      // A formula names params as well as boxes. A param is not something the
+      // reader can move, so it carries nothing.
+      if (!nodeById[source]) continue;
+      const list = dependants.get(source);
+      if (list) list.push(node.id);
+      else dependants.set(source, [node.id]);
+    }
+  }
+
+  const arrivedFrom = new Map<string, string>();
+  const queue: string[] = [];
+  for (const node of NODES) {
+    if (!node.controllable || !node.baseline) continue;
+    for (const dependant of dependants.get(node.id) || []) {
+      if (arrivedFrom.has(dependant)) continue;
+      arrivedFrom.set(dependant, node.label || node.id);
+      queue.push(dependant);
+    }
+  }
+  // Breadth-first, so a box's recorded origin is the nearest input to it. The
+  // seen set is also what makes a feedback loop terminate.
+  for (let index = 0; index < queue.length; index++) {
+    const origin = arrivedFrom.get(queue[index])!;
+    for (const dependant of dependants.get(queue[index]) || []) {
+      if (arrivedFrom.has(dependant)) continue;
+      arrivedFrom.set(dependant, origin);
+      queue.push(dependant);
+    }
+  }
+  return arrivedFrom;
+}
+
+/**
+ * Walk back from a box nothing arrived at, looking for the box that absorbed
+ * the change: a gate that takes its value from an arm the input is not on, or a
+ * limit that is already binding. The walk stops at any box the sweep DID move —
+ * whatever stopped the change is between there and here, and everything in
+ * between has already been looked at.
+ */
+function whatHoldsBack(
+  boxId: string,
+  unmoved: Set<string>,
+  atLimit: Set<string>,
+): UnreachedVerdict | null {
+  const seen = new Set<string>([boxId]);
+  const queue = [boxId];
+  for (let index = 0; index < queue.length; index++) {
+    const identifier = queue[index];
+    const node = nodeById[identifier];
+    if (!node) continue;
+    // An adjustable box is where movement comes FROM. It is never what stopped it.
+    if (identifier !== boxId && node.controllable) continue;
+
+    const label = node.label || identifier;
+    if (atLimit.has(identifier)) return { kind: "held", why: "limit", boxId: identifier, label: label };
+    if (isGate(identifier))      return { kind: "held", why: "gate", boxId: identifier, label: label };
+
+    for (const source of readsFrom(node)) {
+      const sourceNode = nodeById[source];
+      if (!sourceNode || seen.has(source)) continue;
+      seen.add(source);
+      // Something the sweep moved is not where this box is stuck. A box the
+      // sweep could not measure at all — no starting value, so no percentage —
+      // says nothing either way, so the walk goes through it.
+      const measured = !!sourceNode.baseline && !sourceNode.controllable;
+      if (measured && !unmoved.has(source)) continue;
+      queue.push(source);
+    }
+  }
+  return null;
+}
+
+/**
+ * Whether this box's value is one of several candidates rather than a sum: a
+ * top-level min/max/clamp in its formula, or the "weakest input wins" combine
+ * rule over its links. Structural on purpose — it asks how the box is WRITTEN,
+ * not which arm happens to bind at the moment, so it holds wherever the sliders
+ * have been left.
+ */
+function isGate(nodeId: string): boolean {
+  const parsed = getParsedFormula(nodeId);
+  if (parsed) {
+    const ast = parsed.ast;
+    return ast.kind === "call" && ast.args.length >= 2 &&
+           (ast.fn === "min" || ast.fn === "max" || ast.fn === "clamp");
+  }
+  const node = nodeById[nodeId];
+  return !!node && node.combine === "min" && (incomingEdges[nodeId] || []).length >= 2;
 }
 
 export function sweepExceptions(sweep: Sweep): SweepException[] {
@@ -419,19 +638,21 @@ export function sweepExceptions(sweep: Sweep): SweepException[] {
     });
   }
 
-  const single = sweep.rows.filter(r => r.reach === 1);
-  if (single.length) {
+  // One card each, for the same reason the unreachable ones get one: the fix
+  // line says "worth confirming once per box", and a single row headed "3
+  // adjustable boxes reach exactly one box" cannot be confirmed once per box —
+  // it opens on the first of the three and there is no way to the other two.
+  for (const row of sweep.rows) {
+    if (row.reach !== 1) continue;
+    const only = row.moves[0];
     out.push({
       kind: "single-effect",
       severity: "wrong",
-      boxId: single[0].id,
-      title: single.length === 1
-        ? single[0].label + " reaches exactly one box"
-        : single.length + " adjustable boxes reach exactly one box",
-      detail: single.map(r => r.label + " → " + r.moves[0].label +
-        " (" + signed(r.moves[0].pct) + ")").join(" · ") +
-        ". Each moves one box and stops: nothing downstream of that box is quantified.",
-      fix: "Fine if deliberate — worth confirming once per box.",
+      boxId: row.id,
+      title: row.label + " reaches exactly one box",
+      detail: "Up " + stepPct + "% moves " + only.label + " (" + signed(only.pct) +
+        ") and stops there: nothing downstream of that box is quantified.",
+      fix: "Fine if deliberate — worth confirming.",
     });
   }
 
@@ -467,17 +688,45 @@ export function sweepExceptions(sweep: Sweep): SweepException[] {
     });
   }
 
-  if (sweep.unreached.length) {
+  // ONE CARD PER BOX. These used to arrive as a single row reading "4 boxes no
+  // input can reach", which is a count rather than a question: it opens on the
+  // first box of the four, and there is no way to work through the rest of them
+  // or to be done with any one of them. A reviewer settles a box, not a tally.
+  // The counts are worth stating, because they are what the two halves of this
+  // are for: on the example map all four of those boxes sit behind one gate and
+  // none of them is now raised at all, and on the 300-box map the row stood for
+  // fifty separate boxes, every one of which is a decision of its own.
+  const verdicts = classifyUnreached(sweep);
+  for (const box of sweep.unreached) {
+    const verdict = verdicts.get(box.id);
+    // Reached, and held: by a gate, by a limit already binding, or by a route
+    // too weak to draw. None of those is a missing link, and saying so once per
+    // box behind one gate is how a real finding gets buried.
+    if (!verdict || verdict.kind === "held") continue;
+
+    if (verdict.kind === "stranded") {
+      out.push({
+        kind: "unreachable",
+        severity: "wrong",
+        boxId: box.id,
+        title: box.label + " — no input can reach it",
+        detail: "Every adjustable box was nudged up " + stepPct + "% in turn and this one did not " +
+          "move. There is no route to it: nothing it reads, and nothing they read, is a box the " +
+          "reader can move.",
+        fix: "Either it is an input in its own right, or the link that would drive it is missing.",
+      });
+      continue;
+    }
+
     out.push({
-      kind: "moves-nothing",
-      severity: "wrong",
-      boxId: sweep.unreached[0].id,
-      title: sweep.unreached.length + " box" + (sweep.unreached.length === 1 ? "" : "es") +
-        " no input can reach",
-      detail: sweep.unreached.slice(0, 6).map(u => u.label).join(" · ") +
-        (sweep.unreached.length > 6 ? " and " + (sweep.unreached.length - 6) + " more" : "") +
-        ". Nothing the reader can move changes any of them.",
-      fix: "Either they are inputs in their own right, or the link that would drive them is missing.",
+      kind: "inert",
+      severity: "mismatch",
+      boxId: box.id,
+      title: box.label + " never moves",
+      detail: "Up " + stepPct + "% on every adjustable box in turn and this one does not move by " +
+        "so much as a fraction" + (verdict.from ? ", though " + verdict.from + " reaches it" : "") +
+        ". Nothing gates it and no limit is holding it.",
+      fix: "A link with no strength on the route, or a formula that never reads the box the link comes from.",
     });
   }
 

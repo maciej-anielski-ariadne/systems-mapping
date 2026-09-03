@@ -28,7 +28,7 @@
 // =============================================================================
 
 import type { EvidenceMetadata, Finding } from "./types";
-import { edgeById, nodeById, state } from "./03-state";
+import { edgeById, incomingEdges, nodeById, state } from "./03-state";
 import { escapeHtml, formatScalar } from "./04-utils";
 import {
   evidenceStatusOptionsHtml, evidenceStatusLabel, normaliseEvidenceStatus,
@@ -45,7 +45,7 @@ import { findingIdentity } from "./22c-review-queue";
 import type { ReviewItem } from "./22c-review-queue";
 import {
   markAddressed, needsResponse, queuePosition, queueOrder, reopenVerdict,
-  reviewerNamed, scheduleReviewSave, startReviewPass,
+  reviewStateOf, reviewerNamed, scheduleReviewSave, startReviewPass,
 } from "./24-review-record";
 import {
   clearReviewItem, currentReviewItem, goToNextReviewItem, selectReviewItem,
@@ -302,8 +302,15 @@ function uncheckedBody(item: ReviewItem): string {
   const position = item.boxId ? queuePosition(item.boxId) : 0;
   const total = queueOrder().length;
 
-  let html = '<div class="review-item-why">Is this everything that drives this box? The list of ' +
-             'what drives it is below, with a mark against each link.</div>';
+  // The same question the card below asks, and it splits the same way: a box
+  // nothing drives is asked whether anything should. Two headings disagreeing
+  // about what is being asked, one above the other, is worse than either.
+  const drivers = item.boxId ? (incomingEdges[item.boxId] || []).length : 0;
+  let html = '<div class="review-item-why">' + (drivers === 0
+    ? "Should anything drive this box? Nothing does — every number it carries comes from the " +
+      "value typed on it."
+    : "Is this everything that drives this box? The list of what drives it is below, with a " +
+      "mark against each link.") + '</div>';
   if (position && total) {
     html += '<div class="review-item-facts"><span><b>' + position + '</b> of ' + total +
             ' in the pass</span></div>';
@@ -343,6 +350,31 @@ function inputBody(item: ReviewItem): string {
   html += '<div class="review-item-fix">' + escapeHtml(exception.fix) + '</div>';
   html += '<div class="review-item-note">Nothing here is invalid. It computes correctly and would ' +
           'pass every check — it is only not what was intended.</div>';
+
+  // Two of the five ask something a verdict on this box answers: whether the
+  // map is meant to start here. The verdict buttons are further down this same
+  // panel during a pass — the queue does not grow a second set of them, for the
+  // reason at the top of this file — so this says where they are, and offers
+  // the pass when none is running.
+  if (exception.kind === "unreachable" || exception.kind === "inert") {
+    const now = item.boxId ? reviewStateOf(item.boxId) : "unreviewed";
+    if (now === "agreed" || now === "flagged") {
+      html += '<div class="review-item-facts"><span>' +
+              (now === "agreed" ? "<b>Agreed</b> — recorded against this box" : "<b>Flagged</b>") +
+              ', and it travels with the map. Reopen it on the card below.</span></div>';
+    } else if (state.reviewPass) {
+      html += '<div class="review-item-note">Agreeing on this box below records that it is meant ' +
+              'to be this way — signed with your name, kept in the map, and back in the queue if ' +
+              'what drives this box ever changes.</div>';
+    } else {
+      html += '<div class="review-item-note">A verdict is signed with your name and travels with ' +
+              'the map, so it is recorded during a pass rather than one box at a time.</div>';
+      html += '<button type="button" class="review-item-primary" ' +
+              'data-review-item-action="start-pass-here"' + (reviewerNamed() ? "" : " disabled") + '>' +
+              (reviewerNamed() ? "Start a pass" : "Your name first — in the list on the left") +
+              '</button>';
+    }
+  }
   return html;
 }
 
@@ -381,6 +413,16 @@ export function wireReviewItemBlock(container: HTMLElement): void {
       case "start-pass": {
         const goTo = startReviewPass();
         if (goTo) selectReviewItem("unchecked:" + goTo);
+        return;
+      }
+      // The same pass, started from an item that is NOT a coverage row: the
+      // reviewer is working the odd-input list and the first unchecked box is
+      // not where they were going. Start it and stay put — the verdict buttons
+      // appear on the panel underneath.
+      case "start-pass-here": {
+        startReviewPass();
+        renderDetailPanel();
+        syncReviewSidebar();
         return;
       }
     }

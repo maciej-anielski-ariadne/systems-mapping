@@ -121,19 +121,25 @@ export function coverage(): Coverage {
 // Causes before effects. Reviewing a box after the boxes that feed it means
 // every judgement stands on ones already made, and it is how a room works
 // through a causal story out loud. topologicalOrder is already maintained by
-// the loader, so this is a filter rather than a computation.
+// the loader, so this is an ordering rather than a computation.
 //
-// A box with nothing feeding it is skipped: "is this everything that feeds this
-// box?" has no useful answer for a starting box, and putting 33 of them in the
-// queue would spend a third of a session saying "yes, nothing".
+// EVERY box, starting boxes included. They were left out on the reasoning that
+// "is this everything that drives this box?" has no useful answer for a box
+// nothing drives — which mistook a different question for no question. The
+// question a starting box asks is "should anything drive this?", and it is one
+// of the few a map gets badly wrong: the sweep's own check for a box no input
+// can reach is exactly this question asked arithmetically, and on the 300-box
+// example map it comes back fifty times. Leaving them out also meant those
+// fifty boxes had nowhere to record an answer — no queue position, so no
+// verdict card, so no way to say "yes, that is meant to be a driver box" and
+// have it stick. A starting box is where a causal story begins; it is the first
+// thing to agree, not the one thing nobody may judge.
 export function queueOrder(): string[] {
-  const ordered = topologicalOrder.filter(id => (incomingEdges[id] || []).length > 0);
+  const ordered = topologicalOrder.slice();
   // A box in a feedback loop may be missing from the topological order; nothing
   // should be unreviewable because of where it sits, so any stragglers go last.
   const seen = new Set(ordered);
-  for (const node of NODES) {
-    if (!seen.has(node.id) && (incomingEdges[node.id] || []).length > 0) ordered.push(node.id);
-  }
+  for (const node of NODES) if (!seen.has(node.id)) ordered.push(node.id);
   return ordered;
 }
 
@@ -765,8 +771,8 @@ export function reviewReport(): ReportRow[] {
   const position = new Map(order.map((id, i) => [id, i + 1]));
   const rows: ReportRow[] = [];
 
-  // Queue order first — causes before effects, the order a pass runs in — then
-  // the boxes nothing drives, which no pass ever asks about.
+  // Queue order — causes before effects, the order a pass runs in. Every box is
+  // in it; `rest` is the belt to that braces, for a box the order somehow missed.
   const inQueue = order.map(id => nodeById[id]).filter(Boolean) as GraphNode[];
   const rest = NODES.filter(n => !position.has(n.id));
 
@@ -780,9 +786,7 @@ export function reviewReport(): ReportRow[] {
       label: node.label || node.id,
       column: (stageById[node.stage] && stageById[node.stage].label) || node.stage || "",
       linksIn: (incomingEdges[node.id] || []).length,
-      // A box with nothing feeding it is not "not checked" — there is nothing to
-      // check. Saying so is the difference between a gap and a decision.
-      state: at === 0 ? "nothing drives this box — not in the queue" : STATE_WORDS[now],
+      state: STATE_WORDS[now],
       reviewer: entry ? entry.reviewer : "",
       date: entry ? entry.date : "",
       note: entry ? entry.note : "",
